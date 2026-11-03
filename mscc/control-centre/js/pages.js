@@ -151,7 +151,6 @@ NIGHT.pages = (function () {
       api.isMock ? ui.mockBanner('Toggling a module here does not modify the running Node.js bot. The mock adapter records the change in memory only.') : null,
       h('div', { class: 'toolbar' },
         h('div', { class: 'hstack', style: { gap: '10px' } },
-          h('span', { class: 'mono tiny mute' }, 'prefix ' + (data.commandPrefix || '!')),
           h('span', { class: 'mono tiny mute' }, list.filter((m) => m.enabled).length + ' available')
         ),
         h('div', { class: 'spacer' })
@@ -300,34 +299,51 @@ NIGHT.pages = (function () {
     try { data = await api.getStorage(); }
     catch (e) { root.append(ui.errorState(e, () => ctx.reload())); return; }
     root.innerHTML = '';
-    const pct = data.total ? (data.used / data.total) * 100 : 0;
+
+    const hasQuota = Number.isFinite(data.used) && Number.isFinite(data.total) && data.total > 0;
+    const files = Array.isArray(data.files) ? data.files : [];
+    const connectionLabel = data.connected === true ? 'Connected' : data.configured === true ? 'Configured · not checked' : 'Not configured';
+    const connectionKind = data.connected === true ? 'online' : data.configured === true ? 'pairing' : 'offline';
+    const storageRows = files.map((file) => h('div', { class: 'row plain' },
+      h('div', { class: 'col-id' },
+        h('div', { class: 'avatar', style: { width: '30px', height: '30px' } }, icon('folder', 15)),
+        h('div', { style: { minWidth: '0' } },
+          h('div', { class: 'name mono truncate' }, file.name || 'Storage target'),
+          h('div', { class: 'meta' }, file.role || file.type || 'Cloud storage'))),
+      h('div', { class: 'col-profile' }, h('span', { class: 'tiny mute' }, file.status || (file.detected ? 'Detected' : 'Configured'))),
+      h('div', { class: 'col-status' }, h('span', { class: 'small dim' }, Number.isFinite(file.size) && file.size > 0 ? bytes(file.size) : '—')),
+      h('div', { class: 'col-time' }, Number.isFinite(file.count) ? file.count + ' items' : '—')
+    ));
 
     root.append(
-      h('div', { class: 'page-head' }, h('div', { class: 'page-title' }, 'Storage'), h('div', { class: 'page-desc' }, 'Session archives, exports and media held in object storage.')),
+      h('div', { class: 'page-head' },
+        h('div', { class: 'page-title' }, 'Storage'),
+        h('div', { class: 'page-desc' }, 'Cloud storage configuration and available targets. Quota checks are not triggered automatically so an expired provider session cannot break page loading.'),
+        h('div', { class: 'toolbar' }, h('button', { class: 'btn', onclick: () => ctx.reload() }, icon('refresh', 14), 'Refresh'))
+      ),
       api.isMock ? ui.mockBanner('Storage contents are sample records. No files are listed from, or downloaded to, real cloud storage.') : null,
       h('div', { class: 'panel', style: { marginBottom: '14px' } },
+        h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, data.provider || 'Cloud storage'), ui.status(connectionKind, connectionLabel)),
         h('div', { class: 'panel-body stack' },
-          h('div', { class: 'hstack', style: { justifyContent: 'space-between' } },
-            h('div', { style: { flex: '1', minWidth: '0' } },
-              h('div', { class: 'small dim' }, data.provider + ' · ' + data.container),
-              h('div', { style: { fontSize: '22px', fontWeight: '600', letterSpacing: '-.03em', marginTop: '4px' } }, bytes(data.used), h('small', { class: 'mute', style: { fontSize: '13px', fontWeight: '500' } }, ' of ' + bytes(data.total)))
-            )
-          ),
-          ui.meter(pct, pct > 85 ? 'crit' : pct > 70 ? 'warn' : '')
+          h('div', { class: 'small dim' }, data.container || (data.configured ? 'Configured storage' : 'No storage configured')),
+          hasQuota
+            ? h('div', { class: 'stack', style: { gap: '8px' } },
+                h('div', { class: 'hstack', style: { justifyContent: 'space-between' } },
+                  h('span', { class: 'small dim' }, bytes(data.used) + ' used'),
+                  h('span', { class: 'small dim' }, bytes(data.total) + ' total')),
+                ui.meter((data.used / data.total) * 100, data.used / data.total > .85 ? 'crit' : data.used / data.total > .70 ? 'warn' : '')
+              )
+            : h('div', { class: 'small dim' }, 'Quota usage has not been checked. It will appear here after a successful provider check.'),
+          data.note ? h('p', { class: 'hint', style: { margin: '0' } }, data.note) : null
         )
       ),
-      h('div', { class: 'list' },
-        h('div', { class: 'list-head' }, h('div', { class: 'col-id' }, 'Object'), h('div', { class: 'col-profile' }, 'Type'), h('div', { class: 'col-status' }, 'Size'), h('div', { class: 'col-time' }, 'Modified')),
-        data.files.length
-          ? data.files.map((f) => h('div', { class: 'row plain' },
-              h('div', { class: 'col-id' },
-                h('div', { class: 'avatar', style: { width: '30px', height: '30px' } }, icon('file', 15)),
-                h('div', { style: { minWidth: '0' } }, h('div', { class: 'name mono truncate' }, f.name))),
-              h('div', { class: 'col-profile' }, h('span', { class: 'mono tiny mute' }, f.type)),
-              h('div', { class: 'col-status' }, h('span', { class: 'small dim' }, bytes(f.size))),
-              h('div', { class: 'col-time' }, timeAgo(f.modified))
-            ))
-          : ui.emptyState('storage', 'No objects stored', 'Session archives and exports will appear here once the bot writes to storage.')
+      h('div', { class: 'panel' },
+        h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, 'Storage targets'), h('span', { class: 'tiny mute' }, files.length + ' listed')),
+        files.length
+          ? h('div', { class: 'list' },
+              h('div', { class: 'list-head' }, h('div', { class: 'col-id' }, 'Target'), h('div', { class: 'col-profile' }, 'Type'), h('div', { class: 'col-status' }, 'Visible size'), h('div', { class: 'col-time' }, 'Items')),
+              ...storageRows)
+          : h('div', { class: 'panel-body' }, ui.emptyState('storage', data.configured ? 'No targets returned' : 'Storage is not configured', data.configured ? 'The provider has configuration saved, but no storage targets were returned in passive mode.' : 'Configure the cloud-storage provider on the bot host to list storage targets.'))
       )
     );
   }
@@ -339,38 +355,46 @@ NIGHT.pages = (function () {
     root.innerHTML = '';
 
     if (!api.isMock && api.capabilities?.settingsEditor) {
-      const entries = Object.entries(s).filter(([, value]) => typeof value === 'boolean');
-      const draftLive = Object.assign({}, s);
+      const initialPrefix = typeof s.publicPrefix === 'string' && s.publicPrefix ? s.publicPrefix : '.';
+      const prefixInput = ui.textInput({ value: initialPrefix, placeholder: '.' });
+      const saveLive = h('button', { class: 'btn primary', disabled: true, onclick: saveLiveSettings }, icon('check', 16), 'Save settings');
       let dirtyLive = false;
-      const saveLive = h('button', { class: 'btn primary', disabled: true, onclick: saveLiveSettings }, icon('check', 16), 'Save command settings');
-      const list = h('div', { class: 'list' });
-      entries.forEach(([key, value]) => {
-        const label = key.replace(/[._-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-        list.append(h('div', { class: 'row plain' },
-          h('div', { style: { flex: '1', minWidth: '0' } },
-            h('div', { class: 'name' }, label),
-            h('div', { class: 'meta' }, 'Existing boolean command setting from the MSCC registry. This change affects global command availability.')),
-          ui.switchEl(Boolean(value), next => { draftLive[key] = next; dirtyLive = true; saveLive.disabled = false; ctx.setDirty(true); }, false, label)));
+      prefixInput.addEventListener('input', () => {
+        dirtyLive = true;
+        saveLive.disabled = false;
+        ctx.setDirty(true);
       });
       async function saveLiveSettings() {
+        const value = prefixInput.value;
+        if (!value.trim() || value.length > 8 || /\\s/.test(value)) {
+          ui.toast('Use a non-empty command prefix of up to 8 characters, without spaces.', 'err');
+          return;
+        }
         saveLive.disabled = true; saveLive.textContent = 'Saving…';
         try {
-          await api.saveSettings(draftLive);
+          const saved = await api.saveSettings({ publicPrefix: value });
+          prefixInput.value = saved.publicPrefix || value;
           dirtyLive = false; ctx.setDirty(false);
-          ui.success('MSCC command settings saved', 'The existing MSCC settings writer accepted the changes.');
-          saveLive.innerHTML = ''; saveLive.append(icon('check', 16), 'Save command settings');
+          ui.success('Bot settings saved', 'The public command prefix was updated in MSCC.');
+          saveLive.innerHTML = ''; saveLive.append(icon('check', 16), 'Save settings');
         } catch (error) {
           ui.failure(error); saveLive.disabled = false;
-          saveLive.innerHTML = ''; saveLive.append(icon('check', 16), 'Save command settings');
+          saveLive.innerHTML = ''; saveLive.append(icon('check', 16), 'Save settings');
         }
       }
       root.append(
-        h('div', { class: 'page-head' }, h('div', { class: 'page-title' }, 'Settings'), h('div', { class: 'page-desc' }, 'Actual boolean command-availability settings exposed by the current MSCC runtime.')),
-        h('div', { class: 'panel' }, h('div', { class: 'panel-body small dim' }, 'This page deliberately does not show invented preferences such as read receipts, presence, auto-responder, time zone or retention. Only settings already registered in MSCC can be changed here.')),
-        list,
+        h('div', { class: 'page-head' }, h('div', { class: 'page-title' }, 'Settings'), h('div', { class: 'page-desc' }, 'Actual bot-level settings exposed by the running MSCC service.')),
+        h('div', { class: 'panel' },
+          h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, 'Command behaviour')),
+          h('div', { class: 'panel-body stack' },
+            ui.field('Public command prefix', prefixInput, 'The character(s) users put before public commands. This is saved to the bot configuration.'),
+            h('p', { class: 'small dim' }, 'Enable or disable individual commands under Commands & modules. Those controls are intentionally kept separate from general settings.'),
+            h('p', { class: 'small dim' }, 'The private control destination remains Account A and is not editable here.')
+          )
+        ),
         h('div', { class: 'hstack', style: { marginTop: '16px', justifyContent: 'flex-end' } }, saveLive)
       );
-      ctx.onCleanup(() => { if (dirtyLive) ui.toast('Unsaved MSCC settings discarded.', 'warn'); });
+      ctx.onCleanup(() => { if (dirtyLive) ui.toast('Unsaved settings discarded.', 'warn'); });
       return;
     }
 

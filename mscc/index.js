@@ -1,4 +1,4 @@
-import { appendFile, cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, chmod, cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import makeWASocket, {
@@ -137,11 +137,13 @@ const num = (name, fallback, min, max) => {
 
 const LEGACY_ACCOUNT_A_NUMBER = digits(process.env.ACCOUNT_A_NUMBER || process.env.BOT_NUMBER)
 const LEGACY_ACCOUNT_B_NUMBER = digits(process.env.ACCOUNT_B_NUMBER)
-const OWNER_NUMBER = digits(process.env.OWNER_NUMBER || LEGACY_ACCOUNT_A_NUMBER)
+let OWNER_NUMBER = digits(process.env.OWNER_NUMBER || LEGACY_ACCOUNT_A_NUMBER)
+let OWNER_NAME = String(process.env.OWNER_NAME || process.env.BOT_OWNER || 'Owner').trim().slice(0, 64) || 'Owner'
 const LEGACY_ACCOUNT_A_AUTH_DIR = process.env.ACCOUNT_A_AUTH_DIR || '/var/lib/mscc/auth'
 const LEGACY_ACCOUNT_B_AUTH_DIR = process.env.ACCOUNT_B_AUTH_DIR || '/var/lib/mscc/auth-b'
 const INDEX_FILE = process.env.MESSAGE_INDEX_FILE || '/var/lib/mscc/data/mscc-message-index.json'
 const SETTINGS_FILE = process.env.SETTINGS_FILE || '/var/lib/mscc/data/mscc-settings.json'
+const OWNER_CONFIG_FILE = process.env.MSCC_OWNER_CONFIG_FILE || join(dirname(SETTINGS_FILE), 'mscc-owner-config.json')
 const SHARED_DB_FILE = process.env.MSCC_SHARED_DB_FILE || join(dirname(SETTINGS_FILE), 'mscc-shared.sqlite')
 const ACCOUNT_REGISTRY_FILE = process.env.ACCOUNT_REGISTRY_FILE || join(dirname(SETTINGS_FILE), 'mscc-accounts.json')
 const ACCOUNT_AUTH_ROOT = process.env.ACCOUNT_AUTH_ROOT || '/var/lib/mscc/accounts'
@@ -177,12 +179,16 @@ const aniListResolver = createAniListResolver()
 const tmdbResolver = createTmdbResolver()
 const adaptationResolver = createAdaptationResolver()
 
-const controlNumbers = new Set(
-  String(process.env.CONTROL_NUMBERS || OWNER_NUMBER)
-    .split(',')
-    .map(digits)
-    .filter(v => /^\d{7,15}$/.test(v))
-)
+const ENV_CONTROL_NUMBERS = String(process.env.CONTROL_NUMBERS || '')
+  .split(',')
+  .map(digits)
+  .filter(v => /^\d{7,15}$/.test(v))
+const controlNumbers = new Set([...ENV_CONTROL_NUMBERS, ...(OWNER_NUMBER ? [OWNER_NUMBER] : [])])
+function refreshControlNumbers() {
+  controlNumbers.clear()
+  for (const number of ENV_CONTROL_NUMBERS) controlNumbers.add(number)
+  if (OWNER_NUMBER) controlNumbers.add(OWNER_NUMBER)
+}
 
 const accountRegistry = new AccountRegistry({
   file: ACCOUNT_REGISTRY_FILE,
@@ -2873,13 +2879,8 @@ async function processInboundMessage(account, msg) {
           sudoSet: (raw, enabled) => setPublicSudoTarget(account, msg, raw, enabled),
           ownerContact: () => {
             const main = accountRegistry.main()
-            const phoneNumber = digits(main?.phoneNumber || OWNER_NUMBER)
-            const displayName = String(
-              process.env.OWNER_NAME ||
-              process.env.BOT_OWNER ||
-              main?.displayName ||
-              'Owner'
-            ).trim().slice(0, 64) || 'Owner'
+            const phoneNumber = digits(OWNER_NUMBER || main?.phoneNumber)
+            const displayName = String(OWNER_NAME || main?.displayName || 'Owner').trim().slice(0, 64) || 'Owner'
             return { phoneNumber, displayName }
           },
           libraryGet: itemKey => sharedStorage?.getLibraryItem(authority.senderKey, itemKey) || null,
@@ -3383,6 +3384,109 @@ async function repairAccount(id, mode = 'code') {
   })
 }
 
+function getOwnerConfig() {
+  const main = accountRegistry.main()
+  const number = digits(OWNER_NUMBER || main?.phoneNumber)
+  return {
+    ownerNumberConfigured: Boolean(number),
+    ownerNumberMasked: number ? masked(number) : 'Not configured',
+    ownerName: OWNER_NAME || 'Owner',
+  }
+}
+
+async function loadOwnerConfig() {
+  try {
+    const raw = JSON.parse(await readFile(OWNER_CONFIG_FILE, 'utf8'))
+    const number = digits(raw?.ownerNumber)
+    const name = String(raw?.ownerName || '').trim()
+    if (/^\d{7,15}$/.test(number)) OWNER_NUMBER = number
+    if (name && name.length <= 64 && !/[\u0000-\u001f\u007f]/.test(name)) OWNER_NAME = name
+    refreshControlNumbers()
+  } catch (error) {
+    if (error?.code !== 'ENOENT') console.warn('MSCC owner configuration could not be loaded; environment defaults retained.')
+  }
+}
+
+async function setOwnerConfig({ ownerNumber, ownerName } = {}) {
+  const number = digits(ownerNumber)
+  const name = String(ownerName ?? OWNER_NAME ?? 'Owner').trim()
+  if (!/^\d{7,15}$/.test(number)) throw new Error('Owner number must contain 7 to 15 digits, including country code.')
+  if (!name || name.length > 64 || /[\u0000-\u001f\u007f]/.test(name)) throw new Error('Owner name must contain 1 to 64 normal characters.')
+  const temp = OWNER_CONFIG_FILE + '.' + randomUUID() + '.tmp'
+  await mkdir(dirname(OWNER_CONFIG_FILE), { recursive: true, mode: 0o700 })
+  try {
+    await writeFile(temp, JSON.stringify({ ownerNumber: number, ownerName: name }, null, 2) + '\n', { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+    await chmod(temp, 0o600)
+    await rename(temp, OWNER_CONFIG_FILE)
+    await chmod(OWNER_CONFIG_FILE, 0o600)
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => {})
+    throw error
+  }
+  OWNER_NUMBER = number
+  OWNER_NAME = name
+  refreshControlNumbers()
+  await recordActivity('configuration.owner-contact-changed', { ownerNumberMasked: masked(number), ownerName: name })
+  await writeRuntimeRegistry()
+  return getOwnerConfig()
+}
+
+function commandModuleCatalog() {
+  const groups = new Map()
+  for (const command of publicCommandRegistry.canonical) {
+    const id = String(command.capability || 'general').trim().toLowerCase() || 'general'
+    if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id)) continue
+    if (!groups.has(id)) groups.set(id, {
+      id,
+      name: id.replace(/[._-]+/g, ' ').replace(/\b\w/g, char => char.toUpperCase()),
+      category: 'Public command modules',
+      description: String(command.description || 'Public commands grouped by their capability folder.').trim().slice(0, 180),
+      commands: [],
+    })
+    const group = groups.get(id)
+    const commandName = String(command.name || '').trim()
+    if (commandName && !group.commands.includes(commandName)) group.commands.push(commandName)
+  }
+  return [...groups.values()].map(group => ({
+    ...group,
+    commands: group.commands.sort((a, b) => a.localeCompare(b)),
+    commandCount: group.commands.length,
+  })).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+async function setProfileCapability(profileId, capability, enabled) {
+  const id = String(profileId || '').trim().toLowerCase()
+  const cap = String(capability || '').trim().toLowerCase()
+  if (!sharedStorage) throw new Error('Behaviour profile storage is not available.')
+  if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id) || ['control', 'unassigned'].includes(id)) {
+    throw new Error('This behaviour profile is protected and cannot be changed.')
+  }
+  if (typeof enabled !== 'boolean') throw new Error('Module enabled must be true or false.')
+  const catalog = commandModuleCatalog()
+  if (!catalog.some(module => module.id === cap)) throw new Error('Unknown public command module.')
+  let profile = sharedStorage.getProfile(id)
+  if (!profile) throw new Error('Unknown behaviour profile.')
+  const explicit = new Map((profile.capabilities || []).map(item => [item.capability, Number(item.priority)]))
+  if (!enabled && profile.universal) {
+    // Preserve every other inherited capability before converting universal to explicit.
+    sharedStorage.setProfileMode(id, false)
+    for (const module of catalog) {
+      if (module.id === cap || explicit.has(module.id)) continue
+      sharedStorage.setCapability(id, module.id, profile.basePriority)
+    }
+    sharedStorage.setCapability(id, cap, null)
+  } else if (enabled) {
+    if (!profile.universal) sharedStorage.setSpecialty(id, cap, true)
+  } else {
+    sharedStorage.setCapability(id, cap, null)
+  }
+  sharedStorage.clearGroupRoutes()
+  profile = sharedStorage.getProfile(id)
+  await recordActivity('profile.module-changed', { profile: id, module: cap, enabled })
+  await writeRuntimeRegistry()
+  return profile
+}
+
 async function setSetting(key, value) {
   const defaults = commandSettingDefaults()
   if (!Object.prototype.hasOwnProperty.call(defaults, key)) {
@@ -3568,6 +3672,7 @@ async function requestRestart() {
 }
 
 async function init() {
+  await loadOwnerConfig()
   await loadAccounts()
   sharedStorage = await openSharedStorage({
     file: SHARED_DB_FILE,
@@ -3622,7 +3727,7 @@ async function init() {
     getActivity: activity,
     getAccountDiagnostics,
     getCloudDashboard: () => megaStorageDashboard({ passive:true }),
-    getCloudDashboardActive: async () => ({ ...(await megaStorageDashboard()), connected:true }),
+    getCloudDashboardActive: () => megaStorageDashboard(),
     getCloudMounts: () => megaAvailableMounts(),
     verifyCloudFolder: ({ targetId }) => megaVerifyFolder({ targetId }),
     pairAccount,
@@ -3635,6 +3740,10 @@ async function init() {
     assignAccountProfile,
     setSetting,
     setPublicPrefix,
+    getOwnerConfig,
+    setOwnerConfig,
+    listCommandModules: commandModuleCatalog,
+    setProfileCapability,
     setDestination,
     reloadCommands,
     reloadModule

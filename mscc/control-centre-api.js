@@ -15,7 +15,7 @@ const MAX_ATTEMPTS = 10
 const MAX_BODY = 16 * 1024
 const MAX_PREVIEW = 512 * 1024
 const SECRET_RE = /(KEY|TOKEN|SECRET|PASS|PWD|AUTH|COOKIE|SESSION|PRIVATE|CREDENTIAL|OWNER_NUMBER|PHONE|JID)/i
-const APP_ENV_RE = /^(?:NODE_ENV|TZ|PORT$|MSCC_[A-Z0-9_]*|WEB_[A-Z0-9_]*|ACCOUNT_[A-Z0-9_]*|CC_[A-Z0-9_]*|OWNER_[A-Z0-9_]*|MESSAGE_[A-Z0-9_]*|MAX_[A-Z0-9_]*|AUTH_[A-Z0-9_]*|LOG_[A-Z0-9_]*|CONTROL_[A-Z0-9_]*|GROQ_[A-Z0-9_]*|MEGA_[A-Z0-9_]*|WHATSAPP_[A-Z0-9_]*|WEBSITE_[A-Z0-9_]*|AZURE_[A-Z0-9_]*)$/
+const APP_ENV_RE = /^(?:NODE_ENV|TZ|PORT$|MSCC_[A-Z0-9_]*|WEB_[A-Z0-9_]*|ACCOUNT_[A-Z0-9_]*|CC_[A-Z0-9_]*|OWNER_[A-Z0-9_]*|MESSAGE_[A-Z0-9_]*|MAX_[A-Z0-9_]*|AUTH_[A-Z0-9_]*|LOG_[A-Z0-9_]*|CONTROL_[A-Z0-9_]*|GROQ_[A-Z0-9_]*|MEGA_[A-Z0-9_]*|WHATSAPP_[A-Z0-9_]*|WEBSITE_[A-Z0-9_]*|AZURE_[A-Z0-9_]*|SETTINGS_[A-Z0-9_]*|BOT_[A-Z0-9_]*)$/
 const SECRET_ENV_RE = /(KEY|TOKEN|SECRET|PASS|PWD|AUTH|COOKIE|SESSION|PRIVATE|CREDENTIAL|PHONE|NUMBER|EMAIL|JID)/i
 const SAFE_ROOT_FILES = new Set(['index.js', 'web-panel.js', 'panel.html', 'package.json', 'README.md', 'AGENTS.md', 'LICENSE'])
 const SAFE_ROOT_DIRS = new Set(['commands', 'private-commands', 'sources', 'providers', 'utils', 'docs'])
@@ -221,6 +221,32 @@ export function createControlCentreApi(options = {}) {
       enabled: Boolean(enabled),
     }))
   }
+  function storageDto(cloud = {}) {
+    const finiteOrNull = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null
+    const targets = Array.isArray(cloud.targets) ? cloud.targets : []
+    return {
+      provider: cleanText(cloud.provider || 'MEGA', 40),
+      configured: cloud.configured === true,
+      connected: cloud.connected === true,
+      container: cloud.configured ? 'Configured storage' : 'Not configured',
+      used: finiteOrNull(cloud.usedBytes ?? cloud.used),
+      total: finiteOrNull(cloud.totalBytes ?? cloud.total),
+      note: cleanText(cloud.note || (cloud.configured ? 'Storage credentials are configured. Provider quota and contents have not been checked.' : 'Cloud storage is not configured.'), 300),
+      files: targets.map(item => ({
+        id: cleanText(item?.id || '', 100),
+        name: cleanText(item?.label || item?.name || item?.id || 'Storage target', 100),
+        role: cleanText(item?.role || (item?.type === 'primary' ? 'Primary account' : item?.type === 'contributed' ? 'Contributor folder' : item?.type || 'Storage target'), 40),
+        type: 'cloud',
+        status: item?.detected === true ? 'Available' : cloud.connected === true ? 'Not detected' : 'Not checked',
+        detected: item?.detected === true,
+        uploadEnabled: item?.uploadEnabled === true,
+        size: finiteOrNull(item?.visibleBytes),
+        count: finiteOrNull(item?.fileCount ?? item?.files),
+        modified: null,
+      })),
+    }
+  }
+
   async function safeFile(relativePath) {
     const raw = String(relativePath || '').replace(/\\/g, '/')
     const parts = raw.split('/').filter(Boolean)
@@ -484,7 +510,7 @@ export function createControlCentreApi(options = {}) {
       }
       if (method === 'PUT' && path === '/settings') {
         const body = await readBody(req)
-        if (Object.keys(body).length !== 1 || typeof body.publicPrefix !== 'string' || !body.publicPrefix.trim() || body.publicPrefix.length > 8 || /\\s/.test(body.publicPrefix)) {
+        if (Object.keys(body).length !== 1 || typeof body.publicPrefix !== 'string' || !body.publicPrefix.trim() || body.publicPrefix.length > 8 || /\s/.test(body.publicPrefix)) {
           return failure(req.res, 400, 'VALIDATION', 'Set a non-empty public command prefix of up to 8 characters, without spaces.')
         }
         if (typeof options.setPublicPrefix !== 'function') return failure(req.res, 501, 'NOT_IMPLEMENTED', 'The running MSCC release does not expose public-prefix updates.')
@@ -543,42 +569,42 @@ export function createControlCentreApi(options = {}) {
         return success(req.res, { items: filtered.slice(0, limit), source: 'MSCC activity ledger' })
       }
       if (method === 'GET' && path === '/server/config') {
+        // Configuration view must never authenticate with external integrations.
+        const megaConfigured = Boolean(String(process.env.MSCC_MEGA_EMAIL || '').trim() && String(process.env.MSCC_MEGA_PASSWORD || ''))
         return success(req.res, {
           application: { name: 'MSCC', version: current.version || 'unknown' },
           bot: { prefix: current.settings?.publicPrefix || '.', fixedCcDestination: current.destination || 'A', accountCount: current.accounts?.length || 0 },
           integrations: [
             { name: 'WhatsApp', provider: 'Baileys sessions', status: (current.accounts || []).some(item => item.connected) ? 'configured' : 'not-configured', endpoint: 'Managed by MSCC' },
-            { name: 'Cloud storage', provider: 'MEGA', status: Boolean((await options.getCloudDashboard()).configured) ? 'configured' : 'not-configured', endpoint: 'Managed by MSCC' },
+            { name: 'Cloud storage', provider: 'MEGA', status: megaConfigured ? 'configured' : 'not-configured', endpoint: 'Status is checked only when requested from Storage' },
           ],
           deployment: { sourceRef: process.env.MSCC_SOURCE_REF || 'managed-release', mode: 'release-based' },
         })
       }
       if (method === 'GET' && path === '/storage') {
         // Passive dashboard read only: never force MEGA authentication on page load.
-        const cloud = await options.getCloudDashboard()
-        const targets = Array.isArray(cloud?.targets) ? cloud.targets : []
-        const finiteOrNull = value => Number.isFinite(Number(value)) && value !== null && value !== '' ? Number(value) : null
-        return success(req.res, {
-          provider: cleanText(cloud?.provider || 'MEGA', 40),
-          configured: cloud?.configured === true,
-          connected: cloud?.connected === true,
-          container: cloud?.configured ? 'Configured storage' : 'Not configured',
-          used: finiteOrNull(cloud?.usedBytes ?? cloud?.used),
-          total: finiteOrNull(cloud?.totalBytes ?? cloud?.total),
-          note: cleanText(cloud?.note || (cloud?.configured ? 'Storage credentials are configured. Provider quota and contents have not been checked.' : 'Cloud storage is not configured.'), 300),
-          files: targets.map(item => ({
-            id: cleanText(item?.id || '', 100),
-            name: cleanText(item?.name || item?.id || 'Storage target', 100),
-            role: cleanText(item?.role || (item?.primary ? 'Primary' : 'Shared target'), 40),
-            type: 'cloud',
-            status: item?.detected === true ? 'Detected' : item?.configured === false ? 'Not detected' : 'Configured',
-            detected: item?.detected === true,
-            size: finiteOrNull(item?.visibleBytes),
-            count: finiteOrNull(item?.fileCount),
-            modified: null,
-          })),
-          mountsAvailable: null,
+        let cloud
+        try { cloud = await options.getCloudDashboard() }
+        catch (error) {
+          cloud = {
+            provider: 'MEGA',
+            configured: Boolean(String(process.env.MSCC_MEGA_EMAIL || '').trim() && String(process.env.MSCC_MEGA_PASSWORD || '')),
+            connected: false,
+            targets: [],
+            note: 'Passive MEGA status is unavailable: ' + cleanText(error?.message || 'unknown provider error', 180),
+          }
+        }
+        return success(req.res, storageDto(cloud))
+      }
+      if (method === 'POST' && path === '/storage/refresh') {
+        if (typeof options.getCloudDashboardActive !== 'function') {
+          return failure(req.res, 501, 'NOT_IMPLEMENTED', 'An explicit MEGA connection check is not available in this MSCC release.')
+        }
+        const result = await mutation(req, 'storage.connection-check', 'MEGA storage', async () => {
+          const cloud = await options.getCloudDashboardActive()
+          return storageDto(cloud)
         })
+        return success(req.res, result)
       }
       if (method === 'GET' && path === '/env') {
         const rows = []

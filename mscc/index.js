@@ -2599,10 +2599,10 @@ async function processInboundMessage(account, msg) {
     try {
       if (!msg?.message || !msg?.key?.id) return
 
-      // Preserve bot-authored messages for quoting / chat context only.
-      // NEVER interpret our own replies as commands or pending choices:
-      // replying "I could not match that choice" used to feed itself
-      // indefinitely until WhatsApp received hundreds of bot messages.
+      // Bot-authored replies are context-only. The sole exception is an
+      // explicitly registered private command in Account A's exact self-chat;
+      // ordinary replies and pending-choice warnings still cannot feed back
+      // into command processing.
       const ownerSelfControl = isOwnerSelfControlCommand(account, msg)
       if (msg.key.fromMe === true && !ownerSelfControl) {
         remember(account, msg)

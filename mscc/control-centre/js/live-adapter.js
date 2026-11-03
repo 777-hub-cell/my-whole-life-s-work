@@ -7,7 +7,7 @@ NIGHT.LiveAdapter = (function () {
   const base = baseUrl.pathname.replace(/\/$/, '') || '/';
   const timeoutMs = Math.max(1000, Number(NIGHT_CONFIG.apiTimeoutMs) || 15000);
   const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-  const SECRET_KEY_RE = /(KEY|TOKEN|SECRET|PASS|PWD|AUTH|COOKIE|SESSION|PRIVATE|CREDENTIAL|OWNER_NUMBER)/i;
+  const SECRET_KEY_RE = /(KEY|TOKEN|SECRET|PASS|PWD|AUTH|COOKIE|SESSION|PRIVATE|CREDENTIAL|PHONE|NUMBER|EMAIL|JID)/i;
   const knownSecretKeys = new Set();
 
   function csrfMeta() { return document.querySelector('meta[name="csrf-token"]'); }

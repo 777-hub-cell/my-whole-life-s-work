@@ -1,6 +1,7 @@
 import { appendFile, chmod, cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { pathToFileURL } from 'node:url'
 import makeWASocket, {
   Browsers,
   DisconnectReason,
@@ -15,7 +16,7 @@ import { NightPlay, createNightPlayHandler } from './night-play.js'
 import { createNightPlayAvatarSync } from './night-play-avatar.js'
 import { recordPendingChannelLink, pendingChannelLink } from './night-channel-links.js'
 import { megaStorageDashboard, megaAvailableMounts, megaVerifyFolder } from './mega-storage.js'
-import { dispatchNamespacedCommand, loadCommands } from './command-registry.js'
+import { dispatchNamespacedCommand, loadCommands, mergeCommandRegistries } from './command-registry.js'
 import { AccountRegistry, legacyAccountRecords } from './account-registry.js'
 import { selectCcDestination } from './cc-routing.js'
 import { isPrivateOwnerDm } from './control-context.js'
@@ -127,8 +128,22 @@ import { findGroupParticipant, groupMemberLabel, groupTargetJid, memberIdentityK
 const PRIVATE_COMMANDS_URL = new URL('./private-commands/', import.meta.url)
 const PUBLIC_COMMANDS_URL = new URL('./commands/', import.meta.url)
 const SOURCES_URL = new URL('./sources/', import.meta.url)
+// Administrator-owned commands live outside the versioned application release.
+const CUSTOM_COMMANDS_DIR = resolve(process.env.MSCC_CUSTOM_COMMANDS_DIR || '/var/lib/mscc/custom-commands')
+const CUSTOM_COMMANDS_URL = pathToFileURL(CUSTOM_COMMANDS_DIR + sep)
+await mkdir(join(CUSTOM_COMMANDS_DIR, 'general'), { recursive: true, mode: 0o700 })
+const EMPTY_COMMAND_REGISTRY = () => ({ commands: new Map(), canonical: [] })
 let privateCommandRegistry = await loadCommands(PRIVATE_COMMANDS_URL)
-let publicCommandRegistry = await loadCommands(PUBLIC_COMMANDS_URL, { allowMissing: true, capabilityFromDirectory: true })
+const builtInPublicCommandRegistry = await loadCommands(PUBLIC_COMMANDS_URL, { allowMissing: true, capabilityFromDirectory: true })
+let customCommandRegistry = EMPTY_COMMAND_REGISTRY()
+let publicCommandRegistry = builtInPublicCommandRegistry
+try {
+  customCommandRegistry = await loadCommands(CUSTOM_COMMANDS_URL, { cacheBust: Date.now(), allowMissing: true, capabilityFromDirectory: true })
+  publicCommandRegistry = mergeCommandRegistries(builtInPublicCommandRegistry, customCommandRegistry)
+} catch (error) {
+  console.error('NIGHT custom command startup load failed; built-in commands remain available:', error?.message || error)
+  customCommandRegistry = EMPTY_COMMAND_REGISTRY()
+}
 
 const num = (name, fallback, min, max) => {
   const n = Number.parseInt(process.env[name] || '', 10)
@@ -3644,9 +3659,14 @@ async function setPublicPrefix(value) {
 async function reloadCommandsDetailed() {
   const cacheBust = Date.now()
   const nextPrivate = await loadCommands(PRIVATE_COMMANDS_URL, { cacheBust })
-  const nextPublic = await loadCommands(PUBLIC_COMMANDS_URL, { cacheBust, allowMissing: true, capabilityFromDirectory: true })
+  const nextBuiltInPublic = await loadCommands(PUBLIC_COMMANDS_URL, { cacheBust, allowMissing: true, capabilityFromDirectory: true })
+  // Build the next registries completely before swapping. Invalid custom code or
+  // a command-name collision leaves the currently working registry untouched.
+  const nextCustom = await loadCommands(CUSTOM_COMMANDS_URL, { cacheBust, allowMissing: true, capabilityFromDirectory: true })
+  const nextPublic = mergeCommandRegistries(nextBuiltInPublic, nextCustom)
   const nextSources = sourceRegistry ? await sourceRegistry.load({ cacheBust }) : []
   privateCommandRegistry = nextPrivate
+  customCommandRegistry = nextCustom
   publicCommandRegistry = nextPublic
   settings = mergeCommandSettings(settings, nextPrivate)
   await saveSettings()
@@ -3654,8 +3674,9 @@ async function reloadCommandsDetailed() {
   await writeRuntimeRegistry()
   const privateNames = nextPrivate.canonical.map(command => command.name).sort()
   const publicNames = nextPublic.canonical.map(command => command.name).sort()
-  await recordActivity('command.registry-changed', { count:privateNames.length + publicNames.length, privateCount:privateNames.length, publicCount:publicNames.length })
-  return { private:privateNames, public:publicNames, sources:nextSources.map(source => `${source.capability}:${source.id}`).sort() }
+  const customNames = nextCustom.canonical.map(command => command.name).sort()
+  await recordActivity('command.registry-changed', { count:privateNames.length + publicNames.length, privateCount:privateNames.length, publicCount:publicNames.length, customCount:customNames.length })
+  return { private:privateNames, public:publicNames, custom:customNames, sources:nextSources.map(source => `${source.capability}:${source.id}`).sort() }
 }
 
 async function reloadCommands() {
@@ -3859,6 +3880,7 @@ async function init() {
     sessionSecret: WEB_SESSION_SECRET,
     localControlPort: LOCAL_CONTROL_PORT,
     getState: webState,
+    customCommandsDir: CUSTOM_COMMANDS_DIR,
     getActivity: activity,
     getAccountDiagnostics,
     getCloudDashboard: () => megaStorageDashboard({ passive:true }),
@@ -3886,6 +3908,7 @@ async function init() {
     setProfileCapability,
     setDestination,
     reloadCommands,
+    reloadCustomCommands: reloadCommandsDetailed,
     reloadModule
   })
 

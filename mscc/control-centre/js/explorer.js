@@ -33,6 +33,11 @@
     catch (e) { root.append(ui.errorState(e, () => ctx.reload())); return; }
     root.innerHTML = '';
     const readOnly = !api.isMock && api.capabilities?.filesWrite === false;
+    const pathParts = path => String(path || '').split('/').filter(Boolean);
+    const isCustomCommandPath = path => pathParts(path)[0] === 'custom-commands';
+    const canEditPath = path => api.isMock || api.capabilities?.filesWrite !== false || isCustomCommandPath(path);
+    const canCreateCustomFileHere = path => api.isMock || api.capabilities?.filesWrite !== false || (pathParts(path).length === 2 && pathParts(path)[0] === 'custom-commands');
+    const canCreateCustomFolderHere = path => api.isMock || api.capabilities?.filesWrite !== false || path === '/custom-commands';
 
     let currentPath = tree.path;
     let selected = new Set();
@@ -48,6 +53,9 @@
     const crumbEl = h('div', { class: 'fm-breadcrumb' });
     const bulkBar = h('div', { class: 'fm-bulk-bar' });
     const fileInput = h('input', { type: 'file', multiple: true, hidden: true, disabled: readOnly, 'aria-label': 'Choose files to upload' });
+    const newFileButton = h('button', { class: 'btn ghost', disabled: !canCreateCustomFileHere(currentPath), style: { minWidth: '40px', height: '40px', padding: 0 }, title: 'Create a JavaScript command in a capability folder.', 'aria-label': 'New File', onclick: () => promptNew('file') }, icon('filePlus', 20));
+    const newFolderButton = h('button', { class: 'btn ghost', disabled: !canCreateCustomFolderHere(currentPath), style: { minWidth: '40px', height: '40px', padding: 0 }, title: 'Create a command capability folder.', 'aria-label': 'New Folder', onclick: () => promptNew('folder') }, icon('folderPlus', 20));
+    const reloadCommandsButton = h('button', { class: 'btn sm', disabled: !isCustomCommandPath(currentPath), title: 'Validate and reload custom commands.', onclick: reloadCustomCommands }, 'Reload commands');
     const dropzone = h('div', { class: 'fm-dropzone', role: 'group', 'aria-label': 'Upload files' },
       icon('upload', 32),
       h('p', {}, 'Drop files here to upload'));
@@ -59,8 +67,9 @@
         h('div', { class: 'spacer' }),
         h('button', { class: 'btn sm', type: 'button', disabled: readOnly, title: readOnly ? 'Uploads are disabled for immutable production releases.' : 'Upload files', onclick: () => fileInput.click() }, icon('upload', 15), 'Upload'),
         h('div', { class: 'hstack', style: { gap: '4px' } },
-          h('button', { class: 'btn ghost', disabled: readOnly, style: { minWidth: '40px', height: '40px', padding: 0 }, title: readOnly ? 'File creation is disabled in production.' : 'New File', 'aria-label': 'New File', onclick: () => promptNew('file') }, icon('filePlus', 20)),
-          h('button', { class: 'btn ghost', disabled: readOnly, style: { minWidth: '40px', height: '40px', padding: 0 }, title: readOnly ? 'Folder creation is disabled in production.' : 'New Folder', 'aria-label': 'New Folder', onclick: () => promptNew('folder') }, icon('folderPlus', 20))
+          newFileButton,
+          newFolderButton,
+          reloadCommandsButton
         )
       ),
       bulkBar,
@@ -70,7 +79,7 @@
     root.append(
       h('div', { class: 'page-head' },
         h('div', { class: 'page-title' }, 'File explorer'),
-        h('div', { class: 'page-desc' }, 'Browse application files and inspect source. ' + (readOnly ? 'Production release files are read-only; edit them through a reviewed source release.' : 'The server enforces an allowlist of directories.'))
+        h('div', { class: 'page-desc' }, 'Built-in release files stay protected. Your own JavaScript commands are editable inside custom-commands and persist across releases.')
       ),
       api.isMock ? ui.mockBanner('The mock adapter serves a fixed set of sample files. All operations are simulated in the browser.') : null,
       h('div', { class: 'file-manager' }, fmMain)
@@ -135,9 +144,25 @@
       } catch (e) { ui.failure(e); }
     }
 
+    async function reloadCustomCommands() {
+      if (!isCustomCommandPath(currentPath)) return;
+      if (typeof api.reloadCustomCommands !== 'function') return ui.toast('Custom command reload is available in the live bot panel.', 'info');
+      try {
+        const result = await api.reloadCustomCommands();
+        const count = Array.isArray(result?.custom) ? result.custom.length : 0;
+        ui.success('Custom commands reloaded', count + (count === 1 ? ' custom command is active.' : ' custom commands are active.'));
+      } catch (error) { ui.failure(error); }
+    }
+
+    function updateCommandToolbar() {
+      newFileButton.disabled = !canCreateCustomFileHere(currentPath);
+      newFolderButton.disabled = !canCreateCustomFolderHere(currentPath);
+      reloadCommandsButton.disabled = !isCustomCommandPath(currentPath);
+    }
+
     function promptNew(type) {
-      if (readOnly) return;
-      const nameIn = ui.textInput({ placeholder: type === 'file' ? 'e.g. notes.txt' : 'e.g. new-folder' });
+      if (type === 'file' ? !canCreateCustomFileHere(currentPath) : !canCreateCustomFolderHere(currentPath)) return;
+      const nameIn = ui.textInput({ placeholder: type === 'file' ? 'e.g. hello.js' : 'e.g. general' });
       const go = h('button', { class: 'btn primary', onclick: submit }, 'Create');
       const m = ui.modal({
         title: 'New ' + (type === 'file' ? 'File' : 'Folder'),
@@ -191,7 +216,7 @@
         h('button', { class: 'btn sm', disabled: readOnly, title: readOnly ? 'Unavailable in read-only release mode.' : '', onclick: () => {
           ui.toast('Copy operation triggered', 'info');
         } }, icon('copy', 14), 'Copy'),
-        h('button', { class: 'btn sm danger', disabled: readOnly, title: readOnly ? 'Unavailable in read-only release mode.' : '', onclick: async () => {
+        h('button', { class: 'btn sm danger', disabled: !Array.from(selected).every(canEditPath), title: 'Delete selected custom command items.', onclick: async () => {
           const paths = Array.from(selected);
           if (!await ui.confirmAction({ title: 'Delete ' + paths.length + ' items?', message: 'This action cannot be undone.', confirmLabel: 'Delete', danger: true })) return;
           try { await api.deleteItems(paths); ui.success('Items deleted'); reload(); } catch (e) { ui.failure(e); }
@@ -202,6 +227,7 @@
     function renderList() {
       const node = findNode(currentPath);
       if (!node) return;
+      updateCommandToolbar();
       renderBreadcrumb();
       listEl.innerHTML = '';
 
@@ -276,27 +302,28 @@
 
     function openOptions(file) {
       const isFolder = file.type === 'folder';
+      const fileReadOnly = !canEditPath(file.path);
       const extract = !isFolder && isArchive(file.name);
       const opt = (ic, label, fn, cls, disabled = false) => h('button', { class: 'btn' + (cls ? ' ' + cls : ''), disabled, title: disabled ? 'Unavailable in read-only release mode.' : '', style: { justifyContent: 'flex-start', marginTop: cls === 'danger' ? '10px' : null }, onclick: () => { if (disabled) return; m.close(); fn(); } }, icon(ic, 16), label);
       const m = ui.modal({
         title: file.name,
-        subtitle: bytes(file.size || 0) + ' · ' + (file.modified ? timeAgo(file.modified) : '') + (readOnly ? ' · Read only' : ''),
+        subtitle: bytes(file.size || 0) + ' · ' + (file.modified ? timeAgo(file.modified) : '') + (fileReadOnly ? ' · Read only' : ''),
         body: [
           opt('download', 'Download', async () => { const preview = await api.getFsPreview(file.path); downloadContent(file.name, preview.content); }),
-          opt('edit', 'Rename', () => promptRename(file), null, readOnly),
+          opt('edit', 'Rename', () => promptRename(file), null, fileReadOnly),
           opt('move', 'Move', () => ui.toast('Move dialog would open', 'info'), null, readOnly),
           opt('copy', 'Copy', () => ui.toast('Copy dialog would open', 'info'), null, readOnly),
           !isFolder && (extract ? opt('unarchive', 'Unarchive', () => unarchive([file.path]), null, readOnly) : opt('archive', 'Archive', () => archive([file.path]), null, readOnly)),
           opt('trash', 'Delete', async () => {
             if (!await ui.confirmAction({ title: 'Delete ' + file.name + '?', message: 'This action cannot be undone.', confirmLabel: 'Delete', danger: true })) return;
             try { await api.deleteItems([file.path]); ui.success('Deleted'); reload(); } catch (err) { ui.failure(err); }
-          }, 'danger', readOnly)
+          }, 'danger', fileReadOnly)
         ]
       });
     }
 
     function promptRename(file) {
-      if (readOnly) return;
+      if (!canEditPath(file.path)) return;
       const nameIn = ui.textInput({ value: file.name });
       const go = h('button', { class: 'btn primary', onclick: submit }, 'Rename');
       const m = ui.modal({
@@ -376,6 +403,7 @@
 
       const activeFile = openFiles.find(f => f.path === activeFilePath) || openFiles[0];
       activeFilePath = activeFile.path;
+      const editorReadOnly = !canEditPath(activeFile.path);
 
       const tabsEl = h('div', { class: 'editor-header' });
       openFiles.forEach(f => {
@@ -405,20 +433,20 @@
       const f = activeFile;
       const isJson = NIGHT.editorTools.detectLanguage(f) === 'json';
       let jsonIssue = isJson ? NIGHT.editorTools.jsonProblem(f.content) : null;
-      const saveStatus = h('button', { class: 'editor-status', type: 'button', role: 'status', 'aria-live': 'polite', disabled: readOnly, onclick: () => saveNow({ manual: true }) });
+      const saveStatus = h('button', { class: 'editor-status', type: 'button', role: 'status', 'aria-live': 'polite', disabled: editorReadOnly, onclick: () => saveNow({ manual: true }) });
       const STATUS = { saved: ['Saved', 'var(--green)'], dirty: ['Unsaved… tap to save', 'var(--amber)'], saving: ['Saving…', 'var(--blue)'], error: ['Error saving · tap to retry', 'var(--red)'], invalid: ['', 'var(--red)'] };
       function setStatus(kind) {
         saveStatus.textContent = kind === 'invalid' ? 'Invalid JSON' + (jsonIssue && jsonIssue.line ? ' · line ' + jsonIssue.line : '') + ' · not saved' : STATUS[kind][0];
         saveStatus.style.color = STATUS[kind][1];
         saveStatus.disabled = kind === 'saved' || kind === 'saving';
       }
-      setStatus(readOnly ? 'saved' : (f.isDirty ? (jsonIssue ? 'invalid' : 'dirty') : 'saved'));
-      if (readOnly) saveStatus.textContent = 'Read only';
+      setStatus(editorReadOnly ? 'saved' : (f.isDirty ? (jsonIssue ? 'invalid' : 'dirty') : 'saved'));
+      if (editorReadOnly) saveStatus.textContent = 'Read only';
 
       const editorBody = h('div', { class: 'editor-body' + (wrapOn ? ' wrap' : '') });
       const gutter = h('div', { class: 'editor-gutter' });
       const hlLayer = h('div', { class: 'editor-hl', 'aria-hidden': 'true' });
-      const textarea = h('textarea', { class: 'editor-textarea', spellcheck: 'false', readOnly: readOnly, wrap: wrapOn ? 'soft' : 'off', 'aria-label': (readOnly ? 'Viewing ' : 'Editing ') + f.name });
+      const textarea = h('textarea', { class: 'editor-textarea', spellcheck: 'false', readOnly: editorReadOnly, wrap: wrapOn ? 'soft' : 'off', 'aria-label': (editorReadOnly ? 'Viewing ' : 'Editing ') + f.name });
       editorBody.append(gutter, h('div', { class: 'editor-pane' }, hlLayer, textarea));
       const language = NIGHT.editorTools.detectLanguage(f);
       const find = NIGHT.editorTools.createFind(textarea, hlLayer, findState, language);
@@ -476,14 +504,14 @@
           }
         } catch (err) { setStatus('error'); ui.failure(err); }
       }
-      if (!readOnly) textarea.addEventListener('keydown', (ev) => {
+      if (!editorReadOnly) textarea.addEventListener('keydown', (ev) => {
         if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); saveNow({ manual: true }); return; }
         if (ev.key === 'Tab' && !ev.shiftKey && !ev.ctrlKey && !ev.metaKey) { // keep Tab inside the editor
           ev.preventDefault(); document.execCommand('insertText', false, '  ');
         }
       });
-      if (!readOnly) textarea.addEventListener('blur', () => saveNow());
-      if (!readOnly) textarea.addEventListener('input', () => {
+      if (!editorReadOnly) textarea.addEventListener('blur', () => saveNow());
+      if (!editorReadOnly) textarea.addEventListener('input', () => {
         if (f.content === textarea.value) return;
         f.content = textarea.value;
         f.isDirty = true;

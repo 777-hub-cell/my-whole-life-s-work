@@ -150,6 +150,7 @@ NIGHT.LiveAdapter = (function () {
     getHealth: () => request('GET', '/health'),
     getFsTree: () => request('GET', '/files/tree'),
     getFsPreview: (path) => request('GET', '/files/preview?path=' + encodeURIComponent(path)),
+    reloadCustomCommands: () => request('POST', '/custom-commands/reload', {}),
     createFile: (parentPath, name) => request('POST', '/files', { parentPath, name, type: 'file' }),
     createFolder: (parentPath, name) => request('POST', '/files', { parentPath, name, type: 'folder' }),
     saveFileContent: (path, content) => request('PUT', '/files/content', { path, content }),

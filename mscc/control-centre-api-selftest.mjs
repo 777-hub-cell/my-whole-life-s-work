@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { rm, readFile, stat } from 'node:fs/promises'
+import { mkdtemp, rm, readFile, stat } from 'node:fs/promises'
 import { createControlCentreApi } from './control-centre-api.js'
 
 const auditPath = `/tmp/mscc-control-centre-audit-${process.pid}.jsonl`
+const customCommandsDir = await mkdtemp(`/tmp/mscc-custom-commands-${process.pid}-`)
+let customReloadCalls = 0
 process.env.MSCC_ADMIN_AUDIT_FILE = auditPath
 process.env.ACCOUNT_A_NUMBER = '2348000000001'
 process.env.MESSAGE_TTL_HOURS = '48'
@@ -40,6 +42,8 @@ let passiveDashboardCalls = 0
 let activeDashboardCalls = 0
 const options = {
   password: 'test-admin-password',
+  customCommandsDir,
+  reloadCustomCommands: async () => { customReloadCalls++; return { private:['status'], public:['hello'], custom:['hello'] } },
   getState: async () => state,
   getActivity: async () => [
     { id: 'evt-1', at: new Date().toISOString(), action: 'account.created', detail: { account: 'B', displayName: 'Public Session', nested: { apiToken: 'should-not-leak' } } },
@@ -353,6 +357,53 @@ try {
   })
   assert.equal(fileWrite.status, 403)
 
+  // Only the separate persistent custom-command workspace is writable.
+  const customRoot = await call('/api/control-centre/files/tree')
+  const customNode = customRoot.payload.data.children.find(item => item.name === 'custom-commands')
+  assert.ok(customNode, 'custom command workspace is visible in File Explorer')
+  const customFolder = await call('/api/control-centre/files', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{parentPath:'/custom-commands',name:'general',type:'folder'},
+  })
+  assert.equal(customFolder.status, 201)
+  const customFile = await call('/api/control-centre/files', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{parentPath:'/custom-commands/general',name:'hello.js',type:'file'},
+  })
+  assert.equal(customFile.status, 201)
+  const commandPath = '/custom-commands/general/hello.js'
+  const commandPreview = await call('/api/control-centre/files/preview?path=' + encodeURIComponent(commandPath))
+  assert.equal(commandPreview.status, 200)
+  assert.equal(commandPreview.payload.data.readOnly, false)
+  assert.match(commandPreview.payload.data.content, /name: 'hello'/)
+  const validCommand = `export default { name:'hello', aliases:['hi'], description:'test', async run(ctx) { await ctx.reply('Hello ' + ctx.args.join(' ')) } }\n`
+  const commandSave = await call('/api/control-centre/files/content', {
+    method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{path:commandPath,content:validCommand},
+  })
+  assert.equal(commandSave.status, 200, JSON.stringify(commandSave.payload))
+  const invalidCommand = await call('/api/control-centre/files/content', {
+    method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{path:commandPath,content:'export default { run(ctx) {'},
+  })
+  assert.equal(invalidCommand.status, 400)
+  assert.equal(invalidCommand.payload.error.code, 'INVALID_COMMAND_SYNTAX')
+  const reloadCustom = await call('/api/control-centre/custom-commands/reload', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{},
+  })
+  assert.equal(reloadCustom.status, 200)
+  assert.equal(reloadCustom.payload.data.custom[0], 'hello')
+  assert.equal(customReloadCalls, 1)
+  const renamedCustom = await call('/api/control-centre/files/rename', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{path:commandPath,newName:'welcome.js'},
+  })
+  assert.equal(renamedCustom.status, 200)
+  assert.equal(renamedCustom.payload.data.path, '/custom-commands/general/welcome.js')
+  const deletedCustom = await call('/api/control-centre/files/delete', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{paths:['/custom-commands/general/welcome.js']},
+  })
+  assert.equal(deletedCustom.status, 200)
+  const customCoreWrite = await call('/api/control-centre/files/content', {
+    method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{path:'/commands/general/help.js',content:'oops'},
+  })
+  assert.equal(customCoreWrite.status, 403, 'built-in commands remain read-only')
+
   // Environment output includes metadata only for secrets.
   const env = await call('/api/control-centre/env')
   assert.equal(env.status, 200)
@@ -414,6 +465,7 @@ try {
 } finally {
   await new Promise(resolve => server.close(resolve))
   await rm(auditPath, { force: true })
+  await rm(customCommandsDir, { recursive: true, force: true })
   delete process.env.ACCOUNT_A_NUMBER
   delete process.env.MESSAGE_TTL_HOURS
   delete process.env.MSCC_WEB_PORT

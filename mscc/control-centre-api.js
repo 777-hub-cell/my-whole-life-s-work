@@ -1,7 +1,9 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { constants as fsConstants, realpathSync } from 'node:fs'
-import { chmod, lstat, mkdir, open, readdir, realpath } from 'node:fs/promises'
-import { basename, dirname, extname, relative, resolve, sep } from 'node:path'
+import { chmod, lstat, mkdir, open, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 
@@ -12,13 +14,15 @@ const SESSION_AGE = 7 * 24 * 60 * 60
 const PRE_AGE = 10 * 60
 const LOGIN_WINDOW = 10 * 60 * 1000
 const MAX_ATTEMPTS = 10
-const MAX_BODY = 16 * 1024
+const MAX_BODY = 128 * 1024
 const MAX_PREVIEW = 512 * 1024
+const MAX_CUSTOM_COMMAND_BYTES = 96 * 1024
+const execFileAsync = promisify(execFile)
 const SECRET_RE = /(KEY|TOKEN|SECRET|PASS|PWD|AUTH|COOKIE|SESSION|PRIVATE|CREDENTIAL|OWNER_NUMBER|PHONE|JID)/i
 const APP_ENV_RE = /^(?:NODE_ENV|TZ|PORT$|MSCC_[A-Z0-9_]*|WEB_[A-Z0-9_]*|ACCOUNT_[A-Z0-9_]*|CC_[A-Z0-9_]*|OWNER_[A-Z0-9_]*|MESSAGE_[A-Z0-9_]*|MAX_[A-Z0-9_]*|AUTH_[A-Z0-9_]*|LOG_[A-Z0-9_]*|CONTROL_[A-Z0-9_]*|GROQ_[A-Z0-9_]*|MEGA_[A-Z0-9_]*|WHATSAPP_[A-Z0-9_]*|WEBSITE_[A-Z0-9_]*|AZURE_[A-Z0-9_]*|SETTINGS_[A-Z0-9_]*|BOT_[A-Z0-9_]*)$/
 const SECRET_ENV_RE = /(KEY|TOKEN|SECRET|PASS|PWD|AUTH|COOKIE|SESSION|PRIVATE|CREDENTIAL|PHONE|NUMBER|EMAIL|JID)/i
 const SAFE_ROOT_FILES = new Set(['index.js', 'web-panel.js', 'panel.html', 'package.json', 'README.md', 'AGENTS.md', 'LICENSE'])
-const SAFE_ROOT_DIRS = new Set(['commands', 'private-commands', 'sources', 'providers', 'utils', 'docs'])
+const SAFE_ROOT_DIRS = new Set(['commands', 'private-commands', 'custom-commands', 'sources', 'providers', 'utils', 'docs'])
 const SAFE_EXTENSIONS = new Set(['.js', '.mjs', '.json', '.md', '.html', '.css', '.txt', '.yml', '.yaml'])
 const HIDDEN_NAMES = /^(?:\.git|node_modules|data|sessions?|auth(?:[-_]state|_info)?|logs?|backups?|\.env.*|credentials?|secrets?|private|tmp|cache)$/i
 
@@ -162,6 +166,7 @@ export function createControlCentreApi(options = {}) {
   const preSessions = new Map()
   const attempts = new Map()
   const root = realpathSync(resolve(fileURLToPath(new URL('.', import.meta.url))))
+  const customCommandsRoot = resolve(options.customCommandsDir || process.env.MSCC_CUSTOM_COMMANDS_DIR || '/var/lib/mscc/custom-commands')
   const auditFile = process.env.MSCC_ADMIN_AUDIT_FILE || '/var/lib/mscc/data/mscc-admin-audit.jsonl'
   const configured = Boolean(options.password && !['change-this-password', 'change-me'].includes(options.password))
 
@@ -283,32 +288,71 @@ export function createControlCentreApi(options = {}) {
     }
   }
 
+  function customCommandParts(relativePath, { allowCategory = true, allowFile = true } = {}) {
+    const raw = String(relativePath || '').replace(/\\/g, '/')
+    const parts = raw.split('/').filter(Boolean)
+    const invalid = () => { throw Object.assign(new Error('Only files and capability folders inside /custom-commands can be changed.'), { status: 403, code: 'CUSTOM_COMMAND_PATH_ONLY' }) }
+    if (parts[0] !== 'custom-commands' || parts.length < 2 || parts.length > 3 ||
+        parts.some((part, index) => part === '.' || part === '..' || part.startsWith('.') || HIDDEN_NAMES.test(part) || (index > 0 && SECRET_RE.test(part)))) invalid()
+    if (parts.length === 2) {
+      if (!allowCategory || !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(parts[1])) invalid()
+    } else if (!allowFile || !/^[a-z0-9][a-z0-9_-]{0,62}\.js$/.test(parts[2])) invalid()
+    return parts
+  }
+
+  async function validateCustomCommandSource(content) {
+    if (Buffer.byteLength(content, 'utf8') > MAX_CUSTOM_COMMAND_BYTES) {
+      throw Object.assign(new Error('Custom command source must be 96 KB or smaller.'), { status: 413, code: 'COMMAND_TOO_LARGE' })
+    }
+    const temporaryPath = join(os.tmpdir(), `night-custom-command-${randomBytes(8).toString('hex')}.mjs`)
+    try {
+      await writeFile(temporaryPath, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+      await execFileAsync(process.execPath, ['--check', temporaryPath], { timeout: 5000, maxBuffer: 8192 })
+    } catch (error) {
+      const detail = String(error?.stderr || error?.message || 'JavaScript syntax validation failed.')
+        .replaceAll(temporaryPath, 'custom command')
+        .split('\n').slice(0, 3).join(' ').slice(0, 400)
+      throw Object.assign(new Error(detail || 'JavaScript syntax validation failed.'), { status: 400, code: 'INVALID_COMMAND_SYNTAX' })
+    } finally {
+      await rm(temporaryPath, { force: true }).catch(() => {})
+    }
+  }
+
   async function safeFile(relativePath) {
     const raw = String(relativePath || '').replace(/\\/g, '/')
     const parts = raw.split('/').filter(Boolean)
     if (!parts.length || parts.some((part, index) => part === '.' || part === '..' || HIDDEN_NAMES.test(part) || part.startsWith('.') || (index > 0 && SECRET_RE.test(part)))) {
       throw Object.assign(new Error('That path is not in the approved file browser.'), { status: 403, code: 'PATH_NOT_ALLOWED' })
     }
-    if (!SAFE_ROOT_DIRS.has(parts[0]) && !(parts.length === 1 && SAFE_ROOT_FILES.has(parts[0]))) {
+    const customCommand = parts[0] === 'custom-commands'
+    if (!customCommand && !SAFE_ROOT_DIRS.has(parts[0]) && !(parts.length === 1 && SAFE_ROOT_FILES.has(parts[0]))) {
       throw Object.assign(new Error('That path is outside the approved file browser.'), { status: 403, code: 'PATH_NOT_ALLOWED' })
     }
-    let full = root
-    for (const part of parts) {
+    const baseRoot = customCommand ? customCommandsRoot : root
+    if (customCommand) await mkdir(baseRoot, { recursive: true, mode: 0o700 })
+    const baseInfo = await lstat(baseRoot)
+    if (baseInfo.isSymbolicLink() || !baseInfo.isDirectory()) {
+      throw Object.assign(new Error('The custom command directory must be a real directory.'), { status: 403, code: 'CUSTOM_COMMAND_ROOT_INVALID' })
+    }
+    const diskParts = customCommand ? parts.slice(1) : parts
+    let full = baseRoot
+    for (const part of diskParts) {
       full = resolve(full, part)
       const component = await lstat(full)
       if (component.isSymbolicLink()) throw Object.assign(new Error('Symbolic links are not available in the file browser.'), { status: 403, code: 'SYMLINK_BLOCKED' })
     }
-    const rel = relative(root, full)
-    if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || rel.split(sep).some(part => HIDDEN_NAMES.test(part))) {
+    const rel = relative(baseRoot, full)
+    if ((!customCommand && !rel) || rel === '..' || rel.startsWith(`..${sep}`) || rel.split(sep).some(part => HIDDEN_NAMES.test(part))) {
       throw Object.assign(new Error('That path is outside the approved file browser.'), { status: 403, code: 'PATH_NOT_ALLOWED' })
     }
     const info = await lstat(full)
     if (info.isSymbolicLink()) throw Object.assign(new Error('Symbolic links are not available in the file browser.'), { status: 403, code: 'SYMLINK_BLOCKED' })
     const actual = await realpath(full)
-    const actualRel = relative(root, actual)
-    if (!actualRel || actualRel === '..' || actualRel.startsWith(`..${sep}`)) throw Object.assign(new Error('Resolved path is outside the approved application root.'), { status: 403, code: 'PATH_ESCAPE' })
-    return { full, info, parts, path: '/' + parts.join('/') }
+    const actualRel = relative(baseRoot, actual)
+    if ((!customCommand && !actualRel) || actualRel === '..' || actualRel.startsWith(`..${sep}`)) throw Object.assign(new Error('Resolved path is outside the approved application root.'), { status: 403, code: 'PATH_ESCAPE' })
+    return { full, info, parts, path: '/' + parts.join('/'), customCommand }
   }
+
   async function treeNode(pathParts, depth, budget) {
     const name = pathParts.length ? pathParts[pathParts.length - 1] : 'MSCC release'
     const path = '/' + pathParts.join('/')
@@ -750,9 +794,100 @@ export function createControlCentreApi(options = {}) {
           if (!info.isFile() || info.size > MAX_PREVIEW) return failure(req.res, 413, 'PREVIEW_NOT_ALLOWED', 'This file changed or exceeds the browser preview limit.')
           content = await handle.readFile('utf8')
         } finally { await handle.close() }
-        return success(req.res, { path: target.path, name: basename(target.full), content, size: info.size, modified: info.mtime.toISOString(), language: extname(target.full).slice(1) || 'text', readOnly: true })
+        return success(req.res, { path: target.path, name: basename(target.full), content, size: info.size, modified: info.mtime.toISOString(), language: extname(target.full).slice(1) || 'text', readOnly: !target.customCommand })
       }
-      if (path.startsWith('/files/') || path === '/files') return failure(req.res, 403, 'READ_ONLY', 'The release file browser is read-only. Source edits must go through a reviewed MSCC release, never direct writes to a running release.')
+      if (method === 'POST' && path === '/files') {
+        const body = await readBody(req)
+        const parentParts = String(body.parentPath || '').replace(/\\/g, '/').split('/').filter(Boolean)
+        if (parentParts[0] !== 'custom-commands') return failure(req.res, 403, 'READ_ONLY', 'Create custom commands only inside /custom-commands.')
+        const parent = await safeFile(body.parentPath)
+        if (!parent.customCommand || !parent.info.isDirectory()) return failure(req.res, 403, 'READ_ONLY', 'Create custom commands only inside /custom-commands.')
+        const name = String(body.name || '').trim()
+        const type = String(body.type || 'file')
+        if (type === 'folder') {
+          if (parent.path !== '/custom-commands' || !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(name) || HIDDEN_NAMES.test(name) || SECRET_RE.test(name)) return failure(req.res, 400, 'INVALID_CAPABILITY_FOLDER', 'Use a simple lowercase capability folder name, such as general or music.')
+          const created = await mutation(req, 'custom-command.folder-created', name, async () => {
+            await mkdir(resolve(parent.full, name), { recursive: false, mode: 0o700 })
+            return { path: '/custom-commands/' + name }
+          })
+          return success(req.res, created, 201)
+        }
+        if (type !== 'file' || parent.parts.length !== 2 || !/^[a-z0-9][a-z0-9_-]{0,62}\.js$/.test(name)) {
+          return failure(req.res, 400, 'INVALID_COMMAND_FILE', 'Create a .js command file inside a capability folder, for example general/hello.js.')
+        }
+        const commandName = name.slice(0, -3)
+        const source = `export default {\n  name: '${commandName}',\n  description: 'My custom NIGHT command.',\n  async run(ctx) {\n    await ctx.reply('Hello from NIGHT!')\n  },\n}\n`
+        const created = await mutation(req, 'custom-command.file-created', parent.path + '/' + name, async () => {
+          const full = resolve(parent.full, name)
+          await writeFile(full, source, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+          return { path: parent.path + '/' + name, name, size: Buffer.byteLength(source) }
+        })
+        return success(req.res, created, 201)
+      }
+      if (method === 'PUT' && path === '/files/content') {
+        const body = await readBody(req)
+        const parts = customCommandParts(body.path, { allowCategory: false, allowFile: true })
+        const target = await safeFile(body.path)
+        if (!target.customCommand || parts.length !== 3 || !target.info.isFile()) return failure(req.res, 403, 'READ_ONLY', 'Only existing custom JavaScript command files can be edited.')
+        const content = String(body.content ?? '')
+        await validateCustomCommandSource(content)
+        const saved = await mutation(req, 'custom-command.file-updated', target.path, async () => {
+          const temporaryPath = join(dirname(target.full), `.${basename(target.full)}.${randomBytes(8).toString('hex')}.tmp`)
+          try {
+            await writeFile(temporaryPath, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+            await rename(temporaryPath, target.full)
+            await chmod(target.full, 0o600)
+          } catch (error) {
+            await rm(temporaryPath, { force: true }).catch(() => {})
+            throw error
+          }
+          const info = await lstat(target.full)
+          return { path: target.path, size: info.size, modified: info.mtime.toISOString() }
+        })
+        return success(req.res, saved)
+      }
+      if (method === 'POST' && path === '/files/delete') {
+        const body = await readBody(req)
+        const paths = Array.isArray(body.paths) ? [...new Set(body.paths.map(String))] : []
+        if (!paths.length || paths.length > 100) return failure(req.res, 400, 'INVALID_DELETE_LIST', 'Choose between 1 and 100 custom command items.')
+        const targets = []
+        for (const itemPath of paths) {
+          customCommandParts(itemPath)
+          const target = await safeFile(itemPath)
+          if (!target.customCommand || target.path === '/custom-commands') return failure(req.res, 403, 'READ_ONLY', 'The custom command root cannot be deleted.')
+          targets.push(target)
+        }
+        const deleted = await mutation(req, 'custom-command.items-deleted', paths.join(', '), async () => {
+          for (const target of targets) await rm(target.full, { recursive: true, force: false })
+          return { deleted: targets.map(target => target.path) }
+        })
+        return success(req.res, deleted)
+      }
+      if (method === 'POST' && path === '/files/rename') {
+        const body = await readBody(req)
+        const parts = customCommandParts(body.path)
+        const target = await safeFile(body.path)
+        if (!target.customCommand || target.path === '/custom-commands') return failure(req.res, 403, 'READ_ONLY', 'Only custom command folders and files can be renamed.')
+        const newName = String(body.newName || '').trim()
+        const validName = parts.length === 2
+          ? /^[a-z0-9][a-z0-9._-]{0,63}$/.test(newName) && !HIDDEN_NAMES.test(newName) && !SECRET_RE.test(newName)
+          : /^[a-z0-9][a-z0-9_-]{0,62}\.js$/.test(newName)
+        if (!validName) return failure(req.res, 400, 'INVALID_NAME', 'Use a lowercase capability name or a .js command filename.')
+        const destination = resolve(dirname(target.full), newName)
+        try { await lstat(destination); return failure(req.res, 409, 'ALREADY_EXISTS', 'An item with that name already exists.') }
+        catch (error) { if (error?.code !== 'ENOENT') throw error }
+        const renamed = await mutation(req, 'custom-command.item-renamed', target.path, async () => {
+          await rename(target.full, destination)
+          return { oldPath: target.path, path: '/custom-commands/' + (parts.length === 2 ? newName : parts[1] + '/' + newName) }
+        })
+        return success(req.res, renamed)
+      }
+      if (method === 'POST' && path === '/custom-commands/reload') {
+        if (typeof options.reloadCustomCommands !== 'function') return failure(req.res, 503, 'RELOAD_UNAVAILABLE', 'Custom command reload is not available in this runtime.')
+        const result = await mutation(req, 'custom-command.registry-reloaded', 'custom-commands', async () => options.reloadCustomCommands())
+        return success(req.res, result)
+      }
+      if (path.startsWith('/files/') || path === '/files') return failure(req.res, 403, 'READ_ONLY', 'Application release files are read-only. Only the dedicated /custom-commands directory can be changed here.')
       return failure(req.res, 404, 'NOT_FOUND', 'The control-centre API route does not exist.')
     } catch (error) {
       const classified = classifyError(error)

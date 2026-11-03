@@ -69,6 +69,30 @@ export async function loadCommands(directoryUrl, {
   return { commands, canonical: [...new Set(commands.values())] }
 }
 
+/**
+ * Combine built-in public commands with administrator-owned extensions.
+ * Built-ins always win: custom modules may not shadow a command or alias.
+ */
+export function mergeCommandRegistries(baseRegistry, extensionRegistry) {
+  const commands = new Map(baseRegistry?.commands || [])
+  const canonical = [...(baseRegistry?.canonical || [])]
+
+  for (const command of extensionRegistry?.canonical || []) {
+    const keys = [command.name, ...(Array.isArray(command.aliases) ? command.aliases : [])]
+      .map(value => String(value).trim().toLowerCase())
+      .filter(Boolean)
+    for (const key of keys) {
+      if (commands.has(key)) {
+        throw new Error(`Custom command conflicts with an existing MSCC command or alias: ${key}`)
+      }
+    }
+    canonical.push(command)
+    for (const key of keys) commands.set(key, command)
+  }
+
+  return { commands, canonical: [...new Set(canonical)] }
+}
+
 function parseCommand(rawText, prefix = '.') {
   const text = String(rawText || '').trim()
   const normalizedPrefix = String(prefix || '.')

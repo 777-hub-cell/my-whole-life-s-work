@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-mscc-config-modules-20261103-pr604",
+  "releaseId": "night-mscc-managed-env-20261103-pr606",
   "baseBranch": "mscc-azure",
-  "baseCommit": "234a2843e544814f9075c680702724e6e5d139a3",
+  "baseCommit": "3e5cac4b7879584998db40cb29723092309fe0c2",
   "pullRequests": [
-    604
+    606
   ],
-  "preparedAt": "2026-11-03T08:20:00.000Z",
-  "notes": "Release-only batch for PR #604 (NIGHT Control Centre configurable owner, profile-based command modules, storage labels and callback wiring). The exact previous Azure deployment was verified at 234a2843e544814f9075c680702724e6e5d139a3 by successful MSCC Azure deployment workflow run 41597322823. PR #604 is merged into mscc-azure in commit f2876264d11592f85a838c98601992fee9c8876e. No earlier PRs are replayed. Require MSCC Azure, Integrated Readiness and Cortex Contract checks to pass on this release-only PR. Merging this manifest triggers one exact-commit Azure deployment, subject to protected mscc-production approval. No credentials or tunnel settings are included."
+  "preparedAt": "2026-11-03T09:15:00.000Z",
+  "notes": "Release-only batch for PR #606 (NIGHT Control Centre managed environment configuration and route-safe ENV editing). The exact previous Azure deployment is commit 3e5cac4b7879584998db40cb29723092309fe0c2, confirmed by successful MSCC Azure deployment workflow run 41602869855. PR #606 is merged into mscc-azure at 8d350265d3d0c30a9e51c6a005942f86fba5c345. PR #604 is already included in the previous deployed source and is intentionally not replayed. Require MSCC Azure, Integrated Readiness and Cortex Contract checks to pass on this release-only PR. Merging this manifest triggers one exact-commit Azure deployment, subject to protected mscc-production approval. No credentials or tunnel settings are included."
 }

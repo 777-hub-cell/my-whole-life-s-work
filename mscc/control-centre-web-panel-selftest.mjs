@@ -28,6 +28,7 @@ const panel = startWebPanel({
   createAccount: async () => ({}), renameAccount: async () => ({}), assignAccountProfile: async () => ({}),
   pairAccount: async () => ({}), reconnectAccount: async () => ({}), disconnectAccount: async () => ({}),
   repairAccount: async () => ({}), removeAccount: async () => ({}), setSetting: async (key, value) => { state.settings[key] = value },
+  setPublicPrefix: async value => { state.settings.publicPrefix = value; return value },
 })
 
 const base = `http://127.0.0.1:${port}`
@@ -104,10 +105,11 @@ try {
 
   const update = await fetch(base + '/api/control-centre/settings', {
     method: 'PUT', headers: { ...proxyHeaders, Origin: websiteOrigin, Cookie: cookieHeader(apiCookies), 'Content-Type': 'application/json', 'X-CSRF-Token': loginData.csrfToken },
-    body: JSON.stringify({ song: false }),
+    body: JSON.stringify({ publicPrefix: '!' }),
   })
   assert.equal(update.status, 200)
-  assert.equal(state.settings.song, false)
+  assert.equal(state.settings.publicPrefix, '!')
+  assert.equal(state.settings.song, true)
 
   // The pre-existing panel API remains separately protected and functional.
   const legacyUnauth = await fetch(base + '/api/state')

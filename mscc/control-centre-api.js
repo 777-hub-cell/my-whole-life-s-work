@@ -711,7 +711,7 @@ export function createControlCentreApi(options = {}) {
         }
         return success(req.res, [...rowsByKey.values()].sort((a, b) => a.key.localeCompare(b.key)))
       }
-      const envMatch = path.match(/^\\/env\\/([A-Z_][A-Z0-9_]*)$/)
+      const envMatch = /^\/env\/([A-Z_][A-Z0-9_]*)$/.exec(path)
       if (method === 'PUT' && envMatch) {
         const key = envMatch[1]
         const body = await readBody(req)

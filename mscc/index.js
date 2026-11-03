@@ -152,7 +152,7 @@ function validateManagedEnvValue(key, rawValue) {
   const spec = MANAGED_ENV_SCHEMA[key]
   if (!spec) throw new Error('This environment variable is not in the managed settings allowlist.')
   const valueText = String(rawValue ?? '').trim()
-  if (!/^\\d+$/.test(valueText)) throw new Error(key + ' must be a whole number.')
+  if (!/^\d+$/.test(valueText)) throw new Error(key + ' must be a whole number.')
   const value = Number(valueText)
   if (!Number.isSafeInteger(value) || value < spec.min || value > spec.max) {
     throw new Error(key + ' must be between ' + spec.min + ' and ' + spec.max + '.')
@@ -3517,7 +3517,7 @@ async function saveManagedEnv(key, rawValue) {
   const temp = MANAGED_ENV_FILE + '.' + randomUUID() + '.tmp'
   await mkdir(dirname(MANAGED_ENV_FILE), { recursive:true, mode:0o700 })
   try {
-    await writeFile(temp, JSON.stringify(next, null, 2) + '\\n', { encoding:'utf8', mode:0o600, flag:'wx' })
+    await writeFile(temp, JSON.stringify(next, null, 2) + '\n', { encoding:'utf8', mode:0o600, flag:'wx' })
     await chmod(temp, 0o600)
     await rename(temp, MANAGED_ENV_FILE)
     await chmod(MANAGED_ENV_FILE, 0o600)

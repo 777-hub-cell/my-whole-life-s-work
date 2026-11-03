@@ -155,6 +155,7 @@ const dedupeGate = index.search(/if \(!acceptInboundCommand\(account\.id, msg\)\
 const dispatcher = index.indexOf('const commandHandled = await dispatchNamespacedCommand(', inboundGate)
 assert(index.includes('isOwnerSelfControlCommand(account, msg)'), 'Main Account A self-chat exception must be explicitly allowlisted')
 assert(index.includes('allowSelf:(accountId, msg) => isOwnerSelfControlCommand(accounts.get(accountId), msg)'), 'Production inbound guard must use the narrow owner-self predicate')
+assert(index.includes('isPublicOwner: authority.isPublicOwner || ownerSelfControl'), 'Verified owner self-chat must retain private owner-level authorization')
 assert(inboundGate >= 0 && dedupeGate > inboundGate && dispatcher > dedupeGate,
   'Main Baileys upsert handler must allow only a verified private-owner self-command and reject other self/duplicate messages before dispatch')
 assert(index.includes("if (type === 'append') return"),

@@ -7,14 +7,57 @@
  * notify/append or after a reconnect). De-duplicate by account/chat/message ID
  * before any command or selection side effects.
  */
-export function createInboundMessageGuard({ maxEntries = 8192, ttlMs = 30 * 60_000, claim = null } = {}) {
+/**
+ * Permit one narrowly scoped use of WhatsApp's own-chat feature as a private
+ * owner console. The message must be from permanent Account A, addressed to
+ * Account A's exact phone-number JID, and name a command in the private
+ * command registry. All other fromMe traffic remains non-executable.
+ */
+export function isOwnerSelfControlCommand({
+  account,
+  mainAccountId,
+  message,
+  chatJid,
+  ownJid,
+  text,
+  privateCommands,
+} = {}) {
+  const key = message?.key
+  if (key?.fromMe !== true || !key?.id || !message?.message) return false
+  if (account?.id !== 'A' || account?.role !== 'owner' || mainAccountId !== 'A') return false
+  if (account.id !== mainAccountId) return false
+
+  const chat = String(chatJid || key.remoteJid || '').trim()
+  const self = String(ownJid || '').trim()
+  // Require an exact PN self-chat match. Groups, other DMs and opaque LIDs
+  // must never become an alternate route into private owner commands.
+  if (!chat || !self || !chat.endsWith('@s.whatsapp.net') || chat !== self) return false
+
+  const commandText = String(text || '').trim()
+  if (!commandText.startsWith('.')) return false
+  const name = commandText.slice(1).split(/\\s+/, 1)[0].toLowerCase()
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(name)) return false
+  return Boolean(privateCommands && typeof privateCommands.has === 'function' && privateCommands.has(name))
+}
+
+export function createInboundMessageGuard({
+  maxEntries = 8192,
+  ttlMs = 30 * 60_000,
+  claim = null,
+  allowSelf = null,
+} = {}) {
   const seen = new Map()
   const cap = Math.max(1, Number(maxEntries) || 8192)
   const ttl = Math.max(1000, Number(ttlMs) || 30 * 60_000)
 
   return function acceptInbound(accountId, msg, now = Date.now()) {
     const key = msg?.key
-    if (!msg?.message || !key?.id || key.fromMe === true) return false
+    if (!msg?.message || !key?.id) return false
+    if (key.fromMe === true) {
+      let allowed = false
+      try { allowed = typeof allowSelf === 'function' && allowSelf(accountId, msg) === true } catch {}
+      if (!allowed) return false
+    }
     const chat = String(key.remoteJid || '')
     if (!chat) return false
     // Message IDs are scoped to their chat. Avoid duplicate dispatch when the

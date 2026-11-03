@@ -511,12 +511,18 @@ const destinationAccount = () => accounts.get(destinationIdFor())
  * are accepted. All other bot-authored traffic remains inert.
  */
 function isOwnerSelfControlCommand(account, msg) {
+  const chatJid = normalizeJid(msg?.key?.remoteJid)
+  const ownJid = normalizeJid(selfJid(account))
+  const verifiedSelfChat = isOpaqueLid(chatJid) &&
+    !hasConflictingLidMapping(sharedStorage, chatJid) &&
+    normalizeJid(storedLidPhone(sharedStorage, chatJid)) === ownJid
   return isOwnerSelfControlMessage({
     account,
     mainAccountId:destinationIdFor(),
     message:msg,
-    chatJid:normalizeJid(msg?.key?.remoteJid),
-    ownJid:normalizeJid(selfJid(account)),
+    chatJid,
+    ownJid,
+    verifiedSelfChat,
     text:commandText(msg?.message),
     privateCommands:privateCommandRegistry?.commands,
   })

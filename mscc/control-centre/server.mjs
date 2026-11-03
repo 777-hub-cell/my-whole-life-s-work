@@ -114,6 +114,8 @@ function proxyApi(req, res, upstream, accessClientId, accessClientSecret) {
   // Secure-cookie checks. Host remains the upstream tunnel hostname.
   headers['x-forwarded-host'] = String(req.headers.host || '').split(',')[0].trim();
   headers['x-forwarded-proto'] = 'https'; // Bot-Hosting's public app URL terminates HTTPS at its edge.
+  // ngrok's free endpoint shows an HTML interstitial to browser User-Agents unless this proxy-generated header is present.
+  headers['ngrok-skip-browser-warning'] = '1';
   if (req.socket?.remoteAddress) headers['x-real-ip'] = req.socket.remoteAddress;
   if (accessClientId || accessClientSecret) {
     if (!accessClientId || !accessClientSecret) {

@@ -96,7 +96,7 @@ const options = {
     }
     if (key === 'MESSAGE_TTL_HOURS') {
       const number = Number(value)
-      if (!/^\\d+$/.test(value) || number < 1 || number > 168) throw new Error('MESSAGE_TTL_HOURS must be between 1 and 168.')
+      if (!/^\d+$/.test(value) || number < 1 || number > 168) throw new Error('MESSAGE_TTL_HOURS must be between 1 and 168.')
       managedEnv[key] = String(number)
       return { key, value:String(number), isSecret:false, configured:true, editable:true, applyMode:'restart', requiresRestart:true }
     }

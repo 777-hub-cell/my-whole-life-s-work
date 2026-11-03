@@ -2763,7 +2763,7 @@ async function processInboundMessage(account, msg) {
           privateControl,
           isSupremeOwner: authority.isSupremeOwner || ownerSelfControl,
           isSudo: authority.isSudo,
-          isPublicOwner: authority.isPublicOwner,
+          isPublicOwner: authority.isPublicOwner || ownerSelfControl,
           isSessionOwner: authority.isSessionOwner || ownerSelfControl,
           isGroupAdmin: () => isGroupAdminContext(account, msg),
           isBotGroupAdmin: () => isBotGroupAdminContext(account, msg),

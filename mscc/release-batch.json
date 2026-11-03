@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-mscc-pair-repair-fix-20261103-pr610",
+  "releaseId": "night-mscc-main-account-silent-20261103-pr612",
   "baseBranch": "mscc-azure",
-  "baseCommit": "62e2d46dc49123617da0848d8b6d9cd830813801",
+  "baseCommit": "eef6d085b125bcc0df911fb4ccccb8fca90ec01d",
   "pullRequests": [
-    610
+    612
   ],
-  "preparedAt": "2026-11-03T15:42:00.000Z",
-  "notes": "Release-only batch for PR #610 (unified Pair/Repair account-linking flow and stale saved-auth recovery). Exact previous Azure deployment is commit 62e2d46dc49123617da0848d8b6d9cd830813801, confirmed by successful MSCC Azure deployment workflow run 41660363719 after the combined PR #606/#608 release. PRs #606 and #608 are already included in that deployed baseline and are intentionally not replayed. PR #610 is merged into mscc-azure. Require MSCC Azure, Integrated Readiness, Cortex Contract and relevant regression checks to pass on this release batch. Merging this release PR requests deployment of the exact tested mscc-azure commit, subject to protected mscc-production approval. No credentials, session data or tunnel settings are included."
+  "preparedAt": "2026-11-03T16:33:00.000Z",
+  "notes": "Release-only batch for PR #612 (Account A silent inbound policy). Exact previous Azure deployment is commit eef6d085b125bcc0df911fb4ccccb8fca90ec01d, confirmed by successful MSCC Azure workflow run 41667050138 including successful deployment job 126026471101. Earlier changes #606, #608 and #610 are already part of this baseline and are intentionally not replayed. PR #612 is merged into mscc-azure and its MSCC Azure validation, Integrated Readiness and Cortex Contract checks passed. Require fresh release-batch and exact merged-commit validation checks to pass. Merging this manifest-only release PR triggers one protected mscc-production approval for this exact release. No session data, credentials or tunnel settings are included."
 }

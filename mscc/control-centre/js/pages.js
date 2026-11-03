@@ -317,7 +317,7 @@ NIGHT.pages = (function () {
         h('div', { class: 'col-status' }, h('span', { class: 'small dim' }, Number.isFinite(file.size) && file.size > 0 ? bytes(file.size) : '—')),
         h('div', { class: 'col-time' }, Number.isFinite(file.count) ? file.count + ' items' : '—')
       ));
-      const checkButton = h('button', { class: 'btn primary', disabled: checking || !data.configured, onclick: checkConnection },
+      const checkButton = h('button', { class: 'btn primary', disabled: checking || !data.configured || api.isMock, onclick: checkConnection },
         checking ? h('span', { class: 'spinner' }) : icon('refresh', 14),
         checking ? 'Checking MEGA…' : 'Check connection'
       );

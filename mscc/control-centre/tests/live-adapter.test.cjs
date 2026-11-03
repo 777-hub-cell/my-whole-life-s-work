@@ -10,6 +10,7 @@ function makeAdapter(options = {}) {
   const calls = [];
   const meta = { content: options.csrfToken || '' };
   const events = [];
+  const timerDelays = [];
   const ctx = {
     NIGHT: {
       ApiError: class ApiError extends Error {
@@ -33,7 +34,7 @@ function makeAdapter(options = {}) {
       constructor() { this.entries = []; }
       append(...args) { this.entries.push(args); }
     },
-    setTimeout, clearTimeout,
+    setTimeout: (fn, ms) => { timerDelays.push(ms); return setTimeout(fn, ms); }, clearTimeout,
     fetch: async (url, init) => {
       calls.push({ url: String(url), init });
       if (options.fetch) return options.fetch(url, init);
@@ -41,7 +42,7 @@ function makeAdapter(options = {}) {
     }
   };
   vm.runInNewContext(source, ctx, { filename: 'live-adapter.js' });
-  return { api: ctx.NIGHT.LiveAdapter, calls, meta, events, ctx };
+  return { api: ctx.NIGHT.LiveAdapter, calls, meta, events, timerDelays, ctx };
 }
 
 test('safe GET uses the configured same-origin API base and no CSRF token', async () => {
@@ -67,6 +68,30 @@ test('state-changing requests include the server-issued CSRF token', async () =>
   assert.equal(calls[0].init.headers['X-CSRF-Token'], 'test-csrf-token');
   assert.equal(calls[0].init.headers['Content-Type'], 'application/json');
   assert.equal(calls[0].init.body, JSON.stringify({ enabled: false }));
+});
+
+test('pairing and re-pairing use longer request timeouts', async () => {
+  const { api, calls, timerDelays } = makeAdapter({ csrfToken: 'csrf' });
+  await api.pairAccount('B', 'code', '+2348000000000');
+  await api.repairAccount('B', 'qr');
+  assert.equal(calls.length, 2);
+  assert.deepEqual(timerDelays, [35000, 35000]);
+  assert.equal(calls[0].init.body, JSON.stringify({ method: 'code', phone: '+2348000000000' }));
+  assert.equal(calls[1].init.body, JSON.stringify({ confirm: true, method: 'qr' }));
+});
+
+test('account numbers and email environment values are redacted', async () => {
+  const { api } = makeAdapter({ data: [
+    { key: 'ACCOUNT_A_NUMBER', value: '2348000000001', configured: true },
+    { key: 'MSCC_MEGA_EMAIL', value: 'private@example.com', configured: true },
+    { key: 'MESSAGE_TTL_HOURS', value: '48' }
+  ] });
+  const rows = await api.listEnv();
+  assert.equal(rows[0].value, null);
+  assert.equal(rows[0].isSecret, true);
+  assert.equal(rows[1].value, null);
+  assert.equal(rows[1].isSecret, true);
+  assert.equal(rows[2].value, '48');
 });
 
 test('API URL validation rejects protocol-relative, traversal and off-origin paths', async () => {

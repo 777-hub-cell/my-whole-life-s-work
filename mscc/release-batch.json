@@ -1,10 +1,11 @@
 {
-  "releaseId": "night-mscc-main-account-silent-20261103-pr612",
+  "releaseId": "night-mscc-private-help-sticker-20261103",
   "baseBranch": "mscc-azure",
-  "baseCommit": "eef6d085b125bcc0df911fb4ccccb8fca90ec01d",
+  "baseCommit": "55b9a7ea9339963715eeda0ba7e0bde385ae0a20",
   "pullRequests": [
-    612
+    613,
+    614
   ],
-  "preparedAt": "2026-11-03T16:33:00.000Z",
-  "notes": "Release-only batch for PR #612 (Account A silent inbound policy). Exact previous Azure deployment is commit eef6d085b125bcc0df911fb4ccccb8fca90ec01d, confirmed by successful MSCC Azure workflow run 41667050138 including successful deployment job 126026471101. Earlier changes #606, #608 and #610 are already part of this baseline and are intentionally not replayed. PR #612 is merged into mscc-azure and its MSCC Azure validation, Integrated Readiness and Cortex Contract checks passed. Require fresh release-batch and exact merged-commit validation checks to pass. Merging this manifest-only release PR triggers one protected mscc-production approval for this exact release. No session data, credentials or tunnel settings are included."
+  "preparedAt": "2026-11-03T17:58:49.738Z",
+  "notes": "Combined MSCC production batch for requested fixes: PR #613 private-control help interpolation and Account A .menu/.commands shortcuts; PR #614 WhatsApp media CDN refresh/retry for sticker downloads. Rebased onto the current mscc-azure production head. Run the full combined MSCC Azure, Integrated Readiness and Cortex Contract checks on this release PR before merge. Merge requests one protected mscc-production approval. No credentials or runtime session data included."
 }

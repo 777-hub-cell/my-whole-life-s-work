@@ -94,6 +94,16 @@ test('account numbers and email environment values are redacted', async () => {
   assert.equal(rows[2].value, '48');
 });
 
+test('explicit storage refresh is a CSRF-protected POST', async () => {
+  const { api, calls } = makeAdapter({ csrfToken: 'storage-csrf' });
+  await api.refreshStorage();
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /\/api\/storage\/refresh$/);
+  assert.equal(calls[0].init.method, 'POST');
+  assert.equal(calls[0].init.headers['X-CSRF-Token'], 'storage-csrf');
+  assert.equal(calls[0].init.body, '{}');
+});
+
 test('API URL validation rejects protocol-relative, traversal and off-origin paths', async () => {
   const { api, calls } = makeAdapter();
   for (const value of ['//evil.example/x', '/../../admin', '/%2e%2e/admin', 'https://evil.example/api']) {

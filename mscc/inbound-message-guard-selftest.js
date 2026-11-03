@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { DatabaseSync } from 'node:sqlite'
 import { SharedStorage } from './shared-storage.js'
-import { createInboundMessageGuard, isOwnerSelfControlCommand, matchesDisplayedChoice } from './inbound-message-guard.js'
+import { createInboundMessageGuard, isMainAccountInboundAllowed, isOwnerSelfControlCommand, matchesDisplayedChoice } from './inbound-message-guard.js'
 
 const entries = [
   { id:'18kami', title:'18Kami' },
@@ -56,6 +56,13 @@ const ownerSelfArgs = (message, overrides={}) => ({
 })
 assert.equal(isOwnerSelfControlCommand(ownerSelfArgs(selfCommand('owner-status','.status'))), true,
   'Account A must be able to run a registered private command from its own chat')
+assert.equal(isMainAccountInboundAllowed(owner, true), true,
+  'the verified private self-chat command is the only Account A inbound exception')
+assert.equal(isMainAccountInboundAllowed(owner, false), false,
+  'Account A must silently ignore ordinary inbound DMs and group messages')
+assert.equal(isMainAccountInboundAllowed({ id:'A', role:'owner' }, false), false)
+assert.equal(isMainAccountInboundAllowed({ id:'B', role:'linked' }, false), true,
+  'linked specialist accounts must continue processing inbound messages')
 assert.equal(isOwnerSelfControlCommand(ownerSelfArgs(selfCommand('owner-alias','.sessions'))), true,
   'registered private aliases must work in the owner self-chat')
 assert.equal(isOwnerSelfControlCommand(ownerSelfArgs(selfCommand('owner-restart','.restart now'))), true)
@@ -160,9 +167,13 @@ receiptStore.close()
 
 const index = await readFile(new URL('./index.js', import.meta.url), 'utf8')
 const inboundGate = index.indexOf('if (msg.key.fromMe === true && !ownerSelfControl)')
+const silenceGate = index.indexOf('if (!isMainAccountInboundAllowed(account, ownerSelfControl)) return')
 const dedupeGate = index.search(/if \(!acceptInboundCommand\(account\.id, msg\)\) (?:return|continue)/)
 const dispatcher = index.indexOf('const commandHandled = await dispatchNamespacedCommand(', inboundGate)
 assert(index.includes('isOwnerSelfControlCommand(account, msg)'), 'Main Account A self-chat exception must be explicitly allowlisted')
+assert(index.includes("import { createInboundMessageGuard, isMainAccountInboundAllowed,"), 'Production must import the owner-only inbound silence gate')
+assert(silenceGate > inboundGate && dedupeGate > silenceGate && dispatcher > dedupeGate,
+  'Account A silence gate must run before durable receipt claims and command dispatch')
 assert(index.includes('allowSelf:(accountId, msg) => isOwnerSelfControlCommand(accounts.get(accountId), msg)'), 'Production inbound guard must use the narrow owner-self predicate')
 assert(index.includes('isPublicOwner: authority.isPublicOwner || ownerSelfControl'), 'Verified owner self-chat must retain private owner-level authorization')
 assert(index.includes('normalizeJid(storedLidPhone(sharedStorage, chatJid)) === ownJid'), 'Owner self-chat may use only a verified non-conflicting LID-to-PN mapping')

@@ -46,6 +46,16 @@ export function isOwnerSelfControlCommand({
   return Boolean(privateCommands && typeof privateCommands.has === 'function' && privateCommands.has(name))
 }
 
+/**
+ * Account A is the private control identity, not a public responder. It may
+ * process only the verified registered self-chat command admitted above.
+ * Linked specialist accounts retain normal inbound handling.
+ */
+export function isMainAccountInboundAllowed(account, ownerSelfControl = false) {
+  if (account?.id !== 'A' || account?.role !== 'owner') return true
+  return ownerSelfControl === true
+}
+
 export function createInboundMessageGuard({
   maxEntries = 8192,
   ttlMs = 30 * 60_000,

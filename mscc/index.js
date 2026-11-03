@@ -73,7 +73,7 @@ import {
 } from './group-policy.js'
 import { looksLikeNumberSelection } from './number-selection.js'
 import { musicFollowupReply } from './music-chat-context.js'
-import { createInboundMessageGuard, isOwnerSelfControlCommand as isOwnerSelfControlMessage, matchesDisplayedChoice } from './inbound-message-guard.js'
+import { createInboundMessageGuard, isMainAccountInboundAllowed, isOwnerSelfControlCommand as isOwnerSelfControlMessage, matchesDisplayedChoice } from './inbound-message-guard.js'
 import { createCommandTiming } from './command-performance.js'
 import { createMessageScheduler } from './command-scheduler.js'
 import { createSquidGame } from './squid-game.js'
@@ -2615,6 +2615,11 @@ async function processInboundMessage(account, msg) {
         rememberConversation(account, msg)
         return
       }
+      // Account A is a private control identity, never a public/group responder.
+      // Only its verified registered command in its own self-chat passes this gate.
+      // This must run before de-duplication, group handlers, capability routing,
+      // assistants, auto-CC and every possible user-facing reply.
+      if (!isMainAccountInboundAllowed(account, ownerSelfControl)) return
       // Replayed/duplicated Baileys upserts must not execute a choice twice.
       const inboundChat = normalizeJid(msg.key.remoteJid)
       const channelPost = isChannelJid(inboundChat)

@@ -3633,6 +3633,7 @@ async function init() {
     renameAccount,
     assignAccountProfile,
     setSetting,
+    setPublicPrefix,
     setDestination,
     reloadCommands,
     reloadModule

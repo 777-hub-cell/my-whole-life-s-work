@@ -15,7 +15,8 @@ const MAX_ATTEMPTS = 10
 const MAX_BODY = 16 * 1024
 const MAX_PREVIEW = 512 * 1024
 const SECRET_RE = /(KEY|TOKEN|SECRET|PASS|PWD|AUTH|COOKIE|SESSION|PRIVATE|CREDENTIAL|OWNER_NUMBER|PHONE|JID)/i
-const SAFE_ENV_VALUES = new Set(['NODE_ENV', 'TZ', 'WEB_HOST', 'WEB_PORT', 'MSCC_SOURCE_LOOKUP_TIMEOUT_MS', 'MSCC_SOURCE_LOOKUP_MAX_RESULTS'])
+const APP_ENV_RE = /^(?:NODE_ENV|TZ|PORT$|MSCC_[A-Z0-9_]*|WEB_[A-Z0-9_]*|ACCOUNT_[A-Z0-9_]*|CC_[A-Z0-9_]*|OWNER_[A-Z0-9_]*|MESSAGE_[A-Z0-9_]*|MAX_[A-Z0-9_]*|AUTH_[A-Z0-9_]*|LOG_[A-Z0-9_]*|CONTROL_[A-Z0-9_]*|GROQ_[A-Z0-9_]*|MEGA_[A-Z0-9_]*|WHATSAPP_[A-Z0-9_]*|WEBSITE_[A-Z0-9_]*|AZURE_[A-Z0-9_]*)$/
+const SECRET_ENV_RE = /(KEY|TOKEN|SECRET|PASS|PWD|AUTH|COOKIE|SESSION|PRIVATE|CREDENTIAL|PHONE|NUMBER|EMAIL|JID)/i
 const SAFE_ROOT_FILES = new Set(['index.js', 'web-panel.js', 'panel.html', 'package.json', 'README.md', 'AGENTS.md', 'LICENSE'])
 const SAFE_ROOT_DIRS = new Set(['commands', 'private-commands', 'sources', 'providers', 'utils', 'docs'])
 const SAFE_EXTENSIONS = new Set(['.js', '.mjs', '.json', '.md', '.html', '.css', '.txt', '.yml', '.yaml'])
@@ -385,7 +386,8 @@ export function createControlCentreApi(options = {}) {
         const id = accountAction[1]
         const action = accountAction[2] || ''
         async function waitForPairingPayload(mode) {
-          const deadline = Date.now() + 15000
+          // The WhatsApp pairing event may arrive after socket startup; give pairing-code requests enough time.
+          const deadline = Date.now() + 25000
           let account = await stateAccount(id)
           while (Date.now() < deadline && !account.connected && !account.pairingError && !account.pairingCode && !account.pairingQr) {
             await new Promise(resolve => setTimeout(resolve, 250))
@@ -477,14 +479,18 @@ export function createControlCentreApi(options = {}) {
         })
         return success(req.res, result)
       }
-      if (method === 'GET' && path === '/settings') return success(req.res, settingsFromState(current))
+      if (method === 'GET' && path === '/settings') {
+        return success(req.res, { publicPrefix: cleanText(current.settings?.publicPrefix || '.', 8) || '.' })
+      }
       if (method === 'PUT' && path === '/settings') {
         const body = await readBody(req)
-        const entries = Object.entries(body)
-        if (!entries.length || entries.some(([key, value]) => typeof value !== 'boolean' || !Object.hasOwn(current.settings || {}, key))) return failure(req.res, 400, 'VALIDATION', 'Only existing boolean MSCC command settings can be changed here.')
-        const result = await mutation(req, 'settings.update', 'command settings', async () => {
-          for (const [key, value] of entries) await options.setSetting(key, value)
-          return settingsFromState(await state())
+        if (Object.keys(body).length !== 1 || typeof body.publicPrefix !== 'string' || !body.publicPrefix.trim() || body.publicPrefix.length > 8 || /\\s/.test(body.publicPrefix)) {
+          return failure(req.res, 400, 'VALIDATION', 'Set a non-empty public command prefix of up to 8 characters, without spaces.')
+        }
+        if (typeof options.setPublicPrefix !== 'function') return failure(req.res, 501, 'NOT_IMPLEMENTED', 'The running MSCC release does not expose public-prefix updates.')
+        const result = await mutation(req, 'settings.update', 'public command prefix', async () => {
+          const publicPrefix = await options.setPublicPrefix(body.publicPrefix)
+          return { publicPrefix: cleanText(publicPrefix || body.publicPrefix, 8) }
         })
         return success(req.res, result)
       }
@@ -548,17 +554,40 @@ export function createControlCentreApi(options = {}) {
         })
       }
       if (method === 'GET' && path === '/storage') {
+        // Passive dashboard read only: never force MEGA authentication on page load.
         const cloud = await options.getCloudDashboard()
-        const mounts = await options.getCloudMounts()
-        return success(req.res, { used: Number(cloud.usedBytes || cloud.used || 0), total: Number(cloud.totalBytes || cloud.total || 0), provider: cloud.provider || 'MEGA', container: cloud.configured ? 'Configured storage' : 'Not configured', files: Array.isArray(cloud.targets) ? cloud.targets.map(item => ({ id: cleanText(item.id, 100), name: cleanText(item.name || item.id, 100), type: 'cloud', size: 0, modified: null })) : [], mountsAvailable: Array.isArray(mounts) ? mounts.length : 0 })
+        const targets = Array.isArray(cloud?.targets) ? cloud.targets : []
+        const finiteOrNull = value => Number.isFinite(Number(value)) && value !== null && value !== '' ? Number(value) : null
+        return success(req.res, {
+          provider: cleanText(cloud?.provider || 'MEGA', 40),
+          configured: cloud?.configured === true,
+          connected: cloud?.connected === true,
+          container: cloud?.configured ? 'Configured storage' : 'Not configured',
+          used: finiteOrNull(cloud?.usedBytes ?? cloud?.used),
+          total: finiteOrNull(cloud?.totalBytes ?? cloud?.total),
+          note: cleanText(cloud?.note || (cloud?.configured ? 'Storage credentials are configured. Provider quota and contents have not been checked.' : 'Cloud storage is not configured.'), 300),
+          files: targets.map(item => ({
+            id: cleanText(item?.id || '', 100),
+            name: cleanText(item?.name || item?.id || 'Storage target', 100),
+            role: cleanText(item?.role || (item?.primary ? 'Primary' : 'Shared target'), 40),
+            type: 'cloud',
+            status: item?.detected === true ? 'Detected' : item?.configured === false ? 'Not detected' : 'Configured',
+            detected: item?.detected === true,
+            size: finiteOrNull(item?.visibleBytes),
+            count: finiteOrNull(item?.fileCount),
+            modified: null,
+          })),
+          mountsAvailable: null,
+        })
       }
       if (method === 'GET' && path === '/env') {
         const rows = []
         for (const key of Object.keys(process.env).sort()) {
-          if (!/^(?:NODE_ENV|TZ|WEB_|MSCC_|PORT$|WEBSITE_|AZURE_)/.test(key)) continue
-          const isSecret = SECRET_RE.test(key)
-          const row = { key, isSecret, configured: String(process.env[key] || '') !== '' }
-          if (!isSecret && SAFE_ENV_VALUES.has(key)) row.value = cleanText(process.env[key], 200)
+          if (!APP_ENV_RE.test(key)) continue
+          const value = String(process.env[key] || '')
+          const isSecret = SECRET_ENV_RE.test(key)
+          const row = { key, isSecret, configured: value !== '' }
+          if (!isSecret) row.value = cleanText(value, 300)
           rows.push(row)
         }
         return success(req.res, rows)

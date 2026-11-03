@@ -3622,7 +3622,7 @@ async function init() {
     getActivity: activity,
     getAccountDiagnostics,
     getCloudDashboard: () => megaStorageDashboard({ passive:true }),
-    getCloudDashboardActive: () => megaStorageDashboard(),
+    getCloudDashboardActive: async () => ({ ...(await megaStorageDashboard()), connected:true }),
     getCloudMounts: () => megaAvailableMounts(),
     verifyCloudFolder: ({ targetId }) => megaVerifyFolder({ targetId }),
     pairAccount,

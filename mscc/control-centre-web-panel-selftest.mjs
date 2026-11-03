@@ -24,6 +24,7 @@ const state = {
   accounts: [ { id: 'A', displayName: 'Private', role: 'owner', profile: 'control', connected: true, numberMasked: '+234***0001' } ],
 }
 let ownerConfig = { ownerNumberConfigured:true, ownerNumberMasked:'+234••••0001', ownerName:'Panel Owner' }
+let managedTtl = '24'
 const panel = startWebPanel({
   port, localControlPort, host: '127.0.0.1', password, sessionSecret: 'TEST-only-session-secret',
   getState: async () => state,
@@ -38,6 +39,13 @@ const panel = startWebPanel({
   setOwnerConfig: async ({ ownerNumber, ownerName }) => {
     ownerConfig = { ownerNumberConfigured:true, ownerNumberMasked:'+234••••' + ownerNumber.slice(-4), ownerName }
     return { ...ownerConfig }
+  },
+  getManagedEnv: async () => [
+    { key:'MESSAGE_TTL_HOURS', label:'Message retention (hours)', value:managedTtl, isSecret:false, configured:true, editable:true, applyMode:'restart', requiresRestart:true, min:1, max:168 },
+  ],
+  setManagedEnv: async (key, value) => {
+    managedTtl = String(value)
+    return { key, label:'Message retention (hours)', value:managedTtl, isSecret:false, configured:true, editable:true, applyMode:'restart', requiresRestart:true }
   },
   listCommandModules: () => [{ id:'general', name:'General', category:'Public command modules', description:'General public commands', commands:['help','ping'], commandCount:2 }],
   setProfileCapability: async (profileId, moduleId, enabled) => {
@@ -139,6 +147,15 @@ try {
   })
   assert.equal(ownerUpdate.status, 200)
   assert.equal(ownerConfig.ownerName, 'Updated Owner')
+  const envRowsResponse = await fetch(base + '/api/control-centre/env', { headers:{ ...proxyHeaders, Cookie:cookieHeader(apiCookies) } })
+  assert.equal(envRowsResponse.status, 200)
+  assert.equal((await envRowsResponse.json()).data.find(item => item.key === 'MESSAGE_TTL_HOURS').editable, true)
+  const envSave = await fetch(base + '/api/control-centre/env/MESSAGE_TTL_HOURS', {
+    method:'PUT', headers:{ ...proxyHeaders, Origin:websiteOrigin, Cookie:cookieHeader(apiCookies), 'Content-Type':'application/json', 'X-CSRF-Token':loginData.csrfToken },
+    body:JSON.stringify({ value:'48' }),
+  })
+  assert.equal(envSave.status, 200)
+  assert.equal(managedTtl, '48')
   const moduleRows = await fetch(base + '/api/control-centre/modules?profileId=josiah', { headers:{ ...proxyHeaders, Cookie:cookieHeader(apiCookies) } })
   assert.equal(moduleRows.status, 200)
   assert.equal((await moduleRows.json()).data[0].enabled, true)

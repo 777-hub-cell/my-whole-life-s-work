@@ -135,6 +135,49 @@ const num = (name, fallback, min, max) => {
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback
 }
 
+const SETTINGS_FILE = process.env.SETTINGS_FILE || '/var/lib/mscc/data/mscc-settings.json'
+const MANAGED_ENV_FILE = process.env.MSCC_MANAGED_ENV_FILE || join(dirname(SETTINGS_FILE), 'mscc-managed-env.json')
+const MANAGED_ENV_SCHEMA = Object.freeze({
+  MESSAGE_TTL_HOURS: { label:'Message retention (hours)', description:'How long indexed message metadata is retained.', min:1, max:168, default:24 },
+  MAX_MESSAGE_CACHE: { label:'Message cache limit', description:'Maximum cached messages per account.', min:100, max:20000, default:5000 },
+  MAX_ACCOUNTS: { label:'Maximum linked accounts', description:'Maximum number of WhatsApp account records.', min:1, max:50, default:4 },
+  GROUP_META_TTL_SECONDS: { label:'Group metadata cache (seconds)', description:'How long group metadata can be reused before refreshing.', min:10, max:600, default:60 },
+  GROUP_META_CACHE_MAX: { label:'Group metadata cache size', description:'Maximum group metadata entries kept in memory.', min:16, max:1024, default:128 },
+  AI_HISTORY_DAYS: { label:'AI history retention (days)', description:'How long conversational history is retained.', min:1, max:365, default:30 },
+  AI_HISTORY_MAX_PER_CHAT: { label:'AI history limit per chat', description:'Maximum AI history records retained per chat.', min:1000, max:100000, default:25000 },
+  RELEASE_WATCH_INTERVAL_MINUTES: { label:'Release watcher interval (minutes)', description:'How often the release watcher checks for updates.', min:1, max:1440, default:5 },
+})
+
+function validateManagedEnvValue(key, rawValue) {
+  const spec = MANAGED_ENV_SCHEMA[key]
+  if (!spec) throw new Error('This environment variable is not in the managed settings allowlist.')
+  const valueText = String(rawValue ?? '').trim()
+  if (!/^\\d+$/.test(valueText)) throw new Error(key + ' must be a whole number.')
+  const value = Number(valueText)
+  if (!Number.isSafeInteger(value) || value < spec.min || value > spec.max) {
+    throw new Error(key + ' must be between ' + spec.min + ' and ' + spec.max + '.')
+  }
+  return String(value)
+}
+
+let managedEnvOverrides = {}
+try {
+  const parsed = JSON.parse(await readFile(MANAGED_ENV_FILE, 'utf8'))
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    for (const [key, rawValue] of Object.entries(parsed)) {
+      try {
+        const value = validateManagedEnvValue(key, rawValue)
+        managedEnvOverrides[key] = value
+        process.env[key] = value
+      } catch {
+        // Ignore unknown or malformed values; the original service environment stays authoritative.
+      }
+    }
+  }
+} catch (error) {
+  if (error?.code !== 'ENOENT') console.warn('Managed MSCC environment overrides could not be loaded; deployment defaults retained.')
+}
+
 const LEGACY_ACCOUNT_A_NUMBER = digits(process.env.ACCOUNT_A_NUMBER || process.env.BOT_NUMBER)
 const LEGACY_ACCOUNT_B_NUMBER = digits(process.env.ACCOUNT_B_NUMBER)
 let OWNER_NUMBER = digits(process.env.OWNER_NUMBER || LEGACY_ACCOUNT_A_NUMBER)
@@ -142,7 +185,6 @@ let OWNER_NAME = String(process.env.OWNER_NAME || process.env.BOT_OWNER || 'Owne
 const LEGACY_ACCOUNT_A_AUTH_DIR = process.env.ACCOUNT_A_AUTH_DIR || '/var/lib/mscc/auth'
 const LEGACY_ACCOUNT_B_AUTH_DIR = process.env.ACCOUNT_B_AUTH_DIR || '/var/lib/mscc/auth-b'
 const INDEX_FILE = process.env.MESSAGE_INDEX_FILE || '/var/lib/mscc/data/mscc-message-index.json'
-const SETTINGS_FILE = process.env.SETTINGS_FILE || '/var/lib/mscc/data/mscc-settings.json'
 const OWNER_CONFIG_FILE = process.env.MSCC_OWNER_CONFIG_FILE || join(dirname(SETTINGS_FILE), 'mscc-owner-config.json')
 const SHARED_DB_FILE = process.env.MSCC_SHARED_DB_FILE || join(dirname(SETTINGS_FILE), 'mscc-shared.sqlite')
 const ACCOUNT_REGISTRY_FILE = process.env.ACCOUNT_REGISTRY_FILE || join(dirname(SETTINGS_FILE), 'mscc-accounts.json')
@@ -3431,6 +3473,64 @@ async function setOwnerConfig({ ownerNumber, ownerName } = {}) {
   return getOwnerConfig()
 }
 
+async function getManagedEnv() {
+  const owner = getOwnerConfig()
+  const rows = [
+    { key:'OWNER_NUMBER', label:'Owner WhatsApp number', description:'Owner-only authority/contact number. Secret value is never returned.', isSecret:true, configured:owner.ownerNumberConfigured, editable:true, applyMode:'immediate' },
+    { key:'OWNER_NAME', label:'Owner display name', description:'Name used in owner contact replies.', isSecret:false, configured:true, value:OWNER_NAME, editable:true, applyMode:'immediate' },
+  ]
+  for (const [key, spec] of Object.entries(MANAGED_ENV_SCHEMA)) {
+    rows.push({
+      key,
+      label:spec.label,
+      description:spec.description,
+      isSecret:false,
+      configured:true,
+      value:String(managedEnvOverrides[key] ?? process.env[key] ?? spec.default),
+      editable:true,
+      applyMode:'restart',
+      requiresRestart:true,
+      min:spec.min,
+      max:spec.max,
+    })
+  }
+  return rows
+}
+
+async function saveManagedEnv(key, rawValue) {
+  const name = String(key || '').trim().toUpperCase()
+  if (name === 'OWNER_NUMBER') {
+    const saved = await setOwnerConfig({ ownerNumber:rawValue, ownerName:OWNER_NAME })
+    return { key:name, label:'Owner WhatsApp number', isSecret:true, configured:saved.ownerNumberConfigured, editable:true, applyMode:'immediate', requiresRestart:false }
+  }
+  if (name === 'OWNER_NAME') {
+    const main = accountRegistry.main()
+    const number = digits(OWNER_NUMBER || main?.phoneNumber)
+    const value = String(rawValue ?? '').trim()
+    if (!number) throw new Error('Set the owner number before editing the owner display name.')
+    const saved = await setOwnerConfig({ ownerNumber:number, ownerName:value })
+    return { key:name, label:'Owner display name', value:saved.ownerName, isSecret:false, configured:true, editable:true, applyMode:'immediate', requiresRestart:false }
+  }
+
+  const value = validateManagedEnvValue(name, rawValue)
+  const next = { ...managedEnvOverrides, [name]:value }
+  const temp = MANAGED_ENV_FILE + '.' + randomUUID() + '.tmp'
+  await mkdir(dirname(MANAGED_ENV_FILE), { recursive:true, mode:0o700 })
+  try {
+    await writeFile(temp, JSON.stringify(next, null, 2) + '\\n', { encoding:'utf8', mode:0o600, flag:'wx' })
+    await chmod(temp, 0o600)
+    await rename(temp, MANAGED_ENV_FILE)
+    await chmod(MANAGED_ENV_FILE, 0o600)
+  } catch (error) {
+    await rm(temp, { force:true }).catch(() => {})
+    throw error
+  }
+  managedEnvOverrides = next
+  await recordActivity('configuration.managed-environment-changed', { key:name, applyMode:'restart' })
+  const spec = MANAGED_ENV_SCHEMA[name]
+  return { key:name, label:spec.label, description:spec.description, value, isSecret:false, configured:true, editable:true, applyMode:'restart', requiresRestart:true, min:spec.min, max:spec.max }
+}
+
 function commandModuleCatalog() {
   const groups = new Map()
   for (const command of publicCommandRegistry.canonical) {
@@ -3745,6 +3845,8 @@ async function init() {
     setPublicPrefix,
     getOwnerConfig,
     setOwnerConfig,
+    getManagedEnv,
+    setManagedEnv: saveManagedEnv,
     listCommandModules: commandModuleCatalog,
     setProfileCapability,
     setDestination,

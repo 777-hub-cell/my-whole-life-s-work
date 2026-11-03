@@ -678,18 +678,56 @@ export function createControlCentreApi(options = {}) {
         return success(req.res, result)
       }
       if (method === 'GET' && path === '/env') {
-        const rows = []
+        const rowsByKey = new Map()
         for (const key of Object.keys(process.env).sort()) {
           if (!APP_ENV_RE.test(key)) continue
           const value = String(process.env[key] || '')
           const isSecret = SECRET_ENV_RE.test(key)
-          const row = { key, isSecret, configured: value !== '' }
+          const row = { key, isSecret, configured:value !== '', editable:false, applyMode:'read-only' }
           if (!isSecret) row.value = cleanText(value, 300)
-          rows.push(row)
+          rowsByKey.set(key, row)
         }
-        return success(req.res, rows)
+        if (typeof options.getManagedEnv === 'function') {
+          const managed = await options.getManagedEnv()
+          for (const item of (Array.isArray(managed) ? managed : [])) {
+            const key = String(item?.key || '').trim().toUpperCase()
+            if (!/^[A-Z_][A-Z0-9_]{0,127}$/.test(key) || !APP_ENV_RE.test(key)) continue
+            const isSecret = item.isSecret === true || SECRET_ENV_RE.test(key)
+            const row = {
+              key,
+              label:cleanText(item.label || key, 100),
+              description:cleanText(item.description || '', 240),
+              isSecret,
+              configured:item.configured === true,
+              editable:item.editable === true,
+              applyMode:item.applyMode === 'restart' ? 'restart' : item.applyMode === 'immediate' ? 'immediate' : 'read-only',
+              requiresRestart:item.requiresRestart === true,
+              ...(Number.isInteger(item.min) ? { min:item.min } : {}),
+              ...(Number.isInteger(item.max) ? { max:item.max } : {}),
+            }
+            if (!isSecret && item.value !== undefined) row.value = cleanText(item.value, 300)
+            rowsByKey.set(key, row)
+          }
+        }
+        return success(req.res, [...rowsByKey.values()].sort((a, b) => a.key.localeCompare(b.key)))
       }
-      if (method === 'PUT' && path.startsWith('/env/')) return failure(req.res, 501, 'READ_ONLY', 'Environment variables are read-only in the control centre. Set them through the protected Azure service configuration, never through the browser.')
+      const envMatch = path.match(/^\\/env\\/([A-Z_][A-Z0-9_]*)$/)
+      if (method === 'PUT' && envMatch) {
+        const key = envMatch[1]
+        const body = await readBody(req)
+        if (Object.keys(body).length !== 1 || typeof body.value !== 'string' || body.value.length > 256) {
+          return failure(req.res, 400, 'VALIDATION', 'Provide one value (up to 256 characters) for the selected managed setting.')
+        }
+        const managed = typeof options.getManagedEnv === 'function' ? await options.getManagedEnv() : []
+        const target = (Array.isArray(managed) ? managed : []).find(item => String(item?.key || '').toUpperCase() === key && item.editable === true)
+        if (!target || typeof options.setManagedEnv !== 'function') {
+          return failure(req.res, 403, 'READ_ONLY', 'This environment variable is not in the supported editable settings list.')
+        }
+        const result = await mutation(req, 'configuration.environment-variable-changed', key, async () =>
+          options.setManagedEnv(key, body.value))
+        return success(req.res, result)
+      }
+      if (method === 'PUT' && path.startsWith('/env/')) return failure(req.res, 403, 'READ_ONLY', 'Only explicitly managed environment settings can be changed here.')
       if (method === 'GET' && path === '/files/tree') return success(req.res, await treeNode([], 0, { count: 0 }))
       if (method === 'GET' && path === '/files/preview') {
         const target = await safeFile(url.searchParams.get('path'))

@@ -31,6 +31,11 @@ const repairCalls = []
 const pairCalls = []
 const moduleCalls = []
 let ownerConfig = { ownerNumberConfigured:true, ownerNumberMasked:'+234••••0001', ownerName:'Test Owner' }
+const managedEnv = {
+  MESSAGE_TTL_HOURS:'48',
+  MAX_ACCOUNTS:'4',
+}
+
 let passiveDashboardCalls = 0
 let activeDashboardCalls = 0
 const options = {
@@ -74,6 +79,28 @@ const options = {
   setOwnerConfig: async ({ ownerNumber, ownerName }) => {
     ownerConfig = { ownerNumberConfigured:true, ownerNumberMasked:'+234••••' + ownerNumber.slice(-4), ownerName:ownerName || ownerConfig.ownerName }
     return { ...ownerConfig }
+  },
+  getManagedEnv: async () => [
+    { key:'OWNER_NUMBER', label:'Owner WhatsApp number', isSecret:true, configured:true, editable:true, applyMode:'immediate' },
+    { key:'OWNER_NAME', label:'Owner display name', value:ownerConfig.ownerName, isSecret:false, configured:true, editable:true, applyMode:'immediate' },
+    { key:'MESSAGE_TTL_HOURS', label:'Message retention (hours)', description:'Test managed field', value:managedEnv.MESSAGE_TTL_HOURS, isSecret:false, configured:true, editable:true, applyMode:'restart', requiresRestart:true, min:1, max:168 },
+  ],
+  setManagedEnv: async (key, value) => {
+    if (key === 'OWNER_NUMBER') {
+      ownerConfig = { ownerNumberConfigured:true, ownerNumberMasked:'+234••••' + value.slice(-4), ownerName:ownerConfig.ownerName }
+      return { key, isSecret:true, configured:true, editable:true, applyMode:'immediate' }
+    }
+    if (key === 'OWNER_NAME') {
+      ownerConfig.ownerName = value
+      return { key, value, isSecret:false, configured:true, editable:true, applyMode:'immediate' }
+    }
+    if (key === 'MESSAGE_TTL_HOURS') {
+      const number = Number(value)
+      if (!/^\\d+$/.test(value) || number < 1 || number > 168) throw new Error('MESSAGE_TTL_HOURS must be between 1 and 168.')
+      managedEnv[key] = String(number)
+      return { key, value:String(number), isSecret:false, configured:true, editable:true, applyMode:'restart', requiresRestart:true }
+    }
+    throw new Error('Not in managed allowlist')
   },
   listCommandModules: () => [{ id:'general', name:'General', category:'Public command modules', description:'General public commands.', commandCount:2, commands:['help','ping'] }],
   setProfileCapability: async (profileId, moduleId, enabled) => {
@@ -320,6 +347,8 @@ try {
   const settingsFile = envRows.find(row => row.key === 'SETTINGS_FILE')
   const botOwner = envRows.find(row => row.key === 'BOT_OWNER')
   const megaSecret = envRows.find(row => row.key === 'GROQ_API_KEYS')
+  const editableTtl = envRows.find(row => row.key === 'MESSAGE_TTL_HOURS')
+  const editableOwner = envRows.find(row => row.key === 'OWNER_NUMBER')
   assert.equal(accountNumber?.isSecret, true)
   assert.equal(Object.hasOwn(accountNumber || {}, 'value'), false)
   assert.equal(messageTtl?.value, '48')
@@ -327,6 +356,31 @@ try {
   assert.equal(botOwner?.value, 'NIGHT Operator')
   assert.equal(megaSecret?.isSecret, true)
   assert.equal(Object.hasOwn(megaSecret || {}, 'value'), false)
+  assert.equal(editableTtl?.editable, true)
+  assert.equal(editableTtl?.applyMode, 'restart')
+  assert.equal(editableOwner?.editable, true)
+  assert.equal(editableOwner?.isSecret, true)
+  assert.equal(Object.hasOwn(editableOwner || {}, 'value'), false)
+  const savedTtl = await call('/api/control-centre/env/MESSAGE_TTL_HOURS', {
+    method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{value:'72'},
+  })
+  assert.equal(savedTtl.status, 200)
+  assert.equal(savedTtl.payload.data.value, '72')
+  assert.equal(savedTtl.payload.data.requiresRestart, true)
+  assert.equal(managedEnv.MESSAGE_TTL_HOURS, '72')
+  const badTtl = await call('/api/control-centre/env/MESSAGE_TTL_HOURS', {
+    method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{value:'999'},
+  })
+  assert.equal(badTtl.status, 400)
+  const secretWrite = await call('/api/control-centre/env/GROQ_API_KEYS', {
+    method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{value:'replacement-secret'},
+  })
+  assert.equal(secretWrite.status, 403)
+  const ownerEnvSave = await call('/api/control-centre/env/OWNER_NUMBER', {
+    method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{value:'2348012345678'},
+  })
+  assert.equal(ownerEnvSave.status, 200)
+  assert.equal(JSON.stringify(ownerEnvSave.payload).includes('2348012345678'), false)
 
   // Audit log is created with restrictive permissions.
   const audit = await readFile(auditPath, 'utf8')

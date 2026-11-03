@@ -35,7 +35,7 @@ export function isOwnerSelfControlCommand({
 
   const commandText = String(text || '').trim()
   if (!commandText.startsWith('.')) return false
-  const name = commandText.slice(1).split(/\\s+/, 1)[0].toLowerCase()
+  const name = commandText.slice(1).split(/\s+/, 1)[0].toLowerCase()
   if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(name)) return false
   return Boolean(privateCommands && typeof privateCommands.has === 'function' && privateCommands.has(name))
 }

@@ -1,11 +1,12 @@
 {
-  "releaseId": "night-mscc-private-help-sticker-20261103",
+  "releaseId": "night-mscc-custom-commands-20261103-pr613-614-618",
   "baseBranch": "mscc-azure",
   "baseCommit": "55b9a7ea9339963715eeda0ba7e0bde385ae0a20",
   "pullRequests": [
     613,
-    614
+    614,
+    618
   ],
-  "preparedAt": "2026-11-03T17:58:49.738Z",
-  "notes": "Combined MSCC production batch for requested fixes: PR #613 private-control help interpolation and Account A .menu/.commands shortcuts; PR #614 WhatsApp media CDN refresh/retry for sticker downloads. Rebased onto the current mscc-azure production head. Run the full combined MSCC Azure, Integrated Readiness and Cortex Contract checks on this release PR before merge. Merge requests one protected mscc-production approval. No credentials or runtime session data included."
+  "preparedAt": "2026-11-03T18:30:31.871Z",
+  "notes": "Combined production release batch for the already-staged PR #613 private-control help/menu fixes, PR #614 WhatsApp media CDN refresh/retry, and PR #618 persistent administrator-owned custom command workspace/editor. PR #618 passed full Azure runtime and command regression, Control Centre API save/reload and read-only protection tests, Integrated Readiness, Cortex contract, and artwork proof before feature merge. This batch supersedes the earlier waiting approval run for the #613/#614 batch, which had not deployed. No credentials or runtime session data included."
 }

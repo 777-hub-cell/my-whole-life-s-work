@@ -19,6 +19,7 @@ export function isOwnerSelfControlCommand({
   message,
   chatJid,
   ownJid,
+  verifiedSelfChat = false,
   text,
   privateCommands,
 } = {}) {
@@ -29,9 +30,14 @@ export function isOwnerSelfControlCommand({
 
   const chat = String(chatJid || key.remoteJid || '').trim()
   const self = String(ownJid || '').trim()
-  // Require an exact PN self-chat match. Groups, other DMs and opaque LIDs
-  // must never become an alternate route into private owner commands.
-  if (!chat || !self || !chat.endsWith('@s.whatsapp.net') || chat !== self) return false
+  // Require an exact PN self-chat match, or a LID that the caller has
+  // already verified against this account's PN using non-conflicting auth data.
+  // Never infer a phone number from the numeric portion of an opaque LID.
+  if (!self.endsWith('@s.whatsapp.net')) return false
+  const phoneSelfChat = chat === self && chat.endsWith('@s.whatsapp.net')
+  const mappedLidSelfChat = verifiedSelfChat === true &&
+    (chat.endsWith('@lid') || chat.endsWith('@hosted.lid'))
+  if (!phoneSelfChat && !mappedLidSelfChat) return false
 
   const commandText = String(text || '').trim()
   if (!commandText.startsWith('.')) return false

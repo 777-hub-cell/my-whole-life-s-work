@@ -16,9 +16,14 @@ const localControlPort = await freePort()
 const password = 'TEST-only-control-centre-password'
 const state = {
   version: '2.3.1-test', destination: 'A', settings: { publicPrefix: '.', song: true },
-  botProfiles: [ { id: 'control', displayName: 'Control', capabilities: [] }, { id: 'unassigned', displayName: 'Unassigned', capabilities: [] } ],
+  botProfiles: [
+    { id: 'control', displayName: 'Control', capabilities: [] },
+    { id: 'unassigned', displayName: 'Unassigned', capabilities: [] },
+    { id: 'josiah', displayName: 'Josiah', universal: true, basePriority: 100, capabilities: [] },
+  ],
   accounts: [ { id: 'A', displayName: 'Private', role: 'owner', profile: 'control', connected: true, numberMasked: '+234***0001' } ],
 }
+let ownerConfig = { ownerNumberConfigured:true, ownerNumberMasked:'+234••••0001', ownerName:'Panel Owner' }
 const panel = startWebPanel({
   port, localControlPort, host: '127.0.0.1', password, sessionSecret: 'TEST-only-session-secret',
   getState: async () => state,
@@ -29,6 +34,18 @@ const panel = startWebPanel({
   pairAccount: async () => ({}), reconnectAccount: async () => ({}), disconnectAccount: async () => ({}),
   repairAccount: async () => ({}), removeAccount: async () => ({}), setSetting: async (key, value) => { state.settings[key] = value },
   setPublicPrefix: async value => { state.settings.publicPrefix = value; return value },
+  getOwnerConfig: () => ({ ...ownerConfig }),
+  setOwnerConfig: async ({ ownerNumber, ownerName }) => {
+    ownerConfig = { ownerNumberConfigured:true, ownerNumberMasked:'+234••••' + ownerNumber.slice(-4), ownerName }
+    return { ...ownerConfig }
+  },
+  listCommandModules: () => [{ id:'general', name:'General', category:'Public command modules', description:'General public commands', commands:['help','ping'], commandCount:2 }],
+  setProfileCapability: async (profileId, moduleId, enabled) => {
+    const profile = state.botProfiles.find(item => item.id === profileId)
+    profile.universal = false
+    profile.capabilities = enabled ? [{ capability:moduleId, priority:100 }] : []
+    return profile
+  },
 })
 
 const base = `http://127.0.0.1:${port}`
@@ -110,6 +127,27 @@ try {
   assert.equal(update.status, 200)
   assert.equal(state.settings.publicPrefix, '!')
   assert.equal(state.settings.song, true)
+
+  // New configurable owner and real per-profile module callbacks must survive
+  // the web-panel -> Control Centre API handoff.
+  const ownerBefore = await fetch(base + '/api/control-centre/settings/owner', { headers:{ ...proxyHeaders, Cookie:cookieHeader(apiCookies) } })
+  assert.equal(ownerBefore.status, 200)
+  assert.equal((await ownerBefore.json()).data.ownerNumberMasked, '+234••••0001')
+  const ownerUpdate = await fetch(base + '/api/control-centre/settings/owner', {
+    method:'PUT', headers:{ ...proxyHeaders, Origin:websiteOrigin, Cookie:cookieHeader(apiCookies), 'Content-Type':'application/json', 'X-CSRF-Token':loginData.csrfToken },
+    body:JSON.stringify({ ownerNumber:'2348012345678', ownerName:'Updated Owner' }),
+  })
+  assert.equal(ownerUpdate.status, 200)
+  assert.equal(ownerConfig.ownerName, 'Updated Owner')
+  const moduleRows = await fetch(base + '/api/control-centre/modules?profileId=josiah', { headers:{ ...proxyHeaders, Cookie:cookieHeader(apiCookies) } })
+  assert.equal(moduleRows.status, 200)
+  assert.equal((await moduleRows.json()).data[0].enabled, true)
+  const moduleUpdate = await fetch(base + '/api/control-centre/profiles/josiah/config', {
+    method:'PATCH', headers:{ ...proxyHeaders, Origin:websiteOrigin, Cookie:cookieHeader(apiCookies), 'Content-Type':'application/json', 'X-CSRF-Token':loginData.csrfToken },
+    body:JSON.stringify({ moduleId:'general', enabled:false }),
+  })
+  assert.equal(moduleUpdate.status, 200)
+  assert.equal(state.botProfiles.find(item => item.id === 'josiah').universal, false)
 
   // The pre-existing panel API remains separately protected and functional.
   const legacyUnauth = await fetch(base + '/api/state')

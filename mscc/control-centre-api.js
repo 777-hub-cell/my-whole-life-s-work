@@ -212,32 +212,68 @@ export function createControlCentreApi(options = {}) {
   function settingsFromState(current) {
     return Object.fromEntries(Object.entries(current.settings || {}).filter(([, value]) => typeof value === 'boolean'))
   }
-  function modulesFromState(current) {
-    return Object.entries(current.settings || {}).filter(([, value]) => typeof value === 'boolean').map(([key, enabled]) => ({
+  function publicProfile(current, requestedId = '') {
+    const profiles = current.botProfiles || []
+    const id = String(requestedId || '').trim().toLowerCase()
+    return profiles.find(item => item.id === id && !['control', 'unassigned'].includes(item.id))
+      || profiles.find(item => item.id === 'josiah')
+      || profiles.find(item => !['control', 'unassigned'].includes(item.id))
+      || null
+  }
+  function capabilityEnabled(profile, capability) {
+    if (!profile) return false
+    return (profile.capabilities || []).some(item => item.capability === capability) || profile.universal === true
+  }
+  function modulesFromState(current, requestedProfileId = '') {
+    const profile = publicProfile(current, requestedProfileId)
+    const catalog = typeof options.listCommandModules === 'function' ? options.listCommandModules() : []
+    const publicModules = (Array.isArray(catalog) ? catalog : []).map(module => ({
+      id: String(module.id),
+      name: cleanText(module.name || module.id, 80),
+      category: cleanText(module.category || 'Public command modules', 64),
+      description: cleanText(module.description || 'Public commands grouped by their capability.', 180),
+      commandCount: Number(module.commandCount) || (Array.isArray(module.commands) ? module.commands.length : 0),
+      commands: Array.isArray(module.commands) ? module.commands.slice(0, 12).map(name => cleanText(name, 48)) : [],
+      scope: 'profile',
+      profileId: profile?.id || '',
+      enabled: capabilityEnabled(profile, String(module.id)),
+    }))
+    const globalModules = Object.entries(current.settings || {}).filter(([, value]) => typeof value === 'boolean').map(([key, enabled]) => ({
       id: key,
       name: key.replace(/[._-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-      category: 'Command availability',
-      description: 'Live command availability flag from the MSCC settings registry.',
+      category: 'Global command availability',
+      description: 'Global MSCC command switch.',
+      commandCount: 0,
+      commands: [],
+      scope: 'global',
+      profileId: '',
       enabled: Boolean(enabled),
     }))
+    return [...publicModules, ...globalModules]
   }
   function storageDto(cloud = {}) {
     const finiteOrNull = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null
+    const displayText = (value, fallback, max = 300) => {
+      const text = cleanText(value, max)
+      return !text || /^(?:null|none|undefined|n\/?a|not available)$/i.test(text) ? fallback : text
+    }
     const targets = Array.isArray(cloud.targets) ? cloud.targets : []
+    const configured = cloud.configured === true
+    const connected = cloud.connected === true
     return {
-      provider: cleanText(cloud.provider || 'MEGA', 40),
-      configured: cloud.configured === true,
-      connected: cloud.connected === true,
-      container: cloud.configured ? 'Configured storage' : 'Not configured',
+      provider: displayText(cloud.provider, 'MEGA', 40),
+      configured,
+      connected,
+      container: configured ? 'Configured storage' : 'Not configured',
       used: finiteOrNull(cloud.usedBytes ?? cloud.used),
       total: finiteOrNull(cloud.totalBytes ?? cloud.total),
-      note: cleanText(cloud.note || (cloud.configured ? 'Storage credentials are configured. Provider quota and contents have not been checked.' : 'Cloud storage is not configured.'), 300),
+      note: displayText(cloud.note, configured ? (connected ? 'Cloud storage connection verified.' : 'Storage credentials are configured. Check the connection to load quota and contents.') : 'Cloud storage is not configured.', 300),
       files: targets.map(item => ({
-        id: cleanText(item?.id || '', 100),
-        name: cleanText(item?.label || item?.name || item?.id || 'Storage target', 100),
-        role: cleanText(item?.role || (item?.type === 'primary' ? 'Primary account' : item?.type === 'contributed' ? 'Contributor folder' : item?.type || 'Storage target'), 40),
+        id: displayText(item?.id, '', 100),
+        name: displayText(item?.label || item?.name || item?.id, 'Storage target', 100),
+        role: displayText(item?.role || (item?.type === 'primary' ? 'Primary account' : item?.type === 'contributed' ? 'Contributor folder' : item?.type), 'Storage target', 40),
         type: 'cloud',
-        status: item?.detected === true ? 'Available' : cloud.connected === true ? 'Not detected' : 'Not checked',
+        status: displayText(item?.status, item?.detected === true ? 'Available' : connected ? 'Not detected' : 'Not checked', 40),
         detected: item?.detected === true,
         uploadEnabled: item?.uploadEnabled === true,
         size: finiteOrNull(item?.visibleBytes),
@@ -489,12 +525,29 @@ export function createControlCentreApi(options = {}) {
         const profile = (current.botProfiles || []).find(item => item.id === profilePath[1])
         if (!profile) return failure(req.res, 404, 'NOT_FOUND', 'Unknown behaviour profile.')
         if (method === 'GET' && profilePath[2] === 'config') {
-          const modules = Object.fromEntries((profile.capabilities || []).map(item => [item.capability, Number(item.priority) > 0]))
+          const catalog = typeof options.listCommandModules === 'function' ? options.listCommandModules() : []
+          const modules = Object.fromEntries((Array.isArray(catalog) ? catalog : []).map(item => [String(item.id), capabilityEnabled(profile, String(item.id))]))
+          for (const item of (profile.capabilities || [])) modules[item.capability] = true
           return success(req.res, { modules, capabilities: profile.capabilities || [], universal: profile.universal, basePriority: profile.basePriority })
         }
-        if (method === 'PATCH' || method === 'POST' || method === 'DELETE') return failure(req.res, 501, 'READ_ONLY', 'Profile creation and editing are not exposed by the current MSCC control API. Account profile assignment is supported.')
+        if (method === 'PATCH' && profilePath[2] === 'config') {
+          const body = await readBody(req)
+          if (['control', 'unassigned'].includes(profile.id)) return failure(req.res, 403, 'PROFILE_PROTECTED', 'The private Control and Unassigned profiles cannot be edited.')
+          if (Object.keys(body).length !== 2 || typeof body.moduleId !== 'string' || typeof body.enabled !== 'boolean') {
+            return failure(req.res, 400, 'VALIDATION', 'Provide one moduleId and an enabled true/false value.')
+          }
+          const catalog = typeof options.listCommandModules === 'function' ? options.listCommandModules() : []
+          if (!(Array.isArray(catalog) ? catalog : []).some(item => item.id === body.moduleId)) return failure(req.res, 404, 'NOT_FOUND', 'Unknown public command module.')
+          if (typeof options.setProfileCapability !== 'function') return failure(req.res, 501, 'NOT_IMPLEMENTED', 'This MSCC release does not expose profile module configuration.')
+          const updated = await mutation(req, 'profile.module-change', profile.id + ':' + body.moduleId, async () =>
+            options.setProfileCapability(profile.id, body.moduleId, body.enabled))
+          const modules = Object.fromEntries((Array.isArray(catalog) ? catalog : []).map(item => [String(item.id), capabilityEnabled(updated, String(item.id))]))
+          for (const item of (updated.capabilities || [])) modules[item.capability] = true
+          return success(req.res, { profile: profileDto(updated), modules, capabilities: updated.capabilities || [], universal: updated.universal, basePriority: updated.basePriority })
+        }
+        if (method === 'POST' || method === 'DELETE' || (method === 'PATCH' && profilePath[2] !== 'config')) return failure(req.res, 501, 'READ_ONLY', 'Profile creation and deletion are not exposed by the current MSCC control API.')
       }
-      if (method === 'GET' && path === '/modules') return success(req.res, modulesFromState(current))
+      if (method === 'GET' && path === '/modules') return success(req.res, modulesFromState(current, url.searchParams.get('profileId') || ''))
       const moduleMatch = path.match(/^\/modules\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})$/)
       if (method === 'PATCH' && moduleMatch) {
         const body = await readBody(req)
@@ -504,6 +557,24 @@ export function createControlCentreApi(options = {}) {
           return { id: moduleMatch[1], enabled: body.enabled }
         })
         return success(req.res, result)
+      }
+      if (method === 'GET' && path === '/settings/owner') {
+        if (typeof options.getOwnerConfig !== 'function') return failure(req.res, 501, 'NOT_IMPLEMENTED', 'Owner contact configuration is not available in this MSCC release.')
+        return success(req.res, await options.getOwnerConfig())
+      }
+      if (method === 'PUT' && path === '/settings/owner') {
+        const body = await readBody(req)
+        if (Object.keys(body).some(key => !['ownerNumber', 'ownerName'].includes(key)) || typeof body.ownerNumber !== 'string') {
+          return failure(req.res, 400, 'VALIDATION', 'Provide ownerNumber and an optional ownerName only.')
+        }
+        const ownerNumber = body.ownerNumber.replace(/\D/g, '')
+        const ownerName = body.ownerName === undefined ? undefined : cleanText(body.ownerName, 64)
+        if (!/^\d{7,15}$/.test(ownerNumber)) return failure(req.res, 400, 'VALIDATION', 'Owner number must contain 7 to 15 digits, including country code.')
+        if (ownerName !== undefined && (!ownerName || ownerName.length > 64)) return failure(req.res, 400, 'VALIDATION', 'Owner name must contain 1 to 64 normal characters.')
+        if (typeof options.setOwnerConfig !== 'function') return failure(req.res, 501, 'NOT_IMPLEMENTED', 'Owner contact updates are not available in this MSCC release.')
+        const saved = await mutation(req, 'settings.owner-contact-change', 'owner contact', async () =>
+          options.setOwnerConfig({ ownerNumber, ...(ownerName === undefined ? {} : { ownerName }) }))
+        return success(req.res, saved)
       }
       if (method === 'GET' && path === '/settings') {
         return success(req.res, { publicPrefix: cleanText(current.settings?.publicPrefix || '.', 8) || '.' })

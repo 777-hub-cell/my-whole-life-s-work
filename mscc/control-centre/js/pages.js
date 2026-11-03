@@ -299,53 +299,82 @@ NIGHT.pages = (function () {
     try { data = await api.getStorage(); }
     catch (e) { root.append(ui.errorState(e, () => ctx.reload())); return; }
     root.innerHTML = '';
+    let checkError = '';
+    let checking = false;
 
-    const hasQuota = Number.isFinite(data.used) && Number.isFinite(data.total) && data.total > 0;
-    const files = Array.isArray(data.files) ? data.files : [];
-    const connectionLabel = data.connected === true ? 'Connected' : data.configured === true ? 'Configured · not checked' : 'Not configured';
-    const connectionKind = data.connected === true ? 'online' : data.configured === true ? 'pairing' : 'offline';
-    const storageRows = files.map((file) => h('div', { class: 'row plain' },
-      h('div', { class: 'col-id' },
-        h('div', { class: 'avatar', style: { width: '30px', height: '30px' } }, icon('folder', 15)),
-        h('div', { style: { minWidth: '0' } },
-          h('div', { class: 'name mono truncate' }, file.name || 'Storage target'),
-          h('div', { class: 'meta' }, file.role || file.type || 'Cloud storage'))),
-      h('div', { class: 'col-profile' }, h('span', { class: 'tiny mute' }, file.status || (file.detected ? 'Detected' : 'Configured'))),
-      h('div', { class: 'col-status' }, h('span', { class: 'small dim' }, Number.isFinite(file.size) && file.size > 0 ? bytes(file.size) : '—')),
-      h('div', { class: 'col-time' }, Number.isFinite(file.count) ? file.count + ' items' : '—')
-    ));
-
-    root.append(
-      h('div', { class: 'page-head' },
-        h('div', { class: 'page-title' }, 'Storage'),
-        h('div', { class: 'page-desc' }, 'Cloud storage configuration and available targets. Quota checks are not triggered automatically so an expired provider session cannot break page loading.'),
-        h('div', { class: 'toolbar' }, h('button', { class: 'btn', onclick: () => ctx.reload() }, icon('refresh', 14), 'Refresh'))
-      ),
-      api.isMock ? ui.mockBanner('Storage contents are sample records. No files are listed from, or downloaded to, real cloud storage.') : null,
-      h('div', { class: 'panel', style: { marginBottom: '14px' } },
-        h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, data.provider || 'Cloud storage'), ui.status(connectionKind, connectionLabel)),
-        h('div', { class: 'panel-body stack' },
-          h('div', { class: 'small dim' }, data.container || (data.configured ? 'Configured storage' : 'No storage configured')),
-          hasQuota
-            ? h('div', { class: 'stack', style: { gap: '8px' } },
-                h('div', { class: 'hstack', style: { justifyContent: 'space-between' } },
-                  h('span', { class: 'small dim' }, bytes(data.used) + ' used'),
-                  h('span', { class: 'small dim' }, bytes(data.total) + ' total')),
-                ui.meter((data.used / data.total) * 100, data.used / data.total > .85 ? 'crit' : data.used / data.total > .70 ? 'warn' : '')
-              )
-            : h('div', { class: 'small dim' }, 'Quota usage has not been checked. It will appear here after a successful provider check.'),
-          data.note ? h('p', { class: 'hint', style: { margin: '0' } }, data.note) : null
+    function render() {
+      const hasQuota = Number.isFinite(data.used) && Number.isFinite(data.total) && data.total > 0;
+      const files = Array.isArray(data.files) ? data.files : [];
+      const connectionLabel = data.connected === true ? 'Connected' : data.configured === true ? 'Configured · not checked' : 'Not configured';
+      const connectionKind = data.connected === true ? 'online' : data.configured === true ? 'pairing' : 'offline';
+      const storageRows = files.map((file) => h('div', { class: 'row plain' },
+        h('div', { class: 'col-id' },
+          h('div', { class: 'avatar', style: { width: '30px', height: '30px' } }, icon('folder', 15)),
+          h('div', { style: { minWidth: '0' } },
+            h('div', { class: 'name mono truncate' }, file.name || 'Storage target'),
+            h('div', { class: 'meta' }, file.role || file.type || 'Cloud storage'))),
+        h('div', { class: 'col-profile' }, h('span', { class: 'tiny mute' }, file.status || (file.detected ? 'Available' : 'Not checked'))),
+        h('div', { class: 'col-status' }, h('span', { class: 'small dim' }, Number.isFinite(file.size) && file.size > 0 ? bytes(file.size) : '—')),
+        h('div', { class: 'col-time' }, Number.isFinite(file.count) ? file.count + ' items' : '—')
+      ));
+      const checkButton = h('button', { class: 'btn primary', disabled: checking || !data.configured, onclick: checkConnection },
+        checking ? h('span', { class: 'spinner' }) : icon('refresh', 14),
+        checking ? 'Checking MEGA…' : 'Check connection'
+      );
+      root.replaceChildren(
+        h('div', { class: 'page-head' },
+          h('div', { class: 'page-title' }, 'Storage'),
+          h('div', { class: 'page-desc' }, 'Cloud storage configuration and available targets. Opening this page is passive; MEGA authentication happens only when you explicitly check the connection.'),
+          h('div', { class: 'toolbar' },
+            checkButton,
+            h('button', { class: 'btn', onclick: () => ctx.reload() }, icon('refresh', 14), 'Refresh view'))
+        ),
+        api.isMock ? ui.mockBanner('Storage contents are sample records. No files are listed from, or downloaded to, real cloud storage.') : null,
+        h('div', { class: 'panel', style: { marginBottom: '14px' } },
+          h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, data.provider || 'Cloud storage'), ui.status(connectionKind, connectionLabel)),
+          h('div', { class: 'panel-body stack' },
+            h('div', { class: 'small dim' }, data.container || (data.configured ? 'Configured storage' : 'No storage configured')),
+            hasQuota
+              ? h('div', { class: 'stack', style: { gap: '8px' } },
+                  h('div', { class: 'hstack', style: { justifyContent: 'space-between' } },
+                    h('span', { class: 'small dim' }, bytes(data.used) + ' used'),
+                    h('span', { class: 'small dim' }, bytes(data.total) + ' total')),
+                  ui.meter((data.used / data.total) * 100, data.used / data.total > .85 ? 'crit' : data.used / data.total > .70 ? 'warn' : '')
+                )
+              : h('div', { class: 'small dim' }, 'Quota usage has not been checked. It will appear here after a successful provider check.'),
+            data.note ? h('p', { class: 'hint', style: { margin: '0' } }, data.note) : null,
+            checkError ? h('p', { class: 'hint', style: { margin: '0', color: 'var(--red)' } }, 'Last connection check failed: ' + checkError) : null
+          )
+        ),
+        h('div', { class: 'panel' },
+          h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, 'Storage targets'), h('span', { class: 'tiny mute' }, files.length + ' listed')),
+          files.length
+            ? h('div', { class: 'list' },
+                h('div', { class: 'list-head' }, h('div', { class: 'col-id' }, 'Target'), h('div', { class: 'col-profile' }, 'Type'), h('div', { class: 'col-status' }, 'Visible size'), h('div', { class: 'col-time' }, 'Items')),
+                ...storageRows)
+            : h('div', { class: 'panel-body' }, ui.emptyState('storage', data.configured ? 'No targets returned' : 'Storage is not configured', data.configured ? 'MEGA credentials are configured. Check the connection to discover the primary folder and approved contributor mounts.' : 'Configure the cloud-storage provider on the bot host to list storage targets.'))
         )
-      ),
-      h('div', { class: 'panel' },
-        h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, 'Storage targets'), h('span', { class: 'tiny mute' }, files.length + ' listed')),
-        files.length
-          ? h('div', { class: 'list' },
-              h('div', { class: 'list-head' }, h('div', { class: 'col-id' }, 'Target'), h('div', { class: 'col-profile' }, 'Type'), h('div', { class: 'col-status' }, 'Visible size'), h('div', { class: 'col-time' }, 'Items')),
-              ...storageRows)
-          : h('div', { class: 'panel-body' }, ui.emptyState('storage', data.configured ? 'No targets returned' : 'Storage is not configured', data.configured ? 'The provider has configuration saved, but no storage targets were returned in passive mode.' : 'Configure the cloud-storage provider on the bot host to list storage targets.'))
-      )
-    );
+      );
+    }
+
+    async function checkConnection() {
+      if (checking || !data.configured || api.isMock) return;
+      checking = true;
+      checkError = '';
+      render();
+      try {
+        data = await api.refreshStorage();
+        ui.success('MEGA connection checked', data.connected ? 'Storage targets were refreshed.' : 'The provider did not confirm a connected session.');
+      } catch (error) {
+        checkError = error?.message || 'The provider check failed.';
+        ui.failure(error);
+      } finally {
+        checking = false;
+        render();
+      }
+    }
+
+    render();
   }
 
   async function settingsPage(root, ctx) {

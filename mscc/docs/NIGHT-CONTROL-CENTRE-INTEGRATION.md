@@ -6,7 +6,7 @@
 
 The dashboard is hosted on a separate website server. MSCC stays on its existing bot server. This patch adds an authenticated API to the existing MSCC web-panel process, but it deliberately does not serve `/control-centre/` or any static frontend assets from the bot server. The existing `/` panel and `/api/*` endpoints remain unchanged.
 
-The website server serves `mscc/control-centre/` as static files and reverse-proxies `/api/control-centre/*` to the bot server over a private network or authenticated tunnel. The browser therefore calls a same-origin path. The proxy must preserve the website `Host` header and send the browser-facing scheme in `X-Forwarded-Proto`; this lets the API enforce same-origin requests and issue Secure cookies without CORS or cross-site cookies. See `control-centre/deployment/`.
+The website host serves `mscc/control-centre/` with the bundled Node server and reverse-proxies `/api/control-centre/*` to the bot server over a private network or authenticated HTTPS tunnel. The browser therefore calls a same-origin path. The proxy sets the browser-facing host in `X-Forwarded-Host` and scheme in `X-Forwarded-Proto`; this lets the API enforce same-origin requests and issue Secure cookies without CORS or cross-site cookies. For Bot-Hosting.net use `control-centre/HOSTING-QUICKSTART.md` and `control-centre/hosting/README.md`. The Nginx example remains an alternative for static website hosts.
 
 Do not expose the bot's MSCC listener directly to the public internet. The website server must be the only permitted network peer for this API route. The exact private address, tunnel and hosting-server proxy configuration are deployment-specific and are not guessed or configured by this source patch.
 
@@ -39,8 +39,8 @@ The normal repository `npm run check` includes this command. GitHub CI runs on N
 
 ## Deployment sequence
 
-1. Deploy the static frontend to the separate website host. Keep the default `runtime-config.js` in mock mode until the proxy route works; then serve `deployment/runtime-config.live.js` as `/runtime-config.js`.
-2. Configure the private website-to-bot reverse proxy exactly as documented in `control-centre/deployment/README.md`. Do not expose the MSCC listener publicly.
+1. Deploy the website-only ZIP to the separate website host. On Bot-Hosting.net use the Node server start command `node server.mjs`; verify mock mode first.
+2. Configure the authenticated HTTPS tunnel to the private MSCC listener, then set the upstream and service-token secrets in the website hosting panel. Do not expose the MSCC listener publicly.
 3. Confirm the bot service has a strong protected `WEB_PASSWORD`, trusted HTTPS proxy headers and a writable audit directory.
 4. Review the PR and full CI. Use the repository's combined NIGHT release-batch process; do not merge an individual feature PR directly into `mscc-azure`.
 5. For production, install only into a new immutable MSCC release through the protected `mscc-production` workflow. Never unpack into `/opt/mscc/current` or an active release directory.

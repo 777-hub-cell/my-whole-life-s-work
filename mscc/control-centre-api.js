@@ -49,7 +49,7 @@ function getCookie(req, name) {
 }
 function requestOrigin(req) {
   const proto = String(req.headers['x-forwarded-proto'] || (req.socket.encrypted ? 'https' : 'http')).split(',')[0].trim()
-  const host = String(req.headers.host || '').split(',')[0].trim()
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim()
   return host ? `${proto}://${host}` : ''
 }
 function sameOrigin(req) {

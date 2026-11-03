@@ -4,7 +4,7 @@
 
 The browser loads static frontend files from the separate website server. The bot server runs MSCC and only exposes `/api/control-centre/*` through the existing web-panel process. The website server reverse-proxies this path over a private network or authenticated tunnel. Do not expose the bot's admin listener directly to the public internet.
 
-The browser uses the same-origin website path `/api/control-centre`; this is intentional. The proxy must preserve `Host: $host` and set `X-Forwarded-Proto` to the original scheme. The API checks `Origin`, uses HttpOnly `SameSite=Strict` cookies and marks cookies Secure behind HTTPS. Unsafe requests require a session-bound CSRF token. Do not solve cross-server communication with permissive CORS or third-party cookies.
+The browser uses the same-origin website path `/api/control-centre`; this is intentional. The trusted proxy must set `X-Forwarded-Host` to the browser-facing website host and `X-Forwarded-Proto` to the original HTTPS scheme. The API uses the forwarded host for its origin check; the MSCC listener must therefore remain private behind that trusted proxy/tunnel and must not accept arbitrary direct callers that could spoof forwarded headers. The API checks `Origin`, uses HttpOnly `SameSite=Strict` cookies and marks cookies Secure behind HTTPS. Unsafe requests require a session-bound CSRF token. Do not solve cross-server communication with permissive CORS or third-party cookies.
 
 ## Authentication and audit
 
@@ -30,12 +30,14 @@ The available callbacks expose process/runtime state, OS load average, process m
 
 ## Website host proxy
 
-Use the example in `mscc/control-centre/deployment/nginx-control-centre-api.conf.example` or an equivalent private reverse-proxy rule. The proxy upstream must be reachable only over a private network or authenticated tunnel. Preserve the site Host header and original HTTPS scheme. The website host serves static files; the bot host serves only the API.
+For Bot-Hosting.net, use the bundled `mscc/control-centre/server.mjs` as the Node web process. It binds the platform `SERVER_PORT`, serves only the public dashboard assets, and proxies `/api/control-centre/*` server-to-server to a fixed `NIGHT_API_UPSTREAM`. Optional Cloudflare Access service-token credentials are read only from hosting-panel environment variables. Keep the app in mock mode until this authenticated HTTPS upstream is configured.
+
+For other static hosts, use the example in `mscc/control-centre/deployment/nginx-control-centre-api.conf.example` or an equivalent private reverse-proxy rule. The proxy upstream must be reachable only over a private network or authenticated tunnel. The website host serves static files; the bot host serves only the API.
 
 ## Rollout
 
-1. Deploy static assets on the separate website host, and keep the default mock runtime configuration until the proxy path has been verified. Then serve `deployment/runtime-config.live.js` as `/runtime-config.js`.
-2. Configure the private reverse proxy to the MSCC listener. Keep the bot port blocked from public ingress.
+1. Deploy the website-only ZIP to the separate website host. On Bot-Hosting.net use `node server.mjs`; confirm the default mock mode loads and no bot API is contacted.
+2. Configure an authenticated HTTPS tunnel from the website server to the private MSCC listener. Set `NIGHT_API_UPSTREAM` and, when using Cloudflare Access, the two masked service-token variables in the hosting panel. Keep the bot port blocked from public ingress.
 3. Run `npm run check:control-centre` locally and require the repository Node 24 CI suite to pass.
 4. Open a feature PR targeting `mscc-azure`. Do not update `mscc/release-batch.json` or merge this feature PR individually. Include it in the next approved combined release batch.
 5. After user-authorized release approval, install into a new immutable release via the protected `mscc-production` workflow. Keep the prior release for rollback.

@@ -76,7 +76,7 @@ function ip(req) {
   return req.socket.remoteAddress || 'unknown'
 }
 
-export function startWebPanel({ port, host = '127.0.0.1', password, sessionSecret, localControlPort = 8788, nightPlayHandler = null, getState, getActivity = async () => [], getAccountDiagnostics = async () => null, pairAccount, reconnectAccount, disconnectAccount, removeAccount, repairAccount, createAccount, renameAccount, assignAccountProfile, setSetting, setDestination, reloadCommands, reloadModule, getCloudDashboard = async () => ({ provider:'MEGA', configured:false, targets:[] }), getCloudMounts = async () => [], verifyCloudFolder = async () => ({ success:false }) }) {
+export function startWebPanel({ port, host = '127.0.0.1', password, sessionSecret, localControlPort = 8788, nightPlayHandler = null, getState, getActivity = async () => [], getAccountDiagnostics = async () => null, pairAccount, reconnectAccount, disconnectAccount, removeAccount, repairAccount, createAccount, renameAccount, assignAccountProfile, setSetting, setPublicPrefix, setDestination, reloadCommands, reloadModule, getCloudDashboard = async () => ({ provider:'MEGA', configured:false, targets:[] }), getCloudMounts = async () => [], verifyCloudFolder = async () => ({ success:false }) }) {
   const configured = Boolean(password && password !== 'change-this-password' && password !== 'change-me')
   const secret = createHash('sha256').update(`${sessionSecret || ''}\0${password || ''}\0mscc`).digest()
   const token = createHmac('sha256', secret).update('admin').digest('base64url')
@@ -84,7 +84,7 @@ export function startWebPanel({ port, host = '127.0.0.1', password, sessionSecre
   const controlCentreApi = createControlCentreApi({
     password, getState, getActivity, getCloudDashboard, getCloudMounts,
     createAccount, renameAccount, assignAccountProfile, pairAccount, reconnectAccount,
-    disconnectAccount, repairAccount, removeAccount, setSetting,
+    disconnectAccount, repairAccount, removeAccount, setSetting, setPublicPrefix,
   })
 
   function authed(req) {

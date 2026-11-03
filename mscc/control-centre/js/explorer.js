@@ -51,16 +51,16 @@
     const dropzone = h('div', { class: 'fm-dropzone', role: 'group', 'aria-label': 'Upload files' },
       icon('upload', 32),
       h('p', {}, 'Drop files here to upload'));
-    const fmMain = h('div', { class: 'fm-main' + (readOnly ? ' read-only' : '') },
+    const fmMain = h('div', { class: 'fm-main' },
       dropzone,
       fileInput,
       h('div', { class: 'fm-toolbar' },
         crumbEl,
         h('div', { class: 'spacer' }),
-        h('button', { class: 'btn sm', type: 'button', onclick: () => fileInput.click() }, icon('upload', 15), 'Upload'),
+        h('button', { class: 'btn sm', type: 'button', disabled: readOnly, title: readOnly ? 'Uploads are disabled for immutable production releases.' : 'Upload files', onclick: () => fileInput.click() }, icon('upload', 15), 'Upload'),
         h('div', { class: 'hstack', style: { gap: '4px' } },
-          h('button', { class: 'btn ghost', style: { minWidth: '40px', height: '40px', padding: 0 }, title: 'New File', 'aria-label': 'New File', onclick: () => promptNew('file') }, icon('filePlus', 20)),
-          h('button', { class: 'btn ghost', style: { minWidth: '40px', height: '40px', padding: 0 }, title: 'New Folder', 'aria-label': 'New Folder', onclick: () => promptNew('folder') }, icon('folderPlus', 20))
+          h('button', { class: 'btn ghost', disabled: readOnly, style: { minWidth: '40px', height: '40px', padding: 0 }, title: readOnly ? 'File creation is disabled in production.' : 'New File', 'aria-label': 'New File', onclick: () => promptNew('file') }, icon('filePlus', 20)),
+          h('button', { class: 'btn ghost', disabled: readOnly, style: { minWidth: '40px', height: '40px', padding: 0 }, title: readOnly ? 'Folder creation is disabled in production.' : 'New Folder', 'aria-label': 'New Folder', onclick: () => promptNew('folder') }, icon('folderPlus', 20))
         )
       ),
       bulkBar,
@@ -70,9 +70,8 @@
     root.append(
       h('div', { class: 'page-head' },
         h('div', { class: 'page-title' }, 'File explorer'),
-        h('div', { class: 'page-desc' }, readOnly ? 'Browse approved files in the active MSCC release. This view is intentionally read-only.' : 'Manage permitted application files. The server enforces an allowlist of directories.')
+        h('div', { class: 'page-desc' }, 'Browse application files and inspect source. ' + (readOnly ? 'Production release files are read-only; edit them through a reviewed source release.' : 'The server enforces an allowlist of directories.'))
       ),
-      readOnly ? h('div', { class: 'panel', style: { marginBottom: '12px' } }, h('div', { class: 'panel-body small dim' }, 'Release files are immutable from this console. Changes must go through a reviewed MSCC source release so deployment rollback remains reliable.')) : null,
       api.isMock ? ui.mockBanner('The mock adapter serves a fixed set of sample files. All operations are simulated in the browser.') : null,
       h('div', { class: 'file-manager' }, fmMain)
     );
@@ -84,6 +83,7 @@
       if (!chosen.length) return;
       const tooLarge = chosen.find((file) => file.size > 10 * 1024 * 1024);
       if (tooLarge) { ui.toast(tooLarge.name + ' exceeds the 10 MB per-file limit.', 'err'); return; }
+      if (readOnly) { ui.toast('Uploads are disabled for immutable production releases.', 'info'); return; }
       try {
         ui.toast('Uploading ' + chosen.length + (chosen.length === 1 ? ' file…' : ' files…'), 'info');
         const result = await api.uploadFiles(chosen, currentPath);
@@ -94,11 +94,11 @@
       finally { fileInput.value = ''; }
     }
     fileInput.addEventListener('change', () => uploadFiles(fileInput.files));
-    fmMain.addEventListener('dragover', (e) => { e.preventDefault(); fmMain.classList.add('dragover'); });
+    fmMain.addEventListener('dragover', (e) => { if (readOnly) return; e.preventDefault(); fmMain.classList.add('dragover'); });
     fmMain.addEventListener('dragleave', (e) => { if (!fmMain.contains(e.relatedTarget)) fmMain.classList.remove('dragover'); });
     fmMain.addEventListener('drop', (e) => {
       e.preventDefault(); fmMain.classList.remove('dragover');
-      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
+      if (!readOnly && e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
     });
 
     function findNode(path, node) {
@@ -113,10 +113,12 @@
     }
 
     async function archive(paths) {
+      if (readOnly) return ui.toast('Archive actions are disabled for immutable production releases.', 'info');
       ui.toast('Archiving…', 'info');
       try { await api.archiveItems(paths, currentPath); ui.success(paths.length > 1 ? 'Items archived' : 'File archived'); reload(); } catch (err) { ui.failure(err); }
     }
     async function unarchive(paths) {
+      if (readOnly) return ui.toast('Extraction is disabled for immutable production releases.', 'info');
       ui.toast('Extracting…', 'info');
       try {
         for (const p of paths) await api.unarchiveFile(p, currentPath);
@@ -134,6 +136,7 @@
     }
 
     function promptNew(type) {
+      if (readOnly) return;
       const nameIn = ui.textInput({ placeholder: type === 'file' ? 'e.g. notes.txt' : 'e.g. new-folder' });
       const go = h('button', { class: 'btn primary', onclick: submit }, 'Create');
       const m = ui.modal({
@@ -179,16 +182,16 @@
         h('div', { class: 'spacer' }),
         (() => {
           const paths = Array.from(selected), extract = paths.every(isArchive);
-          return h('button', { class: 'btn sm', onclick: () => (extract ? unarchive(paths) : archive(paths)) },
+          return h('button', { class: 'btn sm', disabled: readOnly, title: readOnly ? 'Unavailable in read-only release mode.' : '', onclick: () => (extract ? unarchive(paths) : archive(paths)) },
             icon(extract ? 'unarchive' : 'archive', 14), extract ? 'Unarchive' : 'Archive');
         })(),
-        h('button', { class: 'btn sm', onclick: () => {
+        h('button', { class: 'btn sm', disabled: readOnly, title: readOnly ? 'Unavailable in read-only release mode.' : '', onclick: () => {
           ui.toast('Move operation triggered', 'info');
         } }, icon('move', 14), 'Move'),
-        h('button', { class: 'btn sm', onclick: () => {
+        h('button', { class: 'btn sm', disabled: readOnly, title: readOnly ? 'Unavailable in read-only release mode.' : '', onclick: () => {
           ui.toast('Copy operation triggered', 'info');
         } }, icon('copy', 14), 'Copy'),
-        h('button', { class: 'btn sm danger', onclick: async () => {
+        h('button', { class: 'btn sm danger', disabled: readOnly, title: readOnly ? 'Unavailable in read-only release mode.' : '', onclick: async () => {
           const paths = Array.from(selected);
           if (!await ui.confirmAction({ title: 'Delete ' + paths.length + ' items?', message: 'This action cannot be undone.', confirmLabel: 'Delete', danger: true })) return;
           try { await api.deleteItems(paths); ui.success('Items deleted'); reload(); } catch (e) { ui.failure(e); }
@@ -236,7 +239,7 @@
           onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(it); } },
           onclick: () => go(it)
         },
-          h('div', { class: 'fm-checkbox-wrap', style: readOnly ? { display: 'none' } : null, onclick: (e) => { e.stopPropagation(); if (isSel) selected.delete(it.path); else selected.add(it.path); renderList(); } },
+          h('div', { class: 'fm-checkbox-wrap', onclick: (e) => { e.stopPropagation(); if (isSel) selected.delete(it.path); else selected.add(it.path); renderList(); } },
             h('input', { type: 'checkbox', class: 'fm-checkbox', checked: isSel, tabindex: '-1' })
           ),
           h('div', { class: 'fm-name' },
@@ -274,27 +277,26 @@
     function openOptions(file) {
       const isFolder = file.type === 'folder';
       const extract = !isFolder && isArchive(file.name);
-      const opt = (ic, label, fn, cls) => h('button', { class: 'btn' + (cls ? ' ' + cls : ''), style: { justifyContent: 'flex-start', marginTop: cls === 'danger' ? '10px' : null }, onclick: () => { m.close(); fn(); } }, icon(ic, 16), label);
+      const opt = (ic, label, fn, cls, disabled = false) => h('button', { class: 'btn' + (cls ? ' ' + cls : ''), disabled, title: disabled ? 'Unavailable in read-only release mode.' : '', style: { justifyContent: 'flex-start', marginTop: cls === 'danger' ? '10px' : null }, onclick: () => { if (disabled) return; m.close(); fn(); } }, icon(ic, 16), label);
       const m = ui.modal({
         title: file.name,
-        subtitle: bytes(file.size || 0) + ' · ' + (file.modified ? timeAgo(file.modified) : ''),
+        subtitle: bytes(file.size || 0) + ' · ' + (file.modified ? timeAgo(file.modified) : '') + (readOnly ? ' · Read only' : ''),
         body: [
           opt('download', 'Download', async () => { const preview = await api.getFsPreview(file.path); downloadContent(file.name, preview.content); }),
-          ...(readOnly ? [] : [
-          opt('edit', 'Rename', () => promptRename(file)),
-          opt('move', 'Move', () => ui.toast('Move dialog would open', 'info')),
-          opt('copy', 'Copy', () => ui.toast('Copy dialog would open', 'info')),
-          !isFolder && (extract ? opt('unarchive', 'Unarchive', () => unarchive([file.path])) : opt('archive', 'Archive', () => archive([file.path]))),
+          opt('edit', 'Rename', () => promptRename(file), null, readOnly),
+          opt('move', 'Move', () => ui.toast('Move dialog would open', 'info'), null, readOnly),
+          opt('copy', 'Copy', () => ui.toast('Copy dialog would open', 'info'), null, readOnly),
+          !isFolder && (extract ? opt('unarchive', 'Unarchive', () => unarchive([file.path]), null, readOnly) : opt('archive', 'Archive', () => archive([file.path]), null, readOnly)),
           opt('trash', 'Delete', async () => {
             if (!await ui.confirmAction({ title: 'Delete ' + file.name + '?', message: 'This action cannot be undone.', confirmLabel: 'Delete', danger: true })) return;
             try { await api.deleteItems([file.path]); ui.success('Deleted'); reload(); } catch (err) { ui.failure(err); }
-          }, 'danger')
-          ])
+          }, 'danger', readOnly)
         ]
       });
     }
 
     function promptRename(file) {
+      if (readOnly) return;
       const nameIn = ui.textInput({ value: file.name });
       const go = h('button', { class: 'btn primary', onclick: submit }, 'Rename');
       const m = ui.modal({
@@ -513,12 +515,6 @@
       );
     }
 
-    if (readOnly) {
-      fmMain.querySelector('.fm-dropzone').hidden = true;
-      fmMain.querySelector('input[type=file]').disabled = true;
-      fmMain.querySelectorAll('.fm-toolbar > .btn, .fm-toolbar > .hstack').forEach(el => { el.hidden = true; });
-      bulkBar.hidden = true;
-    }
     renderList();
   }
 
@@ -549,11 +545,16 @@
     function renderStatus() {
       if (!status) return;
       const m = status.metrics;
+      const safe = (value, fallback = '—') => value === null || value === undefined || !Number.isFinite(Number(value)) ? fallback : value;
+      const load = safe(m.cpu, null);
+      const rss = safe(m.rssBytes, null);
+      const heap = safe(m.heapUsedBytes, null);
+      const uptime = safe(m.uptime, status.process?.uptimeSeconds ?? null);
       statsRow.replaceChildren(
-        h('div', { class: 'stat' }, h('div', { class: 'stat-label' }, 'CPU'), h('div', { class: 'stat-value' }, Math.round(m.cpu), h('small', {}, '%')), h('div', { class: 'stat-sub' }, 'process-wide average')),
-        h('div', { class: 'stat' }, h('div', { class: 'stat-label' }, 'Memory'), h('div', { class: 'stat-value' }, Math.round(m.memory), h('small', {}, '%')), h('div', { class: 'stat-sub' }, 'of ' + 'container limit')),
-        h('div', { class: 'stat' }, h('div', { class: 'stat-label' }, 'Disk'), h('div', { class: 'stat-value' }, Math.round(m.disk), h('small', {}, '%')), h('div', { class: 'stat-sub' }, 'session archives')),
-        h('div', { class: 'stat' }, h('div', { class: 'stat-label' }, 'Uptime'), h('div', { class: 'stat-value', style: { fontSize: '18px' } }, duration(m.uptime)), h('div', { class: 'stat-sub' }, 'since last restart'))
+        h('div', { class: 'stat' }, h('div', { class: 'stat-label' }, 'System load'), h('div', { class: 'stat-value' }, load === null ? '—' : Number(load).toFixed(2)), h('div', { class: 'stat-sub' }, '1-minute host load average')),
+        h('div', { class: 'stat' }, h('div', { class: 'stat-label' }, 'Process RAM'), h('div', { class: 'stat-value' }, rss === null ? '—' : bytes(rss)), h('div', { class: 'stat-sub' }, heap === null ? 'RSS usage' : 'Heap ' + bytes(heap))),
+        h('div', { class: 'stat' }, h('div', { class: 'stat-label' }, 'Disk'), h('div', { class: 'stat-value' }, 'Not exposed'), h('div', { class: 'stat-sub' }, 'Disk metrics are not available from this API')),
+        h('div', { class: 'stat' }, h('div', { class: 'stat-label' }, 'Uptime'), h('div', { class: 'stat-value', style: { fontSize: '18px' } }, uptime === null ? '—' : duration(uptime)), h('div', { class: 'stat-sub' }, 'since process start'))
       );
       servicesList.replaceChildren(
         h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, 'Services')),
@@ -577,11 +578,11 @@
         h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, 'Runtime')),
         h('div', { class: 'panel-body' },
           h('dl', { class: 'kv' },
-            h('dt', {}, 'Host'), h('dd', { class: 'mono' }, status.runtime.host),
-            h('dt', {}, 'Region'), h('dd', { class: 'mono' }, status.runtime.region),
-            h('dt', {}, 'OS'), h('dd', { class: 'mono' }, status.runtime.os),
-            h('dt', {}, 'Node'), h('dd', { class: 'mono' }, status.runtime.node),
-            h('dt', {}, 'Arch'), h('dd', { class: 'mono' }, status.runtime.arch)
+            h('dt', {}, 'Host'), h('dd', { class: 'mono' }, status.runtime.host ?? 'Not available'),
+            h('dt', {}, 'Region'), h('dd', { class: 'mono' }, status.runtime.region ?? 'Not available'),
+            h('dt', {}, 'OS'), h('dd', { class: 'mono' }, status.runtime.os ?? 'Not available'),
+            h('dt', {}, 'Node'), h('dd', { class: 'mono' }, status.runtime.node ?? 'Not available'),
+            h('dt', {}, 'Arch'), h('dd', { class: 'mono' }, status.runtime.arch ?? 'Not available')
           )
         )
       );
@@ -630,7 +631,7 @@
       h('span', { class: 'terminal-dot', style: { background: '#f87171' } }),
       h('span', { class: 'terminal-dot', style: { background: '#f5b942' } }),
       h('span', { class: 'terminal-dot', style: { background: '#4ade80' } }),
-      h('span', { style: { marginLeft: '8px' } }, 'night-node-01 · read-only log tail'),
+      h('span', { style: { marginLeft: '8px' } }, 'MSCC activity ledger · read-only'),
       h('span', { class: 'spacer', style: { flex: '1' } }),
       h('span', { class: 'tiny' }, 'refreshing every 3s')
     );
@@ -673,63 +674,74 @@
    *  CONFIGURATION VIEWER
    * ============================================================ */
   async function configPage(root, ctx) {
-    let cfg;
-    try { cfg = await api.getServerConfig(); }
-    catch (e) { root.append(ui.errorState(e, () => ctx.reload())); return; }
     root.innerHTML = '';
+    let active = 'bot';
+    const content = h('div', { class: 'stack' });
+    const tabs = h('div', { class: 'toolbar', role: 'tablist', 'aria-label': 'Configuration sections' });
+    const botTab = h('button', { class: 'btn primary', role: 'tab', 'aria-selected': 'true', onclick: () => show('bot') }, 'Bot configuration');
+    const envTab = h('button', { class: 'btn', role: 'tab', 'aria-selected': 'false', onclick: () => show('env') }, 'Environment variables');
+    tabs.append(botTab, envTab);
 
-    function kv(label, value, mono) {
+    function kv(label, value, mono = true) {
+      const display = value === null || value === undefined || value === '' ? 'Not available' : typeof value === 'boolean' ? (value ? 'On' : 'Off') : String(value);
       return h('div', { class: 'row plain', style: { gap: '16px', alignItems: 'flex-start', flexWrap: 'nowrap' } },
         h('div', { class: 'small mute', style: { flex: '0 0 160px' } }, label),
-        h('div', { class: mono === false ? '' : 'mono', style: { flex: '1', minWidth: '0', overflowWrap: 'anywhere', fontSize: '12px' } }, String(value))
+        h('div', { class: mono === false ? '' : 'mono', style: { flex: '1', minWidth: '0', overflowWrap: 'anywhere', fontSize: '12px' } }, display)
+      );
+    }
+
+    async function show(which) {
+      active = which;
+      botTab.classList.toggle('primary', active === 'bot');
+      envTab.classList.toggle('primary', active === 'env');
+      botTab.setAttribute('aria-selected', String(active === 'bot'));
+      envTab.setAttribute('aria-selected', String(active === 'env'));
+      content.replaceChildren(h('div', { class: 'panel-body' }, h('span', { class: 'spinner' }), ' Loading…'));
+      if (which === 'env') {
+        await NIGHT.pages.envPage(content, ctx, { embedded: true });
+        return;
+      }
+      let cfg;
+      try { cfg = await api.getServerConfig(); }
+      catch (e) { content.replaceChildren(ui.errorState(e, () => show('bot'))); return; }
+      const application = cfg.application || {};
+      const bot = cfg.bot || {};
+      const deployment = cfg.deployment || {};
+      const integrations = Array.isArray(cfg.integrations) ? cfg.integrations : [];
+      content.replaceChildren(
+        h('div', { class: 'panel' },
+          h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, 'Bot')),
+          h('div', {}, Object.entries(bot).map(([k, v]) => kv(k.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()), v)))
+        ),
+        h('div', { class: 'panel' },
+          h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, 'Application')),
+          h('div', {}, Object.entries(application).map(([k, v]) => kv(k.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()), v)))
+        ),
+        h('div', { class: 'panel' },
+          h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, 'Integrations')),
+          integrations.length ? h('div', { class: 'list' },
+            h('div', { class: 'list-head' }, h('div', { class: 'col-id' }, 'Provider'), h('div', { class: 'col-profile' }, 'Status'), h('div', { class: 'col-status' }, 'Endpoint')),
+            ...integrations.map(i => h('div', { class: 'row plain' },
+              h('div', { class: 'col-id' }, h('div', { class: 'avatar', style: { width: '28px', height: '28px', fontSize: '11px' } }, String(i.name || '?').charAt(0)), h('div', { style: { minWidth: '0' } }, h('div', { class: 'name' }, i.name || 'Integration'), h('div', { class: 'meta' }, i.provider || ''))),
+              h('div', { class: 'col-profile' }, ui.status(i.status === 'configured' ? 'online' : 'offline', i.status === 'configured' ? 'Configured' : 'Not configured')),
+              h('div', { class: 'col-status' }, h('span', { class: 'mono tiny mute' }, i.endpoint || '—'))
+            ))
+          ) : h('div', { class: 'panel-body small dim' }, 'No integration metadata was returned.')
+        ),
+        h('div', { class: 'panel' },
+          h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, 'Deployment')),
+          h('div', {}, Object.entries(deployment).map(([k, v]) => kv(k.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()), v)))
+        )
       );
     }
 
     root.append(
-      h('div', { class: 'page-head' },
-        h('div', { class: 'page-title' }, 'Configuration'),
-        h('div', { class: 'page-desc' }, 'Read-only view of application, bot, integration and deployment configuration. Values are sanitised by the backend — secrets, keys and tokens are never returned.')
-      ),
+      h('div', { class: 'page-head' }, h('div', { class: 'page-title' }, 'Configuration'), h('div', { class: 'page-desc' }, 'Switch between bot configuration and the complete environment-variable inventory. Sensitive values remain masked.')),
       api.isMock ? ui.mockBanner('These values come from the mock adapter. The backend must strip every secret before responding.') : null,
-      h('div', { class: 'stack' },
-        h('div', { class: 'panel' },
-          h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, 'Application')),
-          h('div', {}, Object.entries(cfg.application).map(([k, v]) => kv(k.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()), v)))
-        ),
-        h('div', { class: 'panel' },
-          h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, 'Bot')),
-          h('div', {}, Object.entries(cfg.bot).map(([k, v]) => kv(k.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()), typeof v === 'boolean' ? (v ? 'on' : 'off') : v)))
-        ),
-        h('div', { class: 'panel' },
-          h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, 'Integrations')),
-          h('div', { class: 'list-head', style: { display: 'flex' } },
-            h('div', { class: 'col-id' }, 'Provider'),
-            h('div', { class: 'col-profile' }, 'Status'),
-            h('div', { class: 'col-status' }, 'Endpoint')
-          ),
-          h('div', {}, cfg.integrations.map((i) => h('div', { class: 'row plain' },
-            h('div', { class: 'col-id' },
-              h('div', { class: 'avatar', style: { width: '28px', height: '28px', fontSize: '11px' } }, i.name[0]),
-              h('div', { style: { minWidth: '0' } },
-                h('div', { class: 'name' }, i.name),
-                h('div', { class: 'meta' }, i.provider)
-              )
-            ),
-            h('div', { class: 'col-profile' }, ui.status(i.status === 'configured' ? 'online' : 'offline', i.status === 'configured' ? 'Configured' : 'Not configured')),
-            h('div', { class: 'col-status' }, h('span', { class: 'mono tiny mute' }, i.endpoint || '—'))
-          )))
-        ),
-        h('div', { class: 'panel' },
-          h('div', { class: 'panel-head' }, h('div', { class: 'panel-title' }, 'Deployment')),
-          h('div', {}, Object.entries(cfg.deployment).map(([k, v]) => {
-            let display = v;
-            if (k === 'startedAt') display = dateTime(v);
-            else if (k === 'uptimeSeconds') display = duration(v) + ' (' + Math.round(v / 3600) + 'h)';
-            return kv(k.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()), display);
-          }))
-        )
-      )
+      tabs,
+      content
     );
+    show(active);
   }
 
   NIGHT.pages.filesPage = filesPage;

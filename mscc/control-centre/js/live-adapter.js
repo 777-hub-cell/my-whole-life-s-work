@@ -7,7 +7,7 @@ NIGHT.LiveAdapter = (function () {
   const base = baseUrl.pathname.replace(/\/$/, '') || '/';
   const timeoutMs = Math.max(1000, Number(NIGHT_CONFIG.apiTimeoutMs) || 15000);
   const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-  const SECRET_KEY_RE = /(KEY|TOKEN|SECRET|PASS|PWD|AUTH|COOKIE|SESSION|PRIVATE|CREDENTIAL|OWNER_NUMBER)/i;
+  const SECRET_KEY_RE = /(KEY|TOKEN|SECRET|PASS|PWD|AUTH|COOKIE|SESSION|PRIVATE|CREDENTIAL|PHONE|NUMBER|EMAIL|JID)/i;
   const knownSecretKeys = new Set();
 
   function csrfMeta() { return document.querySelector('meta[name="csrf-token"]'); }
@@ -32,7 +32,7 @@ NIGHT.LiveAdapter = (function () {
     return url;
   }
 
-  async function send(method, path, body, isMultipart) {
+  async function send(method, path, body, isMultipart, timeoutOverride) {
     method = String(method || 'GET').toUpperCase();
     const url = makeUrl(path);
     const headers = { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' };
@@ -46,7 +46,8 @@ NIGHT.LiveAdapter = (function () {
     }
 
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    const requestTimeout = Math.max(timeoutMs, Number(timeoutOverride) || timeoutMs);
+    const timer = controller ? setTimeout(() => controller.abort(), requestTimeout) : null;
     let response;
     try {
       response = await fetch(url.href, {
@@ -117,13 +118,13 @@ NIGHT.LiveAdapter = (function () {
     getOverview: () => request('GET', '/overview'),
     listAccounts: () => request('GET', '/accounts'),
     createAccount: (data) => request('POST', '/accounts', data),
-    pairAccount: (accountId, method, phone) => request('POST', '/accounts/' + id(accountId) + '/pair', { method, phone: phone || null }),
+    pairAccount: (accountId, method, phone) => send('POST', '/accounts/' + id(accountId) + '/pair', { method, phone: phone || null }, false, 35000),
     getPairStatus: (accountId) => request('GET', '/accounts/' + id(accountId) + '/pair-status'),
     reconnectAccount: (accountId) => request('POST', '/accounts/' + id(accountId) + '/reconnect'),
     disconnectAccount: (accountId) => request('POST', '/accounts/' + id(accountId) + '/disconnect'),
     renameAccount: (accountId, name) => request('PATCH', '/accounts/' + id(accountId), { name }),
     assignProfile: (accountId, profileId) => request('PATCH', '/accounts/' + id(accountId), { profileId }),
-    repairAccount: (accountId, method = 'code') => request('POST', '/accounts/' + id(accountId) + '/repair', { confirm: true, method: method === 'qr' ? 'qr' : 'code' }),
+    repairAccount: (accountId, method = 'code') => send('POST', '/accounts/' + id(accountId) + '/repair', { confirm: true, method: method === 'qr' ? 'qr' : 'code' }, false, 35000),
     removeAccount: (accountId) => request('DELETE', '/accounts/' + id(accountId) + '?confirm=true'),
     listProfiles: () => request('GET', '/profiles'),
     createProfile: (data) => request('POST', '/profiles', data),
@@ -143,6 +144,7 @@ NIGHT.LiveAdapter = (function () {
     runDiagnostics: () => request('POST', '/diagnostics/run'),
     getSystemMetrics: () => request('GET', '/system/metrics'),
     getStorage: () => request('GET', '/storage'),
+    refreshStorage: () => request('POST', '/storage/refresh', {}),
     getSettings: () => request('GET', '/settings'),
     saveSettings: (patch) => request('PUT', '/settings', patch),
     getHealth: () => request('GET', '/health'),

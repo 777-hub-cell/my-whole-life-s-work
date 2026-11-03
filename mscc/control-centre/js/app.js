@@ -12,8 +12,7 @@
     ]},
     { group: 'Files & config', items: [
       { id: 'files', label: 'File explorer', icon: 'folder', render: pages.filesPage },
-      { id: 'config', label: 'Configuration', icon: 'config', render: pages.configPage },
-      { id: 'env', label: 'Environment', icon: 'env', render: pages.envPage }
+      { id: 'config', label: 'Configuration', icon: 'config', render: pages.configPage }
     ]},
     { group: 'Configure', items: [
       { id: 'profiles', label: 'Behaviour profiles', icon: 'profiles', render: pages.profilesPage },
@@ -32,10 +31,10 @@
     { id: 'overview', label: 'Overview', icon: 'overview', route: 'overview' },
     { id: 'accounts', label: 'Accounts', icon: 'accounts', route: 'accounts' },
     { id: 'files', label: 'Files', icon: 'folder', route: 'files' },
-    { id: 'env', label: 'Env', icon: 'env', route: 'env' },
+    { id: 'config', label: 'Config', icon: 'config', route: 'config' },
     { id: 'more', label: 'More', icon: 'more', route: null }
   ];
-  const MORE_ROUTES = ['activity', 'profiles', 'modules', 'diagnostics', 'server', 'storage', 'settings', 'config'];
+  const MORE_ROUTES = ['activity', 'profiles', 'modules', 'diagnostics', 'server', 'storage', 'settings'];
 
   let current = 'overview';
   let cleanups = [];
@@ -53,7 +52,7 @@
   }
 
   function activeTabFor(routeId) {
-    if (routeId === 'overview' || routeId === 'accounts' || routeId === 'files' || routeId === 'env') return routeId;
+    if (routeId === 'overview' || routeId === 'accounts' || routeId === 'files' || routeId === 'config') return routeId;
     return 'more';
   }
 

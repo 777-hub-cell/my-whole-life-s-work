@@ -5,6 +5,12 @@ import { createControlCentreApi } from './control-centre-api.js'
 
 const auditPath = `/tmp/mscc-control-centre-audit-${process.pid}.jsonl`
 process.env.MSCC_ADMIN_AUDIT_FILE = auditPath
+process.env.ACCOUNT_A_NUMBER = '2348000000001'
+process.env.MESSAGE_TTL_HOURS = '48'
+process.env.MSCC_WEB_PORT = '8787'
+process.env.GROQ_API_KEYS = 'test-secret-must-not-leak'
+process.env.SETTINGS_FILE = '/var/lib/mscc/settings.json'
+process.env.BOT_OWNER = 'NIGHT Operator'
 
 const state = {
   version: '2.3.1-test',
@@ -23,14 +29,17 @@ const state = {
 
 const repairCalls = []
 const pairCalls = []
+let passiveDashboardCalls = 0
+let activeDashboardCalls = 0
 const options = {
   password: 'test-admin-password',
   getState: async () => state,
   getActivity: async () => [
     { id: 'evt-1', at: new Date().toISOString(), action: 'account.created', detail: { account: 'B', displayName: 'Public Session', nested: { apiToken: 'should-not-leak' } } },
   ],
-  getCloudDashboard: async () => ({ configured: false, provider: 'MEGA', targets: [] }),
-  getCloudMounts: async () => [],
+  getCloudDashboard: async () => { passiveDashboardCalls++; return { configured: true, connected: false, provider: 'MEGA', note: 'Passive status: not connected during page load.', targets: [{ id: 'primary', label: 'MSCC Uploads', type: 'primary', detected: false, uploadEnabled: false }] } },
+  getCloudDashboardActive: async () => { activeDashboardCalls++; return { configured: true, connected: true, provider: 'MEGA', usedBytes: 8192, totalBytes: 16384, targets: [{ id: 'primary', label: 'MSCC Uploads', type: 'primary', detected: true, uploadEnabled: true, files: 3, visibleBytes: 8192 }] } },
+  getCloudMounts: async () => { throw new Error('ESID -15: this should not be called by a passive Storage page read') },
   createAccount: async () => { throw new Error('Not exercised') },
   renameAccount: async (id, name) => { const a = state.accounts.find(item => item.id === id); a.displayName = name },
   assignAccountProfile: async (id, profileId) => {
@@ -58,6 +67,7 @@ const options = {
   },
   removeAccount: async id => { if (id === 'A') throw new Error('Account A cannot be removed') },
   setSetting: async (key, value) => { state.settings[key] = value },
+  setPublicPrefix: async value => { state.settings.publicPrefix = value; return value },
 }
 
 const api = createControlCentreApi(options)
@@ -150,6 +160,41 @@ try {
   assert.equal(state.accounts.find(item => item.id === 'A').profile, 'control')
   assert.equal(state.accounts.find(item => item.id === 'B').profile, 'josiah')
 
+  // General Settings contains actual bot configuration, not command-enable booleans.
+  const settings = await call('/api/control-centre/settings')
+  assert.equal(settings.status, 200)
+  assert.deepEqual(settings.payload.data, { publicPrefix: '.' })
+  const savePrefix = await call('/api/control-centre/settings', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: { publicPrefix: '!' },
+  })
+  assert.equal(savePrefix.status, 200)
+  assert.equal(savePrefix.payload.data.publicPrefix, '!')
+  assert.equal(state.settings.song, true, 'general settings must not rewrite command switches')
+
+  // Storage page is passive; provider login happens only after explicit administrator action.
+  const storage = await call('/api/control-centre/storage')
+  assert.equal(storage.status, 200)
+  assert.equal(storage.payload.data.configured, true)
+  assert.equal(storage.payload.data.connected, false)
+  assert.equal(storage.payload.data.used, null)
+  assert.equal(storage.payload.data.files[0].name, 'MSCC Uploads')
+  assert.equal(storage.payload.data.files[0].status, 'Not checked')
+  assert.equal(activeDashboardCalls, 0)
+  const configCallsBefore = passiveDashboardCalls
+  const serverConfig = await call('/api/control-centre/server/config')
+  assert.equal(serverConfig.status, 200)
+  assert.equal(serverConfig.payload.data.integrations.find(x => x.name === 'Cloud storage').status, 'not-configured')
+  assert.equal(passiveDashboardCalls, configCallsBefore, 'configuration view must not authenticate with MEGA')
+  const storageRefresh = await call('/api/control-centre/storage/refresh', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: {},
+  })
+  assert.equal(storageRefresh.status, 200)
+  assert.equal(storageRefresh.payload.data.connected, true)
+  assert.equal(storageRefresh.payload.data.used, 8192)
+  assert.equal(storageRefresh.payload.data.files[0].name, 'MSCC Uploads')
+  assert.equal(storageRefresh.payload.data.files[0].count, 3)
+  assert.equal(activeDashboardCalls, 1)
+
   // Existing global command-setting booleans are changed through MSCC callback.
   const update = await call('/api/control-centre/modules/song', {
     method: 'PATCH', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: { enabled: false },
@@ -215,14 +260,35 @@ try {
     if (entry.isSecret) assert.equal(Object.hasOwn(entry, 'value'), false)
   }
 
+  // Full managed environment inventory: non-secrets are visible and sensitive values are masked.
+  const envRows = env.payload.data
+  const accountNumber = envRows.find(row => row.key === 'ACCOUNT_A_NUMBER')
+  const messageTtl = envRows.find(row => row.key === 'MESSAGE_TTL_HOURS')
+  const settingsFile = envRows.find(row => row.key === 'SETTINGS_FILE')
+  const botOwner = envRows.find(row => row.key === 'BOT_OWNER')
+  const megaSecret = envRows.find(row => row.key === 'GROQ_API_KEYS')
+  assert.equal(accountNumber?.isSecret, true)
+  assert.equal(Object.hasOwn(accountNumber || {}, 'value'), false)
+  assert.equal(messageTtl?.value, '48')
+  assert.equal(settingsFile?.value, '/var/lib/mscc/settings.json')
+  assert.equal(botOwner?.value, 'NIGHT Operator')
+  assert.equal(megaSecret?.isSecret, true)
+  assert.equal(Object.hasOwn(megaSecret || {}, 'value'), false)
+
   // Audit log is created with restrictive permissions.
   const audit = await readFile(auditPath, 'utf8')
   assert.match(audit, /command-setting\.change/)
   assert.match(audit, /account\.profile-assign/)
   assert.equal((await stat(auditPath)).mode & 0o777, 0o600)
 
-  console.log('PASS MSCC control-centre API: auth, CSRF, origin, private Account A, profile guard, safe pair/re-pair, command settings, readonly paths, secret redaction, audit log')
+  console.log('PASS MSCC control-centre API: auth, CSRF, origin, private Account A, profile guard, safe pair/re-pair, split settings, passive storage, full env inventory, readonly paths, secret redaction, audit log')
 } finally {
   await new Promise(resolve => server.close(resolve))
   await rm(auditPath, { force: true })
+  delete process.env.ACCOUNT_A_NUMBER
+  delete process.env.MESSAGE_TTL_HOURS
+  delete process.env.MSCC_WEB_PORT
+  delete process.env.GROQ_API_KEYS
+  delete process.env.SETTINGS_FILE
+  delete process.env.BOT_OWNER
 }

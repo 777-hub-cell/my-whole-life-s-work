@@ -6,7 +6,7 @@
   const api = NIGHT.api;
   const U = NIGHT.util;
 
-  const SECRET_RE = /(KEY|TOKEN|SECRET|PASS|PWD|AUTH|COOKIE|SESSION|PRIVATE|CREDENTIAL|OWNER_NUMBER)/i;
+  const SECRET_RE = /(KEY|TOKEN|SECRET|PASS|PWD|AUTH|COOKIE|SESSION|PRIVATE|CREDENTIAL|PHONE|NUMBER|EMAIL|JID)/i;
   const isSecret = (entry) => entry.isSecret === true || SECRET_RE.test(String(entry.key || ''));
   const normalize = (entry) => {
     const secret = isSecret(entry);
@@ -45,7 +45,7 @@
     }
   }
 
-  async function envPage(root, ctx) {
+  async function envPage(root, ctx, options = {}) {
     let vars;
     try { vars = (await api.listEnv()).map(normalize); }
     catch (e) { root.append(ui.errorState(e, () => ctx.reload())); return; }
@@ -56,8 +56,10 @@
       const secret = isSecret(v);
       const valueText = secret ? (v.configured ? 'Configured · value hidden' : 'Not configured') : (v.value === '' ? '(empty)' : v.value);
       const copyButton = secret ? null : h('button', { class: 'btn icon ghost', type: 'button', 'aria-label': 'Copy ' + v.key, title: 'Copy value', onclick: () => copy(v.value, v.key + ' copied') }, icon('copy', 18));
-      return h('div', { class: 'row plain env-row', tabindex: '0', role: 'button', 'aria-label': 'Edit ' + v.key, onclick: () => { if (api.isMock || api.capabilities?.envWrite !== false) openEdit(v); },
-        onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openEdit(v); } } },
+      const canEdit = api.isMock || api.capabilities?.envWrite !== false;
+      return h('div', { class: 'row plain env-row', tabindex: canEdit ? '0' : null, role: canEdit ? 'button' : null, 'aria-label': canEdit ? 'Edit ' + v.key : v.key,
+        onclick: canEdit ? () => openEdit(v) : null,
+        onkeydown: canEdit ? (e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openEdit(v); } } : null },
         h('div', { class: 'env-main' },
           h('div', { class: 'name mono truncate' }, v.key),
           h('div', { class: 'meta mono env-val' + (secret ? ' masked' : '') }, valueText)),
@@ -65,8 +67,10 @@
     }
     function draw() {
       listEl.replaceChildren();
-      if (!vars.length) { listEl.append(ui.emptyState('env', 'No variables yet', 'Add one — the bot reads these when it starts.')); return; }
-      vars.forEach((v) => listEl.append(row(v)));
+      const query = String(search.value || '').trim().toLowerCase();
+      const visible = vars.filter((v) => !query || v.key.toLowerCase().includes(query));
+      if (!visible.length) { listEl.append(ui.emptyState('env', query ? 'No matching variables' : 'No variables returned', query ? 'Try a different variable name.' : 'The backend did not return any application environment variables.')); return; }
+      visible.forEach((v) => listEl.append(row(v)));
     }
 
     function openEdit(existing) {
@@ -104,14 +108,16 @@
       copy(lines.join('\n'), 'Non-secret variables copied. Secret values were excluded.');
     };
 
+    const search = h('input', { class: 'input', type: 'search', placeholder: 'Filter environment variables…', 'aria-label': 'Filter environment variables', oninput: () => draw() });
     root.append(
-      h('div', { class: 'page-head' }, h('div', { class: 'page-title' }, 'Environment'),
-        h('div', { class: 'page-desc' }, 'View non-secret settings and replace secrets without retrieving their existing values. Changes apply after a restart.')),
-      api.isMock ? ui.mockBanner('Demo variables are stored in this browser only. No real server secrets are available in mock mode.') : null,
+      options.embedded ? null : h('div', { class: 'page-head' }, h('div', { class: 'page-title' }, 'Environment'),
+        h('div', { class: 'page-desc' }, 'View application environment variables. Secret values are always masked and never returned to the browser.')),
+      api.isMock && !options.embedded ? ui.mockBanner('Demo variables are stored in this browser only. No real server secrets are available in mock mode.') : null,
       h('div', { class: 'toolbar' },
+        h('div', { class: 'search', style: { flex: '1 1 220px' } }, icon('search', 16), search),
         api.isMock || api.capabilities?.envWrite !== false ? h('button', { class: 'btn primary', onclick: () => openEdit(null) }, icon('plus', 16), 'Add variable') : null,
         h('button', { class: 'btn', onclick: exportNonSecrets }, icon('file', 16), 'Copy non-secret variables')),
-      !api.isMock && api.capabilities?.envWrite === false ? h('p', { class: 'hint' }, 'Live environment values are read-only here. Secret values never leave the server; use protected Azure configuration to change deployment variables.') : null,
+      !api.isMock && api.capabilities?.envWrite === false ? h('p', { class: 'hint' }, 'Live environment metadata is read-only. All application variables are listed; passwords, tokens, API keys, phone numbers and private session values remain masked. Use protected Azure configuration to change deployment variables.') : null,
       listEl);
     draw();
   }

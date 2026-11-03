@@ -124,7 +124,7 @@ function proxyApi(req, res, upstream, accessClientId, accessClientSecret) {
   }
 
   const transport = target.protocol === 'https:' ? httpsRequest : httpRequest;
-  const upstreamRequest = transport(target, { method, headers, timeout: 20000 }, (upstreamResponse) => {
+  const upstreamRequest = transport(target, { method, headers, timeout: 40000 }, (upstreamResponse) => {
     const responseHeaders = {};
     for (const [name, value] of Object.entries(upstreamResponse.headers)) {
       if (HOP_BY_HOP.has(name.toLowerCase()) || value === undefined) continue;

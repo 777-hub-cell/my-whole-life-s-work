@@ -515,12 +515,6 @@
       );
     }
 
-    if (readOnly) {
-      fmMain.querySelector('.fm-dropzone').hidden = true;
-      fmMain.querySelector('input[type=file]').disabled = true;
-      fmMain.querySelectorAll('.fm-toolbar > .btn, .fm-toolbar > .hstack').forEach(el => { el.hidden = true; });
-      bulkBar.hidden = true;
-    }
     renderList();
   }
 
@@ -637,7 +631,7 @@
       h('span', { class: 'terminal-dot', style: { background: '#f87171' } }),
       h('span', { class: 'terminal-dot', style: { background: '#f5b942' } }),
       h('span', { class: 'terminal-dot', style: { background: '#4ade80' } }),
-      h('span', { style: { marginLeft: '8px' } }, 'night-node-01 · read-only log tail'),
+      h('span', { style: { marginLeft: '8px' } }, 'MSCC activity ledger · read-only'),
       h('span', { class: 'spacer', style: { flex: '1' } }),
       h('span', { class: 'tiny' }, 'refreshing every 3s')
     );

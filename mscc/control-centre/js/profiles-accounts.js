@@ -70,7 +70,7 @@
 
   /* ---------- Accounts ---------- */
   function nextAction(a) {
-    if (a.status === 'pairing') return a.pairStarted ? ['Continue pairing', 'qr', 'pair'] : ['Pair device', 'qr', 'pair'];
+    if (a.status === 'pairing') return a.pairStarted ? ['Continue linking', 'link', 'link'] : ['Link device', 'link', 'link'];
     if (a.status === 'online') return ['Manage', 'more', 'manage'];
     if (a.status === 'offline') return ['Reconnect', 'power', 'reconnect'];
     return ['Diagnose', 'wrench', 'diagnose'];
@@ -89,7 +89,7 @@
 
     async function run(a) {
       const kind = nextAction(a)[2];
-      if (kind === 'pair') openPair(a.id);
+      if (kind === 'link') openLink(a.id);
       else if (kind === 'manage') openAccount(a.id);
       else if (kind === 'diagnose') ctx.navigate('diagnostics');
       else try { await api.reconnectAccount(a.id); ui.success('Account reconnected'); await reload(); } catch (e) { ui.failure(e); }
@@ -153,11 +153,10 @@
             h('dt', {}, 'Last seen'), h('dd', {}, a.lastSeen ? timeAgo(a.lastSeen) : 'Not recorded'), h('dt', {}, 'Messages 24h'), h('dd', {}, a.messages24h == null ? '—' : num(a.messages24h))),
           h('div', { class: 'divider' }), h('div', { class: 'section-label' }, 'Session'),
           h('div', { class: 'action-grid' },
-            btn('qr', a.registered || a.invalid ? 'Re-pair device' : 'Pair device', () => { m.close(); openPair(id); }),
+            btn('qr', 'Pair / repair device', () => { m.close(); openLink(id); }),
             btn('power', online ? 'Disconnect' : 'Reconnect', async () => {
               try { await (online ? api.disconnectAccount(id) : api.reconnectAccount(id)); ui.success(online ? 'Account disconnected' : 'Account reconnected'); await reload(); paint(); } catch (e) { ui.failure(e); }
             }),
-            btn('wrench', 'Repair / re-pair session', () => { m.close(); openPair(id); }),
             btn('edit', 'Rename', () => { m.close(); openRename(id); })),
           h('div', { class: 'section-label', style: { marginTop: '6px' } }, 'Behaviour'),
           h('div', { class: 'action-grid' }, btn('layers', 'Profile & overrides', () => { m.close(); openBehaviour(id); })),
@@ -174,7 +173,7 @@
       const nameIn = ui.textInput({ placeholder: 'e.g. Atlas' });
       const phoneIn = ui.textInput({ placeholder: '+44 7000 000000', inputmode: 'tel' });
       const sel = h('select', { class: 'select' }, h('option', { value: '' }, 'No profile'), profiles.filter((p) => p.id !== 'control').map((p) => h('option', { value: p.id }, p.name)));
-      const go = h('button', { class: 'btn primary', onclick: submit }, 'Create & pair');
+      const go = h('button', { class: 'btn primary', onclick: submit }, 'Create & link');
       const m = ui.modal({ title: 'New account', subtitle: 'Add a WhatsApp identity. You\u2019ll link it right here next.',
         body: [ui.field('Account name', nameIn), ui.field('Phone number', phoneIn, 'Needed for pairing-code linking.'), ui.field('Behaviour profile', sel, 'How this account behaves. You can change it later.')],
         footer: [h('button', { class: 'btn', onclick: () => m.close() }, 'Cancel'), go] });
@@ -182,7 +181,7 @@
         go.disabled = true;
         try {
           const acc = await api.createAccount({ name: nameIn.value, phone: phoneIn.value, profileId: sel.value || null });
-          await reload(); openPair(acc.id, m);
+          await reload(); openLink(acc.id, m);
         } catch (e) { ui.failure(e); go.disabled = false; }
       }
     }
@@ -217,10 +216,10 @@
       paint();
     }
 
-    function openPair(id, host) {
+    function openLink(id, host) {
       const a = list.find((x) => x.id === id); if (!a) return;
       let mode = 'qr', payload = null, busy = false, tick, poll;
-      const needsRepair = Boolean(a.registered || a.invalid);
+      let repairFlow = Boolean(a.registered || a.invalid);
       let repairAuthorized = false;
       const err = h('div', { class: 'tiny', style: { color: 'var(--red)', display: 'none' } });
       const body = h('div', {});
@@ -228,13 +227,13 @@
       let m;
       if (host) {
         m = host;
-        host.setHead('Pair ' + a.name, 'Account created. Link it to WhatsApp now, or pair later.');
-        host.setFooter([h('button', { class: 'btn', onclick: () => host.close() }, 'Pair later')]);
+        host.setHead('Link ' + a.name, 'Account created. Connect this WhatsApp identity now, or continue later.');
+        host.setFooter([h('button', { class: 'btn', onclick: () => host.close() }, 'Link later')]);
         host.setOnClose(stop);
         body.classList.add('step-in');
         host.bodyEl.replaceChildren(body);
       } else {
-        m = ui.modal({ title: (needsRepair ? 'Re-pair ' : 'Pair ') + a.name, subtitle: needsRepair ? 'MSCC will preserve the existing auth in a backup before starting a fresh link.' : 'Select how you want to link this account.', body, onClose: stop });
+        m = ui.modal({ title: 'Link WhatsApp · ' + a.name, subtitle: 'Choose QR or pairing code. MSCC checks whether this is a new link or an existing session that needs repair.', body, onClose: stop });
       }
       const tabs = () => h('div', { class: 'pair-tabs' },
         h('button', { class: 'btn sm' + (mode === 'qr' ? ' primary' : ''), onclick: () => { if (mode !== 'qr') { mode = 'qr'; start(); } } }, icon('qr', 15), 'QR code'),
@@ -252,7 +251,7 @@
           if (payload && payload.code) body.append(h('div', { class: 'code-box', style: { marginTop: '12px' } }, payload.code));
         }
         body.append(countEl, h('div', { class: 'hstack', style: { justifyContent: 'center', marginTop: '12px' } },
-          h('button', { class: 'btn sm' + (payload ? '' : ' primary'), onclick: start }, icon('refresh', 14), payload ? 'Regenerate' : (needsRepair ? 'Start re-pair' : 'Get pairing code'))));
+          h('button', { class: 'btn sm' + (payload ? '' : ' primary'), onclick: start }, icon('refresh', 14), payload ? 'Regenerate' : 'Start linking')));
         if (!payload) return;
         tick = setInterval(() => {
           const left = Math.max(0, Math.floor((payload.expiresAt - Date.now()) / 1000));
@@ -271,24 +270,49 @@
         }, 2000);
       }
 
+      async function confirmRepair() {
+        return ui.confirmAction({
+          title: 'Repair saved session for ' + a.name + '?',
+          message: 'This account already has saved WhatsApp authentication. MSCC will preserve the current auth in a backup before requesting a fresh QR code or pairing code. The backup will not be deleted.',
+          confirmLabel: 'Back up and repair', danger: true,
+        });
+      }
+
       async function start() {
         if (busy) return;
         err.style.display = 'none';
         busy = true; stop(); body.innerHTML = '';
-        body.append(tabs(), h('div', { class: 'empty', style: { padding: '36px 0' } }, h('span', { class: 'spinner', style: { color: 'var(--accent)' } }), h('p', {}, 'Requesting a pairing token…')));
+        body.append(tabs(), h('div', { class: 'empty', style: { padding: '36px 0' } }, h('span', { class: 'spinner', style: { color: 'var(--accent)' } }), h('p', {}, 'Preparing WhatsApp link…')));
         try {
-          if (needsRepair && !repairAuthorized) {
-            const confirmed = await ui.confirmAction({
-              title: 'Re-pair ' + a.name + '?',
-              message: 'MSCC will back up this account’s existing authentication files before starting a fresh QR or pairing-code flow. The old session will not be deleted from the backup.',
-              confirmLabel: 'Back up and re-pair', danger: true,
-            });
-            if (!confirmed) { busy = false; draw(); return; }
+          if (repairFlow && !repairAuthorized) {
+            if (!await confirmRepair()) { busy = false; draw(); return; }
             repairAuthorized = true;
           }
-          payload = needsRepair ? await api.repairAccount(id, mode) : await api.pairAccount(id, mode);
+          try {
+            payload = repairFlow ? await api.repairAccount(id, mode) : await api.pairAccount(id, mode);
+          } catch (pairError) {
+            // Account metadata can be stale while the backend already has saved auth.
+            // Convert that response into the same confirmed repair flow instead of
+            // showing the user a dead-end error message.
+            if (!repairFlow && pairError?.code === 'REPAIR_REQUIRED') {
+              repairFlow = true;
+              if (!await confirmRepair()) { busy = false; draw(); return; }
+              repairAuthorized = true;
+              payload = await api.repairAccount(id, mode);
+            } else {
+              throw pairError;
+            }
+          }
+          if (payload?.connected) {
+            stop();
+            ui.success(a.name + ' is online', 'WhatsApp is already connected.');
+            m.close();
+            await reload();
+            return;
+          }
+        } catch (e) {
+          busy = false; body.innerHTML = ''; body.append(tabs(), ui.errorState(e, start)); return;
         }
-        catch (e) { busy = false; body.innerHTML = ''; body.append(tabs(), ui.errorState(e, start)); return; }
         busy = false; draw();
       }
       start();

@@ -468,8 +468,17 @@ export function createControlCentreApi(options = {}) {
           const payload = await mutation(req, 'account.pair', id, async () => {
             const account = await stateAccount(id)
             if (account.connected) throw Object.assign(new Error('This account is already connected.'), { status: 409, code: 'ALREADY_CONNECTED' })
-            if (account.registered || account.invalid) throw Object.assign(new Error('This account has saved authentication. Use the confirmed re-pair flow instead.'), { status: 409, code: 'REPAIR_REQUIRED' })
-            await options.pairAccount(id, mode)
+            if (account.registered || account.invalid) throw Object.assign(new Error('This account already has a saved WhatsApp session. Confirm repair to back it up and start a fresh link.'), { status: 409, code: 'REPAIR_REQUIRED' })
+            try {
+              await options.pairAccount(id, mode)
+            } catch (error) {
+              // Auth can be discovered by the live account after the API snapshot was read.
+              // Normalize that core guard so the UI can ask for confirmation and repair.
+              if (/use re-pair.*already has saved auth/i.test(String(error?.message || ''))) {
+                throw Object.assign(new Error('This account already has a saved WhatsApp session. Confirm repair to back it up and start a fresh link.'), { status: 409, code: 'REPAIR_REQUIRED' })
+              }
+              throw error
+            }
             return waitForPairingPayload(mode)
           })
           return success(req.res, payload)

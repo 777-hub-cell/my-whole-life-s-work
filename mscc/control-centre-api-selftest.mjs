@@ -23,7 +23,7 @@ const state = {
   ],
   accounts: [
     { id: 'A', displayName: 'Private Control', role: 'owner', profile: 'control', connected: true, enabled: true, numberMasked: '+234***0001', lastConnectedAt: Date.now() },
-    { id: 'B', displayName: 'Public Session', role: 'linked', profile: 'josiah', connected: false, enabled: true, numberMasked: '+234***0002' },
+    { id: 'B', displayName: 'Public Session', role: 'linked', profile: 'josiah', connected: false, enabled: true, registered:false, invalid:false, savedAuthPresent:false, numberMasked: '+234***0002' },
   ],
 }
 
@@ -57,6 +57,7 @@ const options = {
   pairAccount: async (id, mode) => {
     pairCalls.push([id, mode])
     const account = state.accounts.find(item => item.id === id)
+    if (account.savedAuthPresent) throw new Error(`Use Re-pair for Account ${id} because it already has saved auth.`)
     account.connected = false; account.registered = false; account.invalid = false
     account.pairingMode = mode; account.pairingError = ''
     account.pairingQr = mode === 'qr' ? 'data:image/png;base64,dGVzdA==' : ''
@@ -67,7 +68,7 @@ const options = {
   repairAccount: async (id, mode) => {
     repairCalls.push([id, mode])
     const account = state.accounts.find(item => item.id === id)
-    account.connected = false; account.registered = false; account.invalid = false
+    account.connected = false; account.registered = false; account.invalid = false; account.savedAuthPresent = false
     account.pairingMode = mode; account.pairingError = ''
     account.pairingQr = mode === 'qr' ? 'data:image/png;base64,dGVzdA==' : ''
     account.pairingCode = mode === 'code' ? '123-456' : ''
@@ -310,7 +311,26 @@ try {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: { method: 'code' },
   })
   assert.equal(unsafePair.status, 409, 'ordinary pair must not overwrite existing saved auth')
-  state.accounts.find(item => item.id === 'B').registered = false
+  assert.equal(unsafePair.payload.error.code, 'REPAIR_REQUIRED')
+  const accountB = state.accounts.find(item => item.id === 'B')
+  accountB.registered = false
+  accountB.savedAuthPresent = true
+  const staleAuthPair = await call('/api/control-centre/accounts/B/pair', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: { method: 'code' },
+  })
+  assert.equal(staleAuthPair.status, 409, 'saved-auth detected by the core must not become a dead-end pair error')
+  assert.equal(staleAuthPair.payload.error.code, 'REPAIR_REQUIRED')
+  const staleAuthRepair = await call('/api/control-centre/accounts/B/repair', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: { confirm: true, method: 'code' },
+  })
+  assert.equal(staleAuthRepair.status, 200, 'the confirmed repair flow must recover from stale account metadata')
+  assert.equal(staleAuthRepair.payload.data.code, '123-456')
+  assert.equal(accountB.savedAuthPresent, false)
+  const accountUi = await readFile(new URL('./control-centre/js/profiles-accounts.js', import.meta.url), 'utf8')
+  assert(accountUi.includes("btn('qr', 'Pair / repair device'"), 'account details must have one combined pair/repair action')
+  assert(!accountUi.includes('Repair / re-pair session'), 'duplicate repair action must be removed')
+  assert(accountUi.includes("pairError?.code === 'REPAIR_REQUIRED'"), 'stale saved auth must enter the confirmed repair UI flow')
+  assert(accountUi.includes('await api.repairAccount(id, mode)'), 'combined action must call repair after confirmation')
   const firstPair = await call('/api/control-centre/accounts/B/pair', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: { method: 'code' },
   })

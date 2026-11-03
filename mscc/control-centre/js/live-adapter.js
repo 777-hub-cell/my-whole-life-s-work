@@ -144,6 +144,7 @@ NIGHT.LiveAdapter = (function () {
     runDiagnostics: () => request('POST', '/diagnostics/run'),
     getSystemMetrics: () => request('GET', '/system/metrics'),
     getStorage: () => request('GET', '/storage'),
+    refreshStorage: () => request('POST', '/storage/refresh', {}),
     getSettings: () => request('GET', '/settings'),
     saveSettings: (patch) => request('PUT', '/settings', patch),
     getHealth: () => request('GET', '/health'),

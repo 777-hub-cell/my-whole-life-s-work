@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
+import { createControlCentreApi } from './control-centre-api.js'
 
 const PAGE = readFileSync(new URL('./panel.html', import.meta.url), 'utf8')
 const MAX_BODY = 16 * 1024
@@ -80,6 +81,11 @@ export function startWebPanel({ port, host = '127.0.0.1', password, sessionSecre
   const secret = createHash('sha256').update(`${sessionSecret || ''}\0${password || ''}\0mscc`).digest()
   const token = createHmac('sha256', secret).update('admin').digest('base64url')
   const attempts = new Map()
+  const controlCentreApi = createControlCentreApi({
+    password, getState, getActivity, getCloudDashboard, getCloudMounts,
+    createAccount, renameAccount, assignAccountProfile, pairAccount, reconnectAccount,
+    disconnectAccount, repairAccount, removeAccount, setSetting,
+  })
 
   function authed(req) {
     return configured && safeEqual(getCookie(req, 'mscc_session'), token)
@@ -93,6 +99,11 @@ export function startWebPanel({ port, host = '127.0.0.1', password, sessionSecre
   const server = createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://mscc.local')
     try {
+      // The NIGHT Control Centre UI is hosted on a separate website server.
+      // This process exposes only its API; it never serves the website assets.
+      if (url.pathname === '/api/control-centre' || url.pathname.startsWith('/api/control-centre/')) {
+        return await controlCentreApi.handle(req, res, url)
+      }
       if (url.pathname === '/api/night-play/rpc' && nightPlayHandler) return await nightPlayHandler(req, res)
       if (req.method === 'GET' && url.pathname === '/health') {
         return sendJson(res, 200, { ok: true, service: 'mscc', panelConfigured: configured })

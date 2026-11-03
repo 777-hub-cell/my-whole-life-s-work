@@ -70,8 +70,17 @@ assert.equal(isOwnerSelfControlCommand(ownerSelfArgs(selfCommand('owner-other-dm
   chatJid:'2348099999999@s.whatsapp.net', ownJid:ownerJid,
 })), false)
 assert.equal(isOwnerSelfControlCommand(ownerSelfArgs(selfCommand('owner-lid','.status'), {
-  chatJid:'9988776655@lid', ownJid:'9988776655@lid',
-})), false, 'opaque LID self chats must fail closed')
+  chatJid:'9988776655@lid', ownJid:ownerJid,
+})), false, 'opaque LID self chats must fail closed without a verified mapping')
+assert.equal(isOwnerSelfControlCommand(ownerSelfArgs(selfCommand('owner-verified-lid','.status'), {
+  chatJid:'9988776655@lid', ownJid:ownerJid, verifiedSelfChat:true,
+})), true, 'a non-conflicting verified LID alias for Account A must work')
+assert.equal(isOwnerSelfControlCommand(ownerSelfArgs(selfCommand('owner-verified-hosted-lid','.accounts'), {
+  chatJid:'9988776655@hosted.lid', ownJid:ownerJid, verifiedSelfChat:true,
+})), true, 'verified hosted LID aliases must work')
+assert.equal(isOwnerSelfControlCommand(ownerSelfArgs(selfCommand('owner-fake-lid','.status'), {
+  chatJid:'9988776655@lid', ownJid:ownerJid, verifiedSelfChat:false,
+})), false)
 assert.equal(isOwnerSelfControlCommand(ownerSelfArgs(selfCommand('owner-other-account','.status'), {
   account:{ id:'B', role:'linked', number:'2348012345678' },
 })), false)
@@ -156,6 +165,7 @@ const dispatcher = index.indexOf('const commandHandled = await dispatchNamespace
 assert(index.includes('isOwnerSelfControlCommand(account, msg)'), 'Main Account A self-chat exception must be explicitly allowlisted')
 assert(index.includes('allowSelf:(accountId, msg) => isOwnerSelfControlCommand(accounts.get(accountId), msg)'), 'Production inbound guard must use the narrow owner-self predicate')
 assert(index.includes('isPublicOwner: authority.isPublicOwner || ownerSelfControl'), 'Verified owner self-chat must retain private owner-level authorization')
+assert(index.includes('normalizeJid(storedLidPhone(sharedStorage, chatJid)) === ownJid'), 'Owner self-chat may use only a verified non-conflicting LID-to-PN mapping')
 assert(inboundGate >= 0 && dedupeGate > inboundGate && dispatcher > dedupeGate,
   'Main Baileys upsert handler must allow only a verified private-owner self-command and reject other self/duplicate messages before dispatch')
 assert(index.includes("if (type === 'append') return"),

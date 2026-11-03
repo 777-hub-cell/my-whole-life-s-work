@@ -53,6 +53,7 @@ test('proxies only the fixed API origin and preserves same-origin browser contex
       csrf: req.headers['x-csrf-token'],
       accessId: req.headers['cf-access-client-id'],
       accessSecret: req.headers['cf-access-client-secret'],
+      ngrokSkipWarning: req.headers['ngrok-skip-browser-warning'],
     };
     res.writeHead(200, {
       'content-type': 'application/json; charset=utf-8',
@@ -88,6 +89,7 @@ test('proxies only the fixed API origin and preserves same-origin browser contex
   assert.equal(seen.csrf, 'token-123');
   assert.equal(seen.accessId, 'test-client-id');
   assert.equal(seen.accessSecret, 'test-client-secret');
+  assert.equal(seen.ngrokSkipWarning, '1');
 });
 
 test('rejects public plaintext API upstreams and incomplete access-token pairs', () => {

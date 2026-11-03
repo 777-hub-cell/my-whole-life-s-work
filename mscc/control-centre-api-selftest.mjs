@@ -29,6 +29,8 @@ const state = {
 
 const repairCalls = []
 const pairCalls = []
+const moduleCalls = []
+let ownerConfig = { ownerNumberConfigured:true, ownerNumberMasked:'+234••••0001', ownerName:'Test Owner' }
 let passiveDashboardCalls = 0
 let activeDashboardCalls = 0
 const options = {
@@ -68,6 +70,21 @@ const options = {
   removeAccount: async id => { if (id === 'A') throw new Error('Account A cannot be removed') },
   setSetting: async (key, value) => { state.settings[key] = value },
   setPublicPrefix: async value => { state.settings.publicPrefix = value; return value },
+  getOwnerConfig: async () => ({ ...ownerConfig }),
+  setOwnerConfig: async ({ ownerNumber, ownerName }) => {
+    ownerConfig = { ownerNumberConfigured:true, ownerNumberMasked:'+234••••' + ownerNumber.slice(-4), ownerName:ownerName || ownerConfig.ownerName }
+    return { ...ownerConfig }
+  },
+  listCommandModules: () => [{ id:'general', name:'General', category:'Public command modules', description:'General public commands.', commandCount:2, commands:['help','ping'] }],
+  setProfileCapability: async (profileId, moduleId, enabled) => {
+    const profile = state.botProfiles.find(item => item.id === profileId)
+    if (!profile || ['control','unassigned'].includes(profileId)) throw new Error('Protected profile')
+    profile.universal = false
+    profile.capabilities = (profile.capabilities || []).filter(item => item.capability !== moduleId)
+    if (enabled) profile.capabilities.push({ capability:moduleId, priority:100 })
+    moduleCalls.push({ profileId, moduleId, enabled })
+    return profile
+  },
 }
 
 const api = createControlCentreApi(options)
@@ -159,6 +176,42 @@ try {
   assert.equal(giveControlToB.status, 403)
   assert.equal(state.accounts.find(item => item.id === 'A').profile, 'control')
   assert.equal(state.accounts.find(item => item.id === 'B').profile, 'josiah')
+
+  // The module screen uses the actual public command capability catalogue and profile storage.
+  const modules = await call('/api/control-centre/modules?profileId=josiah')
+  assert.equal(modules.status, 200)
+  assert.equal(modules.payload.data.find(item => item.id === 'general').scope, 'profile')
+  assert.equal(modules.payload.data.find(item => item.id === 'general').enabled, true)
+  assert.equal(modules.payload.data.find(item => item.id === 'song').scope, 'global')
+  const profileConfig = await call('/api/control-centre/profiles/josiah/config')
+  assert.equal(profileConfig.status, 200)
+  assert.equal(profileConfig.payload.data.modules.general, true)
+  const disableGeneral = await call('/api/control-centre/profiles/josiah/config', {
+    method:'PATCH', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{moduleId:'general',enabled:false},
+  })
+  assert.equal(disableGeneral.status, 200)
+  assert.equal(disableGeneral.payload.data.modules.general, false)
+  assert.deepEqual(moduleCalls.at(-1), { profileId:'josiah', moduleId:'general', enabled:false })
+  const protectedProfile = await call('/api/control-centre/profiles/control/config', {
+    method:'PATCH', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{moduleId:'general',enabled:false},
+  })
+  assert.equal(protectedProfile.status, 403)
+
+  // Owner contact edits are a real, validated setting; responses remain masked.
+  const ownerBefore = await call('/api/control-centre/settings/owner')
+  assert.equal(ownerBefore.status, 200)
+  assert.equal(ownerBefore.payload.data.ownerNumberMasked, '+234••••0001')
+  const ownerSaved = await call('/api/control-centre/settings/owner', {
+    method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{ownerNumber:'2348012345678',ownerName:'New Owner'},
+  })
+  assert.equal(ownerSaved.status, 200)
+  assert.equal(ownerSaved.payload.data.ownerName, 'New Owner')
+  assert.equal(JSON.stringify(ownerSaved.payload).includes('2348012345678'), false)
+  assert.equal(ownerConfig.ownerNumberMasked, '+234••••5678')
+  const ownerInvalid = await call('/api/control-centre/settings/owner', {
+    method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{ownerNumber:'123'},
+  })
+  assert.equal(ownerInvalid.status, 400)
 
   // General Settings contains actual bot configuration, not command-enable booleans.
   const settings = await call('/api/control-centre/settings')
@@ -278,10 +331,12 @@ try {
   // Audit log is created with restrictive permissions.
   const audit = await readFile(auditPath, 'utf8')
   assert.match(audit, /command-setting\.change/)
+  assert.match(audit, /profile\.module-change/)
+  assert.match(audit, /settings\.owner-contact-change/)
   assert.match(audit, /account\.profile-assign/)
   assert.equal((await stat(auditPath)).mode & 0o777, 0o600)
 
-  console.log('PASS MSCC control-centre API: auth, CSRF, origin, private Account A, profile guard, safe pair/re-pair, split settings, passive storage, full env inventory, readonly paths, secret redaction, audit log')
+  console.log('PASS MSCC control-centre API: auth, CSRF, origin, private Account A, profile capability modules, configurable owner contact, safe pair/re-pair, split settings, passive storage, null-safe storage, full env inventory, readonly paths, secret redaction, audit log')
 } finally {
   await new Promise(resolve => server.close(resolve))
   await rm(auditPath, { force: true })

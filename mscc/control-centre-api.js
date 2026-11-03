@@ -560,7 +560,7 @@ export function createControlCentreApi(options = {}) {
       }
       if (method === 'GET' && path === '/settings/owner') {
         if (typeof options.getOwnerConfig !== 'function') return failure(req.res, 501, 'NOT_IMPLEMENTED', 'Owner contact configuration is not available in this MSCC release.')
-        return success(req.res, options.getOwnerConfig())
+        return success(req.res, await options.getOwnerConfig())
       }
       if (method === 'PUT' && path === '/settings/owner') {
         const body = await readBody(req)

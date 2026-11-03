@@ -73,7 +73,7 @@ import {
 } from './group-policy.js'
 import { looksLikeNumberSelection } from './number-selection.js'
 import { musicFollowupReply } from './music-chat-context.js'
-import { createInboundMessageGuard, matchesDisplayedChoice } from './inbound-message-guard.js'
+import { createInboundMessageGuard, isOwnerSelfControlCommand as isOwnerSelfControlMessage, matchesDisplayedChoice } from './inbound-message-guard.js'
 import { createCommandTiming } from './command-performance.js'
 import { createMessageScheduler } from './command-scheduler.js'
 import { createSquidGame } from './squid-game.js'
@@ -503,6 +503,24 @@ const trackable = isTrackableJid
 const masked = maskedPhone
 const destinationIdFor = () => selectCcDestination({ accounts })
 const destinationAccount = () => accounts.get(destinationIdFor())
+
+/**
+ * Account A's WhatsApp "message yourself" chat is the out-of-band private
+ * console for managing linked bot sessions. It is not a blanket fromMe
+ * exemption: only registered private commands addressed to Account A itself
+ * are accepted. All other bot-authored traffic remains inert.
+ */
+function isOwnerSelfControlCommand(account, msg) {
+  return isOwnerSelfControlMessage({
+    account,
+    mainAccountId:destinationIdFor(),
+    message:msg,
+    chatJid:normalizeJid(msg?.key?.remoteJid),
+    ownJid:normalizeJid(selfJid(account)),
+    text:commandText(msg?.message),
+    privateCommands:privateCommandRegistry?.commands,
+  })
+}
 
 const futureproof = findViewOnceMedia
 const unlocked = unlockViewOnce
@@ -2548,6 +2566,7 @@ async function onDelete(account, updates) {
 }
 
 const acceptInboundCommand = createInboundMessageGuard({
+  allowSelf:(accountId, msg) => isOwnerSelfControlCommand(accounts.get(accountId), msg),
   claim:(accountId, msg, now) => !sharedStorage || sharedStorage.claimInboundMessage({
     accountId,
     chatJid:msg.key.remoteJid,
@@ -2584,7 +2603,8 @@ async function processInboundMessage(account, msg) {
       // NEVER interpret our own replies as commands or pending choices:
       // replying "I could not match that choice" used to feed itself
       // indefinitely until WhatsApp received hundreds of bot messages.
-      if (msg.key.fromMe === true) {
+      const ownerSelfControl = isOwnerSelfControlCommand(account, msg)
+      if (msg.key.fromMe === true && !ownerSelfControl) {
         remember(account, msg)
         rememberConversation(account, msg)
         return
@@ -2619,8 +2639,10 @@ async function processInboundMessage(account, msg) {
       const chat = normalizeJid(msg.key.remoteJid)
       const text = commandText(msg.message)
       const authority = await authorityContext(account, msg)
-      const controller = authority.isSupremeOwner
-      const privateControl = await isPrivateControlContext(account, msg, authority)
+      // The exact Account A self-chat check is an owner proof for this one
+      // private command path; it does not grant public/group command access.
+      const controller = authority.isSupremeOwner || ownerSelfControl
+      const privateControl = ownerSelfControl || await isPrivateControlContext(account, msg, authority)
       probe?.mark('identity')
 
       remember(account, msg)
@@ -2739,10 +2761,10 @@ async function processInboundMessage(account, msg) {
           message: msg,
           controller,
           privateControl,
-          isSupremeOwner: authority.isSupremeOwner,
+          isSupremeOwner: authority.isSupremeOwner || ownerSelfControl,
           isSudo: authority.isSudo,
           isPublicOwner: authority.isPublicOwner,
-          isSessionOwner: authority.isSessionOwner,
+          isSessionOwner: authority.isSessionOwner || ownerSelfControl,
           isGroupAdmin: () => isGroupAdminContext(account, msg),
           isBotGroupAdmin: () => isBotGroupAdminContext(account, msg),
           deleteRecentMessages: count => deleteRecentMessages(account, msg, count),
@@ -2976,6 +2998,8 @@ async function processInboundMessage(account, msg) {
       })
       probe?.mark('command')
       if (commandHandled) return
+      // Fail closed if the private registry changed between admission and dispatch.
+      if (ownerSelfControl) return
 
       // If the user is asking about a pending music choice, give grounded
       // command feedback. A personality must never claim that a non-existent

@@ -99,4 +99,13 @@ const choice = copyTest.chooseCandidate([
 ], '720')
 assert.equal(choice.program.height, 720)
 
+const timedProgress = copyTest.progressSnapshot({ out_time_us:'25000000', speed:'1.2x' }, 100)
+assert.equal(timedProgress.phase, 'copy')
+assert.equal(Math.round(timedProgress.percent), 25)
+assert.equal(timedProgress.speed, '1.2x')
+const untimedProgress = copyTest.progressSnapshot({ out_time_ms:'5000000' }, 0)
+assert.equal(untimedProgress.phase, 'copy')
+assert.equal(Object.hasOwn(untimedProgress, 'percent'), false)
+assert.equal(untimedProgress.timeSeconds, 5)
+
 console.log('PASS VixSrc/VaPlayer movie+TV source fixtures')

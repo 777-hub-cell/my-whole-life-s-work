@@ -6,5 +6,7 @@
     623
   ],
   "preparedAt": "2026-11-04T17:59:17.563Z",
-  "notes": "Protected Azure release for PR #623. Explicit HLS multiple HTTP connections, persistent HLS HTTP, three segment retries, separate source-download/remux and WhatsApp-upload performance timing, and 30-second StreamingUnity movie/TV live samples. PR #623 is already merged into this exact base commit. Deployment remains gated by the mscc-production environment approval."
+  "notes": "Protected Azure release for PR #623. Explicit HLS multiple HTTP connections, persistent HLS HTTP, three segment retries, separate source-download/remux and WhatsApp-upload performance timing, and 30-second StreamingUnity movie/TV live samples. PR #623 is already merged into this exact base commit. Deployment remains gated by the mscc-production environment approval.",
+  "deploymentRequestedAt": "2026-11-04T18:03:14.069Z",
+  "deploymentRequestReason": "User requested deployment after release PR #624 was merged; trigger the protected Azure workflow."
 }

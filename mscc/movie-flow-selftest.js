@@ -144,6 +144,10 @@ saved = { quality:'720', delivery:'video' }
 calls.length = 0
 replies.length = 0
 await runMovieCommand(ctx, { args:['The','Matrix'] })
+const savedResultList = lists.at(-1)
+const savedMovieRow = savedResultList?.rows?.find(row => row.id.includes('~title'))
+if (!savedMovieRow) throw new Error('Saved-delivery movie result was not selectable')
+await runMovieCommand(ctx, { args:savedMovieRow.id.split(/\s+/).slice(1) })
 const savedDelivery = progressRuns.at(-1)
 await savedDelivery.finished
 if (!calls.some(call => call.payload.action === 'download' && call.payload.quality === '720' && call.payload.delivery === 'video')) {
@@ -153,6 +157,12 @@ if (!calls.some(call => call.payload.action === 'download' && call.payload.quali
 lists.length = 0
 saved = null
 await runMovieCommand(ctx, { args:['~tmdb','603'] })
-if (!lists.at(-1)?.sections?.length) throw new Error('TMDB movie handoff did not enter download options')
+const tmdbResultList = lists.at(-1)
+const tmdbMovieRow = tmdbResultList?.rows?.find(row => row.id.includes('~title'))
+if (!tmdbMovieRow) throw new Error('TMDB movie handoff did not show selectable results')
+await runMovieCommand(ctx, { args:tmdbMovieRow.id.split(/\s+/).slice(1) })
+if (lists.at(-1)?.buttonText !== 'Choose quality') {
+  throw new Error('TMDB movie handoff did not open the quality menu')
+}
 
 console.log('PASS movie search/identity/download flow')

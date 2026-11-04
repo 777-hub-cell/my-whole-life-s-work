@@ -12,8 +12,6 @@ const BASES = String(process.env.MSCC_STREAMINGUNITY_BASES || 'https://streaming
   .filter(Boolean)
 const HTTP_TIMEOUT_MS = Math.max(5000, Number(process.env.MSCC_STREAMINGUNITY_HTTP_TIMEOUT_MS || 30000))
 const REMUX_TIMEOUT_MS = Math.max(60000, Number(process.env.MSCC_STREAMINGUNITY_REMUX_TIMEOUT_MS || 14400000))
-// Make HLS segment concurrency explicit instead of relying on FFmpeg's HTTP/1.1 auto-detection.
-const HLS_INPUT_OPTIONS = Object.freeze(['-http_persistent','1','-http_multiple','1','-seg_max_retry','3'])
 const CACHE_TTL_MS = Math.max(15000, Number(process.env.MSCC_STREAMINGUNITY_CACHE_TTL_MS || 300000))
 const cache = new Map()
 let remuxQueue = Promise.resolve()
@@ -405,7 +403,7 @@ function run(command, args, timeoutMs) {
 async function chooseProgram(masterUrl, quality, embedUrl) {
   const headers = vixCloudHeaders(embedUrl)
   const result = await run('ffprobe', [
-    '-v','error',...HLS_INPUT_OPTIONS,'-headers',headers,'-show_programs','-of','json',masterUrl,
+    '-v','error','-headers',headers,'-show_programs','-of','json',masterUrl,
   ], 120000)
   let json
   try { json = JSON.parse(result.stdout) } catch { json = {} }
@@ -435,7 +433,7 @@ async function remux(stream, quality, delivery, durationSeconds = 0, queueWaitMs
     const programProbeStartedAt = Date.now()
     const program = await chooseProgram(stream.masterUrl, quality, embedUrl)
     const programProbeMs = Date.now() - programProbeStartedAt
-    const args = ['-hide_banner','-loglevel','error',...HLS_INPUT_OPTIONS,'-headers',headers,'-i',stream.masterUrl]
+    const args = ['-hide_banner','-loglevel','error','-headers',headers,'-i',stream.masterUrl]
     if (program) args.push('-map','0:p:' + program.id)
     if (asVideo) args.push('-sn')
     if (Number(durationSeconds) > 0) args.push('-t', String(Number(durationSeconds)))
@@ -516,5 +514,4 @@ export const _test = {
   vixCloudOrigin,
   vixCloudHeaders,
   qualityList,
-  hlsInputOptions:() => [...HLS_INPUT_OPTIONS],
 }

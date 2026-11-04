@@ -413,6 +413,7 @@ async function getSelectionOptions(ctx, { sourceId, series, season, selection })
 async function chooseSelectionOptions(ctx, { sourceId, series, season, selection, spec }) {
   const options = await getSelectionOptions(ctx, { sourceId, series, season, selection })
   if (options.catalogueOnly) {
+    ctx.clearCommandReplySession?.()
     return ctx.reply([
       `${series.title} — Season ${season.number} — Episodes ${spec}.`,
       'Dramaday is catalogue-only in MSCC. Its mirror links have not produced a verified direct media URL, so MSCC will not start an automatic download.',

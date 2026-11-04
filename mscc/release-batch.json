@@ -1,12 +1,10 @@
 {
-  "releaseId": "night-mscc-custom-commands-20261103-pr613-614-618",
+  "releaseId": "night-mscc-movie-tv-sources-20261104-pr621",
   "baseBranch": "mscc-azure",
-  "baseCommit": "55b9a7ea9339963715eeda0ba7e0bde385ae0a20",
+  "baseCommit": "d6b31d84e1922e8880010ecc7bb474f8d9bcdf69",
   "pullRequests": [
-    613,
-    614,
-    618
+    621
   ],
-  "preparedAt": "2026-11-03T18:30:31.871Z",
-  "notes": "Combined production release batch for the already-staged PR #613 private-control help/menu fixes, PR #614 WhatsApp media CDN refresh/retry, and PR #618 persistent administrator-owned custom command workspace/editor. PR #618 passed full Azure runtime and command regression, Control Centre API save/reload and read-only protection tests, Integrated Readiness, Cortex contract, and artwork proof before feature merge. This batch supersedes the earlier waiting approval run for the #613/#614 batch, which had not deployed. No credentials or runtime session data included."
+  "preparedAt": "2026-11-04T16:53:28.083Z",
+  "notes": "Production release batch for PR #621. StreamingUnity and VixSrc playback-header/embed fixes, with VaPlayer and VixSrc movie/TV live playback proofs. The exact StreamingUnity and VixSrc runtime probes completed successfully with FFmpeg-backed 8-second materialization for movie and TV cases. This release is staged as one protected Azure deployment; no credentials or runtime session data included."
 }

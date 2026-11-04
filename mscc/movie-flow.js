@@ -245,26 +245,16 @@ async function selectMovie(ctx, { sourceId, movie }) {
     })),
   }))
   if (related.length) sections.unshift({ title:'Based on', rows:related })
+  if (instantActions.length) sections.push({ title:'Other actions', rows:instantActions })
 
-  const text = [status, 'Choose quality and delivery.'].filter(Boolean).join('\n\n')
-  if (instantActions.length && typeof ctx.replyInteractive === 'function') {
-    return ctx.replyInteractive({
-      title:resolved.title,
-      text,
-      footer:`Save a default: ${prefix}delivery movies 720 document`,
-      actions:instantActions,
-      selectors:[{
-        text:'Download options',
-        title:resolved.title,
-        sections,
-      }],
-    })
-  }
-
+  // Keep movie choices in the same single-select menu used by source and
+  // result pickers. Mixing quick-reply buttons with a nested single-select
+  // made the quality picker disappear on some WhatsApp clients.
+  const text = [status, 'Choose a quality and delivery type from the menu.'].filter(Boolean).join('\n\n')
   return ctx.replyList({
     title:resolved.title,
     text,
-    buttonText:'Download options',
+    buttonText:'Choose quality',
     footer:`Save a default: ${prefix}delivery movies 720 document`,
     sections,
   })

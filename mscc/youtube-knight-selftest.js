@@ -73,6 +73,7 @@ const providers = [
 ]
 try {
   const calls=[]
+  const downloadDiagnostics=[]
   const result = await downloadFromKnightProviders(id,dir,4096,{
     providers,
     requestJson: async url => {
@@ -85,6 +86,7 @@ try {
       return 1024
     },
     inspectHeight:async()=>360,
+    onProviderResult:event=>downloadDiagnostics.push(event),
   })
   assert.equal(result.provider,'yupra')
   assert.equal(result.height,360)
@@ -94,6 +96,27 @@ try {
   assert.equal(calls.filter(([type])=>type==='download').length,1)
   assert.match(calls[1][1],/watch%3Fv%3DXEuaRjnuHlc/)
   assert.equal(calls[2][1],'https://cdn.example.com/approved.mp4')
+  assert.deepEqual(downloadDiagnostics,[
+    {provider:'eliteprotech',phase:'validate_media_url',result:'invalid_media_url'},
+    {provider:'yupra',phase:'complete',result:'downloaded',size:1024,height:360},
+  ])
+  assert.equal(JSON.stringify(downloadDiagnostics).includes('malicious'),false)
+
+  const failedDownloadDiagnostics=[]
+  await assert.rejects(downloadFromKnightProviders(id,dir,4096,{
+    providers:[providers[0]],
+    requestJson:async()=>({downloadURL:'https://cdn.example.com/video.mp4'}),
+    downloadFile:async()=> {
+      const error=new Error('secret signed media URL must not appear in logs')
+      error.code='ECONNRESET'
+      throw error
+    },
+    onProviderResult:event=>failedDownloadDiagnostics.push(event),
+  }),/no external media source returned/)
+  assert.deepEqual(failedDownloadDiagnostics,[
+    {provider:'eliteprotech',phase:'download_media',result:'network_failure',diagnosticCode:'ECONNRESET'},
+  ])
+  assert.equal(JSON.stringify(failedDownloadDiagnostics).includes('secret'),false)
 
   await assert.rejects(downloadFromKnightProviders(id,dir,4096,{
     providers,

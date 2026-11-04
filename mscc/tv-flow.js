@@ -417,7 +417,7 @@ async function chooseSelectionOptions(ctx, { sourceId, series, season, selection
       `${series.title} — Season ${season.number} — Episodes ${spec}.`,
       'Dramaday is catalogue-only in MSCC. Its mirror links have not produced a verified direct media URL, so MSCC will not start an automatic download.',
       options.pageUrl ? `Open the Dramaday catalogue: ${options.pageUrl}` : '',
-    ].filter(Boolean).join('\\n\\n'))
+    ].filter(Boolean).join('\n\n'))
   }
   ctx.setCommandReplySession?.({
     kind:'media-download-options',

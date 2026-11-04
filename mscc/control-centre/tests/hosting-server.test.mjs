@@ -72,6 +72,9 @@ test('proxies only the fixed API origin and preserves same-origin browser contex
   const base = await listen(app);
   t.after(() => close(app));
 
+  const runtime = await fetch(base + '/runtime-config.js');
+  assert.match(await runtime.text(), /envWrite: true/);
+
   const response = await fetch(base + '/api/control-centre/auth/session?fresh=1', {
     headers: {
       Origin: 'https://night.apps.bot-hosting.cloud',

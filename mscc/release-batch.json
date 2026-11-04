@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-mscc-movie-tv-sources-20261104-pr621",
+  "releaseId": "night-mscc-streamingunity-performance-20261104-pr623",
   "baseBranch": "mscc-azure",
-  "baseCommit": "d6b31d84e1922e8880010ecc7bb474f8d9bcdf69",
+  "baseCommit": "cc41c9fa701153488b2f6b9af90a7f3027e7a6a7",
   "pullRequests": [
-    621
+    623
   ],
-  "preparedAt": "2026-11-04T16:53:28.083Z",
-  "notes": "Production release batch for PR #621. StreamingUnity and VixSrc playback-header/embed fixes, with VaPlayer and VixSrc movie/TV live playback proofs. The exact StreamingUnity and VixSrc runtime probes completed successfully with FFmpeg-backed 8-second materialization for movie and TV cases. This release is staged as one protected Azure deployment; no credentials or runtime session data included."
+  "preparedAt": "2026-11-04T17:59:17.563Z",
+  "notes": "Protected Azure release for PR #623. Explicit HLS multiple HTTP connections, persistent HLS HTTP, three segment retries, separate source-download/remux and WhatsApp-upload performance timing, and 30-second StreamingUnity movie/TV live samples. PR #623 is already merged into this exact base commit. Deployment remains gated by the mscc-production environment approval."
 }

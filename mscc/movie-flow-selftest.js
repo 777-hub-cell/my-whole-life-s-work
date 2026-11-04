@@ -94,7 +94,7 @@ const resultList = lists.at(-1)
 const movieRow = resultList?.rows?.find(row => row.id.includes('~title'))
 if (!movieRow) throw new Error('Movie search results did not expose a selectable title')
 
-await runMovieCommand(ctx, { args:movieRow.id.split(/\\s+/).slice(1) })
+await runMovieCommand(ctx, { args:movieRow.id.split(/\s+/).slice(1) })
 const optionList = lists.at(-1)
 if (optionList?.buttonText !== 'Choose quality') {
   throw new Error('Movie selection did not open the dedicated quality menu')

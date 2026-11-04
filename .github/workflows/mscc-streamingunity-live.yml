@@ -10,6 +10,15 @@ on:
       - 'mscc/sources/tv/streamingunity.js'
       - 'mscc/streamingunity-source-live-probe.js'
       - '.github/workflows/mscc-streamingunity-live.yml'
+  pull_request:
+    branches:
+      - mscc-azure
+    paths:
+      - 'mscc/providers/streamingunity.js'
+      - 'mscc/sources/movies/streamingunity.js'
+      - 'mscc/sources/tv/streamingunity.js'
+      - 'mscc/streamingunity-source-live-probe.js'
+      - '.github/workflows/mscc-streamingunity-live.yml'
   workflow_dispatch:
 
 permissions:

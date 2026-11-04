@@ -403,8 +403,6 @@ async function getSelectionOptions(ctx, { sourceId, series, season, selection })
   if (outcome.status !== 'ok') return { qualities:DEFAULT_QUALITIES, deliveries:DEFAULT_DELIVERIES }
   const result = outcome.result || {}
   return {
-    catalogueOnly:result.catalogueOnly === true,
-    pageUrl:String(result.pageUrl || ''),
     qualities:Array.isArray(result.qualities) && result.qualities.length ? result.qualities.map(String) : DEFAULT_QUALITIES,
     deliveries:Array.isArray(result.deliveries) && result.deliveries.length ? result.deliveries.map(String) : DEFAULT_DELIVERIES,
   }
@@ -412,14 +410,6 @@ async function getSelectionOptions(ctx, { sourceId, series, season, selection })
 
 async function chooseSelectionOptions(ctx, { sourceId, series, season, selection, spec }) {
   const options = await getSelectionOptions(ctx, { sourceId, series, season, selection })
-  if (options.catalogueOnly) {
-    ctx.clearCommandReplySession?.()
-    return ctx.reply([
-      `${series.title} — Season ${season.number} — Episodes ${spec}.`,
-      'Dramaday is catalogue-only in MSCC. Its mirror links have not produced a verified direct media URL, so MSCC will not start an automatic download.',
-      options.pageUrl ? `Open the Dramaday catalogue: ${options.pageUrl}` : '',
-    ].filter(Boolean).join('\n\n'))
-  }
   ctx.setCommandReplySession?.({
     kind:'media-download-options',
     command:'tv',

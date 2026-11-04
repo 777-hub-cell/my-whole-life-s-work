@@ -1,7 +1,7 @@
 const API_ROOT = 'https://dramaday.me/wp-json/wp/v2'
 
-const MIRROR_QUALITY = /\\b(2160p|1080p|720p|540p|480p|360p)\\s+(HDTV|WEB-DL)(?:\\s+(x265|x264|AV1))?/gi
-const EXCLUDED_TITLE = /\\b(?:OST|soundtrack|official soundtrack)\\b|\\bpart\\s*\\d+\\s*OST\\b/i
+const MIRROR_QUALITY = /\b(2160p|1080p|720p|540p|480p|360p)\s+(HDTV|WEB-DL)(?:\s+(x265|x264|AV1))?/gi
+const EXCLUDED_TITLE = /\b(?:OST|soundtrack|official soundtrack)\b|\bpart\s*\d+\s*OST\b/i
 
 function safePageUrl(value) {
   try {
@@ -27,13 +27,13 @@ function decodeEntities(value) {
 
 function cellLines(value) {
   return decodeEntities(String(value || '')
-    .replace(/<br\\s*\\/?\\s*>/gi, '\\n')
-    .replace(/<\\/(?:p|div|li|h[1-6])\\s*>/gi, '\\n')
-    .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')
-    .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/(?:p|div|li|h[1-6])\s*>/gi, '\n')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<[^>]+>/g, ' '))
-    .split('\\n')
-    .map(line => line.replace(/\\s+/g, ' ').trim())
+    .split('\n')
+    .map(line => line.replace(/\s+/g, ' ').trim())
     .filter(Boolean)
 }
 
@@ -59,12 +59,12 @@ function mapPost(post) {
 
 function extractEpisodeRows(renderedHtml) {
   const rows = []
-  const matches = [...String(renderedHtml || '').matchAll(/<tr\\b[^>]*>([\\s\\S]*?)<\\/tr>/gi)]
+  const matches = [...String(renderedHtml || '').matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
   for (const match of matches) {
-    const cells = [...match[1].matchAll(/<t[dh]\\b[^>]*>([\\s\\S]*?)<\\/t[dh]>/gi)].map(row => row[1])
+    const cells = [...match[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map(row => row[1])
     if (cells.length < 2) continue
 
-    const episodeNumber = Number(plainText(cells[0]).match(/\\d+/)?.[0] || 0)
+    const episodeNumber = Number(plainText(cells[0]).match(/\d+/)?.[0] || 0)
     if (!Number.isInteger(episodeNumber) || episodeNumber <= 0) continue
 
     const qualityText = cellLines(cells[1]).join(' ')
@@ -193,7 +193,7 @@ export default {
           'Dramaday is catalogue-only in MSCC.',
           'Its mirror URLs are third-party shorteners and no direct playable media URL has been verified, so no download was started.',
           pageUrl ? `Open the drama catalogue: ${pageUrl}` : '',
-        ].filter(Boolean).join('\\n\\n'),
+        ].filter(Boolean).join('\n\n'),
       }
     }
 

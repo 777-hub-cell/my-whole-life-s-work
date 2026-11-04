@@ -1,12 +1,10 @@
 {
-  "releaseId": "night-mscc-streamingunity-hls-rollback-20261104",
+  "releaseId": "night-mscc-tmdb-env-editor-20261104",
   "baseBranch": "mscc-azure",
-  "baseCommit": "9d0dedcb22a948ce56a003385afcb895df526794",
+  "baseCommit": "6e7f80d61e5ce6a05ff4a5b8afde683069c46df5",
   "pullRequests": [
-    623,
-    625,
-    626
+    627
   ],
-  "preparedAt": "2026-11-04T18:21:17.360Z",
-  "notes": "Production corrective release: restore FFmpeg's original default HLS handling by removing forced http_persistent/http_multiple/seg_max_retry overrides introduced in PR #623. Retain source/remux and WhatsApp upload timings plus sanitized phase-specific error logging. PR #625 adds the exact movie 480p document live proof; live CI was blocked at catalogue browse by upstream HTTP 403 before reaching that case. Deploy through the protected mscc-production environment."
+  "preparedAt": "2026-11-04T19:29:09.460Z",
+  "notes": "Production release: enable secure, allowlisted TMDB_READ_ACCESS_TOKEN and TMDB_API_KEY configuration in the live NIGHT Control Centre ENV editor. Managed TMDB credentials are stored server-side with restrictive permissions, never returned to the browser, and applied after MSCC restart. No movie provider or download behavior changes."
 }

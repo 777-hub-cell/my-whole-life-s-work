@@ -16,8 +16,12 @@ async function makeProgress(initial) {
   const finished = new Promise(resolve => { finish = resolve })
   const run = { initial:String(initial), updates:[], finished }
   progressRuns.push(run)
-  const update = async value => { run.updates.push(String(value)); finish(); return value }
-  return { done:update, fail:update }
+  const update = async value => {
+    run.updates.push(String(value))
+    if (/was sent|OK:movie:|download failed/i.test(String(value))) finish()
+    return value
+  }
+  return { update, done:update, fail:update }
 }
 
 const ctx = {
@@ -64,6 +68,12 @@ const ctx = {
       }
     }
     if (payload.action === 'download') {
+      if (!holdNextDownload && typeof payload.onProgress === 'function') {
+        await payload.onProgress({ phase:'resolving' })
+        await payload.onProgress({ phase:'copy', percent:40, timeSeconds:120, durationSeconds:300, speed:'1.0x' })
+        await payload.onProgress({ phase:'validating' })
+        await payload.onProgress({ phase:'upload' })
+      }
       if (holdNextDownload) {
         holdNextDownload = false
         return new Promise(resolve => {
@@ -115,6 +125,12 @@ const firstDelivery = progressRuns.at(-1)
 await firstDelivery.finished
 if (!firstDelivery.updates.some(value => value.includes('OK:movie:1080:document'))) {
   throw new Error('Movie download option did not reach source download')
+}
+if (!firstDelivery.updates.some(value => value.includes('copying stream to server disk 40%'))) {
+  throw new Error('Movie stream-copy progress was not surfaced')
+}
+if (!firstDelivery.updates.some(value => value.includes('uploading the file to WhatsApp'))) {
+  throw new Error('Movie WhatsApp delivery stage was not surfaced')
 }
 if (!firstDelivery.initial.includes('download queued')) {
   throw new Error('Movie download was not acknowledged before source delivery')

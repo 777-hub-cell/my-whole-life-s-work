@@ -30,12 +30,39 @@ function headerBlob(headers = {}) {
     .join('')
 }
 
-function run(command, args, timeoutMs = STREAM_COPY_TIMEOUT_MS) {
+function run(command, args, timeoutMs = STREAM_COPY_TIMEOUT_MS, { onProgress } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio:['ignore','pipe','pipe'] })
     let stdout = ''
     let stderr = ''
-    child.stdout.on('data', chunk => { stdout += String(chunk) })
+    let progressBuffer = ''
+    let progressFields = {}
+
+    const emitProgress = () => {
+      const snapshot = { ...progressFields }
+      progressFields = {}
+      if (typeof onProgress !== 'function') return
+      try {
+        const result = onProgress(snapshot)
+        if (result && typeof result.catch === 'function') result.catch(() => {})
+      } catch {}
+    }
+
+    child.stdout.on('data', chunk => {
+      const value = String(chunk)
+      stdout += value
+      if (typeof onProgress !== 'function') return
+      progressBuffer += value
+      const lines = progressBuffer.split(/\r?\n/)
+      progressBuffer = lines.pop() || ''
+      for (const line of lines) {
+        const separator = line.indexOf('=')
+        if (separator <= 0) continue
+        const key = line.slice(0, separator).trim()
+        progressFields[key] = line.slice(separator + 1).trim()
+        if (key === 'progress') emitProgress()
+      }
+    })
     child.stderr.on('data', chunk => { stderr += String(chunk) })
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
@@ -51,6 +78,23 @@ function run(command, args, timeoutMs = STREAM_COPY_TIMEOUT_MS) {
       else reject(new Error(command + ' failed (' + code + '): ' + stderr.slice(-1200)))
     })
   })
+}
+
+function progressSnapshot(fields = {}, durationSeconds = 0) {
+  let rawTime = Number(fields.out_time_us)
+  if (!Number.isFinite(rawTime) || rawTime <= 0) rawTime = Number(fields.out_time_ms)
+  const timeSeconds = Number.isFinite(rawTime) && rawTime > 0 ? rawTime / 1_000_000 : 0
+  const duration = Number(durationSeconds) > 0 ? Number(durationSeconds) : 0
+  const percent = duration > 0 && timeSeconds > 0
+    ? Math.min(99, Math.max(0, (timeSeconds / duration) * 100))
+    : null
+  return {
+    phase:'copy',
+    ...(percent === null ? {} : { percent }),
+    ...(timeSeconds > 0 ? { timeSeconds } : {}),
+    ...(duration > 0 ? { durationSeconds:duration } : {}),
+    ...(fields.speed ? { speed:String(fields.speed) } : {}),
+  }
 }
 
 function numericHeight(stream) {
@@ -93,6 +137,7 @@ export async function inspectInput(url, headers = {}) {
     '-headers',headerBlob(headers),
     '-show_programs',
     '-show_streams',
+    '-show_format',
     '-of','json',
     String(url),
   ], 120_000)
@@ -106,6 +151,7 @@ export async function inspectInput(url, headers = {}) {
     programs:programRows(probe),
     heights,
     maxHeight:heights[0] || 0,
+    durationSeconds:Number(probe?.format?.duration || 0) || 0,
     playable:(probe?.streams || []).some(stream => stream?.codec_type === 'video') || programRows(probe).length > 0,
   }
 }
@@ -162,7 +208,7 @@ export function chooseCandidate(inspected = [], quality = 'source') {
   return scored[0]
 }
 
-async function materialize({ inspected, quality, delivery, durationSeconds = 0 }) {
+async function materialize({ inspected, quality, delivery, durationSeconds = 0, onProgress }) {
   const choice = chooseCandidate(inspected, quality)
   if (!choice) throw new Error('No playable stream candidate is available.')
 
@@ -171,6 +217,7 @@ async function materialize({ inspected, quality, delivery, durationSeconds = 0 }
   const output = join(root, asVideo ? 'media.mp4' : 'media.mkv')
   const args = [
     '-hide_banner','-loglevel','error',
+    '-progress','pipe:1','-stats_period','1','-nostats',
     '-headers',headerBlob(choice.row.headers),
     '-i',choice.row.url,
   ]
@@ -182,7 +229,19 @@ async function materialize({ inspected, quality, delivery, durationSeconds = 0 }
   args.push('-y',output)
 
   try {
-    await run('ffmpeg', args)
+    const totalDurationSeconds = Number(choice.row.durationSeconds || 0) || 0
+    await run('ffmpeg', args, STREAM_COPY_TIMEOUT_MS, {
+      onProgress:fields => {
+        if (typeof onProgress !== 'function') return
+        try {
+          const result = onProgress(progressSnapshot(fields, totalDurationSeconds))
+          if (result && typeof result.catch === 'function') result.catch(() => {})
+        } catch {}
+      },
+    })
+    if (typeof onProgress === 'function') {
+      try { await onProgress({ phase:'validating' }) } catch {}
+    }
     const probeRun = await run('ffprobe', [
       '-v','error',
       '-show_entries','format=duration,size:stream=codec_type,codec_name,width,height',
@@ -200,6 +259,9 @@ async function materialize({ inspected, quality, delivery, durationSeconds = 0 }
     const target = wantedHeight(quality)
     if (target > 0 && choice.program?.height === target && Number(video.height) !== target) {
       throw new Error('Requested ' + target + 'p but copy output was ' + String(video.height || 0) + 'p.')
+    }
+    if (typeof onProgress === 'function') {
+      try { await onProgress({ phase:'prepared' }) } catch {}
     }
     return {
       path:output,
@@ -220,9 +282,24 @@ export async function materializeCandidates(candidates, quality = 'source', deli
     ? options.inspected
     : await inspectCandidates(candidates)
   if (!inspected.length) throw new Error('No playable stream candidates were resolved.')
+  if (typeof options?.onProgress === 'function') {
+    try { await options.onProgress({ phase:'waiting' }) } catch {}
+  }
   const task = queue.then(
-    () => materialize({ inspected, quality, delivery, durationSeconds:options?.durationSeconds || 0 }),
-    () => materialize({ inspected, quality, delivery, durationSeconds:options?.durationSeconds || 0 }),
+    () => materialize({
+      inspected,
+      quality,
+      delivery,
+      durationSeconds:options?.durationSeconds || 0,
+      onProgress:options?.onProgress,
+    }),
+    () => materialize({
+      inspected,
+      quality,
+      delivery,
+      durationSeconds:options?.durationSeconds || 0,
+      onProgress:options?.onProgress,
+    }),
   )
   queue = task.catch(() => {})
   return task
@@ -234,4 +311,5 @@ export const _test = {
   streamHeights,
   wantedHeight,
   chooseCandidate,
+  progressSnapshot,
 }

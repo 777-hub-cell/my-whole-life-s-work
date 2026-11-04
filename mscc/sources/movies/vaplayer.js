@@ -12,10 +12,12 @@ async function identity(context, item) {
   return { imdbId }
 }
 
-async function deliver(item, quality, delivery, context) {
+async function deliver(item, quality, delivery, context, onProgress) {
+  try { await onProgress?.({ phase:'resolving' }) } catch {}
   const ids = await identity(context, item)
-  const media = await materializeVaPlayer({ type:'movie', ...ids }, quality, delivery)
+  const media = await materializeVaPlayer({ type:'movie', ...ids }, quality, delivery, { onProgress })
   try {
+    try { await onProgress?.({ phase:'upload' }) } catch {}
     if (delivery === 'video') {
       await context.send({ video:{ url:media.path }, mimetype:'video/mp4', caption:item?.title || undefined })
     } else {
@@ -39,7 +41,7 @@ export default {
   fallbackOrder:30,
   brandAliases:['VA Player'],
 
-  async run({ action, query, item, quality = 'source', delivery = 'document', context }) {
+  async run({ action, query, item, quality = 'source', delivery = 'document', context, onProgress }) {
     if (action === 'search') return { items:await searchMetadata(context, query, 'movie') }
     if (action === 'browse') return { items:await browseMetadata(context, 'movie') }
     if (action === 'options') {
@@ -47,7 +49,7 @@ export default {
       const resolved = await inspectVaPlayer({ type:'movie', ...ids })
       return { qualities:resolved.qualities, deliveries:['document','video'] }
     }
-    if (action === 'download') return deliver(item, quality, delivery, context)
+    if (action === 'download') return deliver(item, quality, delivery, context, onProgress)
     throw new Error('Unsupported VaPlayer movie action: ' + action)
   },
 }

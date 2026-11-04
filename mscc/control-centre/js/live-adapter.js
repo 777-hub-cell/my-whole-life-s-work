@@ -179,15 +179,16 @@ NIGHT.LiveAdapter = (function () {
         const key = String(entry.key || '');
         const secret = entry.isSecret === true || SECRET_KEY_RE.test(key);
         if (secret) knownSecretKeys.add(key);
-        const metadata = {
-          key: String(entry.key || ''),
-          label: String(entry.label || entry.key || ''),
-          description: String(entry.description || ''),
-          editable: entry.editable === true,
-          applyMode: String(entry.applyMode || 'read-only'),
-          requiresRestart: entry.requiresRestart === true,
-          maxLength: Number.isInteger(entry.maxLength) ? entry.maxLength : 4096,
-        };
+        const metadata = { key: String(entry.key || '') };
+        for (const field of ['label', 'description', 'applyMode']) {
+          if (typeof entry[field] === 'string') metadata[field] = entry[field];
+        }
+        for (const field of ['editable', 'requiresRestart']) {
+          if (typeof entry[field] === 'boolean') metadata[field] = entry[field];
+        }
+        for (const field of ['maxLength', 'min', 'max']) {
+          if (Number.isInteger(entry[field])) metadata[field] = entry[field];
+        }
         return secret
           ? { ...metadata, isSecret: true, configured: entry.configured === true, value: null }
           : { ...metadata, isSecret: false, configured: true, value: String(entry.value == null ? '' : entry.value) };
@@ -196,18 +197,19 @@ NIGHT.LiveAdapter = (function () {
     setEnv: async (key, value) => {
       const result = await request('PUT', '/env/' + id(key), { value });
       const secret = knownSecretKeys.has(String(key)) || SECRET_KEY_RE.test(String(key));
-      if (secret) return {
-        key: String(key),
-        label: String(result && result.label || key),
-        description: String(result && result.description || ''),
-        editable: Boolean(result && result.editable === true),
-        applyMode: String(result && result.applyMode || 'read-only'),
-        requiresRestart: Boolean(result && result.requiresRestart === true),
-        maxLength: Number.isInteger(result && result.maxLength) ? result.maxLength : 4096,
-        isSecret: true,
-        configured: !result || result.configured !== false,
-        value: null,
-      };
+      if (secret) {
+        const metadata = { key: String(key), isSecret: true, configured: !result || result.configured !== false, value: null };
+        for (const field of ['label', 'description', 'applyMode']) {
+          if (result && typeof result[field] === 'string') metadata[field] = result[field];
+        }
+        for (const field of ['editable', 'requiresRestart']) {
+          if (result && typeof result[field] === 'boolean') metadata[field] = result[field];
+        }
+        for (const field of ['maxLength', 'min', 'max']) {
+          if (result && Number.isInteger(result[field])) metadata[field] = result[field];
+        }
+        return metadata;
+      }
       return result;
     }
   };

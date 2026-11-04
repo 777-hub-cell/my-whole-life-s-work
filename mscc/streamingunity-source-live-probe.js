@@ -12,7 +12,10 @@ async function proveSample(label,stream,quality='720',delivery='document'){
   if(!stream.masterText.includes('#EXTM3U') || !stream.variants.length) {
     throw new Error(label+' returned no playable HLS variants')
   }
-  const media=await _probe.materializeSample(stream,quality,delivery,8)
+  const sampleSeconds=30
+  const startedAt=Date.now()
+  const media=await _probe.materializeSample(stream,quality,delivery,sampleSeconds)
+  const materializeMs=Date.now()-startedAt
   try{
     const probe=media.probe || {}
     const duration=Number(probe?.format?.duration||0)
@@ -30,7 +33,10 @@ async function proveSample(label,stream,quality='720',delivery='document'){
       requestedQuality:quality,
       delivery,
       extension:media.extension,
-      sample:{bytes:size,duration,streams:probe.streams},
+      sample:{
+        bytes:size,duration,streams:probe.streams,materializeMs,
+        throughputMbps:materializeMs>0?Number((size*8/materializeMs/1000).toFixed(2)):0,
+      },
     }
   }finally{
     await media.cleanup()

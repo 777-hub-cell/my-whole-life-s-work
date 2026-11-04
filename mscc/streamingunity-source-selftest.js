@@ -56,6 +56,14 @@ if (parsed.variants.length !== 2 || parsed.variants[0]?.height !== 1080) {
 if (parsed.media.filter(row => row.type === 'AUDIO').length !== 1 || parsed.media.filter(row => row.type === 'SUBTITLES').length !== 1) {
   throw new Error('StreamingUnity HLS media-group parser failed')
 }
+const hlsOptions = _test.hlsInputOptions()
+for (const option of [['-http_persistent','1'],['-http_multiple','1'],['-seg_max_retry','3']]) {
+  const index = hlsOptions.indexOf(option[0])
+  if (index < 0 || hlsOptions[index + 1] !== option[1]) {
+    throw new Error('StreamingUnity HLS transfer option missing: ' + option[0])
+  }
+}
+
 const qualities = _test.qualityList(parsed)
 if (qualities.join('|') !== 'source|1080|720') {
   throw new Error('StreamingUnity quality discovery failed: ' + qualities.join('|'))

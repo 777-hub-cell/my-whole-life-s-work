@@ -141,6 +141,36 @@ test('secret update response is reduced to metadata', async () => {
   assert.deepEqual(JSON.parse(JSON.stringify(row)), { key: 'GROQ_API_KEY', isSecret: true, configured: true, value: null });
 });
 
+test('TMDB credentials stay hidden while their allowlisted edit metadata is retained', async () => {
+  const { api } = makeAdapter({ data: [
+    { key: 'TMDB_READ_ACCESS_TOKEN', isSecret: true, configured: false, editable: true, label: 'TMDB Read Access Token', applyMode: 'restart', requiresRestart: true, maxLength: 4096 },
+  ] });
+  const [row] = await api.listEnv();
+  assert.equal(row.isSecret, true);
+  assert.equal(row.configured, false);
+  assert.equal(row.editable, true);
+  assert.equal(row.label, 'TMDB Read Access Token');
+  assert.equal(row.maxLength, 4096);
+  assert.equal(Object.hasOwn(row, 'value'), true);
+  assert.equal(row.value, null);
+});
+
+test('TMDB secret updates preserve safe metadata but never echo the token', async () => {
+  const token = 'private-tmdb-token';
+  const { api } = makeAdapter({ csrfToken: 'csrf', data: {
+    key: 'TMDB_READ_ACCESS_TOKEN', label: 'TMDB Read Access Token', editable: true,
+    applyMode: 'restart', requiresRestart: true, maxLength: 4096,
+    configured: true, value: token,
+  } });
+  const row = await api.setEnv('TMDB_READ_ACCESS_TOKEN', token);
+  assert.equal(row.isSecret, true);
+  assert.equal(row.configured, true);
+  assert.equal(row.editable, true);
+  assert.equal(row.requiresRestart, true);
+  assert.equal(row.value, null);
+  assert.equal(JSON.stringify(row).includes(token), false);
+});
+
 test('multipart upload keeps the browser-generated content type boundary', async () => {
   const { api, calls } = makeAdapter({ csrfToken: 'csrf' });
   await api.uploadFiles([{ name: 'test.txt', size: 5 }], '/home/mscc');

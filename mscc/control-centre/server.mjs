@@ -88,7 +88,7 @@ function runtimeConfig(upstreamConfigured) {
   if (!upstreamConfigured) {
     return `// Safe preview mode. No live bot API has been configured.\nwindow.MSCC_CONTROL_CENTRE_BOOTSTRAP = {};\n`;
   }
-  return `// Live mode is enabled only when the server-side API upstream is configured.\nwindow.MSCC_CONTROL_CENTRE_BOOTSTRAP = {\n  adapter: 'live',\n  apiBase: '/api/control-centre',\n  apiTimeoutMs: 15000,\n  requireCsrf: true,\n  capabilities: {\n    filesReadOnly: true, filesWrite: false, envWrite: false,\n    profilesWrite: false, profileCapabilities: false, accountOverrides: false,\n    moduleToggle: true, settingsEditor: true\n  }\n};\n`;
+  return `// Live mode is enabled only when the server-side API upstream is configured.\nwindow.MSCC_CONTROL_CENTRE_BOOTSTRAP = {\n  adapter: 'live',\n  apiBase: '/api/control-centre',\n  apiTimeoutMs: 15000,\n  requireCsrf: true,\n  capabilities: {\n    filesReadOnly: true, filesWrite: false, envWrite: true,\n    profilesWrite: false, profileCapabilities: false, accountOverrides: false,\n    moduleToggle: true, settingsEditor: true\n  }\n};\n`;
 }
 
 function proxyApi(req, res, upstream, accessClientId, accessClientSecret) {

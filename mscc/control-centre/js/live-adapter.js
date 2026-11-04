@@ -179,15 +179,37 @@ NIGHT.LiveAdapter = (function () {
         const key = String(entry.key || '');
         const secret = entry.isSecret === true || SECRET_KEY_RE.test(key);
         if (secret) knownSecretKeys.add(key);
+        const metadata = { key: String(entry.key || '') };
+        for (const field of ['label', 'description', 'applyMode']) {
+          if (typeof entry[field] === 'string') metadata[field] = entry[field];
+        }
+        for (const field of ['editable', 'requiresRestart']) {
+          if (typeof entry[field] === 'boolean') metadata[field] = entry[field];
+        }
+        for (const field of ['maxLength', 'min', 'max']) {
+          if (Number.isInteger(entry[field])) metadata[field] = entry[field];
+        }
         return secret
-          ? { key: String(entry.key || ''), isSecret: true, configured: entry.configured === true, value: null }
-          : { key: String(entry.key || ''), isSecret: false, configured: true, value: String(entry.value == null ? '' : entry.value) };
+          ? { ...metadata, isSecret: true, configured: entry.configured === true, value: null }
+          : { ...metadata, isSecret: false, configured: true, value: String(entry.value == null ? '' : entry.value) };
       });
     },
     setEnv: async (key, value) => {
       const result = await request('PUT', '/env/' + id(key), { value });
       const secret = knownSecretKeys.has(String(key)) || SECRET_KEY_RE.test(String(key));
-      if (secret) return { key: String(key), isSecret: true, configured: !result || result.configured !== false, value: null };
+      if (secret) {
+        const metadata = { key: String(key), isSecret: true, configured: !result || result.configured !== false, value: null };
+        for (const field of ['label', 'description', 'applyMode']) {
+          if (result && typeof result[field] === 'string') metadata[field] = result[field];
+        }
+        for (const field of ['editable', 'requiresRestart']) {
+          if (result && typeof result[field] === 'boolean') metadata[field] = result[field];
+        }
+        for (const field of ['maxLength', 'min', 'max']) {
+          if (result && Number.isInteger(result[field])) metadata[field] = result[field];
+        }
+        return metadata;
+      }
       return result;
     }
   };

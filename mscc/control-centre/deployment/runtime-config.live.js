@@ -8,7 +8,7 @@ window.MSCC_CONTROL_CENTRE_BOOTSTRAP = {
   capabilities: {
     filesReadOnly: true,
     filesWrite: false,
-    envWrite: false,
+    envWrite: true,
     profilesWrite: false,
     profileCapabilities: false,
     accountOverrides: false,

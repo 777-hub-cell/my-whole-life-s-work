@@ -10,9 +10,18 @@
   const isSecret = (entry) => entry.isSecret === true || SECRET_RE.test(String(entry.key || ''));
   const normalize = (entry) => {
     const secret = isSecret(entry);
+    const metadata = {
+      key: String(entry.key || ''),
+      label: String(entry.label || entry.key || ''),
+      description: String(entry.description || ''),
+      editable: entry.editable === true,
+      applyMode: String(entry.applyMode || 'read-only'),
+      requiresRestart: entry.requiresRestart === true,
+      maxLength: Number.isInteger(entry.maxLength) ? entry.maxLength : 4096,
+    };
     return secret
-      ? { key: String(entry.key || ''), isSecret: true, configured: entry.configured === true || (entry.value != null && entry.value !== ''), value: null }
-      : { key: String(entry.key || ''), isSecret: false, configured: true, value: String(entry.value == null ? '' : entry.value) };
+      ? { ...metadata, isSecret: true, configured: entry.configured === true || (entry.value != null && entry.value !== ''), value: null }
+      : { ...metadata, isSecret: false, configured: true, value: String(entry.value == null ? '' : entry.value) };
   };
 
   if (api.isMock) {
@@ -56,7 +65,7 @@
       const secret = isSecret(v);
       const valueText = secret ? (v.configured ? 'Configured · value hidden' : 'Not configured') : (v.value === '' ? '(empty)' : v.value);
       const copyButton = secret ? null : h('button', { class: 'btn icon ghost', type: 'button', 'aria-label': 'Copy ' + v.key, title: 'Copy value', onclick: () => copy(v.value, v.key + ' copied') }, icon('copy', 18));
-      const canEdit = api.isMock || api.capabilities?.envWrite !== false;
+      const canEdit = api.isMock || (api.capabilities?.envWrite === true && v.editable === true);
       return h('div', { class: 'row plain env-row', tabindex: canEdit ? '0' : null, role: canEdit ? 'button' : null, 'aria-label': canEdit ? 'Edit ' + v.key : v.key,
         onclick: canEdit ? () => openEdit(v) : null,
         onkeydown: canEdit ? (e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openEdit(v); } } : null },
@@ -76,7 +85,7 @@
     function openEdit(existing) {
       const wasSecret = existing ? isSecret(existing) : false;
       const keyIn = ui.textInput({ placeholder: 'e.g. GROQ_API_KEY', value: existing ? existing.key : '', disabled: !!existing, autocapitalize: 'characters', autocomplete: 'off', spellcheck: 'false' });
-      const valIn = h('textarea', { class: 'input', rows: '3', autocomplete: 'new-password', spellcheck: 'false', placeholder: wasSecret ? 'Enter a replacement value. Leave blank to keep the current secret.' : 'Value' });
+      const valIn = h('textarea', { class: 'input', rows: '3', autocomplete: 'new-password', spellcheck: 'false', maxlength: String(existing && existing.maxLength || 4096), placeholder: wasSecret ? 'Enter a replacement value. Leave blank to keep the current secret.' : 'Value' });
       if (existing && !wasSecret) valIn.value = existing.value;
       const err = h('div', { class: 'tiny', style: { color: 'var(--red)', display: 'none' }, role: 'alert' });
       const save = h('button', { class: 'btn primary', onclick: submit }, existing ? 'Save' : 'Add variable');
@@ -115,9 +124,10 @@
       api.isMock && !options.embedded ? ui.mockBanner('Demo variables are stored in this browser only. No real server secrets are available in mock mode.') : null,
       h('div', { class: 'toolbar' },
         h('div', { class: 'search', style: { flex: '1 1 220px' } }, icon('search', 16), search),
-        api.isMock || api.capabilities?.envWrite !== false ? h('button', { class: 'btn primary', onclick: () => openEdit(null) }, icon('plus', 16), 'Add variable') : null,
+        api.isMock ? h('button', { class: 'btn primary', onclick: () => openEdit(null) }, icon('plus', 16), 'Add variable') : null,
         h('button', { class: 'btn', onclick: exportNonSecrets }, icon('file', 16), 'Copy non-secret variables')),
-      !api.isMock && api.capabilities?.envWrite === false ? h('p', { class: 'hint' }, 'Live environment metadata is read-only. All application variables are listed; passwords, tokens, API keys, phone numbers and private session values remain masked. Use protected Azure configuration to change deployment variables.') : null,
+      !api.isMock && api.capabilities?.envWrite !== true ? h('p', { class: 'hint' }, 'Live environment metadata is read-only. Secret values remain masked; use the protected deployment configuration to change them.') : null,
+      !api.isMock && api.capabilities?.envWrite === true ? h('p', { class: 'hint' }, 'Only explicitly approved settings can be edited. TMDB credentials are stored as write-only secrets and take effect after a bot restart.') : null,
       listEl);
     draw();
   }

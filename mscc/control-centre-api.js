@@ -19,7 +19,7 @@ const MAX_PREVIEW = 512 * 1024
 const MAX_CUSTOM_COMMAND_BYTES = 96 * 1024
 const execFileAsync = promisify(execFile)
 const SECRET_RE = /(KEY|TOKEN|SECRET|PASS|PWD|AUTH|COOKIE|SESSION|PRIVATE|CREDENTIAL|OWNER_NUMBER|PHONE|JID)/i
-const APP_ENV_RE = /^(?:NODE_ENV|TZ|PORT$|MSCC_[A-Z0-9_]*|WEB_[A-Z0-9_]*|ACCOUNT_[A-Z0-9_]*|CC_[A-Z0-9_]*|OWNER_[A-Z0-9_]*|MESSAGE_[A-Z0-9_]*|MAX_[A-Z0-9_]*|AUTH_[A-Z0-9_]*|LOG_[A-Z0-9_]*|CONTROL_[A-Z0-9_]*|GROQ_[A-Z0-9_]*|MEGA_[A-Z0-9_]*|WHATSAPP_[A-Z0-9_]*|WEBSITE_[A-Z0-9_]*|AZURE_[A-Z0-9_]*|SETTINGS_[A-Z0-9_]*|BOT_[A-Z0-9_]*)$/
+const APP_ENV_RE = /^(?:NODE_ENV|TZ|PORT$|MSCC_[A-Z0-9_]*|WEB_[A-Z0-9_]*|ACCOUNT_[A-Z0-9_]*|CC_[A-Z0-9_]*|OWNER_[A-Z0-9_]*|MESSAGE_[A-Z0-9_]*|MAX_[A-Z0-9_]*|AUTH_[A-Z0-9_]*|LOG_[A-Z0-9_]*|CONTROL_[A-Z0-9_]*|GROQ_[A-Z0-9_]*|TMDB_[A-Z0-9_]*|MEGA_[A-Z0-9_]*|WHATSAPP_[A-Z0-9_]*|WEBSITE_[A-Z0-9_]*|AZURE_[A-Z0-9_]*|SETTINGS_[A-Z0-9_]*|BOT_[A-Z0-9_]*)$/
 const SECRET_ENV_RE = /(KEY|TOKEN|SECRET|PASS|PWD|AUTH|COOKIE|SESSION|PRIVATE|CREDENTIAL|PHONE|NUMBER|EMAIL|JID)/i
 const SAFE_ROOT_FILES = new Set(['index.js', 'web-panel.js', 'panel.html', 'package.json', 'README.md', 'AGENTS.md', 'LICENSE'])
 const SAFE_ROOT_DIRS = new Set(['commands', 'private-commands', 'custom-commands', 'sources', 'providers', 'utils', 'docs'])
@@ -757,6 +757,7 @@ export function createControlCentreApi(options = {}) {
               requiresRestart:item.requiresRestart === true,
               ...(Number.isInteger(item.min) ? { min:item.min } : {}),
               ...(Number.isInteger(item.max) ? { max:item.max } : {}),
+              ...(Number.isInteger(item.maxLength) ? { maxLength:item.maxLength } : {}),
             }
             if (!isSecret && item.value !== undefined) row.value = cleanText(item.value, 300)
             rowsByKey.set(key, row)
@@ -768,13 +769,17 @@ export function createControlCentreApi(options = {}) {
       if (method === 'PUT' && envMatch) {
         const key = envMatch[1]
         const body = await readBody(req)
-        if (Object.keys(body).length !== 1 || typeof body.value !== 'string' || body.value.length > 256) {
-          return failure(req.res, 400, 'VALIDATION', 'Provide one value (up to 256 characters) for the selected managed setting.')
+        if (Object.keys(body).length !== 1 || typeof body.value !== 'string' || body.value.length > 4096) {
+          return failure(req.res, 400, 'VALIDATION', 'Provide one value (up to 4096 characters) for the selected managed setting.')
         }
         const managed = typeof options.getManagedEnv === 'function' ? await options.getManagedEnv() : []
         const target = (Array.isArray(managed) ? managed : []).find(item => String(item?.key || '').toUpperCase() === key && item.editable === true)
         if (!target || typeof options.setManagedEnv !== 'function') {
           return failure(req.res, 403, 'READ_ONLY', 'This environment variable is not in the supported editable settings list.')
+        }
+        const maxLength = Number.isInteger(target.maxLength) ? target.maxLength : 256
+        if (body.value.length > maxLength) {
+          return failure(req.res, 400, 'VALIDATION', 'The selected managed setting is limited to ' + maxLength + ' characters.')
         }
         const result = await mutation(req, 'configuration.environment-variable-changed', key, async () =>
           options.setManagedEnv(key, body.value))

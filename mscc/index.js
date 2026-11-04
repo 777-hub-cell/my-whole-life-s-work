@@ -161,12 +161,21 @@ const MANAGED_ENV_SCHEMA = Object.freeze({
   AI_HISTORY_DAYS: { label:'AI history retention (days)', description:'How long conversational history is retained.', min:1, max:365, default:30 },
   AI_HISTORY_MAX_PER_CHAT: { label:'AI history limit per chat', description:'Maximum AI history records retained per chat.', min:1000, max:100000, default:25000 },
   RELEASE_WATCH_INTERVAL_MINUTES: { label:'Release watcher interval (minutes)', description:'How often the release watcher checks for updates.', min:1, max:1440, default:5 },
+  TMDB_READ_ACCESS_TOKEN: { label:'TMDB Read Access Token', description:'Bearer token used for movie and TV title/identity lookup. Secret value is write-only in Control Centre.', secret:true, maxLength:4096, default:'' },
+  TMDB_API_KEY: { label:'TMDB API Key (fallback)', description:'Optional TMDB API key used only when no read access token is set. Secret value is write-only in Control Centre.', secret:true, maxLength:512, default:'' },
 })
 
 function validateManagedEnvValue(key, rawValue) {
   const spec = MANAGED_ENV_SCHEMA[key]
   if (!spec) throw new Error('This environment variable is not in the managed settings allowlist.')
   const valueText = String(rawValue ?? '').trim()
+  if (spec.secret === true) {
+    const maxLength = Number.isInteger(spec.maxLength) ? spec.maxLength : 4096
+    if (!valueText || valueText.length > maxLength || /[\u0000-\u001f\u007f]/.test(valueText)) {
+      throw new Error(key + ' must be a non-empty secret value of at most ' + maxLength + ' characters.')
+    }
+    return valueText
+  }
   if (!/^\d+$/.test(valueText)) throw new Error(key + ' must be a whole number.')
   const value = Number(valueText)
   if (!Number.isSafeInteger(value) || value < spec.min || value > spec.max) {
@@ -3530,18 +3539,21 @@ async function getManagedEnv() {
     { key:'OWNER_NAME', label:'Owner display name', description:'Name used in owner contact replies.', isSecret:false, configured:true, value:OWNER_NAME, editable:true, applyMode:'immediate' },
   ]
   for (const [key, spec] of Object.entries(MANAGED_ENV_SCHEMA)) {
+    const value = String(managedEnvOverrides[key] ?? process.env[key] ?? spec.default ?? '')
+    const isSecret = spec.secret === true
     rows.push({
       key,
       label:spec.label,
       description:spec.description,
-      isSecret:false,
-      configured:true,
-      value:String(managedEnvOverrides[key] ?? process.env[key] ?? spec.default),
+      isSecret,
+      configured:isSecret ? Boolean(value.trim()) : true,
+      ...(!isSecret ? { value } : {}),
       editable:true,
       applyMode:'restart',
       requiresRestart:true,
       min:spec.min,
       max:spec.max,
+      maxLength:spec.maxLength,
     })
   }
   return rows
@@ -3578,7 +3590,20 @@ async function saveManagedEnv(key, rawValue) {
   managedEnvOverrides = next
   await recordActivity('configuration.managed-environment-changed', { key:name, applyMode:'restart' })
   const spec = MANAGED_ENV_SCHEMA[name]
-  return { key:name, label:spec.label, description:spec.description, value, isSecret:false, configured:true, editable:true, applyMode:'restart', requiresRestart:true, min:spec.min, max:spec.max }
+  return {
+    key:name,
+    label:spec.label,
+    description:spec.description,
+    ...(spec.secret === true ? {} : { value }),
+    isSecret:spec.secret === true,
+    configured:Boolean(value),
+    editable:true,
+    applyMode:'restart',
+    requiresRestart:true,
+    min:spec.min,
+    max:spec.max,
+    maxLength:spec.maxLength,
+  }
 }
 
 function commandModuleCatalog() {

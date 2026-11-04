@@ -14,24 +14,45 @@ function cleanName(value) {
     .slice(0,120) || 'movie'
 }
 
+async function sendMeasured(context, payload, media, resolveMs) {
+  const bytes = Number(media?.probe?.format?.size || 0) || 0
+  const startedAt = Date.now()
+  let sent = false
+  try {
+    await context.send(payload)
+    sent = true
+  } finally {
+    const durationMs = Date.now() - startedAt
+    const throughputMbps = durationMs > 0 && bytes > 0
+      ? Number((bytes * 8 / durationMs / 1000).toFixed(2))
+      : 0
+    console.info('[MSCC_MEDIA_TRANSFER] ' + JSON.stringify({
+      source:'StreamingUnity', phase:'whatsapp-upload', durationMs, bytes,
+      throughputMbps, resolveMs, success:sent,
+    }))
+  }
+}
+
 async function deliver(item, quality, delivery, context) {
+  const resolveStartedAt = Date.now()
   const stream = await resolveStream(item)
+  const resolveMs = Date.now() - resolveStartedAt
   const media = await materializeStream(stream, quality, delivery)
   try {
     const title = cleanName(item?.title)
     if (delivery === 'video') {
-      await context.send({
+      await sendMeasured(context, {
         video:{ url:media.path },
         mimetype:'video/mp4',
         caption:item?.title || undefined,
-      })
+      }, media, resolveMs)
     } else {
-      await context.send({
+      await sendMeasured(context, {
         document:{ url:media.path },
         mimetype:'video/x-matroska',
         fileName:title + '.mkv',
         caption:item?.title || undefined,
-      })
+      }, media, resolveMs)
     }
     return { delivered:true }
   } finally {

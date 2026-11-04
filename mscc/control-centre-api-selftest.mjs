@@ -36,6 +36,8 @@ let ownerConfig = { ownerNumberConfigured:true, ownerNumberMasked:'+234•••
 const managedEnv = {
   MESSAGE_TTL_HOURS:'48',
   MAX_ACCOUNTS:'4',
+  TMDB_READ_ACCESS_TOKEN:'',
+  TMDB_API_KEY:'',
 }
 
 let passiveDashboardCalls = 0
@@ -89,6 +91,8 @@ const options = {
     { key:'OWNER_NUMBER', label:'Owner WhatsApp number', isSecret:true, configured:true, editable:true, applyMode:'immediate' },
     { key:'OWNER_NAME', label:'Owner display name', value:ownerConfig.ownerName, isSecret:false, configured:true, editable:true, applyMode:'immediate' },
     { key:'MESSAGE_TTL_HOURS', label:'Message retention (hours)', description:'Test managed field', value:managedEnv.MESSAGE_TTL_HOURS, isSecret:false, configured:true, editable:true, applyMode:'restart', requiresRestart:true, min:1, max:168 },
+    { key:'TMDB_READ_ACCESS_TOKEN', label:'TMDB Read Access Token', description:'TMDB resolver credential.', isSecret:true, configured:Boolean(managedEnv.TMDB_READ_ACCESS_TOKEN), editable:true, applyMode:'restart', requiresRestart:true, maxLength:4096 },
+    { key:'TMDB_API_KEY', label:'TMDB API Key (fallback)', description:'TMDB resolver credential.', isSecret:true, configured:Boolean(managedEnv.TMDB_API_KEY), editable:true, applyMode:'restart', requiresRestart:true, maxLength:512 },
   ],
   setManagedEnv: async (key, value) => {
     if (key === 'OWNER_NUMBER') {
@@ -104,6 +108,13 @@ const options = {
       if (!/^\d+$/.test(value) || number < 1 || number > 168) throw new Error('MESSAGE_TTL_HOURS must be between 1 and 168.')
       managedEnv[key] = String(number)
       return { key, value:String(number), isSecret:false, configured:true, editable:true, applyMode:'restart', requiresRestart:true }
+    }
+    if (key === 'TMDB_READ_ACCESS_TOKEN' || key === 'TMDB_API_KEY') {
+      const maxLength = key === 'TMDB_READ_ACCESS_TOKEN' ? 4096 : 512
+      const secret = String(value || '').trim()
+      if (!secret || secret.length > maxLength || /[\u0000-\u001f\u007f]/.test(secret)) throw new Error('Invalid TMDB secret value.')
+      managedEnv[key] = secret
+      return { key, label:key === 'TMDB_READ_ACCESS_TOKEN' ? 'TMDB Read Access Token' : 'TMDB API Key (fallback)', isSecret:true, configured:true, editable:true, applyMode:'restart', requiresRestart:true, maxLength }
     }
     throw new Error('Not in managed allowlist')
   },
@@ -432,6 +443,12 @@ try {
   assert.equal(editableOwner?.editable, true)
   assert.equal(editableOwner?.isSecret, true)
   assert.equal(Object.hasOwn(editableOwner || {}, 'value'), false)
+  const editableTmdb = envRows.find(row => row.key === 'TMDB_READ_ACCESS_TOKEN')
+  assert.equal(editableTmdb?.isSecret, true)
+  assert.equal(editableTmdb?.configured, false)
+  assert.equal(editableTmdb?.editable, true)
+  assert.equal(editableTmdb?.maxLength, 4096)
+  assert.equal(Object.hasOwn(editableTmdb || {}, 'value'), false)
   const savedTtl = await call('/api/control-centre/env/MESSAGE_TTL_HOURS', {
     method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{value:'72'},
   })
@@ -447,6 +464,23 @@ try {
     method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{value:'replacement-secret'},
   })
   assert.equal(secretWrite.status, 403)
+  const tmdbTestToken = 'tmdb-test-secret-' + 'x'.repeat(900)
+  const tmdbSecretSave = await call('/api/control-centre/env/TMDB_READ_ACCESS_TOKEN', {
+    method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{value:tmdbTestToken},
+  })
+  assert.equal(tmdbSecretSave.status, 200)
+  assert.equal(tmdbSecretSave.payload.data.configured, true)
+  assert.equal(tmdbSecretSave.payload.data.requiresRestart, true)
+  assert.equal(JSON.stringify(tmdbSecretSave.payload).includes(tmdbTestToken), false, 'TMDB token must never be returned to the browser')
+  assert.equal(managedEnv.TMDB_READ_ACCESS_TOKEN, tmdbTestToken)
+  const envAfterTmdbSave = await call('/api/control-centre/env')
+  const tmdbAfterSave = envAfterTmdbSave.payload.data.find(row => row.key === 'TMDB_READ_ACCESS_TOKEN')
+  assert.equal(tmdbAfterSave?.configured, true)
+  assert.equal(Object.hasOwn(tmdbAfterSave || {}, 'value'), false)
+  const tooLongTmdb = await call('/api/control-centre/env/TMDB_READ_ACCESS_TOKEN', {
+    method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{value:'x'.repeat(4097)},
+  })
+  assert.equal(tooLongTmdb.status, 400)
   const ownerEnvSave = await call('/api/control-centre/env/OWNER_NUMBER', {
     method:'PUT', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:{value:'2348012345678'},
   })

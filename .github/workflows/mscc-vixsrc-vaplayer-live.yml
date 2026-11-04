@@ -15,6 +15,20 @@ on:
       - 'mscc/sources/tv/vaplayer.js'
       - 'mscc/vixsrc-vaplayer-live-probe.js'
       - '.github/workflows/mscc-vixsrc-vaplayer-live.yml'
+  pull_request:
+    branches:
+      - mscc-azure
+    paths:
+      - 'mscc/providers/stream-copy.js'
+      - 'mscc/providers/vixsrc.js'
+      - 'mscc/providers/vaplayer.js'
+      - 'mscc/providers/screen-source-metadata.js'
+      - 'mscc/sources/movies/vixsrc.js'
+      - 'mscc/sources/movies/vaplayer.js'
+      - 'mscc/sources/tv/vixsrc.js'
+      - 'mscc/sources/tv/vaplayer.js'
+      - 'mscc/vixsrc-vaplayer-live-probe.js'
+      - '.github/workflows/mscc-vixsrc-vaplayer-live.yml'
   workflow_dispatch:
 
 permissions:

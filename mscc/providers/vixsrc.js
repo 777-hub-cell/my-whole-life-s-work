@@ -34,6 +34,14 @@ async function get(url, headers = {}) {
   return response
 }
 
+function streamHeaders(embedUrl) {
+  return {
+    Referer:String(embedUrl || BASE + '/'),
+    Origin:BASE,
+    'User-Agent':UA,
+  }
+}
+
 function field(html, name) {
   const patterns = name === 'url'
     ? [/\burl\s*:\s*["']([^"']+)["']/i, /["']url["']\s*:\s*["']([^"']+)["']/i]
@@ -90,11 +98,7 @@ export async function resolveVixSrc({ type = 'movie', tmdbId, season = 0, episod
 
   const candidate = {
     url:master.href,
-    headers:{
-      Referer:api,
-      Origin:BASE,
-      'User-Agent':UA,
-    },
+    headers:streamHeaders(embedUrl),
   }
   return store(key, {
     type:kind,
@@ -122,4 +126,4 @@ export async function materializeVixSrc(input, quality = 'source', delivery = 'd
   })
 }
 
-export const _test = { field, cacheKey }
+export const _test = { field, cacheKey, streamHeaders }

@@ -22,6 +22,23 @@ const nested = _test.walkTitles({
 })
 if (nested.length !== 2) throw new Error('StreamingUnity recursive browse parser failed')
 
+const ccEmbed = '<iframe src="https://vixcloud.cc/embed/199980?token=a&amp;expires=10"></iframe>'
+if (_test.findVixCloudEmbed(ccEmbed) !== 'https://vixcloud.cc/embed/199980?token=a&expires=10') {
+  throw new Error('StreamingUnity VixCloud .cc embed extraction failed')
+}
+if (_test.findVixCloudEmbed('https://vixcloud.co/embed/legacy') !== 'https://vixcloud.co/embed/legacy') {
+  throw new Error('StreamingUnity legacy VixCloud .co embed extraction failed')
+}
+if (_test.findVixCloudEmbed('https://untrusted.example/embed/199980')) {
+  throw new Error('StreamingUnity accepted an untrusted embed host')
+}
+if (_test.vixCloudOrigin('https://vixcloud.cc/embed/199980') !== 'https://vixcloud.cc') {
+  throw new Error('StreamingUnity VixCloud .cc origin derivation failed')
+}
+if (!_test.vixCloudHeaders('https://vixcloud.cc/embed/199980').includes('Origin: https://vixcloud.cc\r\n')) {
+  throw new Error('StreamingUnity VixCloud .cc FFmpeg headers failed')
+}
+
 const master = [
   '#EXTM3U',
   '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="en",NAME="English",URI="audio/en.m3u8"',

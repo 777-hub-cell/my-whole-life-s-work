@@ -88,6 +88,10 @@ assert.equal(vaTest.normalizeImdb('TT0063350'), 'tt0063350')
 assert.equal(vaTest.normalizeImdb('bad'), '')
 assert.equal(vixTest.field('token:"abc"; expires:"123"; url:"https:\\/\\/cdn.example\\/master.m3u8"', 'token'), 'abc')
 assert.equal(vixTest.field('token:"abc"; expires:"123"; url:"https:\\/\\/cdn.example\\/master.m3u8"', 'url'), 'https://cdn.example/master.m3u8')
+const vixHeaders = vixTest.streamHeaders('https://vixsrc.to/embed/170060?token=sample')
+assert.equal(vixHeaders.Referer, 'https://vixsrc.to/embed/170060?token=sample')
+assert.equal(vixHeaders.Origin, 'https://vixsrc.to')
+assert.match(vixHeaders['User-Agent'], /Android/)
 
 const choice = copyTest.chooseCandidate([
   { maxHeight:1080, programs:[{ id:1, height:1080, bandwidth:4000 }, { id:2, height:720, bandwidth:2200 }] },

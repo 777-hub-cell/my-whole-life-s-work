@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-mscc-movie-quality-picker-20261104",
+  "releaseId": "night-mscc-movie-download-progress-20261104",
   "baseBranch": "mscc-azure",
-  "baseCommit": "010ecda86841f9d3b870a5629a3501214815738f",
+  "baseCommit": "6a6744f33b9ee39e9d146af97a23e5a661a1fe01",
   "pullRequests": [
-    629
+    631
   ],
-  "preparedAt": "2026-11-04T20:56:45.000Z",
-  "notes": "Production release: fix NIGHT movie quality and delivery menu rendering on WhatsApp. Movie selection now uses the proven single-select picker rather than combining quick-reply buttons with a nested selector; Library and related-title actions remain available in the same menu. Includes the passing movie-flow regression test from PR #629."
+  "preparedAt": "2026-11-04T21:46:10.000Z",
+  "notes": "Production release: add stage-by-stage NIGHT movie download progress for VixSrc and VaPlayer. The existing WhatsApp progress message now reports source resolution, copy-worker queueing, FFmpeg stream-copy progress based on probed duration when available, output validation and WhatsApp delivery. For streams without a known duration it reports copied media time without inventing a percentage. Includes successful movie-flow and VixSrc/VaPlayer regressions, live source proof, Azure validation and integrated readiness checks from PR #631."
 }

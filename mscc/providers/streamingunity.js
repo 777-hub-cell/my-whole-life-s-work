@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { load as loadHtml } from 'cheerio'
@@ -12,6 +12,8 @@ const BASES = String(process.env.MSCC_STREAMINGUNITY_BASES || 'https://streaming
   .filter(Boolean)
 const HTTP_TIMEOUT_MS = Math.max(5000, Number(process.env.MSCC_STREAMINGUNITY_HTTP_TIMEOUT_MS || 30000))
 const REMUX_TIMEOUT_MS = Math.max(60000, Number(process.env.MSCC_STREAMINGUNITY_REMUX_TIMEOUT_MS || 14400000))
+// Make HLS segment concurrency explicit instead of relying on FFmpeg's HTTP/1.1 auto-detection.
+const HLS_INPUT_OPTIONS = Object.freeze(['-http_persistent','1','-http_multiple','1','-seg_max_retry','3'])
 const CACHE_TTL_MS = Math.max(15000, Number(process.env.MSCC_STREAMINGUNITY_CACHE_TTL_MS || 300000))
 const cache = new Map()
 let remuxQueue = Promise.resolve()
@@ -403,7 +405,7 @@ function run(command, args, timeoutMs) {
 async function chooseProgram(masterUrl, quality, embedUrl) {
   const headers = vixCloudHeaders(embedUrl)
   const result = await run('ffprobe', [
-    '-v','error','-headers',headers,'-show_programs','-of','json',masterUrl,
+    '-v','error',...HLS_INPUT_OPTIONS,'-headers',headers,'-show_programs','-of','json',masterUrl,
   ], 120000)
   let json
   try { json = JSON.parse(result.stdout) } catch { json = {} }
@@ -422,23 +424,29 @@ async function chooseProgram(masterUrl, quality, embedUrl) {
   return rows.find(row => row.height === target) || rows.find(row => row.height < target) || rows.at(-1)
 }
 
-async function remux(stream, quality, delivery, durationSeconds = 0) {
+async function remux(stream, quality, delivery, durationSeconds = 0, queueWaitMs = 0) {
+  const materializeStartedAt = Date.now()
   const root = await mkdtemp(join(tmpdir(), 'mscc-streamingunity-'))
   const asVideo = delivery === 'video'
   const output = join(root, asVideo ? 'media.mp4' : 'media.mkv')
   const embedUrl = stream.embedUrl || 'https://vixcloud.cc/embed/'
   const headers = vixCloudHeaders(embedUrl)
   try {
+    const programProbeStartedAt = Date.now()
     const program = await chooseProgram(stream.masterUrl, quality, embedUrl)
-    const args = ['-hide_banner','-loglevel','error','-headers',headers,'-i',stream.masterUrl]
+    const programProbeMs = Date.now() - programProbeStartedAt
+    const args = ['-hide_banner','-loglevel','error',...HLS_INPUT_OPTIONS,'-headers',headers,'-i',stream.masterUrl]
     if (program) args.push('-map','0:p:' + program.id)
     if (asVideo) args.push('-sn')
     if (Number(durationSeconds) > 0) args.push('-t', String(Number(durationSeconds)))
     args.push('-c','copy')
     if (asVideo) args.push('-movflags','+faststart')
     args.push('-y',output)
+    const ffmpegStartedAt = Date.now()
     await run('ffmpeg', args, REMUX_TIMEOUT_MS)
+    const sourceTransferMs = Date.now() - ffmpegStartedAt
 
+    const outputProbeStartedAt = Date.now()
     const probeRun = await run('ffprobe', [
       '-v','error',
       '-show_entries','format=duration,size:stream=codec_type,codec_name,width,height',
@@ -449,11 +457,31 @@ async function remux(stream, quality, delivery, durationSeconds = 0) {
     if (!(Number(probe.format && probe.format.duration) > 0) || !(probe.streams || []).some(row => row.codec_type === 'video')) {
       throw new Error('StreamingUnity remux was not playable.')
     }
+    const outputProbeMs = Date.now() - outputProbeStartedAt
+    const outputInfo = await stat(output)
+    const totalMs = Date.now() - materializeStartedAt
+    const throughputMbps = sourceTransferMs > 0
+      ? Number((outputInfo.size * 8 / sourceTransferMs / 1000).toFixed(2))
+      : 0
+    const metrics = {
+      queueWaitMs:Number(queueWaitMs) || 0,
+      programProbeMs,
+      sourceTransferMs,
+      outputProbeMs,
+      totalMs,
+      bytes:outputInfo.size,
+      throughputMbps,
+    }
+    console.info('[MSCC_MEDIA_TRANSFER] ' + JSON.stringify({
+      source:'StreamingUnity', phase:'source-download-remux', quality:String(quality || 'source'),
+      delivery:String(delivery || 'document'), ...metrics,
+    }))
     return {
       path:output,
       root,
       extension:asVideo ? '.mp4' : '.mkv',
       probe,
+      metrics,
       cleanup:() => rm(root, { recursive:true, force:true }).catch(() => {}),
     }
   } catch (error) {
@@ -463,9 +491,10 @@ async function remux(stream, quality, delivery, durationSeconds = 0) {
 }
 
 export async function materializeStream(stream, quality = 'source', delivery = 'document') {
+  const enqueuedAt = Date.now()
   const task = remuxQueue.then(
-    () => remux(stream, quality, delivery),
-    () => remux(stream, quality, delivery),
+    () => remux(stream, quality, delivery, 0, Date.now() - enqueuedAt),
+    () => remux(stream, quality, delivery, 0, Date.now() - enqueuedAt),
   )
   remuxQueue = task.catch(() => {})
   return task
@@ -487,4 +516,5 @@ export const _test = {
   vixCloudOrigin,
   vixCloudHeaders,
   qualityList,
+  hlsInputOptions:() => [...HLS_INPUT_OPTIONS],
 }

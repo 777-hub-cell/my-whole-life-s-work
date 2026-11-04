@@ -179,15 +179,35 @@ NIGHT.LiveAdapter = (function () {
         const key = String(entry.key || '');
         const secret = entry.isSecret === true || SECRET_KEY_RE.test(key);
         if (secret) knownSecretKeys.add(key);
+        const metadata = {
+          key: String(entry.key || ''),
+          label: String(entry.label || entry.key || ''),
+          description: String(entry.description || ''),
+          editable: entry.editable === true,
+          applyMode: String(entry.applyMode || 'read-only'),
+          requiresRestart: entry.requiresRestart === true,
+          maxLength: Number.isInteger(entry.maxLength) ? entry.maxLength : 4096,
+        };
         return secret
-          ? { key: String(entry.key || ''), isSecret: true, configured: entry.configured === true, value: null }
-          : { key: String(entry.key || ''), isSecret: false, configured: true, value: String(entry.value == null ? '' : entry.value) };
+          ? { ...metadata, isSecret: true, configured: entry.configured === true, value: null }
+          : { ...metadata, isSecret: false, configured: true, value: String(entry.value == null ? '' : entry.value) };
       });
     },
     setEnv: async (key, value) => {
       const result = await request('PUT', '/env/' + id(key), { value });
       const secret = knownSecretKeys.has(String(key)) || SECRET_KEY_RE.test(String(key));
-      if (secret) return { key: String(key), isSecret: true, configured: !result || result.configured !== false, value: null };
+      if (secret) return {
+        key: String(key),
+        label: String(result && result.label || key),
+        description: String(result && result.description || ''),
+        editable: Boolean(result && result.editable === true),
+        applyMode: String(result && result.applyMode || 'read-only'),
+        requiresRestart: Boolean(result && result.requiresRestart === true),
+        maxLength: Number.isInteger(result && result.maxLength) ? result.maxLength : 4096,
+        isSecret: true,
+        configured: !result || result.configured !== false,
+        value: null,
+      };
       return result;
     }
   };

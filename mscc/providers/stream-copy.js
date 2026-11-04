@@ -37,15 +37,15 @@ function run(command, args, timeoutMs = STREAM_COPY_TIMEOUT_MS, { onProgress } =
     let stderr = ''
     let progressBuffer = ''
     let progressFields = {}
+    let progressPending = Promise.resolve()
 
     const emitProgress = () => {
       const snapshot = { ...progressFields }
       progressFields = {}
       if (typeof onProgress !== 'function') return
-      try {
-        const result = onProgress(snapshot)
-        if (result && typeof result.catch === 'function') result.catch(() => {})
-      } catch {}
+      progressPending = progressPending
+        .then(() => onProgress(snapshot))
+        .catch(() => {})
     }
 
     child.stdout.on('data', chunk => {
@@ -74,8 +74,10 @@ function run(command, args, timeoutMs = STREAM_COPY_TIMEOUT_MS, { onProgress } =
     })
     child.once('close', code => {
       clearTimeout(timer)
-      if (code === 0) resolve({ stdout, stderr })
-      else reject(new Error(command + ' failed (' + code + '): ' + stderr.slice(-1200)))
+      progressPending.then(() => {
+        if (code === 0) resolve({ stdout, stderr })
+        else reject(new Error(command + ' failed (' + code + '): ' + stderr.slice(-1200)))
+      })
     })
   })
 }

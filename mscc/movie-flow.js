@@ -174,7 +174,7 @@ function movieProgressText(movieTitle, update = {}) {
     case 'waiting':
       return '⏳ *' + movieTitle + '* — waiting for the media-copy worker…'
     case 'copy': {
-      const percent = Number.isFinite(Number(update.percent))
+      const percent = update.percent !== undefined && update.percent !== null && Number.isFinite(Number(update.percent))
         ? ' ' + Math.round(Math.max(0, Math.min(99, Number(update.percent)))) + '%'
         : ''
       const elapsed = Number(update.timeSeconds) > 0
@@ -219,7 +219,7 @@ async function startDelivery(ctx, details) {
     if (!message) return
     const phase = String(update?.phase || '')
     const numericPercent = Number(update?.percent)
-    const hasPercent = Number.isFinite(numericPercent)
+    const hasPercent = update?.percent !== undefined && update?.percent !== null && Number.isFinite(numericPercent)
     const bucket = hasPercent ? Math.floor(numericPercent / 5) : -1
     const now = Date.now()
     const phaseChanged = phase !== lastPhase

@@ -71,6 +71,7 @@ if(!night) throw new Error('StreamingUnity search returned no Night of the Livin
 
 const movieStream=await resolveStream(night)
 const movieProof=await proveSample('StreamingUnity movie',movieStream,'720','video')
+const movieDocument480Proof=await proveSample('StreamingUnity movie 480p document',movieStream,'480','document')
 
 console.log(JSON.stringify({
   browse:{
@@ -91,6 +92,7 @@ console.log(JSON.stringify({
     searchResults:movieResults.length,
     selected:{id:night.id,title:night.title,year:night.description},
     ...movieProof,
+    document480Proof:movieDocument480Proof,
     complete:true,
   },
   exactRuntimeMaterializer:true,

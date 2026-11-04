@@ -2,6 +2,7 @@ import { runMovieCommand } from './movie-flow.js'
 
 const calls = []
 const lists = []
+const interactive = []
 const replies = []
 let saved = null
 let holdNextDownload = false
@@ -25,6 +26,7 @@ const ctx = {
   getDeliveryDefault:() => saved,
   reply:async value => { replies.push(String(value)); return value },
   replyList:async value => { lists.push(value); return value },
+  replyInteractive:async value => { interactive.push(value); return value },
   progress:makeProgress,
   resolveTmdbTitles:async query => ({
     query,
@@ -48,7 +50,10 @@ const ctx = {
       return {
         status:'ok',
         source:{ id:'alpha', name:'Alpha Movies' },
-        result:{ items:[{ id:'matrix', title:'The Matrix', year:1999 }] },
+        result:{ items:[
+          { id:'matrix', title:'The Matrix', year:1999 },
+          { id:'matrix-reloaded', title:'The Matrix Reloaded', year:2003 },
+        ] },
       }
     }
     if (payload.action === 'options') {
@@ -85,10 +90,24 @@ const searches = calls.filter(call => call.payload.action === 'search').map(call
 if (searches.join('|') !== 'matrixx|The Matrix') {
   throw new Error('Movie TMDB alias retry failed: ' + searches.join('|'))
 }
+const resultList = lists.at(-1)
+const movieRow = resultList?.rows?.find(row => row.id.includes('~title'))
+if (!movieRow) throw new Error('Movie search results did not expose a selectable title')
+
+await runMovieCommand(ctx, { args:movieRow.id.split(/\\s+/).slice(1) })
 const optionList = lists.at(-1)
-const option = optionList?.sections?.flatMap(section => section.rows)
-  .find(row => row.id.includes('~download') && /1080p.*Document/.test(row.title))
-if (!option) throw new Error('Movie download options missing')
+if (optionList?.buttonText !== 'Choose quality') {
+  throw new Error('Movie selection did not open the dedicated quality menu')
+}
+if (interactive.length) {
+  throw new Error('Movie quality menu must not mix quick-reply and single-select controls')
+}
+const optionRows = optionList?.sections?.flatMap(section => section.rows) || []
+const option = optionRows.find(row => row.id.includes('~download') && /1080p.*Document/.test(row.title))
+if (!option) throw new Error('Movie quality and delivery choices missing')
+if (!optionRows.some(row => row.title === 'Add to Library')) {
+  throw new Error('Movie quick actions were not preserved in the selection menu')
+}
 
 replies.length = 0
 await runMovieCommand(ctx, { args:option.id.split(/\s+/).slice(1) })

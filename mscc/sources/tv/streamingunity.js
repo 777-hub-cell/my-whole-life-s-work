@@ -8,6 +8,20 @@ import {
   searchTitles,
 } from '../../providers/streamingunity.js'
 
+function safeError(error) {
+  const message = String(error && error.message || error || 'Unknown error')
+  return message.replace(/https?:\/\/[^\s"'<>]+/gi, value => {
+    try {
+      const url = new URL(value)
+      url.search = ''
+      url.hash = ''
+      return url.href
+    } catch {
+      return '[URL redacted]'
+    }
+  }).slice(0,700)
+}
+
 function cleanName(value) {
   return String(value || 'episode')
     .replace(/[\\/:*?"<>|]+/g, ' ')
@@ -37,16 +51,21 @@ async function sendMeasured(context, payload, media, resolveMs) {
 
 async function deliverEpisode(item, seasonNumber, episode, quality, delivery, context) {
   if (!episode?.id) throw new Error('StreamingUnity episode reference is missing.')
-  const resolveStartedAt = Date.now()
-  const stream = await resolveStream(item, episode.id)
-  const resolveMs = Date.now() - resolveStartedAt
-  const media = await materializeStream(stream, quality, delivery)
+  let stage = 'resolve'
+  let media
   try {
+    const resolveStartedAt = Date.now()
+    const stream = await resolveStream(item, episode.id)
+    const resolveMs = Date.now() - resolveStartedAt
+    stage = 'materialize'
+    media = await materializeStream(stream, quality, delivery)
+
     const season = String(Number(seasonNumber) || 1).padStart(2, '0')
-    const number = String(Number(episode.number) || 0).padStart(2, '0')
-    const base = cleanName(item?.title) + '.S' + season + 'E' + number
+    const number = String(Number(episode.number) || 1).padStart(2, '0')
+    const base = cleanName(item?.title + ' S' + season + 'E' + number)
     const caption = (item?.title || 'TV') + ' — S' + season + 'E' + number
 
+    stage = 'whatsapp-upload'
     if (delivery === 'video') {
       await sendMeasured(context, {
         video:{ url:media.path },
@@ -62,8 +81,15 @@ async function deliverEpisode(item, seasonNumber, episode, quality, delivery, co
       }, media, resolveMs)
     }
     return { delivered:true }
+  } catch (error) {
+    console.error('[MSCC_MEDIA_TRANSFER] ' + JSON.stringify({
+      source:'StreamingUnity', phase:'download-failed', stage,
+      errorName:String(error && error.name || 'Error'),
+      error:safeError(error),
+    }))
+    throw error
   } finally {
-    await media.cleanup()
+    if (media) await media.cleanup()
   }
 }
 

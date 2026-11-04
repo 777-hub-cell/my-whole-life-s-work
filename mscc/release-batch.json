@@ -1,12 +1,12 @@
 {
-  "releaseId": "night-mscc-streamingunity-performance-20261104-pr623",
+  "releaseId": "night-mscc-streamingunity-hls-rollback-20261104",
   "baseBranch": "mscc-azure",
-  "baseCommit": "cc41c9fa701153488b2f6b9af90a7f3027e7a6a7",
+  "baseCommit": "9d0dedcb22a948ce56a003385afcb895df526794",
   "pullRequests": [
-    623
+    623,
+    625,
+    626
   ],
-  "preparedAt": "2026-11-04T17:59:17.563Z",
-  "notes": "Protected Azure release for PR #623. Explicit HLS multiple HTTP connections, persistent HLS HTTP, three segment retries, separate source-download/remux and WhatsApp-upload performance timing, and 30-second StreamingUnity movie/TV live samples. PR #623 is already merged into this exact base commit. Deployment remains gated by the mscc-production environment approval.",
-  "deploymentRequestedAt": "2026-11-04T18:03:14.069Z",
-  "deploymentRequestReason": "User requested deployment after release PR #624 was merged; trigger the protected Azure workflow."
+  "preparedAt": "2026-11-04T18:21:17.360Z",
+  "notes": "Production corrective release: restore FFmpeg's original default HLS handling by removing forced http_persistent/http_multiple/seg_max_retry overrides introduced in PR #623. Retain source/remux and WhatsApp upload timings plus sanitized phase-specific error logging. PR #625 adds the exact movie 480p document live proof; live CI was blocked at catalogue browse by upstream HTTP 403 before reaching that case. Deploy through the protected mscc-production environment."
 }

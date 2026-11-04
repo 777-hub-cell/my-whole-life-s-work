@@ -162,6 +162,7 @@ export default {
   id:'dramaday',
   name:'Dramaday (catalogue only)',
   description:'Searches Dramaday and lists episode metadata. No automatic mirror bypass or media delivery.',
+  catalogueOnly:true,
   fallbackOrder:50,
 
   async run({ action, query, item, context = {} }) {

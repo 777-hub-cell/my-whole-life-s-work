@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { createControlCentreApi } from './control-centre-api.js'
@@ -66,7 +66,9 @@ function origin(req) {
 
 function mutationAllowed(req) {
   const o = String(req.headers.origin || '').trim()
-  return !o || o === origin(req)
+  if (o) return o === origin(req)
+  // Missing Origin is not proof of trust; accept only explicit same-origin Fetch Metadata.
+  return String(req.headers['sec-fetch-site'] || '').toLowerCase() === 'same-origin'
 }
 
 function ip(req) {
@@ -78,9 +80,32 @@ function ip(req) {
 
 export function startWebPanel({ port, host = '127.0.0.1', password, sessionSecret, localControlPort = 8788, nightPlayHandler = null, getState, getActivity = async () => [], getAccountDiagnostics = async () => null, pairAccount, reconnectAccount, disconnectAccount, removeAccount, repairAccount, createAccount, renameAccount, assignAccountProfile, setSetting, setPublicPrefix, getOwnerConfig, setOwnerConfig, getManagedEnv, setManagedEnv, listCommandModules, setProfileCapability, setDestination, reloadCommands, reloadCustomCommands, customCommandsDir, reloadModule, getCloudDashboard = async () => ({ provider:'MEGA', configured:false, targets:[] }), getCloudDashboardActive = async () => ({ provider:'MEGA', configured:false, targets:[] }), getCloudMounts = async () => [], verifyCloudFolder = async () => ({ success:false }) }) {
   const configured = Boolean(password && password !== 'change-this-password' && password !== 'change-me')
-  const secret = createHash('sha256').update(`${sessionSecret || ''}\0${password || ''}\0mscc`).digest()
-  const token = createHmac('sha256', secret).update('admin').digest('base64url')
+  const sessions = new Map()
   const attempts = new Map()
+  const MAX_LOGIN_BUCKETS = 2048
+  const MAX_SESSIONS = 2048
+
+  function sessionFor(req) {
+    const id = getCookie(req, 'mscc_session')
+    const session = sessions.get(id)
+    if (!session) return null
+    if (session.expiresAt <= Date.now()) { sessions.delete(id); return null }
+    return { id, ...session }
+  }
+
+  function trimSessions(now) {
+    for (const [id, session] of sessions) if (session.expiresAt <= now) sessions.delete(id)
+    while (sessions.size >= MAX_SESSIONS) sessions.delete(sessions.keys().next().value)
+  }
+
+  function trimAttempts(now) {
+    for (const [key, times] of attempts) {
+      const fresh = times.filter(at => now - at < LOGIN_WINDOW)
+      if (fresh.length) attempts.set(key, fresh)
+      else attempts.delete(key)
+    }
+    while (attempts.size > MAX_LOGIN_BUCKETS) attempts.delete(attempts.keys().next().value)
+  }
   const controlCentreApi = createControlCentreApi({
     password, getState, getActivity, getCloudDashboard, getCloudDashboardActive, getCloudMounts,
     createAccount, renameAccount, assignAccountProfile, pairAccount, reconnectAccount,
@@ -90,7 +115,7 @@ export function startWebPanel({ port, host = '127.0.0.1', password, sessionSecre
   })
 
   function authed(req) {
-    return configured && safeEqual(getCookie(req, 'mscc_session'), token)
+    return configured && Boolean(sessionFor(req))
   }
 
   function cookie(req, value, maxAge = SESSION_AGE) {
@@ -117,22 +142,30 @@ export function startWebPanel({ port, host = '127.0.0.1', password, sessionSecre
         if (!mutationAllowed(req)) return sendJson(res, 403, { error: 'Origin rejected' })
         const key = ip(req)
         const now = Date.now()
-        const list = (attempts.get(key) || []).filter(t => now - t < LOGIN_WINDOW)
+        trimAttempts(now)
+        const list = attempts.get(key) || []
         if (list.length >= MAX_ATTEMPTS) return sendJson(res, 429, { error: 'Too many attempts. Try later.' })
         const body = await readJson(req)
         if (!safeEqual(body.password || '', password)) {
           list.push(now)
           attempts.set(key, list)
+          trimAttempts(now)
           return sendJson(res, 401, { error: 'Wrong password' })
         }
         attempts.delete(key)
-        return sendJson(res, 200, { ok: true }, { 'set-cookie': cookie(req, token) })
+        const sessionId = randomBytes(32).toString('base64url')
+        trimSessions(now)
+        sessions.set(sessionId, { expiresAt: now + SESSION_AGE * 1000 })
+        return sendJson(res, 200, { ok: true }, { 'set-cookie': cookie(req, sessionId) })
       }
 
       if (!authed(req)) return sendJson(res, 401, { error: 'Locked' })
       if (req.method !== 'GET' && !mutationAllowed(req)) return sendJson(res, 403, { error: 'Origin rejected' })
 
       if (req.method === 'POST' && url.pathname === '/api/logout') {
+        if (!mutationAllowed(req)) return sendJson(res, 403, { error: 'Origin rejected' })
+        const session = sessionFor(req)
+        if (session) sessions.delete(session.id)
         return sendJson(res, 200, { ok: true }, { 'set-cookie': cookie(req, '', 0) })
       }
       if (req.method === 'GET' && url.pathname === '/api/state') {

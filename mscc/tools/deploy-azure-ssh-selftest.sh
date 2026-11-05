@@ -2,6 +2,22 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 script=mscc/tools/deploy-azure-ssh.sh
+installer=mscc/install-azure.sh
+if ! grep -Fq 'SOURCE_REPOSITORY="${MSCC_SOURCE_REPOSITORY:-777-hub-cell/my-whole-life-s-work}"' "$installer" ||
+   ! grep -Fq 'https://github.com/$SOURCE_REPOSITORY/archive/$SOURCE_REF.tar.gz' "$installer"; then
+  echo "Azure installer must download the pinned source archive from the configured migrated repository." >&2
+  exit 1
+fi
+if grep -Fq 'Tomex777/Build' "$installer" "$script" mscc/tools/azure-cortex-cloud-bootstrap.sh; then
+  echo "Deployment scripts must not fetch NIGHT from the unavailable old repository." >&2
+  exit 1
+fi
+for protected in '**/.env' '**/.env.*' '!**/.env.example' '**/auth/' '**/sessions/' '**/*.pem' '**/*.key'; do
+  if ! grep -Fxq "$protected" .gitignore; then
+    echo "Repository .gitignore is missing protection: $protected" >&2
+    exit 1
+  fi
+done
 if ! grep -Fq '"$USER_NAME@$HOST" "MSCC_SOURCE_REF=$SHA MSCC_SOURCE_REPOSITORY=$SOURCE_REPOSITORY MSCC_REUSE_EXISTING_SOURCE_STACK=1 bash -se"' "$script"; then
   echo "Deployment must pass a validated source repository and preserve the existing Azure Tor + FlareSolverr stack." >&2
   exit 1

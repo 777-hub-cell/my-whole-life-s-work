@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-recovery-security-migration-20261105",
+  "releaseId": "night-book-source-timeout-20261105",
   "baseBranch": "mscc-azure",
-  "baseCommit": "3968a622fad52f4458b9d9e2d36ed6cc4b2111ca",
+  "baseCommit": "0c7de4b8b8914e1e7bd80fcaa053fdd995df82ec",
   "pullRequests": [
-    2
+    3
   ],
-  "preparedAt": "2026-11-05T07:42:32.345Z",
-  "notes": "User-authorized NIGHT recovery release batch. Includes recovered MSCC source snapshot, private command interpolation corrections, legacy panel authentication/session hardening, Control Centre session-map bounds, Azure source repository migration to 777-hub-cell/my-whole-life-s-work, repository secret/runtime exclusions, and exact-base release approval gate. Run full combined validation before one protected mscc-production approval."
+  "preparedAt": "2026-11-05T17:55:29.119Z",
+  "notes": "Release authorization for merged PR #3 (Fix book source searches that stall after selection). Prepared against the exact current mscc-azure base so the merge push passes the production release gate. Validation must pass before the protected mscc-production approval and Azure deployment."
 }

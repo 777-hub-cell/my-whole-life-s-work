@@ -1,4 +1,4 @@
-export const BOOK_UA = 'MSCC/2.3 (books source; +https://github.com/Tomex777/Build)'
+export const BOOK_UA = 'MSCC/2.3 (books source; +https://github.com/777-hub-cell/my-whole-life-s-work)'
 
 export function clean(value, max = 300) {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)

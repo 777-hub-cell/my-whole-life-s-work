@@ -13,6 +13,8 @@
 !**/.env.example
 **/.envrc
 **/*.pem
+# Public verification key used by NIGHT Play; contains no private signing material.
+!mscc/night-play-public-key.pem
 **/*.key
 **/id_rsa*
 **/id_ed25519*

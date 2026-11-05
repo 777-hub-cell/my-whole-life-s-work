@@ -1,7 +1,7 @@
 {
   "name": "night-control-centre-mscc-integration",
   "type": "separate-host-website-and-api-integration",
-  "targetRepository": "Tomex777/Build",
+  "targetRepository": "777-hub-cell/my-whole-life-s-work",
   "targetBranch": "feature/night-control-centre-20261102",
   "baseBranch": "mscc-azure",
   "knownNewerApprovedCommit": "3968a622fad52f4458b9d9e2d36ed6cc4b2111ca",

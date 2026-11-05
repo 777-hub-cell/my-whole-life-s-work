@@ -7,6 +7,6 @@ export default {
     const id = ctx.resolveAccountId(ctx.args[0])
     if (!id) return ctx.reply('Usage: .reconnect <account-id>')
     await ctx.reconnectAccount(id)
-    await ctx.reply(`🔄 Reconnect requested for ${id}.`)
+    await ctx.reply(`🔄 Reconnect requested for \${id}.`)
   },
 }

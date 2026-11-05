@@ -4,9 +4,9 @@ export default {
   setting: { key:'autoCc', default:false, label:'Auto CC', description:'Copy incoming view-once media immediately.' },
   async run(ctx) {
     const mode = String(ctx.args[0] || '').toLowerCase()
-    if (!['on','off'].includes(mode)) return ctx.reply(`Usage: .autocc on|off\nCurrent: ${ctx.settings.autoCc ? 'ON' : 'OFF'}`)
+    if (!['on','off'].includes(mode)) return ctx.reply(`Usage: .autocc on|off\nCurrent: \${ctx.settings.autoCc ? 'ON' : 'OFF'}`)
     const enabled = mode === 'on'
     await ctx.setSetting('autoCc', enabled)
-    await ctx.reply(`✅ Auto CC: ${enabled ? 'ON' : 'OFF'}`)
+    await ctx.reply(`✅ Auto CC: \${enabled ? 'ON' : 'OFF'}`)
   },
 }

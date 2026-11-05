@@ -14,6 +14,9 @@ const SESSION_AGE = 7 * 24 * 60 * 60
 const PRE_AGE = 10 * 60
 const LOGIN_WINDOW = 10 * 60 * 1000
 const MAX_ATTEMPTS = 10
+const MAX_SESSIONS = 2048
+const MAX_PRE_SESSIONS = 4096
+const MAX_ATTEMPT_BUCKETS = 2048
 const MAX_BODY = 128 * 1024
 const MAX_PREVIEW = 512 * 1024
 const MAX_CUSTOM_COMMAND_BYTES = 96 * 1024
@@ -178,6 +181,9 @@ export function createControlCentreApi(options = {}) {
       const fresh = times.filter(time => now - time < LOGIN_WINDOW)
       if (fresh.length) attempts.set(key, fresh); else attempts.delete(key)
     }
+    while (sessions.size > MAX_SESSIONS) sessions.delete(sessions.keys().next().value)
+    while (preSessions.size > MAX_PRE_SESSIONS) preSessions.delete(preSessions.keys().next().value)
+    while (attempts.size > MAX_ATTEMPT_BUCKETS) attempts.delete(attempts.keys().next().value)
   }
   function getSession(req) {
     sweep()
@@ -402,6 +408,7 @@ export function createControlCentreApi(options = {}) {
           preId = randomBytes(32).toString('base64url')
           pre = { csrfToken: randomBytes(32).toString('base64url'), expiresAt: Date.now() + PRE_AGE * 1000 }
           preSessions.set(preId, pre)
+          while (preSessions.size > MAX_PRE_SESSIONS) preSessions.delete(preSessions.keys().next().value)
           headers = { 'set-cookie': cookie(req, PRE_COOKIE, preId, PRE_AGE) }
         }
         return success(req.res, { authenticated: false, csrfToken: pre.csrfToken }, 200, headers)
@@ -419,6 +426,7 @@ export function createControlCentreApi(options = {}) {
         const body = await readBody(req)
         if (!safeEqual(body.password, options.password)) {
           recent.push(now); attempts.set(remote, recent)
+          while (attempts.size > MAX_ATTEMPT_BUCKETS) attempts.delete(attempts.keys().next().value)
           return failure(req.res, 401, 'BAD_CREDENTIALS', 'The administrator password is incorrect.')
         }
         attempts.delete(remote)
@@ -426,6 +434,7 @@ export function createControlCentreApi(options = {}) {
         const sessionId = randomBytes(32).toString('base64url')
         const csrfToken = randomBytes(32).toString('base64url')
         sessions.set(sessionId, { csrfToken, expiresAt: Date.now() + SESSION_AGE * 1000 })
+        while (sessions.size > MAX_SESSIONS) sessions.delete(sessions.keys().next().value)
         await audit('auth.login', 'control-centre', 'success')
         return success(req.res, { authenticated: true, csrfToken }, 200, {
           'set-cookie': [cookie(req, SESSION_COOKIE, sessionId, SESSION_AGE), expiredCookie(req, PRE_COOKIE)],

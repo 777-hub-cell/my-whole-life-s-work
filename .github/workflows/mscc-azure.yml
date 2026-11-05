@@ -31,23 +31,22 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 2
-      # A regular PR merge validates but cannot queue yet another production
-      # approval. Only the explicitly staged release manifest triggers deploy.
-      - name: Detect bundled release
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      # PRs never deploy. A push can request production only when the release
+      # manifest was prepared against this exact first parent; stale manifests
+      # from migrated snapshots must not request an accidental approval.
+      - name: Validate exact-base release manifest
         id: release_gate
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "release_ready=true" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event_name }}" = "push" ] && git diff --name-only HEAD^ HEAD -- mscc/release-batch.json | grep -Fxq mscc/release-batch.json; then
-            echo "release_ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "release_ready=false" >> "$GITHUB_OUTPUT"
+          manifest_changed=false
+          if [ "${{ github.event_name }}" = "push" ] && git diff --name-only HEAD^ HEAD -- mscc/release-batch.json | grep -Fxq mscc/release-batch.json; then
+            manifest_changed=true
           fi
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '24'
+          MSCC_RELEASE_MANIFEST_CHANGED="$manifest_changed" node mscc/tools/mscc-release-manifest-gate.mjs
       - name: Install MSCC dependencies
         working-directory: mscc
         run: npm install --no-audit --no-fund

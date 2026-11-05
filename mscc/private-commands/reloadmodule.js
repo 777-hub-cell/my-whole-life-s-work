@@ -7,6 +7,6 @@ export default {
     const id = which === 'private' ? 'mscc-private-commands' : which === 'public' ? 'mscc-public-commands' : ''
     if (!id) return ctx.reply('Usage: .reloadmodule private|public')
     const result = await ctx.reloadModule(id)
-    await ctx.reply(`♻️ Reloaded \${which} commands: \${result.commands.length}`)
+    await ctx.reply(`♻️ Reloaded ${which} commands: ${result.commands.length}`)
   },
 }

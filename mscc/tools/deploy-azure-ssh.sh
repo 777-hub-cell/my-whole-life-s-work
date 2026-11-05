@@ -4,7 +4,9 @@ set -euo pipefail
 # Deploy only the commit GitHub Actions checked, never a moving branch head.
 # Credentials are supplied by the protected mscc-production environment.
 SHA="${GITHUB_SHA:-}"
+SOURCE_REPOSITORY="${GITHUB_REPOSITORY:-777-hub-cell/my-whole-life-s-work}"
 [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "A full, lowercase GitHub commit SHA is required." >&2; exit 2; }
+[[ "$SOURCE_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "Invalid MSCC source repository." >&2; exit 2; }
 
 for key in MSCC_SSH_HOST MSCC_SSH_USER MSCC_SSH_KEY MSCC_SSH_KNOWN_HOSTS; do
   if [[ -z "${!key:-}" ]]; then
@@ -43,11 +45,12 @@ ssh -T -F /dev/null \
   -o IdentitiesOnly=yes -o IdentityAgent=none \
   -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
   -i "$tmp/deploy_key" -p "$PORT" \
-  "$USER_NAME@$HOST" "MSCC_SOURCE_REF=$SHA MSCC_REUSE_EXISTING_SOURCE_STACK=1 bash -se" <<'REMOTE'
+  "$USER_NAME@$HOST" "MSCC_SOURCE_REF=$SHA MSCC_SOURCE_REPOSITORY=$SOURCE_REPOSITORY MSCC_REUSE_EXISTING_SOURCE_STACK=1 bash -se" <<'REMOTE'
 set -euo pipefail
 umask 077
 
 [[ "${MSCC_SOURCE_REF:-}" =~ ^[0-9a-f]{40}$ ]] || exit 2
+[[ "${MSCC_SOURCE_REPOSITORY:-}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || exit 2
 [[ "$(id -u)" -ne 0 ]] || { echo "Use the existing non-root MSCC service account." >&2; exit 2; }
 command -v curl >/dev/null
 command -v sudo >/dev/null
@@ -66,10 +69,10 @@ fi
 installer="$(mktemp /tmp/mscc-pinned-installer.XXXXXXXX.sh)"
 trap 'rm -f "$installer"' EXIT
 curl --fail --silent --show-error --location --retry 3 \
-  "https://raw.githubusercontent.com/Tomex777/Build/$MSCC_SOURCE_REF/mscc/install-azure.sh" \
+  "https://raw.githubusercontent.com/$MSCC_SOURCE_REPOSITORY/$MSCC_SOURCE_REF/mscc/install-azure.sh" \
   -o "$installer"
 bash -n "$installer"
-MSCC_SOURCE_REF="$MSCC_SOURCE_REF" bash "$installer"
+MSCC_SOURCE_REF="$MSCC_SOURCE_REF" MSCC_SOURCE_REPOSITORY="$MSCC_SOURCE_REPOSITORY" bash "$installer"
 
 # The installer verifies real health and Cortex account-contract smoke tests
 # before disarming its rollback handler. Also verify the exact Git ref.

@@ -169,7 +169,7 @@ try {
   // The pre-existing panel API remains separately protected and functional.
   const legacyUnauth = await fetch(base + '/api/state')
   assert.equal(legacyUnauth.status, 401)
-  const legacyLogin = await fetch(base + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) })
+  const legacyLogin = await fetch(base + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: websiteOrigin, 'X-Forwarded-Proto': 'https' }, body: JSON.stringify({ password }) })
   applyCookies(legacyCookies, legacyLogin)
   assert.equal(legacyLogin.status, 200)
   const legacyState = await fetch(base + '/api/state', { headers: { Cookie: cookieHeader(legacyCookies) } })

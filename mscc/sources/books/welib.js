@@ -15,12 +15,14 @@ function htmlAttr(value = '') {
   return decodeHtml(String(value || '').replace(/\\u0026/gi, '&'))
 }
 
-async function flare(command, extra = {}) {
+async function flare(command, extra = {}, signal = null) {
+  const timeoutSignal = AbortSignal.timeout(MAX_TIMEOUT + 10000)
+  const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
   const response = await fetch(FLARE_URL + '/v1', {
     method:'POST',
     headers:{ 'content-type':'application/json' },
     body:JSON.stringify({ cmd:command, maxTimeout:MAX_TIMEOUT, ...extra }),
-    signal:AbortSignal.timeout(MAX_TIMEOUT + 10000),
+    signal:requestSignal,
   })
   const text = await response.text()
   if (!response.ok) throw new Error('FlareSolverr HTTP ' + response.status)
@@ -40,8 +42,8 @@ async function destroySession(session) {
   await flare('sessions.destroy', { session }).catch(() => {})
 }
 
-async function getHtml(url, { session = '' } = {}) {
-  const data = await flare('request.get', { url, ...(session ? { session } : {}) })
+async function getHtml(url, { session = '', signal = null } = {}) {
+  const data = await flare('request.get', { url, ...(session ? { session } : {}) }, signal)
   const solution = data?.solution || {}
   const status = Number(solution.status || 0)
   if (status && status >= 400) throw new Error('WeLib HTTP ' + status)
@@ -115,10 +117,10 @@ function parseSearch(html, language = DEFAULT_LANGUAGE) {
   return items
 }
 
-async function search(query, language = DEFAULT_LANGUAGE) {
+async function search(query, language = DEFAULT_LANGUAGE, signal = null) {
   const q = clean(query, 180)
   if (!q) return []
-  const html = await getHtml(SITE + '/search?' + new URLSearchParams({ q }))
+  const html = await getHtml(SITE + '/search?' + new URLSearchParams({ q }), { signal })
   const items = parseSearch(html, language)
   if (!items.length) throw new Error('WeLib returned no ' + (language || DEFAULT_LANGUAGE) + ' books.')
   return items
@@ -229,7 +231,7 @@ export default {
 
   async run({ action, query, item, edition, language, context }) {
     if (action === 'search') {
-      return { items:await search(query, language || DEFAULT_LANGUAGE) }
+      return { items:await search(query, language || DEFAULT_LANGUAGE, context?.signal || null) }
     }
 
     if (action === 'editions') {

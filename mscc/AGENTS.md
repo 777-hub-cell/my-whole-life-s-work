@@ -24,6 +24,7 @@
 - `.github/workflows/night-release-batch.yml` **prepares** a combined PR via manual `workflow_dispatch` with `pull_requests` (comma-separated PR numbers). It **does not deploy on its own**.
 - `.github/workflows/mscc-azure.yml` validates PRs and branch updates. The deployment job may run on `mscc-azure` **only** when the release manifest changed on a push, or when a `workflow_dispatch` was explicitly requested. It uses GitHub's protected `mscc-production` environment.
 - `mscc/release-batch.json` identifies the release. Change it **only when actually staging a complete, ready-to-ship combined release**. Its change requests a new protected production approval once the batch is merged and validated. Do not change it for routine docs or individual fixes.
+- The automatic deploy gate also requires `baseBranch` to equal `mscc-azure`, `baseCommit` to equal the exact first parent of the push, a non-empty list of valid PR numbers, and a valid preparation timestamp. Stale manifests from migrated/older snapshots must not request production approval; stage a fresh batch against the current production parent.
 - The batch cleanup workflow cancels only superseded **waiting/pending/queued** MSCC production runs. **Never interrupt a running Azure SSH installation**, and never tell a user to approve an outdated run.
 - The workflow currently uses `cancel-in-progress: false` for Azure safety. Do not disable that without a tested safe-restart/rollback design.
 

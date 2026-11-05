@@ -1,0 +1,40 @@
+# Dependencies and local editor state
+**/node_modules/
+**/.DS_Store
+**/.idea/
+**/.vscode/
+
+# Secrets and environment files. Keep only explicitly safe templates.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+**/.envrc
+**/*.pem
+**/*.key
+**/id_rsa*
+**/id_ed25519*
+**/credentials.json
+**/creds.json
+
+# WhatsApp authentication, session and runtime data
+**/auth/
+**/auth-*/
+**/auth_info_baileys/
+**/sessions/
+**/.cortex/
+mscc/accounts/
+mscc/data/*.sqlite*
+mscc/data/*.db*
+mscc/data/mscc-accounts.json
+mscc/data/mscc-message-index.json
+mscc/data/mscc-settings.json
+mscc/data/mscc-activity.jsonl
+
+# Temporary build / diagnostic output
+**/coverage/
+**/.nyc_output/
+**/tmp/
+**/*.log

@@ -1,6 +1,6 @@
 # NIGHT Control Centre — integration PR
 
-This is an additive, separately hosted website + MSCC API integration for `Tomex777/Build`. It targets the current `mscc-azure` baseline through the feature branch `feature/night-control-centre-20261102`.
+This is an additive, separately hosted website + MSCC API integration for `777-hub-cell/my-whole-life-s-work`. It targets the current `mscc-azure` baseline through the feature branch `feature/night-control-centre-20261102`.
 
 - The website is deployed on its separate hosting server from `mscc/control-centre/`.
 - The bot server keeps the current MSCC runtime and exposes API routes only under `/api/control-centre/`.

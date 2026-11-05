@@ -19,7 +19,7 @@
 
 ## Actual GitHub wiring (verify current source; do not guess)
 
-- Repository: `Tomex777/Build`.
+- Repository: `777-hub-cell/my-whole-life-s-work`.
 - Production source branch: `mscc-azure`. Do not deploy MSCC from `main`, feature branches, or an unrelated repository.
 - `.github/workflows/night-release-batch.yml` **prepares** a combined PR via manual `workflow_dispatch` with `pull_requests` (comma-separated PR numbers). It **does not deploy on its own**.
 - `.github/workflows/mscc-azure.yml` validates PRs and branch updates. The deployment job may run on `mscc-azure` **only** when the release manifest changed on a push, or when a `workflow_dispatch` was explicitly requested. It uses GitHub's protected `mscc-production` environment.
@@ -30,7 +30,7 @@
 Example preparation after gathering approved, open MSCC PRs:
 
 ```bash
-gh workflow run night-release-batch.yml --repo Tomex777/Build --ref mscc-azure -f pull_requests="236,237"
+gh workflow run night-release-batch.yml --repo 777-hub-cell/my-whole-life-s-work --ref mscc-azure -f pull_requests="236,237"
 ```
 
 That creates a **release PR** (after successful preparation) which must be reviewed, tested, and merged once. The PR numbers above are only an illustration, **not** a list to deploy again. If the workflow cannot open a PR because of GitHub permissions, prepare an equivalent integration branch/PR with the repository tools; do **not** bypass validation or push straight to production.

@@ -8,6 +8,6 @@ export default {
     const displayName = ctx.args.slice(1).join(' ').trim()
     if (!id || !displayName) return ctx.reply('Usage: .renameaccount <account-id> <friendly name>')
     const result = await ctx.renameAccount(id, displayName)
-    await ctx.reply(`✅ \${result.account} is now “\${result.displayName}”.`)
+    await ctx.reply(`✅ ${result.account} is now “${result.displayName}”.`)
   },
 }

@@ -7,7 +7,7 @@ import { loadCommands } from './command-registry.js'
 
 const CATEGORIES = 'angry baka bite bleh blowkiss blush bonk bored carry clap confused cry cuddle dance facepalm feed handhold handshake happy highfive hug kabedon kick kiss lappillow laugh lurk nod nom nope nya pat peck poke pout punch run salute shake shoot shocked shrug sip slap sleep smile smug spin stare tableflip teehee think thumbsup tickle wag wave wink yawn yeet'.split(' ')
 const BASE = 'https://nekos.best/api/v2/'
-const UA = 'NIGHT-Anime-Stickers (https://github.com/Tomex777/Build)'
+const UA = 'NIGHT-Anime-Stickers (https://github.com/777-hub-cell/my-whole-life-s-work)'
 const TIMEOUT = 15000
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 const live = []

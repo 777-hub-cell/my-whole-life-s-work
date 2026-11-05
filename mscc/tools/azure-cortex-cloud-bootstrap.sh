@@ -434,7 +434,7 @@ trap rollback EXIT
 
 for row in index.js cortex-agent-control protected-settings-write.cjs; do
   curl --fail --silent --show-error --location --retry 3 --max-time 40 \
-    "https://raw.githubusercontent.com/Tomex777/Build/$SOURCE_SHA/cortex-agent/$row" \
+    "https://raw.githubusercontent.com/$SOURCE_REPOSITORY/$SOURCE_SHA/cortex-agent/$row" \
     --output "$tmp/$row"
 done
 [[ "$(git hash-object "$tmp/index.js")" == "$AGENT_BLOB" ]] || {

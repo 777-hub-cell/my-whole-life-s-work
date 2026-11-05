@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-mscc-youtube-provider-diagnostics-20261104",
+  "releaseId": "night-recovery-security-migration-20261105",
   "baseBranch": "mscc-azure",
-  "baseCommit": "444bf2cbf865d491375cb9a786b23f0689bdd030",
+  "baseCommit": "3968a622fad52f4458b9d9e2d36ed6cc4b2111ca",
   "pullRequests": [
-    633
+    2
   ],
-  "preparedAt": "2026-11-04T21:59:46.797Z",
-  "notes": "Production release batch: sanitized per-provider diagnostics for NIGHT YouTube fallback failures, plus an exact-video read-only Azure provider probe and regression coverage. PR #633 only. This improves diagnosis of the existing fallback chain; it does not restore or replace the currently unavailable external provider services."
+  "preparedAt": "2026-11-05T07:42:32.345Z",
+  "notes": "User-authorized NIGHT recovery release batch. Includes recovered MSCC source snapshot, private command interpolation corrections, legacy panel authentication/session hardening, Control Centre session-map bounds, Azure source repository migration to 777-hub-cell/my-whole-life-s-work, repository secret/runtime exclusions, and exact-base release approval gate. Run full combined validation before one protected mscc-production approval."
 }

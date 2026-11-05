@@ -117,3 +117,33 @@ if(novelImages.length!==1 ||
 }
 
 console.log('PASS whole-novel preview and download flow')
+
+
+const sourceProgress=[]
+const sourceReplies=[]
+const sourceCtx={
+  publicPrefix:'.',
+  listSources:()=>[{id:'welib',name:'WeLib',description:'English-first ebook catalog'}],
+  progress:async message=>{
+    sourceProgress.push(String(message))
+    return {
+      done:async value=>{sourceProgress.push(String(value));return value},
+    }
+  },
+  reply:async value=>{sourceReplies.push(String(value));return value},
+  executeSource:async ({capability,explicitSource,payload})=>{
+    if(capability!=='books' || explicitSource!=='welib' || payload.query!=='A Tale of Two Cities') {
+      throw new Error('Book source selection did not preserve the chosen source and query')
+    }
+    return {status:'source-error',source:{id:'welib',name:'WeLib'}}
+  },
+}
+const encodedPublicDomainQuery=Buffer.from(JSON.stringify('A Tale of Two Cities'),'utf8').toString('base64url')
+await runBookCommand(sourceCtx,{args:['~source','welib',encodedPublicDomainQuery]})
+if(sourceProgress.length!==2 ||
+   !sourceProgress[0].includes('Searching WeLib') ||
+   !sourceProgress[1].includes('WeLib could not complete that request')) {
+  throw new Error('Selected book source did not acknowledge progress and return a bounded failure')
+}
+
+console.log('PASS book source selection progress and failure reply')

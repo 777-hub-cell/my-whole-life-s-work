@@ -49,11 +49,15 @@ function savedBookFormat(ctx) {
   return normalizeFormatKey(saved?.quality || '')
 }
 
-function outcomeError(ctx, outcome) {
-  if (outcome?.status === 'no-sources') return ctx.reply('No book sources are installed yet.')
-  if (outcome?.status === 'source-error') return ctx.reply(`${outcome.source?.name || 'The book source'} could not complete that request.`)
-  if (outcome?.status === 'all-failed') return ctx.reply('All configured book sources failed for that request.')
-  return ctx.reply('Could not complete that book request.')
+function outcomeError(ctx, outcome, respond = value => ctx.reply(value)) {
+  if (outcome?.status === 'no-sources') return respond('No book sources are installed yet.')
+  if (outcome?.status === 'source-error') return respond(`${outcome.source?.name || 'The book source'} could not complete that request.`)
+  if (outcome?.status === 'unknown-source') {
+    const names = (outcome.sources || []).map(source => source.id).join(', ')
+    return respond(`Unknown book source "${outcome.sourceId}". Available: ${names || 'none'}.`)
+  }
+  if (outcome?.status === 'all-failed') return respond('All configured book sources failed for that request.')
+  return respond('Could not complete that book request.')
 }
 
 async function chooseSource(ctx, query) {
@@ -76,19 +80,37 @@ async function chooseSource(ctx, query) {
 async function search(ctx, { query, sourceId = '' }) {
   if (!query) return ctx.reply('Usage: .book <title or author>')
 
-  const outcome = await ctx.executeSource({
-    capability:'books',
-    explicitSource:sourceId,
-    payload:{ action:'search', query },
-  })
+  const selectedSource = sourceId
+    ? (ctx.listSources('books') || []).find(source => source.id === sourceId)
+    : null
+  let progress = null
+  if (sourceId && typeof ctx.progress === 'function') {
+    try {
+      progress = await ctx.progress(`Searching ${selectedSource?.name || sourceId} for “${query}”…`)
+    } catch {}
+  }
+  const respond = value => progress?.done ? progress.done(value) : ctx.reply(value)
+
+  let outcome
+  try {
+    outcome = await ctx.executeSource({
+      capability:'books',
+      explicitSource:sourceId,
+      payload:{ action:'search', query },
+    })
+  } catch (error) {
+    console.warn('[book-flow] book source search failed:', sourceId || 'default', error?.message || error)
+    return respond(`${selectedSource?.name || 'The selected book source'} could not complete that search. Try another source or choose one with ${ctx.publicPrefix || '.'}sources books.`)
+  }
+
   if (outcome.status === 'choice-required') return chooseSource(ctx, query)
-  if (outcome.status !== 'ok') return outcomeError(ctx, outcome)
+  if (outcome.status !== 'ok') return outcomeError(ctx, outcome, respond)
 
   const result = outcome.result || {}
   const books = (Array.isArray(result.items) ? result.items : result.item ? [result.item] : [])
     .map(normalizeBook)
 
-  if (!books.length) return ctx.reply(`No books found for “${query}”.`)
+  if (!books.length) return respond(`No books found for “${query}”.`)
 
   ctx.setCommandReplySession?.({
     kind:'number-selection',
@@ -99,7 +121,7 @@ async function search(ctx, { query, sourceId = '' }) {
     expiresAt:Date.now() + 30 * 60000,
   })
 
-  return ctx.reply([
+  return respond([
     `*Books for “${query}”*`,
     '',
     ...books.slice(0, 25).map(book => {
@@ -306,21 +328,25 @@ export async function runBookCommand(ctx, { args = [] } = {}) {
   const first = String(args[0] || '')
   if (first === '~numbers') return handleNumbers(ctx)
   if (first === '~relation') {
+    let query
     try {
-      return search(ctx, { query:untoken(args[1] || '') })
+      query = untoken(args[1] || '')
     } catch {
       return ctx.reply('That book relation expired. Search the book again.')
     }
+    return await search(ctx, { query })
   }
   if (first === '~source') {
+    let query
     try {
-      return search(ctx, {
-        sourceId:String(args[1] || ''),
-        query:untoken(args[2] || ''),
-      })
+      query = untoken(args[2] || '')
     } catch {
       return ctx.reply('That book source selection expired. Run .book again.')
     }
+    return await search(ctx, {
+      sourceId:String(args[1] || ''),
+      query,
+    })
   }
   return search(ctx, { query:args.join(' ').trim() })
 }

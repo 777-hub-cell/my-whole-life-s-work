@@ -10,7 +10,7 @@ export default {
     const lines = rows.map(row => {
       const at = String(row.at || '').replace('T',' ').replace(/\.\d+Z$/,'Z')
       const detail = JSON.stringify(row.detail || {})
-      return `\${at} • \${row.action} • \${detail.length > 180 ? detail.slice(0,177) + '...' : detail}`
+      return `${at} • ${row.action} • ${detail.length > 180 ? detail.slice(0,177) + '...' : detail}`
     })
     await ctx.reply(['📜 MSCC activity','',...lines].join('\n'))
   },

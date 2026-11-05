@@ -8,6 +8,8 @@ bash -n "$UPGRADE" "$INSTALL"
 # Updater can only fetch an approved, fixed Cortex Agent revision and exact
 # Git blob hashes. Never let environment variables or SSH input set its SHA.
 grep -Fq 'readonly SOURCE_SHA=b6175f37c53f6ca1f86f062d1da60a40101d3c17' "$UPGRADE"
+grep -Fq 'SOURCE_REPOSITORY="${MSCC_SOURCE_REPOSITORY:-777-hub-cell/my-whole-life-s-work}"' "$UPGRADE"
+grep -Fq 'https://raw.githubusercontent.com/$SOURCE_REPOSITORY/$SOURCE_SHA/cortex-agent/$row' "$UPGRADE"
 grep -Fq 'readonly AGENT_BLOB=68e1f21daecd59b4831394d188ce8b59f5d57ff7' "$UPGRADE"
 grep -Fq 'readonly PREVIOUS_AGENT_BLOB=8aacac2287e96a19a7fd68cfa645c8f13a0e8f51' "$UPGRADE"
 grep -Fq 'readonly HELPER_BLOB=8bc55110b92f60bfe31b8097cbc5dad32ae0a820' "$UPGRADE"

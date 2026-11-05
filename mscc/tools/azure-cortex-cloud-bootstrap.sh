@@ -6,6 +6,8 @@ set -euo pipefail
 umask 077
 
 readonly SOURCE_SHA=b6175f37c53f6ca1f86f062d1da60a40101d3c17
+SOURCE_REPOSITORY="${MSCC_SOURCE_REPOSITORY:-777-hub-cell/my-whole-life-s-work}"
+[[ "$SOURCE_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "Invalid Cortex source repository." >&2; exit 2; }
 readonly AGENT_BLOB=68e1f21daecd59b4831394d188ce8b59f5d57ff7
 readonly PREVIOUS_AGENT_BLOB=8aacac2287e96a19a7fd68cfa645c8f13a0e8f51
 readonly HELPER_BLOB=8bc55110b92f60bfe31b8097cbc5dad32ae0a820
@@ -54,7 +56,7 @@ if [[ ! -f "$AGENT_TARGET" || ! -f "$HELPER_TARGET" ]] ||
   trap 'rm -rf "$setup_dir"' EXIT
   for row in index.js cortex-agent-control install.sh package.json cortex-agent.service protected-settings-write.cjs; do
     curl --fail --silent --show-error --location --retry 3 --max-time 50 \
-      "https://raw.githubusercontent.com/Tomex777/Build/$SOURCE_SHA/cortex-agent/$row" \
+      "https://raw.githubusercontent.com/$SOURCE_REPOSITORY/$SOURCE_SHA/cortex-agent/$row" \
       --output "$setup_dir/$row"
   done
   for expected in \

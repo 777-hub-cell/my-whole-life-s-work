@@ -6,7 +6,7 @@ import { mediaToSticker } from './utils/media-conversion.js'
 import { reactionProviders } from './utils/anime-reaction-providers.js'
 
 const categories = ['hug','slap','smug','wave','cry','sleep','kick','kill']
-const ua = 'NIGHT-Anime-Stickers (https://github.com/Tomex777/Build)'
+const ua = 'NIGHT-Anime-Stickers (https://github.com/777-hub-cell/my-whole-life-s-work)'
 const TIMEOUT_MS = 12000
 const CAP = 16*1024*1024
 async function fetchGif(url) {

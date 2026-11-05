@@ -33,6 +33,64 @@ const silentLogger = {
   error() {},
 }
 
+function isRetryableMediaFetchError(error) {
+  const detail = [
+    error?.message,
+    error?.cause?.message,
+    error?.cause?.code,
+    error?.cause?.cause?.code,
+  ].filter(Boolean).join(' ')
+  return /fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|UND_ERR_CONNECT_TIMEOUT/i.test(detail)
+}
+
+export async function socketMediaDownloadOptions(sock, forceRefresh = false) {
+  if (typeof sock?.refreshMediaConn === 'function') {
+    // Baileys caches this value for the media_conn TTL, so this is cheap
+    // when the socket already has a current media CDN assignment.
+    try {
+      await sock.refreshMediaConn(forceRefresh)
+    } catch {
+      // Retain the last known host and let the normal downloader report failure.
+    }
+  }
+
+  const host = typeof sock?.getMediaHost === 'function' ? sock.getMediaHost() : ''
+  return host ? { host: String(host) } : {}
+}
+
+export async function downloadMediaWithSocketHost(
+  target,
+  sock,
+  retryContext,
+  downloader = downloadMediaMessage,
+) {
+  const options = await socketMediaDownloadOptions(sock)
+
+  try {
+    return await downloader(target, 'buffer', options, retryContext)
+  } catch (error) {
+    if (!isRetryableMediaFetchError(error)) throw error
+
+    if (typeof sock?.refreshMediaConn === 'function') {
+      const retryOptions = await socketMediaDownloadOptions(sock, true)
+      try {
+        return await downloader(target, 'buffer', retryOptions, retryContext)
+      } catch (retryError) {
+        if (!isRetryableMediaFetchError(retryError)) throw retryError
+        throw new Error(
+          'WhatsApp could not reach its media CDN. Please resend the media and try again.',
+          { cause: retryError },
+        )
+      }
+    }
+
+    throw new Error(
+      'WhatsApp could not reach its media CDN. Please resend the media and try again.',
+      { cause: error },
+    )
+  }
+}
+
 let conversionTail = Promise.resolve()
 
 function numberValue(value) {
@@ -114,7 +172,7 @@ export async function downloadCommandMedia(ctx, acceptedKinds = []) {
       }
     : undefined
 
-  const buffer = await downloadMediaMessage(resolved.target, 'buffer', {}, retryContext)
+  const buffer = await downloadMediaWithSocketHost(resolved.target, sock, retryContext)
   if (!Buffer.isBuffer(buffer) || !buffer.length) {
     throw new Error('I could not download that media.')
   }

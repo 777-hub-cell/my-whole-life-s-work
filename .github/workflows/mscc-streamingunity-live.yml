@@ -10,6 +10,15 @@ on:
       - 'mscc/sources/tv/streamingunity.js'
       - 'mscc/streamingunity-source-live-probe.js'
       - '.github/workflows/mscc-streamingunity-live.yml'
+  pull_request:
+    branches:
+      - mscc-azure
+    paths:
+      - 'mscc/providers/streamingunity.js'
+      - 'mscc/sources/movies/streamingunity.js'
+      - 'mscc/sources/tv/streamingunity.js'
+      - 'mscc/streamingunity-source-live-probe.js'
+      - '.github/workflows/mscc-streamingunity-live.yml'
   workflow_dispatch:
 
 permissions:
@@ -18,7 +27,7 @@ permissions:
 jobs:
   prove:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5

@@ -88,11 +88,24 @@ assert.equal(vaTest.normalizeImdb('TT0063350'), 'tt0063350')
 assert.equal(vaTest.normalizeImdb('bad'), '')
 assert.equal(vixTest.field('token:"abc"; expires:"123"; url:"https:\\/\\/cdn.example\\/master.m3u8"', 'token'), 'abc')
 assert.equal(vixTest.field('token:"abc"; expires:"123"; url:"https:\\/\\/cdn.example\\/master.m3u8"', 'url'), 'https://cdn.example/master.m3u8')
+const vixHeaders = vixTest.streamHeaders('https://vixsrc.to/embed/170060?token=sample')
+assert.equal(vixHeaders.Referer, 'https://vixsrc.to/embed/170060?token=sample')
+assert.equal(vixHeaders.Origin, 'https://vixsrc.to')
+assert.match(vixHeaders['User-Agent'], /Android/)
 
 const choice = copyTest.chooseCandidate([
   { maxHeight:1080, programs:[{ id:1, height:1080, bandwidth:4000 }, { id:2, height:720, bandwidth:2200 }] },
   { maxHeight:720, programs:[{ id:3, height:720, bandwidth:1800 }] },
 ], '720')
 assert.equal(choice.program.height, 720)
+
+const timedProgress = copyTest.progressSnapshot({ out_time_us:'25000000', speed:'1.2x' }, 100)
+assert.equal(timedProgress.phase, 'copy')
+assert.equal(Math.round(timedProgress.percent), 25)
+assert.equal(timedProgress.speed, '1.2x')
+const untimedProgress = copyTest.progressSnapshot({ out_time_ms:'5000000' }, 0)
+assert.equal(untimedProgress.phase, 'copy')
+assert.equal(Object.hasOwn(untimedProgress, 'percent'), false)
+assert.equal(untimedProgress.timeSeconds, 5)
 
 console.log('PASS VixSrc/VaPlayer movie+TV source fixtures')

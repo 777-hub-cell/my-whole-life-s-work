@@ -4,6 +4,9 @@ export DEBIAN_FRONTEND=noninteractive
 
 VERSION="2.3.1"
 SOURCE_REF="${MSCC_SOURCE_REF:-mscc-azure}"
+SOURCE_REPOSITORY="${MSCC_SOURCE_REPOSITORY:-777-hub-cell/my-whole-life-s-work}"
+[[ "$SOURCE_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "Invalid MSCC source repository." >&2; exit 2; }
+export MSCC_SOURCE_REPOSITORY="$SOURCE_REPOSITORY"
 BASE="/opt/mscc"
 RELEASE="$BASE/releases/$VERSION-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 STATE="/var/lib/mscc"
@@ -93,7 +96,7 @@ chmod 700 "$STATE" "$STATE/auth" "$STATE/auth-b" "$STATE/data"
 
 echo ">>> Downloading complete MSCC source from GitHub..."
 rm -rf "$UNPACK" "$ARCHIVE"
-curl -fsSL "https://github.com/Tomex777/Build/archive/$SOURCE_REF.tar.gz" -o "$ARCHIVE"
+curl -fsSL "https://github.com/$SOURCE_REPOSITORY/archive/$SOURCE_REF.tar.gz" -o "$ARCHIVE"
 mkdir -p "$UNPACK"
 tar -xzf "$ARCHIVE" -C "$UNPACK" --strip-components=1
 # Never remove the currently running release; each deployment gets a new directory.

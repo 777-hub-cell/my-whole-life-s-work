@@ -248,27 +248,58 @@ export async function probeKnightProviders(videoId, {
   return results
 }
 
+function emitProviderDiagnostic(onProviderResult, provider, phase, result, error = null, extra = {}) {
+  const event = { provider, phase, result, ...extra }
+  if (error) {
+    // Node error codes are useful for operators, but raw messages can contain
+    // signed media URLs or provider response fragments. Never log those.
+    const code = String(error?.code || '')
+    if (/^[A-Z][A-Z0-9_]{1,55}$/.test(code)) event.diagnosticCode = code
+  }
+  try {
+    if (typeof onProviderResult === 'function') onProviderResult(event)
+    else console.warn('[MSCC YouTube source]', JSON.stringify(event))
+  } catch {
+    // Diagnostics must never break a working download or fallback chain.
+  }
+}
+
 export async function downloadFromKnightProviders(videoId, outputDir, maxBytes, {
   requestJson=readProviderJson, downloadFile=streamMp4, providers=PROVIDERS,
-  inspectHeight=videoHeightFromFile,
+  inspectHeight=videoHeightFromFile, onProviderResult = null,
 } = {}) {
   if (!ID_RE.test(String(videoId || ''))) throw new Error('Invalid YouTube video ID.')
   if (!knightProviderEnabled()) throw new Error('Third-party media fallback is disabled.')
   const cap = Math.max(1,Math.floor(Number(maxBytes) || 0))
   const watchUrl = 'https://www.youtube.com/watch?v=' + videoId
   for (const provider of providers) {
+    let phase = 'metadata_request'
     try {
       const requestUrl = new URL(provider.endpoint)
       for (const [key,value] of Object.entries(provider.params(watchUrl))) {
         requestUrl.searchParams.set(key,value)
       }
       const data = await requestJson(requestUrl.toString())
+      phase = 'parse_response'
       const media = provider.parse(data)
-      if (!media?.url) continue
+      if (!media?.url) {
+        emitProviderDiagnostic(onProviderResult,provider.name,phase,'no_media_link')
+        continue
+      }
+
+      phase = 'validate_media_url'
       const safeUrl = checkedMediaUrl(media.url)
       const file = join(outputDir,'knight-' + provider.name + '.mp4')
+
+      phase = 'download_media'
       const size = await downloadFile(safeUrl.toString(),file,cap)
+
+      phase = 'probe_media'
       const height = await inspectHeight(file)
+      emitProviderDiagnostic(onProviderResult,provider.name,'complete','downloaded',null,{
+        size,
+        height:height || null,
+      })
       return {
         provider:provider.name,
         file,
@@ -277,7 +308,8 @@ export async function downloadFromKnightProviders(videoId, outputDir, maxBytes, 
         height,
         title:String(media.title || 'YouTube video').slice(0,180),
       }
-    } catch {
+    } catch (error) {
+      emitProviderDiagnostic(onProviderResult,provider.name,phase,providerFailureCategory(error),error)
       // A broken service, expired media URL or unsafe redirect should not
       // prevent the next provider from being tried. Never log signed URLs.
     }

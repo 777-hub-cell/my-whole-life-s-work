@@ -1,0 +1,26 @@
+{
+  "name": "night-control-centre-mscc-integration",
+  "type": "separate-host-website-and-api-integration",
+  "targetRepository": "777-hub-cell/my-whole-life-s-work",
+  "targetBranch": "feature/night-control-centre-20261102",
+  "baseBranch": "mscc-azure",
+  "knownNewerApprovedCommit": "3968a622fad52f4458b9d9e2d36ed6cc4b2111ca",
+  "preservesCurrentIndexJs": true,
+  "websiteHostSeparate": true,
+  "botServerServesUi": false,
+  "deployed": false,
+  "containsProductionSecrets": false,
+  "accountAProfile": "control",
+  "features": {
+    "accountLifecycle": true,
+    "profileAssignment": true,
+    "commandAvailability": true,
+    "activityLedger": true,
+    "runtimeMetrics": true,
+    "readonlyFileBrowser": true,
+    "environmentSecretWrites": false,
+    "filesystemWrites": false,
+    "shellAccess": false,
+    "websiteApiReverseProxyRequired": true
+  }
+}

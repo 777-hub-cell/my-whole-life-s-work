@@ -5,6 +5,8 @@ import {
   STICKER_FIT_FILTER,
   classifyMessageMedia,
   mediaIsAnimated,
+  socketMediaDownloadOptions,
+  downloadMediaWithSocketHost,
 } from './utils/media-conversion.js'
 
 assert.equal(STICKER_CANVAS, 512)
@@ -28,5 +30,55 @@ assert.equal(classifyMessageMedia({ key:'audioMessage', media:{ mimetype:'audio/
 assert.equal(mediaIsAnimated({ key:'videoMessage', media:{ mimetype:'video/mp4' } }), true)
 assert.equal(mediaIsAnimated({ key:'stickerMessage', media:{ mimetype:'image/webp', isAnimated:true } }), true)
 assert.equal(mediaIsAnimated({ key:'stickerMessage', media:{ mimetype:'image/webp', isAnimated:false } }), false)
+
+// Media downloads must use the socket's current media_conn host, not
+// Baileys' hard-coded default CDN host. A transient fetch failure gets one
+// forced media_conn refresh and one retry.
+let activeMediaHost = 'media-old.whatsapp.net'
+const refreshCalls = []
+const mediaSock = {
+  async refreshMediaConn(force = false) {
+    refreshCalls.push(force)
+    if (force) activeMediaHost = 'media-new.whatsapp.net'
+  },
+  getMediaHost() {
+    return activeMediaHost
+  },
+}
+const downloadCalls = []
+const fixtureBuffer = Buffer.from('media fixture')
+const downloaded = await downloadMediaWithSocketHost(
+  { key: { id: 'media-fixture' } },
+  mediaSock,
+  {},
+  async (_message, type, options) => {
+    downloadCalls.push({ type, options })
+    if (downloadCalls.length === 1) throw new TypeError('fetch failed')
+    return fixtureBuffer
+  },
+)
+assert.equal(downloaded, fixtureBuffer)
+assert.deepEqual(refreshCalls, [false, true])
+assert.deepEqual(downloadCalls, [
+  { type:'buffer', options:{ host:'media-old.whatsapp.net' } },
+  { type:'buffer', options:{ host:'media-new.whatsapp.net' } },
+])
+assert.deepEqual(await socketMediaDownloadOptions({}), {})
+
+const nonRetryRefreshes = []
+const nonRetrySock = {
+  async refreshMediaConn(force = false) { nonRetryRefreshes.push(force) },
+  getMediaHost() { return 'media.whatsapp.net' },
+}
+await assert.rejects(
+  downloadMediaWithSocketHost(
+    { key: { id:'invalid-key-fixture' } },
+    nonRetrySock,
+    {},
+    async () => { throw new Error('Cannot derive from empty media key') },
+  ),
+  /empty media key/,
+)
+assert.deepEqual(nonRetryRefreshes, [false], 'non-network media errors must not trigger forced CDN refresh')
 
 console.log('media conversion self-test passed')

@@ -1,5 +1,5 @@
 const WIKI_API = 'https://en.wikipedia.org/w/api.php'
-const UA = 'MSCC/2.3 (+https://github.com/Tomex777/Build)'
+const UA = 'MSCC/2.3 (+https://github.com/777-hub-cell/my-whole-life-s-work)'
 
 function clean(value, max = 4000) {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)

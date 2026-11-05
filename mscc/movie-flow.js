@@ -146,11 +146,11 @@ async function getOptions(ctx, sourceId, movie) {
   }
 }
 
-async function performDelivery(ctx, { sourceId, movie, quality, delivery }) {
+async function performDelivery(ctx, { sourceId, movie, quality, delivery, onProgress }) {
   const outcome = await ctx.executeSource({
     capability:'movies',
     explicitSource:sourceId,
-    payload:{ action:'download', itemId:movie.id, item:movie, quality, delivery },
+    payload:{ action:'download', itemId:movie.id, item:movie, quality, delivery, onProgress },
   })
   if (outcome.status !== 'ok') return { ok:false, message:outcomeError(ctx, outcome) }
   const result = outcome.result
@@ -158,6 +158,40 @@ async function performDelivery(ctx, { sourceId, movie, quality, delivery }) {
   if (typeof result === 'string') return { ok:true, message:result }
   if (result?.text) return { ok:true, message:String(result.text) }
   return { ok:true, message:'The download request for ' + movie.title + ' completed, but the source did not confirm delivery.' }
+}
+
+function formatProgressTime(seconds) {
+  const value = Math.max(0, Math.floor(Number(seconds) || 0))
+  const minutes = Math.floor(value / 60)
+  const remainder = value % 60
+  return minutes + ':' + String(remainder).padStart(2, '0')
+}
+
+function movieProgressText(movieTitle, update = {}) {
+  switch (String(update.phase || '')) {
+    case 'resolving':
+      return '🔎 *' + movieTitle + '* — resolving the source stream…'
+    case 'waiting':
+      return '⏳ *' + movieTitle + '* — waiting for the media-copy worker…'
+    case 'copy': {
+      const percent = update.percent !== undefined && update.percent !== null && Number.isFinite(Number(update.percent))
+        ? ' ' + Math.round(Math.max(0, Math.min(99, Number(update.percent)))) + '%'
+        : ''
+      const elapsed = Number(update.timeSeconds) > 0
+        ? ' · ' + formatProgressTime(update.timeSeconds) + ' copied'
+        : ''
+      const speed = update.speed ? ' · ' + String(update.speed) : ''
+      return '⬇️ *' + movieTitle + '* — copying stream to server disk' + percent + elapsed + speed + '…'
+    }
+    case 'validating':
+      return '🔍 *' + movieTitle + '* — checking the completed media file…'
+    case 'prepared':
+      return '✅ *' + movieTitle + '* — file prepared; starting WhatsApp delivery…'
+    case 'upload':
+      return '📤 *' + movieTitle + '* — uploading the file to WhatsApp…'
+    default:
+      return ''
+  }
 }
 
 // Acknowledge first, then perform long media work outside the inbound chat queue.
@@ -168,17 +202,47 @@ async function startDelivery(ctx, details) {
   let progress = null
   if (typeof ctx.progress === 'function') { try { progress = await ctx.progress(opening) } catch {} }
   if (!progress) { try { await ctx.reply(opening) } catch {} }
+
   const report = async (message, failed = false) => {
     if (progress) {
-      const update = failed ? progress.fail : progress.done
+      const update = failed ? progress.fail : (progress.update || progress.done)
       if (typeof update === 'function') { try { await update.call(progress, message); return } catch {} }
     }
     try { await ctx.reply(message) } catch {}
   }
+
+  let lastPhase = ''
+  let lastPercentBucket = -1
+  let lastProgressAt = 0
+  const publishProgress = async update => {
+    const message = movieProgressText(movieTitle, update)
+    if (!message) return
+    const phase = String(update?.phase || '')
+    const numericPercent = Number(update?.percent)
+    const hasPercent = update?.percent !== undefined && update?.percent !== null && Number.isFinite(numericPercent)
+    const bucket = hasPercent ? Math.floor(numericPercent / 5) : -1
+    const now = Date.now()
+    const phaseChanged = phase !== lastPhase
+    const percentageAdvanced = phase === 'copy' && hasPercent && bucket >= lastPercentBucket + 1
+    const timeElapsed = now - lastProgressAt >= 10_000
+    if (!phaseChanged && !percentageAdvanced && !timeElapsed) return
+    lastPhase = phase
+    if (phase === 'copy' && hasPercent) lastPercentBucket = bucket
+    lastProgressAt = now
+
+    if (progress) {
+      const updateMessage = progress.update || progress.done
+      if (typeof updateMessage === 'function') {
+        try { await updateMessage.call(progress, message); return } catch {}
+      }
+    }
+    try { await ctx.reply(message) } catch {}
+  }
+
   setImmediate(() => {
     void (async () => {
       try {
-        const result = await performDelivery(ctx, details)
+        const result = await performDelivery(ctx, { ...details, onProgress:publishProgress })
         await report(result.message, !result.ok)
       } catch (error) {
         const detail = String(error?.message || '').replace(/\s+/g, ' ').slice(0, 160)
@@ -245,26 +309,16 @@ async function selectMovie(ctx, { sourceId, movie }) {
     })),
   }))
   if (related.length) sections.unshift({ title:'Based on', rows:related })
+  if (instantActions.length) sections.push({ title:'Other actions', rows:instantActions })
 
-  const text = [status, 'Choose quality and delivery.'].filter(Boolean).join('\n\n')
-  if (instantActions.length && typeof ctx.replyInteractive === 'function') {
-    return ctx.replyInteractive({
-      title:resolved.title,
-      text,
-      footer:`Save a default: ${prefix}delivery movies 720 document`,
-      actions:instantActions,
-      selectors:[{
-        text:'Download options',
-        title:resolved.title,
-        sections,
-      }],
-    })
-  }
-
+  // Keep movie choices in the same single-select menu used by source and
+  // result pickers. Mixing quick-reply buttons with a nested single-select
+  // made the quality picker disappear on some WhatsApp clients.
+  const text = [status, 'Choose a quality and delivery type from the menu.'].filter(Boolean).join('\n\n')
   return ctx.replyList({
     title:resolved.title,
     text,
-    buttonText:'Download options',
+    buttonText:'Choose quality',
     footer:`Save a default: ${prefix}delivery movies 720 document`,
     sections,
   })

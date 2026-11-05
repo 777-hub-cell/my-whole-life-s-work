@@ -2,7 +2,7 @@
 // domain allowlist; returned URLs are untrusted until matched and decoded.
 import { randomInt } from 'node:crypto'
 
-const UA = 'NIGHT-Anime-Stickers (https://github.com/Tomex777/Build)'
+const UA = 'NIGHT-Anime-Stickers (https://github.com/777-hub-cell/my-whole-life-s-work)'
 const ENKIDU_API = 'https://animegifs-enkidu.koyeb.app/v3/api/?category='
 const OCI_HOST = 'frqs54dqeajn.objectstorage.eu-frankfurt-1.oci.customer-oci.com'
 const NEKOS_API = 'https://nekos.best/api/v2/'

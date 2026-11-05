@@ -19,7 +19,7 @@ export const REACTIONS = Object.freeze(Object.fromEntries(
   )
 ))
 export const REACTION_NAMES = Object.freeze(Object.keys(REACTIONS))
-const USER_AGENT = 'NIGHT-Anime-Stickers (https://github.com/Tomex777/Build)'
+const USER_AGENT = 'NIGHT-Anime-Stickers (https://github.com/777-hub-cell/my-whole-life-s-work)'
 const MAX_MEDIA_BYTES = 16 * 1024 * 1024
 const stickerCache = new Map()
 const CACHE_ENTRIES = 12

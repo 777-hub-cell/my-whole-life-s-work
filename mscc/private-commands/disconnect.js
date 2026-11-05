@@ -7,6 +7,6 @@ export default {
     if (!id) return ctx.reply('Usage: .disconnect <account-id>')
     if (id === 'A') return ctx.reply('Account A is the permanent control session. Use .restart for the MSCC process instead.')
     const result = await ctx.disconnectAccount(id)
-    await ctx.reply(`⏹️ \${result.account} is now \${result.status}. Saved auth is preserved.`)
+    await ctx.reply(`⏹️ ${result.account} is now ${result.status}. Saved auth is preserved.`)
   },
 }

@@ -1,0 +1,17 @@
+{
+  "name": "night-control-centre",
+  "version": "1.0.3",
+  "private": true,
+  "description": "NIGHT Control Centre frontend",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "check": "npm run check:syntax && npm test",
+    "check:syntax": "node --check js/app.js && node --check js/live-adapter.js && node --check js/mock-adapter.js && node --check js/profiles-accounts.js && node --check js/env.js && node --check js/explorer.js && node --check js/pages.js && node --check tools/serve.mjs && node --check server.mjs",
+    "test": "node --test tests/*.test.cjs tests/*.test.mjs",
+    "serve": "node server.mjs",
+    "start": "node server.mjs"
+  }
+}

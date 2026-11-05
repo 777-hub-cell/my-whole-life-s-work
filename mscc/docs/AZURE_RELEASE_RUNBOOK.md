@@ -103,6 +103,7 @@ Replace the placeholder with the 40-character commit SHA of the reviewed `mscc-a
 ```bash
 set -euo pipefail
 export MSCC_SOURCE_REF='<TESTED_MSCC_COMMIT_SHA>'
+export MSCC_SOURCE_REPOSITORY='777-hub-cell/my-whole-life-s-work'
 [[ "$MSCC_SOURCE_REF" =~ ^[[:xdigit:]]{40}$ ]] || { echo 'Invalid deployment commit SHA'; exit 1; }
 curl -fsSL "https://raw.githubusercontent.com/Tomex777/Build/${MSCC_SOURCE_REF}/mscc/install-azure.sh" -o /tmp/mscc-install-azure.sh
 bash -n /tmp/mscc-install-azure.sh

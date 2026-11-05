@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-mscc-song-delivery-fix-20261022-pr581",
+  "releaseId": "night-recovery-security-migration-20261105",
   "baseBranch": "mscc-azure",
-  "baseCommit": "783d6d0fde2bf5ae49fd6a7bfcb8fa61dc919786",
+  "baseCommit": "3968a622fad52f4458b9d9e2d36ed6cc4b2111ca",
   "pullRequests": [
-    581
+    2
   ],
-  "preparedAt": "2026-10-22T19:17:00.000Z",
-  "notes": "User explicitly authorized production deployment of NIGHT music fix PR #581. Only the exact song search, delivery receipt, retry, and AI music follow-up fix is included. Preserve the already deployed per-channel AI default-OFF security guard. Require the MSCC Azure, Integrated Readiness, Cortex Contract, and MSCC Music Lyrics Regression checks on this release PR before merge. Deploy via protected mscc-production approval once; verify Azure pinned SHA, smoke, and connected WhatsApp accounts after deployment."
+  "preparedAt": "2026-11-05T07:42:32.345Z",
+  "notes": "User-authorized NIGHT recovery release batch. Includes recovered MSCC source snapshot, private command interpolation corrections, legacy panel authentication/session hardening, Control Centre session-map bounds, Azure source repository migration to 777-hub-cell/my-whole-life-s-work, repository secret/runtime exclusions, and exact-base release approval gate. Run full combined validation before one protected mscc-production approval."
 }

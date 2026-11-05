@@ -17,20 +17,33 @@
 
 **A single approval is needed for each new release batch, not one lifetime approval for all future batches.** An expired/cancelled/failed deployment or a separately requested emergency release may require another approval. Never tell the user that merely approving one run approves all future production changes.
 
+## Production branch protection — currently not enabled
+
+At the 2026-11-05 migration audit, GitHub reported `mscc-azure` as `protected: false`, with protection disabled, and the repository had no rulesets. The connected GitHub integration could read this status but could not change branch-protection settings.
+
+Until an owner enables a GitHub branch rule/ruleset for `mscc-azure`, PR review and required-check rules in this document are operating policy, **not technically enforced by GitHub**. Before the first post-migration production merge, enable protection that:
+- Requires changes to enter through a pull request (no direct pushes).
+- Requires the MSCC Azure validation job and workflow-syntax guard to pass.
+- Blocks force-pushes and branch deletion.
+- Applies to administrators as well as other write-capable users where GitHub permits.
+
+Recheck the live branch/ruleset configuration before treating protection as enabled; do not infer it from a green PR or a successful merge.
+
 ## Actual GitHub wiring (verify current source; do not guess)
 
-- Repository: `Tomex777/Build`.
+- Repository: `777-hub-cell/my-whole-life-s-work`.
 - Production source branch: `mscc-azure`. Do not deploy MSCC from `main`, feature branches, or an unrelated repository.
 - `.github/workflows/night-release-batch.yml` **prepares** a combined PR via manual `workflow_dispatch` with `pull_requests` (comma-separated PR numbers). It **does not deploy on its own**.
 - `.github/workflows/mscc-azure.yml` validates PRs and branch updates. The deployment job may run on `mscc-azure` **only** when the release manifest changed on a push, or when a `workflow_dispatch` was explicitly requested. It uses GitHub's protected `mscc-production` environment.
 - `mscc/release-batch.json` identifies the release. Change it **only when actually staging a complete, ready-to-ship combined release**. Its change requests a new protected production approval once the batch is merged and validated. Do not change it for routine docs or individual fixes.
+- The automatic deploy gate also requires `baseBranch` to equal `mscc-azure`, `baseCommit` to equal the exact first parent of the push, a non-empty list of valid PR numbers, and a valid preparation timestamp. Stale manifests from migrated/older snapshots must not request production approval; stage a fresh batch against the current production parent.
 - The batch cleanup workflow cancels only superseded **waiting/pending/queued** MSCC production runs. **Never interrupt a running Azure SSH installation**, and never tell a user to approve an outdated run.
 - The workflow currently uses `cancel-in-progress: false` for Azure safety. Do not disable that without a tested safe-restart/rollback design.
 
 Example preparation after gathering approved, open MSCC PRs:
 
 ```bash
-gh workflow run night-release-batch.yml --repo Tomex777/Build --ref mscc-azure -f pull_requests="236,237"
+gh workflow run night-release-batch.yml --repo 777-hub-cell/my-whole-life-s-work --ref mscc-azure -f pull_requests="236,237"
 ```
 
 That creates a **release PR** (after successful preparation) which must be reviewed, tested, and merged once. The PR numbers above are only an illustration, **not** a list to deploy again. If the workflow cannot open a PR because of GitHub permissions, prepare an equivalent integration branch/PR with the repository tools; do **not** bypass validation or push straight to production.

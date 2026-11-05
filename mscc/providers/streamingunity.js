@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { load as loadHtml } from 'cheerio'
@@ -262,6 +262,26 @@ function field(script, name) {
   return ''
 }
 
+function findVixCloudEmbed(html) {
+  const match = /https?:\/\/vixcloud\.(?:co|cc)\/embed\/[^\s<>]+/i.exec(String(html || ''))
+  return match ? match[0].replace(/&amp;/g, '&').replace(/["']+$/, '') : ''
+}
+
+function vixCloudOrigin(embedUrl) {
+  try {
+    const parsed = new URL(embedUrl)
+    if (!/^(?:www\.)?vixcloud\.(?:co|cc)$/i.test(parsed.hostname)) throw new Error('Unsupported VixCloud host.')
+    return parsed.origin
+  } catch {
+    throw new Error('StreamingUnity VixCloud embed URL was invalid.')
+  }
+}
+
+function vixCloudHeaders(embedUrl) {
+  const origin = vixCloudOrigin(embedUrl)
+  return 'Referer: ' + origin + '/\r\nOrigin: ' + origin + '\r\nUser-Agent: ' + UA + '\r\n'
+}
+
 function parseMaster(text, masterUrl) {
   const lines = String(text || '').split(/\r?\n/).map(value => value.trim()).filter(Boolean)
   const variants = []
@@ -300,9 +320,9 @@ async function resolveAt(base, item, episodeId) {
   }
   const ir = await get(iframe.href, { accept:'text/html,*/*', referer:base + '/' })
   const iframeText = await ir.text()
-  const embedMatch = /https:\/\/vixcloud\.co\/embed\/[^"'\s<>]+/i.exec(iframeText)
-  if (!embedMatch) throw new Error('StreamingUnity did not expose a VixCloud embed.')
-  const embed = embedMatch[0].replace(/&amp;/g, '&')
+  const embed = findVixCloudEmbed(iframeText)
+  if (!embed) throw new Error('StreamingUnity did not expose a VixCloud embed.')
+  const playerOrigin = vixCloudOrigin(embed)
 
   const er = await get(embed, { accept:'text/html,*/*', referer:base + '/' })
   const $ = loadHtml(await er.text())
@@ -326,14 +346,14 @@ async function resolveAt(base, item, episodeId) {
 
   const mr = await get(master.href, {
     accept:'application/vnd.apple.mpegurl,application/x-mpegURL,*/*',
-    referer:'https://vixcloud.co/',
-    origin:'https://vixcloud.co',
+    referer:playerOrigin + '/',
+    origin:playerOrigin,
   })
   const masterText = await mr.text()
   if (!masterText.includes('#EXTM3U')) throw new Error('StreamingUnity master playlist was invalid.')
   const parsed = parseMaster(masterText, master.href)
   if (!parsed.variants.length) throw new Error('StreamingUnity master playlist had no video variants.')
-  return { masterUrl:master.href, masterText, ...parsed }
+  return { masterUrl:master.href, masterText, embedUrl:embed, playerOrigin, ...parsed }
 }
 
 export async function resolveStream(item, episodeId = '') {
@@ -380,8 +400,8 @@ function run(command, args, timeoutMs) {
   })
 }
 
-async function chooseProgram(masterUrl, quality) {
-  const headers = 'Referer: https://vixcloud.co/\r\nOrigin: https://vixcloud.co\r\nUser-Agent: ' + UA + '\r\n'
+async function chooseProgram(masterUrl, quality, embedUrl) {
+  const headers = vixCloudHeaders(embedUrl)
   const result = await run('ffprobe', [
     '-v','error','-headers',headers,'-show_programs','-of','json',masterUrl,
   ], 120000)
@@ -402,13 +422,17 @@ async function chooseProgram(masterUrl, quality) {
   return rows.find(row => row.height === target) || rows.find(row => row.height < target) || rows.at(-1)
 }
 
-async function remux(stream, quality, delivery, durationSeconds = 0) {
+async function remux(stream, quality, delivery, durationSeconds = 0, queueWaitMs = 0) {
+  const materializeStartedAt = Date.now()
   const root = await mkdtemp(join(tmpdir(), 'mscc-streamingunity-'))
   const asVideo = delivery === 'video'
   const output = join(root, asVideo ? 'media.mp4' : 'media.mkv')
-  const headers = 'Referer: https://vixcloud.co/\r\nOrigin: https://vixcloud.co\r\nUser-Agent: ' + UA + '\r\n'
+  const embedUrl = stream.embedUrl || 'https://vixcloud.cc/embed/'
+  const headers = vixCloudHeaders(embedUrl)
   try {
-    const program = await chooseProgram(stream.masterUrl, quality)
+    const programProbeStartedAt = Date.now()
+    const program = await chooseProgram(stream.masterUrl, quality, embedUrl)
+    const programProbeMs = Date.now() - programProbeStartedAt
     const args = ['-hide_banner','-loglevel','error','-headers',headers,'-i',stream.masterUrl]
     if (program) args.push('-map','0:p:' + program.id)
     if (asVideo) args.push('-sn')
@@ -416,8 +440,11 @@ async function remux(stream, quality, delivery, durationSeconds = 0) {
     args.push('-c','copy')
     if (asVideo) args.push('-movflags','+faststart')
     args.push('-y',output)
+    const ffmpegStartedAt = Date.now()
     await run('ffmpeg', args, REMUX_TIMEOUT_MS)
+    const sourceTransferMs = Date.now() - ffmpegStartedAt
 
+    const outputProbeStartedAt = Date.now()
     const probeRun = await run('ffprobe', [
       '-v','error',
       '-show_entries','format=duration,size:stream=codec_type,codec_name,width,height',
@@ -428,11 +455,31 @@ async function remux(stream, quality, delivery, durationSeconds = 0) {
     if (!(Number(probe.format && probe.format.duration) > 0) || !(probe.streams || []).some(row => row.codec_type === 'video')) {
       throw new Error('StreamingUnity remux was not playable.')
     }
+    const outputProbeMs = Date.now() - outputProbeStartedAt
+    const outputInfo = await stat(output)
+    const totalMs = Date.now() - materializeStartedAt
+    const throughputMbps = sourceTransferMs > 0
+      ? Number((outputInfo.size * 8 / sourceTransferMs / 1000).toFixed(2))
+      : 0
+    const metrics = {
+      queueWaitMs:Number(queueWaitMs) || 0,
+      programProbeMs,
+      sourceTransferMs,
+      outputProbeMs,
+      totalMs,
+      bytes:outputInfo.size,
+      throughputMbps,
+    }
+    console.info('[MSCC_MEDIA_TRANSFER] ' + JSON.stringify({
+      source:'StreamingUnity', phase:'source-download-remux', quality:String(quality || 'source'),
+      delivery:String(delivery || 'document'), ...metrics,
+    }))
     return {
       path:output,
       root,
       extension:asVideo ? '.mp4' : '.mkv',
       probe,
+      metrics,
       cleanup:() => rm(root, { recursive:true, force:true }).catch(() => {}),
     }
   } catch (error) {
@@ -442,9 +489,10 @@ async function remux(stream, quality, delivery, durationSeconds = 0) {
 }
 
 export async function materializeStream(stream, quality = 'source', delivery = 'document') {
+  const enqueuedAt = Date.now()
   const task = remuxQueue.then(
-    () => remux(stream, quality, delivery),
-    () => remux(stream, quality, delivery),
+    () => remux(stream, quality, delivery, 0, Date.now() - enqueuedAt),
+    () => remux(stream, quality, delivery, 0, Date.now() - enqueuedAt),
   )
   remuxQueue = task.catch(() => {})
   return task
@@ -462,5 +510,8 @@ export const _test = {
   uniqueTitles,
   identity,
   parseMaster,
+  findVixCloudEmbed,
+  vixCloudOrigin,
+  vixCloudHeaders,
   qualityList,
 }

@@ -1,0 +1,7 @@
+# Leave this unset for the safe demo/mock website preview.
+NIGHT_API_UPSTREAM=
+
+# Optional: Cloudflare Access service token for the private HTTPS tunnel.
+# Store real values as masked/secret variables in the hosting panel only.
+NIGHT_API_ACCESS_CLIENT_ID=
+NIGHT_API_ACCESS_CLIENT_SECRET=

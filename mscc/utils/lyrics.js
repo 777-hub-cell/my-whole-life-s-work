@@ -1,5 +1,5 @@
 const LRCLIB_ORIGIN = 'https://lrclib.net'
-const USER_AGENT = 'MSCC/2.3 (https://github.com/Tomex777/Build)'
+const USER_AGENT = 'MSCC/2.3 (https://github.com/777-hub-cell/my-whole-life-s-work)'
 
 function clean(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim()

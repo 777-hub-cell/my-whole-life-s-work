@@ -40,6 +40,7 @@ try {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
+        'origin': `http://127.0.0.1:${port}`,
         'x-forwarded-for': `198.51.100.${i+1}`,
         'x-real-ip': `203.0.113.${i+1}`,
       },
@@ -54,6 +55,7 @@ try {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
+      'origin': `http://127.0.0.1:${port}`,
       'x-forwarded-for': '192.0.2.99',
       'x-real-ip': '192.0.2.100',
     },

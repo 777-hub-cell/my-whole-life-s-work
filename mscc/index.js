@@ -1,6 +1,7 @@
-import { appendFile, cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { appendFile, chmod, cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { pathToFileURL } from 'node:url'
 import makeWASocket, {
   Browsers,
   DisconnectReason,
@@ -15,7 +16,7 @@ import { NightPlay, createNightPlayHandler } from './night-play.js'
 import { createNightPlayAvatarSync } from './night-play-avatar.js'
 import { recordPendingChannelLink, pendingChannelLink } from './night-channel-links.js'
 import { megaStorageDashboard, megaAvailableMounts, megaVerifyFolder } from './mega-storage.js'
-import { dispatchNamespacedCommand, loadCommands } from './command-registry.js'
+import { dispatchNamespacedCommand, loadCommands, mergeCommandRegistries } from './command-registry.js'
 import { AccountRegistry, legacyAccountRecords } from './account-registry.js'
 import { selectCcDestination } from './cc-routing.js'
 import { isPrivateOwnerDm } from './control-context.js'
@@ -73,7 +74,7 @@ import {
 } from './group-policy.js'
 import { looksLikeNumberSelection } from './number-selection.js'
 import { musicFollowupReply } from './music-chat-context.js'
-import { createInboundMessageGuard, matchesDisplayedChoice } from './inbound-message-guard.js'
+import { createInboundMessageGuard, isMainAccountInboundAllowed, isOwnerSelfControlCommand as isOwnerSelfControlMessage, matchesDisplayedChoice } from './inbound-message-guard.js'
 import { createCommandTiming } from './command-performance.js'
 import { createMessageScheduler } from './command-scheduler.js'
 import { createSquidGame } from './squid-game.js'
@@ -127,21 +128,88 @@ import { findGroupParticipant, groupMemberLabel, groupTargetJid, memberIdentityK
 const PRIVATE_COMMANDS_URL = new URL('./private-commands/', import.meta.url)
 const PUBLIC_COMMANDS_URL = new URL('./commands/', import.meta.url)
 const SOURCES_URL = new URL('./sources/', import.meta.url)
+// Administrator-owned commands live outside the versioned application release.
+const CUSTOM_COMMANDS_DIR = resolve(process.env.MSCC_CUSTOM_COMMANDS_DIR || '/var/lib/mscc/custom-commands')
+const CUSTOM_COMMANDS_URL = pathToFileURL(CUSTOM_COMMANDS_DIR + sep)
+await mkdir(join(CUSTOM_COMMANDS_DIR, 'general'), { recursive: true, mode: 0o700 })
+const EMPTY_COMMAND_REGISTRY = () => ({ commands: new Map(), canonical: [] })
 let privateCommandRegistry = await loadCommands(PRIVATE_COMMANDS_URL)
-let publicCommandRegistry = await loadCommands(PUBLIC_COMMANDS_URL, { allowMissing: true, capabilityFromDirectory: true })
+const builtInPublicCommandRegistry = await loadCommands(PUBLIC_COMMANDS_URL, { allowMissing: true, capabilityFromDirectory: true })
+let customCommandRegistry = EMPTY_COMMAND_REGISTRY()
+let publicCommandRegistry = builtInPublicCommandRegistry
+try {
+  customCommandRegistry = await loadCommands(CUSTOM_COMMANDS_URL, { cacheBust: Date.now(), allowMissing: true, capabilityFromDirectory: true })
+  publicCommandRegistry = mergeCommandRegistries(builtInPublicCommandRegistry, customCommandRegistry)
+} catch (error) {
+  console.error('NIGHT custom command startup load failed; built-in commands remain available:', error?.message || error)
+  customCommandRegistry = EMPTY_COMMAND_REGISTRY()
+}
 
 const num = (name, fallback, min, max) => {
   const n = Number.parseInt(process.env[name] || '', 10)
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback
 }
 
+const SETTINGS_FILE = process.env.SETTINGS_FILE || '/var/lib/mscc/data/mscc-settings.json'
+const MANAGED_ENV_FILE = process.env.MSCC_MANAGED_ENV_FILE || join(dirname(SETTINGS_FILE), 'mscc-managed-env.json')
+const MANAGED_ENV_SCHEMA = Object.freeze({
+  MESSAGE_TTL_HOURS: { label:'Message retention (hours)', description:'How long indexed message metadata is retained.', min:1, max:168, default:24 },
+  MAX_MESSAGE_CACHE: { label:'Message cache limit', description:'Maximum cached messages per account.', min:100, max:20000, default:5000 },
+  MAX_ACCOUNTS: { label:'Maximum linked accounts', description:'Maximum number of WhatsApp account records.', min:1, max:50, default:4 },
+  GROUP_META_TTL_SECONDS: { label:'Group metadata cache (seconds)', description:'How long group metadata can be reused before refreshing.', min:10, max:600, default:60 },
+  GROUP_META_CACHE_MAX: { label:'Group metadata cache size', description:'Maximum group metadata entries kept in memory.', min:16, max:1024, default:128 },
+  AI_HISTORY_DAYS: { label:'AI history retention (days)', description:'How long conversational history is retained.', min:1, max:365, default:30 },
+  AI_HISTORY_MAX_PER_CHAT: { label:'AI history limit per chat', description:'Maximum AI history records retained per chat.', min:1000, max:100000, default:25000 },
+  RELEASE_WATCH_INTERVAL_MINUTES: { label:'Release watcher interval (minutes)', description:'How often the release watcher checks for updates.', min:1, max:1440, default:5 },
+  TMDB_READ_ACCESS_TOKEN: { label:'TMDB Read Access Token', description:'Bearer token used for movie and TV title/identity lookup. Secret value is write-only in Control Centre.', secret:true, maxLength:4096, default:'' },
+  TMDB_API_KEY: { label:'TMDB API Key (fallback)', description:'Optional TMDB API key used only when no read access token is set. Secret value is write-only in Control Centre.', secret:true, maxLength:512, default:'' },
+})
+
+function validateManagedEnvValue(key, rawValue) {
+  const spec = MANAGED_ENV_SCHEMA[key]
+  if (!spec) throw new Error('This environment variable is not in the managed settings allowlist.')
+  const valueText = String(rawValue ?? '').trim()
+  if (spec.secret === true) {
+    const maxLength = Number.isInteger(spec.maxLength) ? spec.maxLength : 4096
+    if (!valueText || valueText.length > maxLength || /[\u0000-\u001f\u007f]/.test(valueText)) {
+      throw new Error(key + ' must be a non-empty secret value of at most ' + maxLength + ' characters.')
+    }
+    return valueText
+  }
+  if (!/^\d+$/.test(valueText)) throw new Error(key + ' must be a whole number.')
+  const value = Number(valueText)
+  if (!Number.isSafeInteger(value) || value < spec.min || value > spec.max) {
+    throw new Error(key + ' must be between ' + spec.min + ' and ' + spec.max + '.')
+  }
+  return String(value)
+}
+
+let managedEnvOverrides = {}
+try {
+  const parsed = JSON.parse(await readFile(MANAGED_ENV_FILE, 'utf8'))
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    for (const [key, rawValue] of Object.entries(parsed)) {
+      try {
+        const value = validateManagedEnvValue(key, rawValue)
+        managedEnvOverrides[key] = value
+        process.env[key] = value
+      } catch {
+        // Ignore unknown or malformed values; the original service environment stays authoritative.
+      }
+    }
+  }
+} catch (error) {
+  if (error?.code !== 'ENOENT') console.warn('Managed MSCC environment overrides could not be loaded; deployment defaults retained.')
+}
+
 const LEGACY_ACCOUNT_A_NUMBER = digits(process.env.ACCOUNT_A_NUMBER || process.env.BOT_NUMBER)
 const LEGACY_ACCOUNT_B_NUMBER = digits(process.env.ACCOUNT_B_NUMBER)
-const OWNER_NUMBER = digits(process.env.OWNER_NUMBER || LEGACY_ACCOUNT_A_NUMBER)
+let OWNER_NUMBER = digits(process.env.OWNER_NUMBER || LEGACY_ACCOUNT_A_NUMBER)
+let OWNER_NAME = String(process.env.OWNER_NAME || process.env.BOT_OWNER || 'Owner').trim().slice(0, 64) || 'Owner'
 const LEGACY_ACCOUNT_A_AUTH_DIR = process.env.ACCOUNT_A_AUTH_DIR || '/var/lib/mscc/auth'
 const LEGACY_ACCOUNT_B_AUTH_DIR = process.env.ACCOUNT_B_AUTH_DIR || '/var/lib/mscc/auth-b'
 const INDEX_FILE = process.env.MESSAGE_INDEX_FILE || '/var/lib/mscc/data/mscc-message-index.json'
-const SETTINGS_FILE = process.env.SETTINGS_FILE || '/var/lib/mscc/data/mscc-settings.json'
+const OWNER_CONFIG_FILE = process.env.MSCC_OWNER_CONFIG_FILE || join(dirname(SETTINGS_FILE), 'mscc-owner-config.json')
 const SHARED_DB_FILE = process.env.MSCC_SHARED_DB_FILE || join(dirname(SETTINGS_FILE), 'mscc-shared.sqlite')
 const ACCOUNT_REGISTRY_FILE = process.env.ACCOUNT_REGISTRY_FILE || join(dirname(SETTINGS_FILE), 'mscc-accounts.json')
 const ACCOUNT_AUTH_ROOT = process.env.ACCOUNT_AUTH_ROOT || '/var/lib/mscc/accounts'
@@ -177,12 +245,16 @@ const aniListResolver = createAniListResolver()
 const tmdbResolver = createTmdbResolver()
 const adaptationResolver = createAdaptationResolver()
 
-const controlNumbers = new Set(
-  String(process.env.CONTROL_NUMBERS || OWNER_NUMBER)
-    .split(',')
-    .map(digits)
-    .filter(v => /^\d{7,15}$/.test(v))
-)
+const ENV_CONTROL_NUMBERS = String(process.env.CONTROL_NUMBERS || '')
+  .split(',')
+  .map(digits)
+  .filter(v => /^\d{7,15}$/.test(v))
+const controlNumbers = new Set([...ENV_CONTROL_NUMBERS, ...(OWNER_NUMBER ? [OWNER_NUMBER] : [])])
+function refreshControlNumbers() {
+  controlNumbers.clear()
+  for (const number of ENV_CONTROL_NUMBERS) controlNumbers.add(number)
+  if (OWNER_NUMBER) controlNumbers.add(OWNER_NUMBER)
+}
 
 const accountRegistry = new AccountRegistry({
   file: ACCOUNT_REGISTRY_FILE,
@@ -455,6 +527,30 @@ const trackable = isTrackableJid
 const masked = maskedPhone
 const destinationIdFor = () => selectCcDestination({ accounts })
 const destinationAccount = () => accounts.get(destinationIdFor())
+
+/**
+ * Account A's WhatsApp "message yourself" chat is the out-of-band private
+ * console for managing linked bot sessions. It is not a blanket fromMe
+ * exemption: only registered private commands addressed to Account A itself
+ * are accepted. All other bot-authored traffic remains inert.
+ */
+function isOwnerSelfControlCommand(account, msg) {
+  const chatJid = normalizeJid(msg?.key?.remoteJid)
+  const ownJid = normalizeJid(selfJid(account))
+  const verifiedSelfChat = isOpaqueLid(chatJid) &&
+    !hasConflictingLidMapping(sharedStorage, chatJid) &&
+    normalizeJid(storedLidPhone(sharedStorage, chatJid)) === ownJid
+  return isOwnerSelfControlMessage({
+    account,
+    mainAccountId:destinationIdFor(),
+    message:msg,
+    chatJid,
+    ownJid,
+    verifiedSelfChat,
+    text:commandText(msg?.message),
+    privateCommands:privateCommandRegistry?.commands,
+  })
+}
 
 const futureproof = findViewOnceMedia
 const unlocked = unlockViewOnce
@@ -2500,6 +2596,7 @@ async function onDelete(account, updates) {
 }
 
 const acceptInboundCommand = createInboundMessageGuard({
+  allowSelf:(accountId, msg) => isOwnerSelfControlCommand(accounts.get(accountId), msg),
   claim:(accountId, msg, now) => !sharedStorage || sharedStorage.claimInboundMessage({
     accountId,
     chatJid:msg.key.remoteJid,
@@ -2532,15 +2629,21 @@ async function processInboundMessage(account, msg) {
     try {
       if (!msg?.message || !msg?.key?.id) return
 
-      // Preserve bot-authored messages for quoting / chat context only.
-      // NEVER interpret our own replies as commands or pending choices:
-      // replying "I could not match that choice" used to feed itself
-      // indefinitely until WhatsApp received hundreds of bot messages.
-      if (msg.key.fromMe === true) {
+      // Bot-authored replies are context-only. The sole exception is an
+      // explicitly registered private command in Account A's exact self-chat;
+      // ordinary replies and pending-choice warnings still cannot feed back
+      // into command processing.
+      const ownerSelfControl = isOwnerSelfControlCommand(account, msg)
+      if (msg.key.fromMe === true && !ownerSelfControl) {
         remember(account, msg)
         rememberConversation(account, msg)
         return
       }
+      // Account A is a private control identity, never a public/group responder.
+      // Only its verified registered command in its own self-chat passes this gate.
+      // This must run before de-duplication, group handlers, capability routing,
+      // assistants, auto-CC and every possible user-facing reply.
+      if (!isMainAccountInboundAllowed(account, ownerSelfControl)) return
       // Replayed/duplicated Baileys upserts must not execute a choice twice.
       const inboundChat = normalizeJid(msg.key.remoteJid)
       const channelPost = isChannelJid(inboundChat)
@@ -2571,8 +2674,10 @@ async function processInboundMessage(account, msg) {
       const chat = normalizeJid(msg.key.remoteJid)
       const text = commandText(msg.message)
       const authority = await authorityContext(account, msg)
-      const controller = authority.isSupremeOwner
-      const privateControl = await isPrivateControlContext(account, msg, authority)
+      // The exact Account A self-chat check is an owner proof for this one
+      // private command path; it does not grant public/group command access.
+      const controller = authority.isSupremeOwner || ownerSelfControl
+      const privateControl = ownerSelfControl || await isPrivateControlContext(account, msg, authority)
       probe?.mark('identity')
 
       remember(account, msg)
@@ -2691,10 +2796,10 @@ async function processInboundMessage(account, msg) {
           message: msg,
           controller,
           privateControl,
-          isSupremeOwner: authority.isSupremeOwner,
+          isSupremeOwner: authority.isSupremeOwner || ownerSelfControl,
           isSudo: authority.isSudo,
-          isPublicOwner: authority.isPublicOwner,
-          isSessionOwner: authority.isSessionOwner,
+          isPublicOwner: authority.isPublicOwner || ownerSelfControl,
+          isSessionOwner: authority.isSessionOwner || ownerSelfControl,
           isGroupAdmin: () => isGroupAdminContext(account, msg),
           isBotGroupAdmin: () => isBotGroupAdminContext(account, msg),
           deleteRecentMessages: count => deleteRecentMessages(account, msg, count),
@@ -2873,13 +2978,8 @@ async function processInboundMessage(account, msg) {
           sudoSet: (raw, enabled) => setPublicSudoTarget(account, msg, raw, enabled),
           ownerContact: () => {
             const main = accountRegistry.main()
-            const phoneNumber = digits(main?.phoneNumber || OWNER_NUMBER)
-            const displayName = String(
-              process.env.OWNER_NAME ||
-              process.env.BOT_OWNER ||
-              main?.displayName ||
-              'Owner'
-            ).trim().slice(0, 64) || 'Owner'
+            const phoneNumber = digits(OWNER_NUMBER || main?.phoneNumber)
+            const displayName = String(OWNER_NAME || main?.displayName || 'Owner').trim().slice(0, 64) || 'Owner'
             return { phoneNumber, displayName }
           },
           libraryGet: itemKey => sharedStorage?.getLibraryItem(authority.senderKey, itemKey) || null,
@@ -2933,6 +3033,8 @@ async function processInboundMessage(account, msg) {
       })
       probe?.mark('command')
       if (commandHandled) return
+      // Fail closed if the private registry changed between admission and dispatch.
+      if (ownerSelfControl) return
 
       // If the user is asking about a pending music choice, give grounded
       // command feedback. A personality must never claim that a non-existent
@@ -3383,6 +3485,183 @@ async function repairAccount(id, mode = 'code') {
   })
 }
 
+function getOwnerConfig() {
+  const main = accountRegistry.main()
+  const number = digits(OWNER_NUMBER || main?.phoneNumber)
+  return {
+    ownerNumberConfigured: Boolean(number),
+    ownerNumberMasked: number ? masked(number) : 'Not configured',
+    ownerName: OWNER_NAME || 'Owner',
+  }
+}
+
+async function loadOwnerConfig() {
+  try {
+    const raw = JSON.parse(await readFile(OWNER_CONFIG_FILE, 'utf8'))
+    const number = digits(raw?.ownerNumber)
+    const name = String(raw?.ownerName || '').trim()
+    if (/^\d{7,15}$/.test(number)) OWNER_NUMBER = number
+    if (name && name.length <= 64 && !/[\u0000-\u001f\u007f]/.test(name)) OWNER_NAME = name
+    refreshControlNumbers()
+  } catch (error) {
+    if (error?.code !== 'ENOENT') console.warn('MSCC owner configuration could not be loaded; environment defaults retained.')
+  }
+}
+
+async function setOwnerConfig({ ownerNumber, ownerName } = {}) {
+  const number = digits(ownerNumber)
+  const name = String(ownerName ?? OWNER_NAME ?? 'Owner').trim()
+  if (!/^\d{7,15}$/.test(number)) throw new Error('Owner number must contain 7 to 15 digits, including country code.')
+  if (!name || name.length > 64 || /[\u0000-\u001f\u007f]/.test(name)) throw new Error('Owner name must contain 1 to 64 normal characters.')
+  const temp = OWNER_CONFIG_FILE + '.' + randomUUID() + '.tmp'
+  await mkdir(dirname(OWNER_CONFIG_FILE), { recursive: true, mode: 0o700 })
+  try {
+    await writeFile(temp, JSON.stringify({ ownerNumber: number, ownerName: name }, null, 2) + '\n', { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+    await chmod(temp, 0o600)
+    await rename(temp, OWNER_CONFIG_FILE)
+    await chmod(OWNER_CONFIG_FILE, 0o600)
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => {})
+    throw error
+  }
+  OWNER_NUMBER = number
+  OWNER_NAME = name
+  refreshControlNumbers()
+  await recordActivity('configuration.owner-contact-changed', { ownerNumberMasked: masked(number), ownerName: name })
+  await writeRuntimeRegistry()
+  return getOwnerConfig()
+}
+
+async function getManagedEnv() {
+  const owner = getOwnerConfig()
+  const rows = [
+    { key:'OWNER_NUMBER', label:'Owner WhatsApp number', description:'Owner-only authority/contact number. Secret value is never returned.', isSecret:true, configured:owner.ownerNumberConfigured, editable:true, applyMode:'immediate' },
+    { key:'OWNER_NAME', label:'Owner display name', description:'Name used in owner contact replies.', isSecret:false, configured:true, value:OWNER_NAME, editable:true, applyMode:'immediate' },
+  ]
+  for (const [key, spec] of Object.entries(MANAGED_ENV_SCHEMA)) {
+    const value = String(managedEnvOverrides[key] ?? process.env[key] ?? spec.default ?? '')
+    const isSecret = spec.secret === true
+    rows.push({
+      key,
+      label:spec.label,
+      description:spec.description,
+      isSecret,
+      configured:isSecret ? Boolean(value.trim()) : true,
+      ...(!isSecret ? { value } : {}),
+      editable:true,
+      applyMode:'restart',
+      requiresRestart:true,
+      min:spec.min,
+      max:spec.max,
+      maxLength:spec.maxLength,
+    })
+  }
+  return rows
+}
+
+async function saveManagedEnv(key, rawValue) {
+  const name = String(key || '').trim().toUpperCase()
+  if (name === 'OWNER_NUMBER') {
+    const saved = await setOwnerConfig({ ownerNumber:rawValue, ownerName:OWNER_NAME })
+    return { key:name, label:'Owner WhatsApp number', isSecret:true, configured:saved.ownerNumberConfigured, editable:true, applyMode:'immediate', requiresRestart:false }
+  }
+  if (name === 'OWNER_NAME') {
+    const main = accountRegistry.main()
+    const number = digits(OWNER_NUMBER || main?.phoneNumber)
+    const value = String(rawValue ?? '').trim()
+    if (!number) throw new Error('Set the owner number before editing the owner display name.')
+    const saved = await setOwnerConfig({ ownerNumber:number, ownerName:value })
+    return { key:name, label:'Owner display name', value:saved.ownerName, isSecret:false, configured:true, editable:true, applyMode:'immediate', requiresRestart:false }
+  }
+
+  const value = validateManagedEnvValue(name, rawValue)
+  const next = { ...managedEnvOverrides, [name]:value }
+  const temp = MANAGED_ENV_FILE + '.' + randomUUID() + '.tmp'
+  await mkdir(dirname(MANAGED_ENV_FILE), { recursive:true, mode:0o700 })
+  try {
+    await writeFile(temp, JSON.stringify(next, null, 2) + '\n', { encoding:'utf8', mode:0o600, flag:'wx' })
+    await chmod(temp, 0o600)
+    await rename(temp, MANAGED_ENV_FILE)
+    await chmod(MANAGED_ENV_FILE, 0o600)
+  } catch (error) {
+    await rm(temp, { force:true }).catch(() => {})
+    throw error
+  }
+  managedEnvOverrides = next
+  await recordActivity('configuration.managed-environment-changed', { key:name, applyMode:'restart' })
+  const spec = MANAGED_ENV_SCHEMA[name]
+  return {
+    key:name,
+    label:spec.label,
+    description:spec.description,
+    ...(spec.secret === true ? {} : { value }),
+    isSecret:spec.secret === true,
+    configured:Boolean(value),
+    editable:true,
+    applyMode:'restart',
+    requiresRestart:true,
+    min:spec.min,
+    max:spec.max,
+    maxLength:spec.maxLength,
+  }
+}
+
+function commandModuleCatalog() {
+  const groups = new Map()
+  for (const command of publicCommandRegistry.canonical) {
+    const id = String(command.capability || 'general').trim().toLowerCase() || 'general'
+    if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id)) continue
+    if (!groups.has(id)) groups.set(id, {
+      id,
+      name: id.replace(/[._-]+/g, ' ').replace(/\b\w/g, char => char.toUpperCase()),
+      category: 'Public command modules',
+      description: String(command.description || 'Public commands grouped by their capability folder.').trim().slice(0, 180),
+      commands: [],
+    })
+    const group = groups.get(id)
+    const commandName = String(command.name || '').trim()
+    if (commandName && !group.commands.includes(commandName)) group.commands.push(commandName)
+  }
+  return [...groups.values()].map(group => ({
+    ...group,
+    commands: group.commands.sort((a, b) => a.localeCompare(b)),
+    commandCount: group.commands.length,
+  })).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+async function setProfileCapability(profileId, capability, enabled) {
+  const id = String(profileId || '').trim().toLowerCase()
+  const cap = String(capability || '').trim().toLowerCase()
+  if (!sharedStorage) throw new Error('Behaviour profile storage is not available.')
+  if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id) || ['control', 'unassigned'].includes(id)) {
+    throw new Error('This behaviour profile is protected and cannot be changed.')
+  }
+  if (typeof enabled !== 'boolean') throw new Error('Module enabled must be true or false.')
+  const catalog = commandModuleCatalog()
+  if (!catalog.some(module => module.id === cap)) throw new Error('Unknown public command module.')
+  let profile = sharedStorage.getProfile(id)
+  if (!profile) throw new Error('Unknown behaviour profile.')
+  const explicit = new Map((profile.capabilities || []).map(item => [item.capability, Number(item.priority)]))
+  if (!enabled && profile.universal) {
+    // Preserve every other inherited capability before converting universal to explicit.
+    sharedStorage.setProfileMode(id, false)
+    for (const module of catalog) {
+      if (module.id === cap || explicit.has(module.id)) continue
+      sharedStorage.setCapability(id, module.id, profile.basePriority)
+    }
+    sharedStorage.setCapability(id, cap, null)
+  } else if (enabled) {
+    if (!profile.universal) sharedStorage.setSpecialty(id, cap, true)
+  } else {
+    sharedStorage.setCapability(id, cap, null)
+  }
+  sharedStorage.clearGroupRoutes()
+  profile = sharedStorage.getProfile(id)
+  await recordActivity('profile.module-changed', { profile: id, module: cap, enabled })
+  await writeRuntimeRegistry()
+  return profile
+}
+
 async function setSetting(key, value) {
   const defaults = commandSettingDefaults()
   if (!Object.prototype.hasOwnProperty.call(defaults, key)) {
@@ -3405,9 +3684,14 @@ async function setPublicPrefix(value) {
 async function reloadCommandsDetailed() {
   const cacheBust = Date.now()
   const nextPrivate = await loadCommands(PRIVATE_COMMANDS_URL, { cacheBust })
-  const nextPublic = await loadCommands(PUBLIC_COMMANDS_URL, { cacheBust, allowMissing: true, capabilityFromDirectory: true })
+  const nextBuiltInPublic = await loadCommands(PUBLIC_COMMANDS_URL, { cacheBust, allowMissing: true, capabilityFromDirectory: true })
+  // Build the next registries completely before swapping. Invalid custom code or
+  // a command-name collision leaves the currently working registry untouched.
+  const nextCustom = await loadCommands(CUSTOM_COMMANDS_URL, { cacheBust, allowMissing: true, capabilityFromDirectory: true })
+  const nextPublic = mergeCommandRegistries(nextBuiltInPublic, nextCustom)
   const nextSources = sourceRegistry ? await sourceRegistry.load({ cacheBust }) : []
   privateCommandRegistry = nextPrivate
+  customCommandRegistry = nextCustom
   publicCommandRegistry = nextPublic
   settings = mergeCommandSettings(settings, nextPrivate)
   await saveSettings()
@@ -3415,8 +3699,9 @@ async function reloadCommandsDetailed() {
   await writeRuntimeRegistry()
   const privateNames = nextPrivate.canonical.map(command => command.name).sort()
   const publicNames = nextPublic.canonical.map(command => command.name).sort()
-  await recordActivity('command.registry-changed', { count:privateNames.length + publicNames.length, privateCount:privateNames.length, publicCount:publicNames.length })
-  return { private:privateNames, public:publicNames, sources:nextSources.map(source => `${source.capability}:${source.id}`).sort() }
+  const customNames = nextCustom.canonical.map(command => command.name).sort()
+  await recordActivity('command.registry-changed', { count:privateNames.length + publicNames.length, privateCount:privateNames.length, publicCount:publicNames.length, customCount:customNames.length })
+  return { private:privateNames, public:publicNames, custom:customNames, sources:nextSources.map(source => `${source.capability}:${source.id}`).sort() }
 }
 
 async function reloadCommands() {
@@ -3568,6 +3853,7 @@ async function requestRestart() {
 }
 
 async function init() {
+  await loadOwnerConfig()
   await loadAccounts()
   sharedStorage = await openSharedStorage({
     file: SHARED_DB_FILE,
@@ -3619,9 +3905,14 @@ async function init() {
     sessionSecret: WEB_SESSION_SECRET,
     localControlPort: LOCAL_CONTROL_PORT,
     getState: webState,
+    customCommandsDir: CUSTOM_COMMANDS_DIR,
     getActivity: activity,
     getAccountDiagnostics,
     getCloudDashboard: () => megaStorageDashboard({ passive:true }),
+    getCloudDashboardActive: async () => {
+      const cloud = await megaStorageDashboard()
+      return { ...cloud, connected: cloud.configured === true }
+    },
     getCloudMounts: () => megaAvailableMounts(),
     verifyCloudFolder: ({ targetId }) => megaVerifyFolder({ targetId }),
     pairAccount,
@@ -3633,8 +3924,16 @@ async function init() {
     renameAccount,
     assignAccountProfile,
     setSetting,
+    setPublicPrefix,
+    getOwnerConfig,
+    setOwnerConfig,
+    getManagedEnv,
+    setManagedEnv: saveManagedEnv,
+    listCommandModules: commandModuleCatalog,
+    setProfileCapability,
     setDestination,
     reloadCommands,
+    reloadCustomCommands: reloadCommandsDetailed,
     reloadModule
   })
 

@@ -2,6 +2,7 @@ import { runMovieCommand } from './movie-flow.js'
 
 const calls = []
 const lists = []
+const interactive = []
 const replies = []
 let saved = null
 let holdNextDownload = false
@@ -15,8 +16,12 @@ async function makeProgress(initial) {
   const finished = new Promise(resolve => { finish = resolve })
   const run = { initial:String(initial), updates:[], finished }
   progressRuns.push(run)
-  const update = async value => { run.updates.push(String(value)); finish(); return value }
-  return { done:update, fail:update }
+  const update = async value => {
+    run.updates.push(String(value))
+    if (/was sent|OK:movie:|download failed/i.test(String(value))) finish()
+    return value
+  }
+  return { update, done:update, fail:update }
 }
 
 const ctx = {
@@ -25,6 +30,7 @@ const ctx = {
   getDeliveryDefault:() => saved,
   reply:async value => { replies.push(String(value)); return value },
   replyList:async value => { lists.push(value); return value },
+  replyInteractive:async value => { interactive.push(value); return value },
   progress:makeProgress,
   resolveTmdbTitles:async query => ({
     query,
@@ -48,7 +54,10 @@ const ctx = {
       return {
         status:'ok',
         source:{ id:'alpha', name:'Alpha Movies' },
-        result:{ items:[{ id:'matrix', title:'The Matrix', year:1999 }] },
+        result:{ items:[
+          { id:'matrix', title:'The Matrix', year:1999 },
+          { id:'matrix-reloaded', title:'The Matrix Reloaded', year:2003 },
+        ] },
       }
     }
     if (payload.action === 'options') {
@@ -59,6 +68,12 @@ const ctx = {
       }
     }
     if (payload.action === 'download') {
+      if (!holdNextDownload && typeof payload.onProgress === 'function') {
+        await payload.onProgress({ phase:'resolving' })
+        await payload.onProgress({ phase:'copy', percent:40, timeSeconds:120, durationSeconds:300, speed:'1.0x' })
+        await payload.onProgress({ phase:'validating' })
+        await payload.onProgress({ phase:'upload' })
+      }
       if (holdNextDownload) {
         holdNextDownload = false
         return new Promise(resolve => {
@@ -85,10 +100,24 @@ const searches = calls.filter(call => call.payload.action === 'search').map(call
 if (searches.join('|') !== 'matrixx|The Matrix') {
   throw new Error('Movie TMDB alias retry failed: ' + searches.join('|'))
 }
+const resultList = lists.at(-1)
+const movieRow = resultList?.rows?.find(row => row.id.includes('~title'))
+if (!movieRow) throw new Error('Movie search results did not expose a selectable title')
+
+await runMovieCommand(ctx, { args:movieRow.id.split(/\s+/).slice(1) })
 const optionList = lists.at(-1)
-const option = optionList?.sections?.flatMap(section => section.rows)
-  .find(row => row.id.includes('~download') && /1080p.*Document/.test(row.title))
-if (!option) throw new Error('Movie download options missing')
+if (optionList?.buttonText !== 'Choose quality') {
+  throw new Error('Movie selection did not open the dedicated quality menu')
+}
+if (interactive.length) {
+  throw new Error('Movie quality menu must not mix quick-reply and single-select controls')
+}
+const optionRows = optionList?.sections?.flatMap(section => section.rows) || []
+const option = optionRows.find(row => row.id.includes('~download') && /1080p.*Document/.test(row.title))
+if (!option) throw new Error('Movie quality and delivery choices missing')
+if (!optionRows.some(row => row.title === 'Add to Library')) {
+  throw new Error('Movie quick actions were not preserved in the selection menu')
+}
 
 replies.length = 0
 await runMovieCommand(ctx, { args:option.id.split(/\s+/).slice(1) })
@@ -96,6 +125,12 @@ const firstDelivery = progressRuns.at(-1)
 await firstDelivery.finished
 if (!firstDelivery.updates.some(value => value.includes('OK:movie:1080:document'))) {
   throw new Error('Movie download option did not reach source download')
+}
+if (!firstDelivery.updates.some(value => value.includes('copying stream to server disk 40%'))) {
+  throw new Error('Movie stream-copy progress was not surfaced')
+}
+if (!firstDelivery.updates.some(value => value.includes('uploading the file to WhatsApp'))) {
+  throw new Error('Movie WhatsApp delivery stage was not surfaced')
 }
 if (!firstDelivery.initial.includes('download queued')) {
   throw new Error('Movie download was not acknowledged before source delivery')
@@ -125,6 +160,10 @@ saved = { quality:'720', delivery:'video' }
 calls.length = 0
 replies.length = 0
 await runMovieCommand(ctx, { args:['The','Matrix'] })
+const savedResultList = lists.at(-1)
+const savedMovieRow = savedResultList?.rows?.find(row => row.id.includes('~title'))
+if (!savedMovieRow) throw new Error('Saved-delivery movie result was not selectable')
+await runMovieCommand(ctx, { args:savedMovieRow.id.split(/\s+/).slice(1) })
 const savedDelivery = progressRuns.at(-1)
 await savedDelivery.finished
 if (!calls.some(call => call.payload.action === 'download' && call.payload.quality === '720' && call.payload.delivery === 'video')) {
@@ -134,6 +173,12 @@ if (!calls.some(call => call.payload.action === 'download' && call.payload.quali
 lists.length = 0
 saved = null
 await runMovieCommand(ctx, { args:['~tmdb','603'] })
-if (!lists.at(-1)?.sections?.length) throw new Error('TMDB movie handoff did not enter download options')
+const tmdbResultList = lists.at(-1)
+const tmdbMovieRow = tmdbResultList?.rows?.find(row => row.id.includes('~title'))
+if (!tmdbMovieRow) throw new Error('TMDB movie handoff did not show selectable results')
+await runMovieCommand(ctx, { args:tmdbMovieRow.id.split(/\s+/).slice(1) })
+if (lists.at(-1)?.buttonText !== 'Choose quality') {
+  throw new Error('TMDB movie handoff did not open the quality menu')
+}
 
 console.log('PASS movie search/identity/download flow')

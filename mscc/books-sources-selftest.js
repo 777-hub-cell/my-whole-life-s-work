@@ -4,6 +4,7 @@ import standardEbooks from './sources/books/standard-ebooks.js'
 import openLibrary from './sources/books/openlibrary.js'
 import novelBuddy from './sources/books/novelbuddy.js'
 import welib from './sources/books/welib.js'
+import { rankBookSearchResults } from './sources/books/_shared.js'
 
 const registry = new SourceRegistry({
   rootUrl:new URL('./sources/', import.meta.url),
@@ -108,5 +109,67 @@ if (welibItems.length !== 1 || welibItems[0].id !== md5English) {
 if (welibItems[0].format !== 'EPUB' || welibItems[0].language !== 'English') {
   throw new Error('WeLib search metadata parsing failed.')
 }
+
+
+const percyMatches = rankBookSearchResults('percy jackson', [
+  { title:'Poetry', author:'Ring Lardner' },
+  { title:'The Sea of Monsters', author:'Rick Riordan', rawText:'Percy Jackson and the Olympians' },
+  { title:'Percy Jackson and the Lightning Thief', author:'Rick Riordan' },
+])
+if (percyMatches.length !== 2 || percyMatches.some(item => item.title === 'Poetry')) {
+  throw new Error('Book search relevance admitted an unrelated title.')
+}
+
+const peterMatches = rankBookSearchResults('Peter and Jane', [
+  { title:'Sense and Sensibility', author:'Jane Austen' },
+  { title:'Peter and Jane', author:'S. Macnaughtan' },
+])
+if (peterMatches.length !== 1 || peterMatches[0].author !== 'S. Macnaughtan') {
+  throw new Error('Book search relevance did not keep the exact Peter and Jane match.')
+}
+
+const unrelatedStandard = standardEbooks._test.parseSearch(
+  '<a href="/ebooks/ring-lardner/poetry">Poetry</a>',
+  'percy jackson',
+)
+if (unrelatedStandard.length) throw new Error('Standard Ebooks returned Poetry for Percy Jackson.')
+
+const unrelatedGutenberg = gutenberg._test.parseSearch(`
+<li class="booklink">
+  <a href="/ebooks/100"><span class="title">Poetry</span><span class="subtitle">Ring Lardner</span></a>
+</li>`, 'percy jackson')
+if (unrelatedGutenberg.length) throw new Error('Project Gutenberg returned an irrelevant Percy Jackson result.')
+
+const boundedFiles = openLibrary._test.archiveFormats('bounded-item', {
+  files:[
+    { name:'book.pdf', size:'213909504' },
+    { name:'book.txt', size:'614400' },
+  ],
+})
+if (boundedFiles.length !== 1 || boundedFiles[0].format !== 'TXT') {
+  throw new Error('Open Library exposed an oversized PDF edition.')
+}
+
+const incompleteNovelChapters = Array.from({ length:19 }, (_, index) => ({
+  id:String(index + 2),
+  name:'Chapter ' + (index + 2),
+}))
+let chapterGapRejected = false
+try {
+  novelBuddy._test.assertCompleteChapters({}, incompleteNovelChapters)
+} catch (error) {
+  chapterGapRejected = /chapter 1 is missing/i.test(String(error?.message || ''))
+}
+if (!chapterGapRejected) throw new Error('NovelBuddy accepted a novel whose first chapter is missing.')
+
+let chapterCountRejected = false
+try {
+  novelBuddy._test.assertCompleteChapters({ chapterCount:20 }, incompleteNovelChapters, 20)
+} catch (error) {
+  chapterCountRejected = /expected 20, received 19/i.test(String(error?.message || ''))
+}
+if (!chapterCountRejected) throw new Error('NovelBuddy accepted fewer chapters than the source declared.')
+
+console.log('PASS book search relevance, edition size limits and novel completeness')
 
 console.log('PASS books/novels sources: ' + expected.join(' | '))

@@ -85,8 +85,8 @@ if (next?.props?.pageProps?.initialManga?.id !== '123') {
   throw new Error('NovelBuddy __NEXT_DATA__ parsing failed.')
 }
 
-if (novelBuddy.fallbackOrder !== 10 || welib.fallbackOrder !== 20) {
-  throw new Error('Books fallback order must remain NovelBuddy #1, WeLib #2.')
+if (novelBuddy.fallbackOrder !== 10) {
+  throw new Error('NovelBuddy must retain first fallback priority among enabled novel sources.')
 }
 if (registry.get('books', 'welib') !== null) {
   throw new Error('A disabled book source must not be selectable.')

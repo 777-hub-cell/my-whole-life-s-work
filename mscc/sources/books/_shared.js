@@ -1,5 +1,6 @@
 import { readFile, stat } from 'node:fs/promises'
 import AdmZip from 'adm-zip'
+import { posix as pathPosix } from 'node:path'
 
 export const BOOK_UA = 'MSCC/2.3 (books source; +https://github.com/777-hub-cell/my-whole-life-s-work)'
 
@@ -180,7 +181,8 @@ export function validateBookDocument(data, { mimetype = '', fileName = 'book' } 
   const maxBytes = BOOK_LIMITS[kind] || MAX_BOOK_BYTES
   if (!buffer.length) throw new Error('The book provider returned an empty file.')
   if (buffer.length > maxBytes) throw new Error(`The selected book file is too large (${sizeText(buffer.length)}; limit ${sizeText(maxBytes)}).`)
-  if (buffer.length < 128) throw new Error('The selected book file is too small to be a complete document.')
+  const minBytes = kind === 'epub' || kind === 'kepub' ? 1024 : 128
+  if (buffer.length < minBytes) throw new Error('The selected book file is too small to be a complete document.')
 
   const head = buffer.subarray(0, Math.min(buffer.length, 512))
   const headText = head.toString('utf8').trimStart().toLowerCase()
@@ -196,14 +198,64 @@ export function validateBookDocument(data, { mimetype = '', fileName = 'book' } 
     } catch {
       throw new Error('The EPUB archive is damaged or incomplete.')
     }
-    const names = entries.map(entry => String(entry.entryName || '').replace(/^\//, '').toLowerCase())
-    const mimeEntry = entries.find(entry => String(entry.entryName || '').toLowerCase() === 'mimetype')
-    if (!mimeEntry || !names.includes('meta-inf/container.xml') || !names.some(name => name.endsWith('.opf'))) {
+    const entryMap = new Map(entries.map(entry => [
+      String(entry.entryName || '').replace(/^\\//, '').toLowerCase(),
+      entry,
+    ]))
+    const mimeEntry = entryMap.get('mimetype')
+    const containerEntry = entryMap.get('meta-inf/container.xml')
+    if (!mimeEntry || !containerEntry || !entries.some(entry => String(entry.entryName || '').toLowerCase().endsWith('.opf'))) {
       throw new Error('The EPUB is missing required package files and cannot be trusted as complete.')
     }
     if (mimeEntry.getData().toString('utf8').trim() !== 'application/epub+zip') {
       throw new Error('The EPUB archive has an invalid mimetype entry.')
     }
+
+    let containerText
+    try { containerText = containerEntry.getData().toString('utf8') } catch {
+      throw new Error('The EPUB container file is damaged.')
+    }
+    const rootfilePath = /full-path=["']([^"']+\\.opf)["']/i.exec(containerText)?.[1]
+    const opfEntry = rootfilePath
+      ? entryMap.get(decodeURIComponent(rootfilePath).toLowerCase())
+      : entries.find(entry => String(entry.entryName || '').toLowerCase().endsWith('.opf'))
+    if (!opfEntry) throw new Error('The EPUB package document is missing.')
+    let opfText
+    try { opfText = opfEntry.getData().toString('utf8') } catch {
+      throw new Error('The EPUB package document is damaged.')
+    }
+    if (!/<(?:[a-z0-9]+:)?manifest\\b/i.test(opfText) || !/<(?:[a-z0-9]+:)?spine\\b/i.test(opfText)) {
+      throw new Error('The EPUB package document has no readable manifest or spine.')
+    }
+
+    const manifest = new Map()
+    for (const match of opfText.matchAll(/<(?:[a-z0-9]+:)?item\\b([^>]*)>/gi)) {
+      const id = /\\bid=["']([^"']+)["']/i.exec(match[1])?.[1]
+      const href = /\\bhref=["']([^"']+)["']/i.exec(match[1])?.[1]
+      if (id && href) manifest.set(id, href)
+    }
+    const spineIds = [...opfText.matchAll(/<(?:[a-z0-9]+:)?itemref\\b[^>]*\\bidref=["']([^"']+)["'][^>]*>/gi)]
+      .map(match => match[1])
+    if (!spineIds.length) throw new Error('The EPUB contains no readable spine items.')
+
+    const packagePath = String(opfEntry.entryName || '').replace(/^\\//, '')
+    let readableBytes = 0
+    for (const id of spineIds) {
+      const href = manifest.get(id)
+      if (!href) throw new Error('The EPUB spine references a missing manifest item.')
+      let decodedHref
+      try { decodedHref = decodeURIComponent(href.split(/[?#]/, 1)[0]) } catch { decodedHref = href.split(/[?#]/, 1)[0] }
+      const itemPath = pathPosix.normalize(pathPosix.join(pathPosix.dirname(packagePath), decodedHref)).toLowerCase()
+      const entry = entryMap.get(itemPath)
+      if (!entry) throw new Error('The EPUB is missing a reading-content file referenced by its spine.')
+      let body
+      try { body = entry.getData() } catch {
+        throw new Error('An EPUB reading-content file is damaged or truncated.')
+      }
+      if (!body.length) throw new Error('The EPUB contains an empty reading-content file.')
+      readableBytes += body.length
+    }
+    if (readableBytes < 256) throw new Error('The EPUB contains too little reading content to be a complete book.')
   } else if (kind === 'pdf') {
     if (buffer.subarray(0, 5).toString('ascii') !== '%PDF-' ||
         !buffer.subarray(Math.max(0, buffer.length - 4096)).toString('latin1').includes('%%EOF')) {

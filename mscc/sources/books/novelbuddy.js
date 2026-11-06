@@ -17,7 +17,9 @@ function positiveCount(...values) {
 
 function chapterOrdinal(chapter = {}) {
   for (const key of ['chapter_number','chapterNumber','chapter_no','chapterNo','number','order','sort_order','sequence','index']) {
-    const value = Number(chapter?.[key])
+    const raw = chapter?.[key]
+    if (raw === null || raw === undefined || String(raw).trim() === '') continue
+    const value = Number(raw)
     if (Number.isSafeInteger(value) && value >= 0) return value
   }
   const name = String(chapter?.name || '')
@@ -41,6 +43,8 @@ function assertCompleteChapters(novel, rows, expectedCount = 0) {
         throw new Error(`NovelBuddy chapter sequence is incomplete: chapter ${start + index} is missing. Refusing to send a partial novel.`)
       }
     }
+  } else if (ordinals.some(value => value !== null)) {
+    throw new Error('NovelBuddy chapter numbering is inconsistent. Refusing to send a potentially incomplete novel.')
   } else if (expected && rows.length < expected) {
     throw new Error(`NovelBuddy is missing chapters: expected ${expected}, received ${rows.length}.`)
   }
@@ -66,6 +70,7 @@ function searchItems(data) {
       url:url.startsWith('http') ? url : SITE + '/' + url.replace(/^\//, ''),
       slug:clean(item?.slug || '', 160),
       cv:Number(item?.cv || item?.content_version || 0) || 0,
+      chapterCount:positiveCount(item?.chapter_count, item?.chapterCount, item?.total_chapters, item?.totalChapters),
     }]
   })
 }
@@ -89,7 +94,7 @@ function nextData(html) {
 
 async function details(item = {}) {
   const url = String(item?.url || '').trim()
-  if (!url) return { id:String(item?.id || ''), title:item?.title || '', author:item?.author || '', cv:Number(item?.cv || 0) || 0 }
+  if (!url) return { id:String(item?.id || ''), title:item?.title || '', author:item?.author || '', cv:Number(item?.cv || 0) || 0, chapterCount:positiveCount(item?.chapterCount) }
   try {
     const { text } = await fetchText(url, {
       headers:{ accept:'text/html,application/xhtml+xml', referer:SITE + '/' },
@@ -109,7 +114,7 @@ async function details(item = {}) {
       url,
     }
   } catch {
-    return { id:String(item?.id || ''), title:item?.title || '', author:item?.author || '', cover:String(item?.cover || ''), synopsis:String(item?.synopsis || ''), cv:Number(item?.cv || 0) || 0, url }
+    return { id:String(item?.id || ''), title:item?.title || '', author:item?.author || '', cover:String(item?.cover || ''), synopsis:String(item?.synopsis || ''), cv:Number(item?.cv || 0) || 0, chapterCount:positiveCount(item?.chapterCount), url }
   }
 }
 
@@ -128,6 +133,7 @@ async function chapters(novelId, cv = 0) {
     payload.total_chapters, payload.totalChapters, payload.chapter_count,
     payload.chapterCount, payload.total, payload.count,
     payload.pagination?.total, payload.meta?.total,
+    data?.pagination?.total, data?.meta?.total,
   )
   const rows = rawRows.map((chapter, index) => ({
     id:String(chapter?.id || '').trim(),

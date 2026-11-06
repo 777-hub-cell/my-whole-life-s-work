@@ -4,17 +4,17 @@ import { posix as pathPosix } from 'node:path'
 
 export const BOOK_UA = 'MSCC/2.3 (books source; +https://github.com/777-hub-cell/my-whole-life-s-work)'
 
-const MAX_BOOK_BYTES = 100 * 1024 * 1024
+const MAX_BOOK_BYTES = 50 * 1024 * 1024
 const BOOK_LIMITS = Object.freeze({
-  epub:80 * 1024 * 1024,
-  kepub:80 * 1024 * 1024,
-  pdf:100 * 1024 * 1024,
-  txt:20 * 1024 * 1024,
-  mobi:80 * 1024 * 1024,
-  azw3:80 * 1024 * 1024,
-  rtf:40 * 1024 * 1024,
-  doc:40 * 1024 * 1024,
-  docx:40 * 1024 * 1024,
+  epub:40 * 1024 * 1024,
+  kepub:40 * 1024 * 1024,
+  pdf:50 * 1024 * 1024,
+  txt:10 * 1024 * 1024,
+  mobi:40 * 1024 * 1024,
+  azw3:40 * 1024 * 1024,
+  rtf:30 * 1024 * 1024,
+  doc:30 * 1024 * 1024,
+  docx:30 * 1024 * 1024,
 })
 
 const SEARCH_STOP_WORDS = new Set([

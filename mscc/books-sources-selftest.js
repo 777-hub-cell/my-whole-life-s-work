@@ -92,6 +92,24 @@ if (registry.get('books', 'welib') !== null) {
   throw new Error('WeLib must remain disabled without verified distribution rights.')
 }
 
+const staleDefaultRegistry = new SourceRegistry({
+  rootUrl:new URL('./sources/', import.meta.url),
+  storage:{
+    brandForCapability:() => 'MSCC',
+    getSourceDefault:() => 'welib',
+  },
+})
+await staleDefaultRegistry.load()
+const staleDefaultOutcome = await staleDefaultRegistry.execute({
+  capability:'books',
+  userKey:'test-user',
+  payload:{ action:'search', query:'Peter and Jane' },
+})
+if (staleDefaultOutcome.status !== 'choice-required' ||
+    staleDefaultOutcome.unavailableDefault !== 'welib') {
+  throw new Error('A disabled saved book source must prompt for a new source instead of silently searching another catalogue.')
+}
+
 
 
 const percyMatches = rankBookSearchResults('percy jackson', [

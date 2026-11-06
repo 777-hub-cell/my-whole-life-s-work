@@ -85,8 +85,8 @@ if (delivery.delivered !== true || delivery.bytes !== epub.length ||
   throw new Error('Document delivery did not send the verified file bytes.')
 }
 
-if (_test.maxBookBytes('pdf') !== 100 * 1024 * 1024 ||
-    _test.maxBookBytes('epub') !== 80 * 1024 * 1024) {
+if (_test.maxBookBytes('pdf') !== 50 * 1024 * 1024 ||
+    _test.maxBookBytes('epub') !== 40 * 1024 * 1024) {
   throw new Error('Book download size limits are not configured correctly.')
 }
 

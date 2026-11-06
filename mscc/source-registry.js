@@ -69,6 +69,7 @@ export class SourceRegistry {
       const module = await import(url.href)
       const source = module.default
       if (!source || typeof source.run !== 'function') throw new Error(`Invalid source module: ${rel}`)
+      if (source.disabled === true) continue
 
       const id = normalizeId(source.id || basename(file, extname(file)))
       const key = `${capability}:${id}`

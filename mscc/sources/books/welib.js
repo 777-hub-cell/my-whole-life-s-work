@@ -1,4 +1,4 @@
-import { clean, decodeHtml, safeFileName, sendDocument, textFromHtml } from './_shared.js'
+import { clean, decodeHtml, rankBookSearchResults, safeFileName, sendDocument, textFromHtml } from './_shared.js'
 
 const SITE = 'https://welib.org'
 const DEFAULT_LANGUAGE = 'English'
@@ -6,8 +6,8 @@ const FLARE_URL = String(
   process.env.MSCC_FLARESOLVERR_URL ||
   ('http://127.0.0.1:' + (process.env.MSCC_FLARE_PORT || '8191'))
 ).replace(/\/$/, '')
-const MAX_TIMEOUT = Number(process.env.MSCC_WELIB_FLARE_TIMEOUT_MS || 60000)
-const SLOW_TIMEOUT = Number(process.env.MSCC_WELIB_SLOW_TIMEOUT_MS || 75000)
+const MAX_TIMEOUT = Math.min(60000, Math.max(5000, Number(process.env.MSCC_WELIB_FLARE_TIMEOUT_MS || 30000)))
+const SLOW_TIMEOUT = Math.min(45000, Math.max(5000, Number(process.env.MSCC_WELIB_SLOW_TIMEOUT_MS || 30000)))
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -32,14 +32,14 @@ async function flare(command, extra = {}, signal = null) {
   return data
 }
 
-async function createSession() {
-  const data = await flare('sessions.create')
+async function createSession(signal = null) {
+  const data = await flare('sessions.create', {}, signal)
   return String(data?.session || '').trim()
 }
 
 async function destroySession(session) {
   if (!session) return
-  await flare('sessions.destroy', { session }).catch(() => {})
+  await flare('sessions.destroy', { session }, AbortSignal.timeout(5000)).catch(() => {})
 }
 
 async function getHtml(url, { session = '', signal = null } = {}) {
@@ -122,8 +122,7 @@ async function search(query, language = DEFAULT_LANGUAGE, signal = null) {
   if (!q) return []
   const html = await getHtml(SITE + '/search?' + new URLSearchParams({ q }), { signal })
   const items = parseSearch(html, language)
-  if (!items.length) throw new Error('WeLib returned no ' + (language || DEFAULT_LANGUAGE) + ' books.')
-  return items
+  return rankBookSearchResults(q, items, { limit:25 })
 }
 
 function extractUrls(html) {
@@ -157,26 +156,41 @@ async function probePayload(url) {
     const response = await fetch(url, {
       headers:{ range:'bytes=0-1023', 'user-agent':'Mozilla/5.0' },
       redirect:'follow',
-      signal:AbortSignal.timeout(12000),
+      signal:AbortSignal.timeout(7000),
     })
     if (!(response.ok || response.status === 206)) return false
     const type = String(response.headers.get('content-type') || '').toLowerCase()
-    const bytes = new Uint8Array(await response.arrayBuffer())
+    if (type.includes('text/html')) return false
+    const reader = response.body?.getReader()
+    let bytes = new Uint8Array(0)
+    if (reader) {
+      try {
+        const first = await reader.read()
+        if (!first.done && first.value) bytes = first.value.slice(0, 1024)
+      } finally {
+        await reader.cancel().catch(() => {})
+        reader.releaseLock()
+      }
+    } else {
+      bytes = new Uint8Array(await response.arrayBuffer()).slice(0, 1024)
+    }
     if (!bytes.length) return false
     const head = Buffer.from(bytes.slice(0, 96)).toString('utf8').trimStart().toLowerCase()
-    if (type.includes('text/html') || head.startsWith('<!doctype html') || head.startsWith('<html')) return false
+    if (head.startsWith('<!doctype html') || head.startsWith('<html')) return false
     return true
   } catch {
     return false
   }
 }
 
-async function firstUsable(urls, limit = 16) {
-  for (const url of urls.slice(0, limit)) {
-    if (/^https?:\/\/ipfs\.io\/ipfs\//i.test(url)) continue
-    if (await probePayload(url)) return url
-  }
-  return ''
+async function firstUsable(urls, limit = 8) {
+  const candidates = urls
+    .filter(url => !/^https?:\/\/ipfs\.io\/ipfs\//i.test(url))
+    .slice(0, limit)
+  if (!candidates.length) return ''
+  const results = await Promise.all(candidates.map(probePayload))
+  const index = results.findIndex(Boolean)
+  return index >= 0 ? candidates[index] : ''
 }
 
 async function resolveDownload(md5) {
@@ -271,5 +285,5 @@ export default {
     throw new Error('Unsupported WeLib action: ' + action)
   },
 
-  _test:{ parseSearch, parseFormat, parseLanguage, extractUrls },
+  _test:{ parseSearch, parseFormat, parseLanguage, extractUrls, probePayload, firstUsable },
 }

@@ -203,7 +203,7 @@ async function wholeNovel(item) {
 }
 
 async function buildWholeNovelTxt(item) {
-  const { novel, chapters:rows } = await wholeNovel(item || {})
+  const { novel, chapters:rows, expectedCount } = await wholeNovel(item || {})
   const file = join(tmpdir(), 'mscc-novelbuddy-' + randomUUID() + '.txt')
   const heading = [
     novel.title || item?.title || 'Novel',

@@ -16,15 +16,25 @@ function positiveCount(...values) {
 }
 
 function chapterOrdinal(chapter = {}) {
-  for (const key of ['chapter_number','chapterNumber','chapter_no','chapterNo','number','order','sort_order','sequence','index']) {
+  const explicitKeys = ['chapter_number','chapterNumber','chapter_no','chapterNo','number']
+  for (const key of explicitKeys) {
     const raw = chapter?.[key]
     if (raw === null || raw === undefined || String(raw).trim() === '') continue
     const value = Number(raw)
     if (Number.isSafeInteger(value) && value >= 0) return value
   }
+
   const name = String(chapter?.name || '')
-  const match = /\\b(?:chapter|ch\\.?|part)\\s*#?\\s*(\\d+)\\b/i.exec(name)
-  return match ? Number(match[1]) : null
+  const named = /\\b(?:chapter|ch\\.?|part)\\s*#?\\s*(\\d+)\\b/i.exec(name)
+  if (named) return Number(named[1])
+
+  for (const key of ['order','sort_order','sequence']) {
+    const raw = chapter?.[key]
+    if (raw === null || raw === undefined || String(raw).trim() === '') continue
+    const value = Number(raw)
+    if (Number.isSafeInteger(value) && value >= 0) return value
+  }
+  return null
 }
 
 function assertCompleteChapters(novel, rows, expectedCount = 0) {

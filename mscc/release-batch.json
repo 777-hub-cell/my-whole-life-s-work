@@ -1,8 +1,8 @@
 {
-  "releaseId": "night-book-source-timeout-20261106",
+  "releaseId": "night-books-integrity-20261106",
   "baseBranch": "mscc-azure",
-  "baseCommit": "d41cc0bc1eb138bad4c461f6fed42c809bc9a5a3",
-  "pullRequests": [3],
-  "preparedAt": "2026-11-06T17:29:00.000Z",
-  "notes": "Re-authorize already-merged PR #3 after repairing CI media-tool setup. Validation must pass before the protected mscc-production approval and Azure deployment."
+  "baseCommit": "bf2f9d6d7b9f1f6bdc384a19cf559f926f72fa95",
+  "pullRequests": [7],
+  "preparedAt": "2026-11-06T21:50:00.000Z",
+  "notes": "Fix book source relevance, file verification and whole-novel completeness. Requires passing validation before manual mscc-production approval and Azure deployment."
 }

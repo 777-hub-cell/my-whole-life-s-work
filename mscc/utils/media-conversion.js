@@ -269,7 +269,7 @@ function animatedStickerArgs(input, output, { seconds, fps, quality }) {
     '-c:v', 'libwebp',
     '-preset', 'default',
     '-loop', '0',
-    '-vsync', '0',
+    '-fps_mode', 'passthrough',
     '-pix_fmt', 'yuva420p',
     '-quality', String(quality),
     '-compression_level', '6',

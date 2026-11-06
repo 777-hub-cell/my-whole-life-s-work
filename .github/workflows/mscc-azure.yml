@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       release_ready: ${{ steps.release_gate.outputs.release_ready }}
     timeout-minutes: 30
@@ -50,17 +50,7 @@ jobs:
       - name: Install MSCC dependencies
         working-directory: mscc
         run: npm install --no-audit --no-fund
-      - name: Set up FFmpeg for Nexia sticker rendering regression
-        uses: AnimMouse/setup-ffmpeg@178e0b4a408f06ce40d896c3cd79f50fa6f8b0c3
-        with:
-          version: release
-          token: ${{ github.token }}
-      - name: Verify FFmpeg tools
-        shell: bash
-        run: |
-          ffmpeg -version
-          ffprobe -version
-      - name: Install Noto fonts for Unicode and emoji screenshot regression
+      - name: Install compatible FFmpeg and Noto fonts
         shell: bash
         run: |
           set -euo pipefail
@@ -71,8 +61,10 @@ jobs:
             -o DPkg::Lock::Timeout=60
           )
           sudo timeout --signal=TERM --kill-after=15s 300s apt-get "${apt_options[@]}" update -qq
-          sudo timeout --signal=TERM --kill-after=15s 300s apt-get "${apt_options[@]}" install -y -qq --no-install-recommends fonts-noto-core fonts-noto-color-emoji fonts-freefont-ttf
+          sudo timeout --signal=TERM --kill-after=15s 300s apt-get "${apt_options[@]}" install -y -qq --no-install-recommends ffmpeg fonts-noto-core fonts-noto-color-emoji fonts-freefont-ttf
           sudo fc-cache -f
+          ffmpeg -version
+          ffprobe -version
       - name: Check complete runtime and command regression suite
         working-directory: mscc
         run: npm run check

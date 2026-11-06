@@ -44,7 +44,7 @@ function assertCompleteChapters(novel, rows, expectedCount = 0) {
     throw new Error(`NovelBuddy chapter list is incomplete: expected ${expected}, received ${rows.length}. Refusing to send a partial novel.`)
   }
 
-  const ordinals = rows.map(row => row.order ?? chapterOrdinal(row))
+  const ordinals = rows.map(row => chapterOrdinal(row) ?? (Number.isSafeInteger(row?.order) ? row.order : null))
   if (ordinals.every(value => value !== null)) {
     const sorted = [...ordinals].sort((a,b) => a-b)
     const start = sorted[0] === 0 ? 0 : 1

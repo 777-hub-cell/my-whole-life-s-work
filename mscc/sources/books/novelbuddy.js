@@ -2,10 +2,50 @@ import { appendFile, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { clean, fetchJson, fetchText, safeFileName, sendDocument, textFromHtml } from './_shared.js'
+import { clean, fetchJson, fetchText, rankBookSearchResults, safeFileName, sendDocument, textFromHtml } from './_shared.js'
 
 const API = 'https://api.novelbuddy.me'
 const SITE = 'https://novelbuddy.me'
+
+function positiveCount(...values) {
+  for (const value of values) {
+    const count = Number(value)
+    if (Number.isSafeInteger(count) && count > 0) return count
+  }
+  return 0
+}
+
+function chapterOrdinal(chapter = {}) {
+  for (const key of ['chapter_number','chapterNumber','chapter_no','chapterNo','number','order','sort_order','sequence','index']) {
+    const value = Number(chapter?.[key])
+    if (Number.isSafeInteger(value) && value >= 0) return value
+  }
+  const name = String(chapter?.name || '')
+  const match = /\\b(?:chapter|ch\\.?|part)\\s*#?\\s*(\\d+)\\b/i.exec(name)
+  return match ? Number(match[1]) : null
+}
+
+function assertCompleteChapters(novel, rows, expectedCount = 0) {
+  const expected = positiveCount(expectedCount, novel?.chapterCount)
+  if (!Array.isArray(rows) || !rows.length) throw new Error('NovelBuddy returned an empty chapter list.')
+  if (expected && rows.length !== expected) {
+    throw new Error(`NovelBuddy chapter list is incomplete: expected ${expected}, received ${rows.length}. Refusing to send a partial novel.`)
+  }
+
+  const ordinals = rows.map(row => row.order ?? chapterOrdinal(row))
+  if (ordinals.every(value => value !== null)) {
+    const sorted = [...ordinals].sort((a,b) => a-b)
+    const start = sorted[0] === 0 ? 0 : 1
+    for (let index = 0; index < sorted.length; index++) {
+      if (sorted[index] !== start + index) {
+        throw new Error(`NovelBuddy chapter sequence is incomplete: chapter ${start + index} is missing. Refusing to send a partial novel.`)
+      }
+    }
+  } else if (expected && rows.length < expected) {
+    throw new Error(`NovelBuddy is missing chapters: expected ${expected}, received ${rows.length}.`)
+  }
+  return true
+}
 
 function searchItems(data) {
   const rows = Array.isArray(data?.data?.items) ? data.data.items : []
@@ -38,9 +78,7 @@ async function search(query) {
   }), {
     headers:{ origin:SITE, referer:SITE + '/' },
   })
-  const items = searchItems(data)
-  if (!items.length) throw new Error('NovelBuddy returned no novels.')
-  return items
+  return rankBookSearchResults(query, searchItems(data), { limit:25 })
 }
 
 function nextData(html) {
@@ -67,6 +105,7 @@ async function details(item = {}) {
       cover:manga.cover ? (String(manga.cover).startsWith('http') ? String(manga.cover) : SITE + '/' + String(manga.cover).replace(/^\//, '')) : String(item?.cover || ''),
       synopsis:clean(textFromHtml(manga.description || manga.summary || manga.synopsis || item?.synopsis || ''), 4000),
       cv:Number(manga.content_version || manga.cv || item?.cv || 0) || 0,
+      chapterCount:positiveCount(manga.chapter_count, manga.chapterCount, manga.total_chapters, manga.totalChapters, manga.chapters_count, manga.chaptersCount, item?.chapterCount),
       url,
     }
   } catch {
@@ -81,13 +120,32 @@ async function chapters(novelId, cv = 0) {
     headers:{ origin:SITE, referer:SITE + '/' },
     timeoutMs:20000,
   })
-  const rows = Array.isArray(data?.data?.chapters) ? data.data.chapters : []
-  if (!rows.length) throw new Error('NovelBuddy returned no chapters.')
-  return rows.map(chapter => ({
+  const payload = data?.data || {}
+  const rawRows = Array.isArray(payload?.chapters) ? payload.chapters : []
+  if (!rawRows.length) throw new Error('NovelBuddy returned no chapters.')
+
+  const expectedCount = positiveCount(
+    payload.total_chapters, payload.totalChapters, payload.chapter_count,
+    payload.chapterCount, payload.total, payload.count,
+    payload.pagination?.total, payload.meta?.total,
+  )
+  const rows = rawRows.map((chapter, index) => ({
     id:String(chapter?.id || '').trim(),
-    name:clean(chapter?.name || 'Chapter', 180),
+    name:clean(chapter?.name || 'Chapter ' + (index + 1), 180),
     url:String(chapter?.url || '').trim(),
-  })).filter(chapter => chapter.id).reverse()
+    order:chapterOrdinal(chapter),
+  }))
+  const missingIds = rows.filter(chapter => !chapter.id).length
+  if (missingIds) {
+    throw new Error(`NovelBuddy returned ${missingIds} chapter entr${missingIds === 1 ? 'y' : 'ies'} without IDs. Refusing to omit them silently.`)
+  }
+
+  const hasOrder = rows.every(chapter => chapter.order !== null)
+  const ordered = hasOrder
+    ? [...rows].sort((a,b) => a.order - b.order)
+    : [...rows].reverse()
+  assertCompleteChapters({ chapterCount:expectedCount }, ordered, expectedCount)
+  return { items:ordered, expectedCount }
 }
 
 async function chapterText(novelId, chapter) {
@@ -121,8 +179,11 @@ async function chapterText(novelId, chapter) {
 
 async function wholeNovel(item) {
   const novel = await details(item)
-  const rows = await chapters(novel.id, novel.cv)
-  return { novel, chapters:rows }
+  const chapterResult = await chapters(novel.id, novel.cv)
+  const rows = chapterResult.items
+  const expectedCount = positiveCount(novel.chapterCount, chapterResult.expectedCount)
+  assertCompleteChapters(novel, rows, expectedCount)
+  return { novel, chapters:rows, expectedCount:expectedCount || rows.length }
 }
 
 async function buildWholeNovelTxt(item) {
@@ -142,6 +203,9 @@ async function buildWholeNovelTxt(item) {
     for (let i = 0; i < rows.length; i += batchSize) {
       const batch = rows.slice(i, i + batchSize)
       const texts = await Promise.all(batch.map(chapter => chapterText(novel.id, chapter)))
+      if (texts.length !== batch.length || texts.some(text => !String(text || '').trim())) {
+        throw new Error('NovelBuddy could not retrieve every chapter. No partial novel will be delivered.')
+      }
       let block = ''
       for (let j = 0; j < batch.length; j++) {
         block += '\n\n' + batch[j].name + '\n' + '='.repeat(Math.min(72, Math.max(8, batch[j].name.length))) + '\n\n'
@@ -153,7 +217,7 @@ async function buildWholeNovelTxt(item) {
       file,
       title:novel.title || item?.title || 'Novel',
       author:novel.author || item?.author || '',
-      chapterCount:rows.length,
+      chapterCount:expectedCount,
     }
   } catch (error) {
     await rm(file, { force:true }).catch(() => {})
@@ -171,7 +235,7 @@ export default {
     if (action === 'search') return { items:await search(clean(query, 180)) }
 
     if (action === 'editions') {
-      const { novel, chapters:rows } = await wholeNovel(item)
+      const { novel, chapters:rows, expectedCount } = await wholeNovel(item)
       return {
         book:{
           author:novel.author || item?.author || '',
@@ -183,7 +247,7 @@ export default {
           title:'TXT',
           format:'TXT',
           language:'English',
-          size:rows.length + ' chapters',
+          size:expectedCount + ' chapters',
           wholeNovel:true,
         }],
       }
@@ -207,5 +271,5 @@ export default {
     throw new Error('Unsupported NovelBuddy action: ' + action)
   },
 
-  _test:{ searchItems, nextData },
+  _test:{ searchItems, nextData, chapterOrdinal, assertCompleteChapters, positiveCount },
 }

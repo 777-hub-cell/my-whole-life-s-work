@@ -23,7 +23,7 @@ zip.addFile('OEBPS/content.opf', Buffer.from(
   '<?xml version="1.0"?><package><manifest><item id="c1" href="chapter1.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c1"/></spine></package>',
 ))
 zip.addFile('OEBPS/chapter1.xhtml', Buffer.from(
-  '<html><body><h1>Chapter 1</h1><p>' + 'A complete chapter with readable contents. '.repeat(40) + '</p></body></html>',
+  '<html><body><h1>Chapter 1</h1>' + Array.from({ length:500 }, (_, index) => '<p>Paragraph ' + index + ': alpha beta gamma delta ' + index + '.</p>').join('') + '</body></html>',
 ))
 const epub = zip.toBuffer()
 const epubCheck = validateBookDocument(epub, {

@@ -162,6 +162,20 @@ try {
 }
 if (!chapterGapRejected) throw new Error('NovelBuddy accepted a novel whose first chapter is missing.')
 
+const orderedButMissingFirst = incompleteNovelChapters.map((chapter, index) => ({
+  ...chapter,
+  order:index,
+}))
+let indexedChapterGapRejected = false
+try {
+  novelBuddy._test.assertCompleteChapters({}, orderedButMissingFirst)
+} catch (error) {
+  indexedChapterGapRejected = /chapter 1 is missing/i.test(String(error?.message || ''))
+}
+if (!indexedChapterGapRejected) {
+  throw new Error('NovelBuddy trusted array position over explicit chapter titles and omitted Chapter 1.')
+}
+
 let chapterCountRejected = false
 try {
   novelBuddy._test.assertCompleteChapters({ chapterCount:20 }, incompleteNovelChapters, 20)

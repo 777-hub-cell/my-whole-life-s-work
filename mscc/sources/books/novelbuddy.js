@@ -241,13 +241,13 @@ async function buildWholeNovelTxt(item) {
   }
 }
 
-// NovelBuddy's published terms prohibit automated tools, bots and scrapers.
+// Automated access and redistribution rights for this provider are unverified.
 // Keep the completeness helpers for regression coverage, but do not expose or
-// invoke this adapter until the provider explicitly authorizes automated access.
+// invoke this adapter until the provider explicitly authorizes both.
 export default {
   id:'novelbuddy',
   name:'NovelBuddy (disabled)',
-  description:'Disabled because the provider terms prohibit automated bot/scraper access.',
+  description:'Disabled until automated access and distribution rights are verified.',
   disabled:true,
 
   async run() {

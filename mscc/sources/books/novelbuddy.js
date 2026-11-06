@@ -241,50 +241,17 @@ async function buildWholeNovelTxt(item) {
   }
 }
 
+// NovelBuddy's published terms prohibit automated tools, bots and scrapers.
+// Keep the completeness helpers for regression coverage, but do not expose or
+// invoke this adapter until the provider explicitly authorizes automated access.
 export default {
   id:'novelbuddy',
-  name:'NovelBuddy',
-  description:'Web-novel search with whole-novel TXT delivery.',
-  fallbackOrder:10,
+  name:'NovelBuddy (disabled)',
+  description:'Disabled because the provider terms prohibit automated bot/scraper access.',
+  disabled:true,
 
-  async run({ action, query, item, edition, context }) {
-    if (action === 'search') return { items:await search(clean(query, 180)) }
-
-    if (action === 'editions') {
-      const { novel, chapters:rows, expectedCount } = await wholeNovel(item)
-      return {
-        book:{
-          author:novel.author || item?.author || '',
-          cover:novel.cover || item?.cover || '',
-          synopsis:novel.synopsis || item?.synopsis || '',
-        },
-        editions:[{
-          id:'whole-txt',
-          title:'TXT',
-          format:'TXT',
-          language:'English',
-          size:expectedCount + ' chapters',
-          wholeNovel:true,
-        }],
-      }
-    }
-
-    if (action === 'download') {
-      const chosen = edition || {}
-      if (chosen.id && chosen.id !== 'whole-txt') throw new Error('Unsupported NovelBuddy edition.')
-      const built = await buildWholeNovelTxt(item || {})
-      try {
-        return await sendDocument(context, {
-          file:built.file,
-          mimetype:'text/plain',
-          fileName:safeFileName([built.title, built.author].filter(Boolean).join(' - '), 'txt'),
-        })
-      } finally {
-        await rm(built.file, { force:true }).catch(() => {})
-      }
-    }
-
-    throw new Error('Unsupported NovelBuddy action: ' + action)
+  async run() {
+    throw new Error('NovelBuddy is disabled because its terms prohibit automated bot/scraper access.')
   },
 
   _test:{ searchItems, nextData, chapterOrdinal, assertCompleteChapters, positiveCount },

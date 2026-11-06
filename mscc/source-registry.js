@@ -248,8 +248,7 @@ export class SourceRegistry {
       return { status:'choice-required', capability:cap, sources:available }
     }
 
-    const preferred = available.find(source => source.id === defaultId)
-    if (!preferred) {
+    if (!this.get(cap, defaultId)) {
       return {
         status:'choice-required',
         capability:cap,
@@ -257,6 +256,7 @@ export class SourceRegistry {
         unavailableDefault:defaultId,
       }
     }
+    const preferred = available.find(source => source.id === defaultId)
     const fallbacks = available
       .filter(source => source.id !== preferred?.id)
       .sort((a,b) => {

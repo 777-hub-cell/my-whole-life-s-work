@@ -41,9 +41,9 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
-      # PRs never deploy. A push can request production only when the release
-      # manifest was prepared against this exact first parent; stale manifests
-      # from migrated snapshots must not request an accidental approval.
+      # PRs and merge pushes only validate. A manual production dispatch
+      # must use a release manifest prepared against this exact first parent;
+      # stale manifests cannot authorize deployment, even with confirmation.
       - name: Validate exact-base release manifest
         id: release_gate
         shell: bash

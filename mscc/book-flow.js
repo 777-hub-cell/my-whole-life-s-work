@@ -53,7 +53,7 @@ function outcomeError(ctx, outcome, respond = value => ctx.reply(value)) {
   if (outcome?.status === 'no-sources') return respond('No book sources are installed yet.')
   if (outcome?.status === 'source-error') {
     const source = outcome.source?.name || 'The book source'
-    const detail = String(outcome.error?.message || '').replace(/\\s+/g, ' ').trim().slice(0, 180)
+    const detail = String(outcome.error?.message || '').replace(/\s+/g, ' ').trim().slice(0, 180)
     return respond(detail ? `${source} failed: ${detail}` : `${source} could not complete that request.`)
   }
   if (outcome?.status === 'unknown-source') {
@@ -61,7 +61,7 @@ function outcomeError(ctx, outcome, respond = value => ctx.reply(value)) {
     return respond(`Unknown book source "${outcome.sourceId}". Available: ${names || 'none'}.`)
   }
   if (outcome?.status === 'all-failed') {
-    const detail = String(outcome.error?.message || '').replace(/\\s+/g, ' ').trim().slice(0, 180)
+    const detail = String(outcome.error?.message || '').replace(/\s+/g, ' ').trim().slice(0, 180)
     return respond(detail ? `All book sources failed: ${detail}` : 'All configured book sources failed for that request.')
   }
   return respond('Could not complete that book request.')

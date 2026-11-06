@@ -16,7 +16,7 @@ function positiveCount(...values) {
 }
 
 function chapterOrdinal(chapter = {}) {
-  const explicitKeys = ['chapter_number','chapterNumber','chapter_no','chapterNo','number']
+  const explicitKeys = ['chapter_number','chapterNumber','chapter_no','chapterNo']
   for (const key of explicitKeys) {
     const raw = chapter?.[key]
     if (raw === null || raw === undefined || String(raw).trim() === '') continue
@@ -28,7 +28,7 @@ function chapterOrdinal(chapter = {}) {
   const named = /\\b(?:chapter|ch\\.?|part)\\s*#?\\s*(\\d+)\\b/i.exec(name)
   if (named) return Number(named[1])
 
-  for (const key of ['order','sort_order','sequence']) {
+  for (const key of ['number','order','sort_order','sequence']) {
     const raw = chapter?.[key]
     if (raw === null || raw === undefined || String(raw).trim() === '') continue
     const value = Number(raw)

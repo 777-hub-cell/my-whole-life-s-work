@@ -1,0 +1,32 @@
+name: MSCC Azure
+
+# GitHub only exposes the Run workflow button for workflow_dispatch files
+# present on the repository's default branch. This lightweight registration
+# copy makes the manual trigger visible. For real production deployment,
+# select the mscc-azure branch in the Run workflow dialog; that branch has
+# the full validated workflow. Running this registry copy on main is a no-op.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_production:
+        description: 'Choose "deploy" only after reviewing the validated mscc-azure commit.'
+        required: true
+        type: choice
+        options: [hold, deploy]
+        default: hold
+
+permissions:
+  contents: read
+
+jobs:
+  registration_only:
+    name: Manual trigger registration only
+    if: github.ref != 'refs/heads/mscc-azure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain the correct deployment branch
+        run: |
+          echo "This is the default-branch registration copy only."
+          echo "No production deployment is performed from main."
+          echo "To deploy, select the mscc-azure branch in the Run workflow dialog."

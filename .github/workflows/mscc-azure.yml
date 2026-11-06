@@ -12,6 +12,13 @@ on:
       - 'mscc/**'
       - '.github/workflows/mscc-azure.yml'
   workflow_dispatch:
+    inputs:
+      confirm_production:
+        description: 'Choose "deploy" only after reviewing the validated mscc-azure commit.'
+        required: true
+        type: choice
+        options: [hold, deploy]
+        default: hold:
 
 permissions:
   contents: read
@@ -43,8 +50,10 @@ jobs:
         run: |
           set -euo pipefail
           manifest_changed=false
-          if [ "${{ github.event_name }}" = "push" ] && git diff --name-only HEAD^ HEAD -- mscc/release-batch.json | grep -Fxq mscc/release-batch.json; then
-            manifest_changed=true
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if git diff --name-only HEAD^ HEAD -- mscc/release-batch.json | grep -Fxq mscc/release-batch.json; then
+              manifest_changed=true
+            fi
           fi
           MSCC_RELEASE_MANIFEST_CHANGED="$manifest_changed" node mscc/tools/mscc-release-manifest-gate.mjs
       - name: Install MSCC dependencies
@@ -162,11 +171,11 @@ jobs:
   deploy:
     name: Deploy tested MSCC commit to Azure
     needs: validate
-    # Deploy only a validated release-batch manifest (or explicit manual dispatch).
-    # Older or ordinary feature pushes cannot accumulate pending approvals.
-    # PRs never receive server credentials or deploy. Protected environment
-    # approval (if configured) is required before accessing production secrets.
-    if: github.ref == 'refs/heads/mscc-azure' && needs.validate.outputs.release_ready == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    # Merges only validate. Production deployment requires a separate manual
+    # workflow_dispatch on mscc-azure and the explicit "deploy" confirmation.
+    # The exact release manifest is revalidated on that manual run as well.
+    # PRs and ordinary pushes never receive server credentials or deploy.
+    if: github.ref == 'refs/heads/mscc-azure' && needs.validate.outputs.release_ready == 'true' && github.event_name == 'workflow_dispatch' && inputs.confirm_production == 'deploy'
     runs-on: ubuntu-latest
     timeout-minutes: 55
     environment: mscc-production

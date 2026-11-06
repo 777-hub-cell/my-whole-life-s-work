@@ -197,6 +197,33 @@ function ffmpegError(stderr, code) {
   return new Error(detail ? `ffmpeg failed (${code}): ${detail}` : `ffmpeg failed with code ${code}`)
 }
 
+// FFmpeg 8 removed the legacy -vsync option. Older Ubuntu images used by
+// existing MSCC hosts (including Ubuntu 22.04 / FFmpeg 4.4) do not yet know
+// -fps_mode. Prefer the modern option, falling back only when the binary
+// explicitly reports that the option itself is unsupported.
+export async function runFfmpegWithFrameSyncFallback(args, options = {}) {
+  const index = args.indexOf('-fps_mode')
+  if (index < 0 || !args[index + 1]) return runFfmpeg(args, options)
+
+  try {
+    return await runFfmpeg(args, options)
+  } catch (error) {
+    if (!/Unrecognized option ['"]fps_mode['"]/i.test(String(error?.message || error))) throw error
+    const legacyMode = {
+      passthrough: '0',
+      vfr: 'vfr',
+    }[String(args[index + 1])]
+    if (!legacyMode) throw error
+
+    const legacyArgs = [
+      ...args.slice(0, index),
+      '-vsync', legacyMode,
+      ...args.slice(index + 2),
+    ]
+    return runFfmpeg(legacyArgs, options)
+  }
+}
+
 export function runFfmpeg(args, { timeoutMs = FFMPEG_TIMEOUT_MS } = {}) {
   const binary = String(process.env.FFMPEG_PATH || 'ffmpeg').trim() || 'ffmpeg'
 
@@ -306,7 +333,7 @@ export async function mediaToSticker(buffer, { animated = false, packName, publi
       ]
 
       for (const profile of profiles) {
-        await runFfmpeg(animatedStickerArgs(input, output, profile))
+        await runFfmpegWithFrameSyncFallback(animatedStickerArgs(input, output, profile))
         if (await fileSize(output) <= MAX_STICKER_BYTES) break
       }
     } else {

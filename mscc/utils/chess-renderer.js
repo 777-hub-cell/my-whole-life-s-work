@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createCanvas, GlobalFonts } from '@napi-rs/canvas'
 import gifenc from 'gifenc'
-import { runFfmpeg } from './media-conversion.js'
+import { runFfmpegWithFrameSyncFallback } from './media-conversion.js'
 import { normalizeChessTheme } from './game-themes.js'
 
 const { GIFEncoder, quantize, applyPalette } = gifenc
@@ -279,7 +279,7 @@ export async function renderChessMoveVideo(game, options = {}) {
     const output = join(directory, 'move.mp4')
     await writeFile(input, gif)
 
-    await runFfmpeg([
+    await runFfmpegWithFrameSyncFallback([
       '-i', input,
       '-vf',
       'fps=15,scale=512:512:flags=lanczos:force_original_aspect_ratio=decrease,' +
@@ -287,9 +287,7 @@ export async function renderChessMoveVideo(game, options = {}) {
       '-c:v', 'libx264',
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
-      // Azure Ubuntu 22.04 supplies FFmpeg 4.4, which does not support
-      // -fps_mode. The older VFR option is accepted by FFmpeg 4.4 and 7+.
-      '-vsync', 'vfr',
+      '-fps_mode', 'vfr',
       output,
     ], { timeoutMs:45_000 })
 

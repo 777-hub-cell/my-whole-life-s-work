@@ -26,7 +26,7 @@ function archiveFormats(identifier, metadata = {}) {
       format = 'TXT'; mimetype = 'text/plain'; extension = 'txt'
     } else continue
     const bytes = Number(file?.size || 0)
-    const maxBytes = format === 'PDF' ? 100 * 1024 * 1024 : format === 'EPUB' ? 80 * 1024 * 1024 : 20 * 1024 * 1024
+    const maxBytes = format === 'PDF' ? 50 * 1024 * 1024 : format === 'EPUB' ? 40 * 1024 * 1024 : 10 * 1024 * 1024
     if (bytes > 0 && bytes > maxBytes) continue
     const key = format + ':' + name
     if (seen.has(key)) continue

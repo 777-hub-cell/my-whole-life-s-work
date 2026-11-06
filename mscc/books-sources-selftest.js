@@ -12,7 +12,7 @@ const registry = new SourceRegistry({
 await registry.load()
 
 const ids = registry.list('books').map(source => source.id).sort()
-const expected = ['gutenberg','novelbuddy','openlibrary','standard-ebooks'].sort()
+const expected = ['gutenberg','openlibrary','standard-ebooks'].sort()
 if (ids.join('|') !== expected.join('|')) {
   throw new Error('Unexpected books source set: ' + ids.join('|'))
 }
@@ -85,11 +85,11 @@ if (next?.props?.pageProps?.initialManga?.id !== '123') {
   throw new Error('NovelBuddy __NEXT_DATA__ parsing failed.')
 }
 
-if (novelBuddy.fallbackOrder !== 10) {
-  throw new Error('NovelBuddy must retain first fallback priority among enabled novel sources.')
+if (novelBuddy.disabled !== true || registry.get('books', 'novelbuddy') !== null) {
+  throw new Error('NovelBuddy must remain disabled until automated access is authorized.')
 }
 if (registry.get('books', 'welib') !== null) {
-  throw new Error('A disabled book source must not be selectable.')
+  throw new Error('WeLib must remain disabled without verified distribution rights.')
 }
 
 

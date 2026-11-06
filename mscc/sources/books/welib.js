@@ -201,12 +201,12 @@ async function resolveDownload(md5) {
   try {
     try {
       const listing = await getHtml(SITE + '/ipfs_downloads/md5:' + hash, { session })
-      const picked = await firstUsable(extractUrls(listing), 24)
+      const picked = await firstUsable(extractUrls(listing), 8)
       if (picked) return picked
     } catch {}
 
     const detail = await getHtml(SITE + '/md5/' + hash, { session })
-    const direct = await firstUsable(extractUrls(detail), 16)
+    const direct = await firstUsable(extractUrls(detail), 8)
     if (direct) return direct
 
     const deadline = Date.now() + SLOW_TIMEOUT
@@ -214,7 +214,7 @@ async function resolveDownload(md5) {
     while (Date.now() < deadline) {
       const page = await getHtml(slowUrl, { session }).catch(() => '')
       if (page) {
-        const candidate = await firstUsable(extractUrls(page), 12)
+        const candidate = await firstUsable(extractUrls(page), 8)
         if (candidate) return candidate
       }
       await sleep(Math.min(8000, Math.max(1000, deadline - Date.now())))

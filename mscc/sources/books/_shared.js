@@ -199,7 +199,7 @@ export function validateBookDocument(data, { mimetype = '', fileName = 'book' } 
       throw new Error('The EPUB archive is damaged or incomplete.')
     }
     const entryMap = new Map(entries.map(entry => [
-      String(entry.entryName || '').replace(/^\\//, '').toLowerCase(),
+      String(entry.entryName || '').replace(/^\//, '').toLowerCase(),
       entry,
     ]))
     const mimeEntry = entryMap.get('mimetype')
@@ -215,7 +215,7 @@ export function validateBookDocument(data, { mimetype = '', fileName = 'book' } 
     try { containerText = containerEntry.getData().toString('utf8') } catch {
       throw new Error('The EPUB container file is damaged.')
     }
-    const rootfilePath = /full-path=["']([^"']+\\.opf)["']/i.exec(containerText)?.[1]
+    const rootfilePath = /full-path=["']([^"']+\.opf)["']/i.exec(containerText)?.[1]
     const opfEntry = rootfilePath
       ? entryMap.get(decodeURIComponent(rootfilePath).toLowerCase())
       : entries.find(entry => String(entry.entryName || '').toLowerCase().endsWith('.opf'))
@@ -224,17 +224,17 @@ export function validateBookDocument(data, { mimetype = '', fileName = 'book' } 
     try { opfText = opfEntry.getData().toString('utf8') } catch {
       throw new Error('The EPUB package document is damaged.')
     }
-    if (!/<(?:[a-z0-9]+:)?manifest\\b/i.test(opfText) || !/<(?:[a-z0-9]+:)?spine\\b/i.test(opfText)) {
+    if (!/<(?:[a-z0-9]+:)?manifest\b/i.test(opfText) || !/<(?:[a-z0-9]+:)?spine\b/i.test(opfText)) {
       throw new Error('The EPUB package document has no readable manifest or spine.')
     }
 
     const manifest = new Map()
-    for (const match of opfText.matchAll(/<(?:[a-z0-9]+:)?item\\b([^>]*)>/gi)) {
-      const id = /\\bid=["']([^"']+)["']/i.exec(match[1])?.[1]
-      const href = /\\bhref=["']([^"']+)["']/i.exec(match[1])?.[1]
+    for (const match of opfText.matchAll(/<(?:[a-z0-9]+:)?item\b([^>]*)>/gi)) {
+      const id = /\bid=["']([^"']+)["']/i.exec(match[1])?.[1]
+      const href = /\bhref=["']([^"']+)["']/i.exec(match[1])?.[1]
       if (id && href) manifest.set(id, href)
     }
-    const spineIds = [...opfText.matchAll(/<(?:[a-z0-9]+:)?itemref\\b[^>]*\\bidref=["']([^"']+)["'][^>]*>/gi)]
+    const spineIds = [...opfText.matchAll(/<(?:[a-z0-9]+:)?itemref\b[^>]*\bidref=["']([^"']+)["'][^>]*>/gi)]
       .map(match => match[1])
     if (!spineIds.length) throw new Error('The EPUB contains no readable spine items.')
 

@@ -25,7 +25,7 @@ function chapterOrdinal(chapter = {}) {
   }
 
   const name = String(chapter?.name || '')
-  const named = /\\b(?:chapter|ch\\.?|part)\\s*#?\\s*(\\d+)\\b/i.exec(name)
+  const named = /\b(?:chapter|ch\.?|part)\s*#?\s*(\d+)\b/i.exec(name)
   if (named) return Number(named[1])
 
   for (const key of ['number','order','sort_order','sequence']) {

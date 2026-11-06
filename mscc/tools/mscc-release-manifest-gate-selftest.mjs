@@ -20,7 +20,12 @@ assert.equal(evaluateReleaseGate({ eventName: 'push', manifestChanged: true, man
 assert.equal(evaluateReleaseGate({ eventName: 'push', manifestChanged: true, manifest: { ...manifest, baseBranch: 'main' }, parentSha }).ready, false)
 assert.equal(evaluateReleaseGate({ eventName: 'push', manifestChanged: true, manifest: { ...manifest, pullRequests: [] }, parentSha }).ready, false)
 assert.equal(evaluateReleaseGate({ eventName: 'push', manifestChanged: true, manifest: { ...manifest, preparedAt: 'not-a-date' }, parentSha }).ready, false)
-assert.equal(evaluateReleaseGate({ eventName: 'workflow_dispatch', manifestChanged: false, manifest: null, parentSha: '' }).ready, true)
+assert.deepEqual(
+  evaluateReleaseGate({ eventName: 'workflow_dispatch', manifestChanged: true, manifest, parentSha }),
+  { ready: true, reason: 'release manifest matches the current production base' },
+)
+assert.equal(evaluateReleaseGate({ eventName: 'workflow_dispatch', manifestChanged: false, manifest, parentSha }).ready, false)
+assert.equal(evaluateReleaseGate({ eventName: 'workflow_dispatch', manifestChanged: true, manifest, parentSha: 'b'.repeat(40) }).ready, false)
 
 const migratedSnapshotManifest = {
   releaseId: 'night-mscc-youtube-provider-diagnostics-20261104',

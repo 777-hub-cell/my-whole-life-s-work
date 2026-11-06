@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   STICKER_CANVAS,
   STICKER_CORNER_RADIUS,
@@ -7,6 +10,7 @@ import {
   mediaIsAnimated,
   socketMediaDownloadOptions,
   downloadMediaWithSocketHost,
+  runFfmpegWithFrameSyncFallback,
 } from './utils/media-conversion.js'
 
 assert.equal(STICKER_CANVAS, 512)
@@ -80,5 +84,46 @@ await assert.rejects(
   /empty media key/,
 )
 assert.deepEqual(nonRetryRefreshes, [false], 'non-network media errors must not trigger forced CDN refresh')
+
+
+  // New FFmpeg uses -fps_mode; older Azure FFmpeg 4.4 only supports -vsync.
+  // Simulate that exact unsupported-option response and verify the wrapper
+  // retries with the equivalent legacy mode instead of hiding real errors.
+  const compatDir = await mkdtemp(join(tmpdir(), 'mscc-ffmpeg-compat-'))
+  const fakeFfmpeg = join(compatDir, 'ffmpeg')
+  const callLog = join(compatDir, 'calls.txt')
+  const previousFfmpegPath = process.env.FFMPEG_PATH
+  const previousCallLog = process.env.MSCC_FFMPEG_TEST_LOG
+  try {
+    await writeFile(fakeFfmpeg, `#!/bin/sh
+printf '%s\\n' '__CALL__' >> "$MSCC_FFMPEG_TEST_LOG"
+printf '%s\\n' "$@" >> "$MSCC_FFMPEG_TEST_LOG"
+for arg in "$@"; do
+  if [ "$arg" = "-fps_mode" ]; then
+    echo "Unrecognized option 'fps_mode'." >&2
+    exit 8
+  fi
+done
+exit 0
+`)
+    await chmod(fakeFfmpeg, 0o755)
+    process.env.FFMPEG_PATH = fakeFfmpeg
+    process.env.MSCC_FFMPEG_TEST_LOG = callLog
+    await runFfmpegWithFrameSyncFallback(['-i', 'input.gif', '-fps_mode', 'passthrough', 'output.webp'])
+    const calls = (await readFile(callLog, 'utf8')).split('__CALL__').map(value => value.trim()).filter(Boolean)
+    assert.equal(calls.length, 2, 'unsupported modern option must cause exactly one legacy retry')
+    assert.ok(calls[0].includes('-fps_mode') && calls[0].includes('passthrough'),
+      'first attempt must use modern passthrough mode')
+    assert.ok(calls[1].includes('-vsync') && calls[1].includes('0'),
+      'fallback must map passthrough to legacy -vsync 0')
+    assert.ok(!calls[1].includes('-fps_mode') && !calls[1].includes('passthrough'),
+      'legacy fallback must not retain modern frame-sync arguments')
+  } finally {
+    if (previousFfmpegPath === undefined) delete process.env.FFMPEG_PATH
+    else process.env.FFMPEG_PATH = previousFfmpegPath
+    if (previousCallLog === undefined) delete process.env.MSCC_FFMPEG_TEST_LOG
+    else process.env.MSCC_FFMPEG_TEST_LOG = previousCallLog
+    await rm(compatDir, { recursive:true, force:true })
+  }
 
 console.log('media conversion self-test passed')

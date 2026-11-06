@@ -6,9 +6,11 @@ import { dirname, resolve } from 'node:path'
 const COMMIT_SHA = /^[0-9a-f]{40}$/
 
 export function evaluateReleaseGate({ eventName, manifestChanged, manifest, parentSha }) {
-  if (eventName === 'workflow_dispatch') return { ready: true, reason: 'explicit workflow dispatch' }
-  if (eventName !== 'push' || manifestChanged !== true) {
-    return { ready: false, reason: 'not a manifest-changing production push' }
+  if (eventName !== 'push' && eventName !== 'workflow_dispatch') {
+    return { ready: false, reason: 'event is not authorized to prepare production release' }
+  }
+  if (manifestChanged !== true) {
+    return { ready: false, reason: 'release manifest must change in the validated commit' }
   }
   if (!manifest || manifest.baseBranch !== 'mscc-azure') {
     return { ready: false, reason: 'release manifest baseBranch must be mscc-azure' }
@@ -37,7 +39,7 @@ async function main() {
   let manifest = null
   try { manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) } catch {}
   let parentSha = ''
-  if (eventName === 'push' && manifestChanged) {
+  if ((eventName === 'push' || eventName === 'workflow_dispatch') && manifestChanged) {
     try { parentSha = execFileSync('git', ['rev-parse', 'HEAD^'], { encoding: 'utf8' }).trim() } catch {}
   }
   const result = evaluateReleaseGate({ eventName, manifestChanged, manifest, parentSha })

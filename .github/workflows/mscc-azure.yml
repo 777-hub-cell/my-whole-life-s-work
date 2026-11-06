@@ -12,6 +12,13 @@ on:
       - 'mscc/**'
       - '.github/workflows/mscc-azure.yml'
   workflow_dispatch:
+    inputs:
+      confirm_production:
+        description: 'Choose "deploy" only after reviewing the validated mscc-azure commit.'
+        required: true
+        type: choice
+        options: [hold, deploy]
+        default: hold
 
 permissions:
   contents: read
@@ -23,10 +30,10 @@ concurrency:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       release_ready: ${{ steps.release_gate.outputs.release_ready }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
         with:
@@ -34,33 +41,47 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
-      # PRs never deploy. A push can request production only when the release
-      # manifest was prepared against this exact first parent; stale manifests
-      # from migrated snapshots must not request an accidental approval.
+      # PRs and merge pushes only validate. A manual production dispatch
+      # must use a release manifest prepared against this exact first parent;
+      # stale manifests cannot authorize deployment, even with confirmation.
       - name: Validate exact-base release manifest
         id: release_gate
         shell: bash
         run: |
           set -euo pipefail
           manifest_changed=false
-          if [ "${{ github.event_name }}" = "push" ] && git diff --name-only HEAD^ HEAD -- mscc/release-batch.json | grep -Fxq mscc/release-batch.json; then
-            manifest_changed=true
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if git diff --name-only HEAD^ HEAD -- mscc/release-batch.json | grep -Fxq mscc/release-batch.json; then
+              manifest_changed=true
+            fi
           fi
           MSCC_RELEASE_MANIFEST_CHANGED="$manifest_changed" node mscc/tools/mscc-release-manifest-gate.mjs
       - name: Install MSCC dependencies
         working-directory: mscc
         run: npm install --no-audit --no-fund
-      - name: Ensure FFmpeg for Nexia sticker rendering regression
+      - name: Set up FFmpeg for Nexia sticker rendering regression
+        uses: AnimMouse/setup-ffmpeg@178e0b4a408f06ce40d896c3cd79f50fa6f8b0c3
+        with:
+          version: release
+          token: ${{ github.token }}
+      - name: Verify FFmpeg tools
         shell: bash
         run: |
-          if ! command -v ffmpeg >/dev/null 2>&1; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq ffmpeg
-          fi
+          ffmpeg -version
+          ffprobe -version
       - name: Install Noto fonts for Unicode and emoji screenshot regression
+        shell: bash
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends fonts-noto-core fonts-noto-color-emoji fonts-freefont-ttf
+          set -euo pipefail
+          apt_options=(
+            -o Acquire::Retries=2
+            -o Acquire::http::Timeout=30
+            -o Acquire::https::Timeout=30
+            -o DPkg::Lock::Timeout=60
+          )
+          sudo timeout --signal=TERM --kill-after=15s 300s apt-get "${apt_options[@]}" update -qq
+          sudo timeout --signal=TERM --kill-after=15s 300s apt-get "${apt_options[@]}" install -y -qq --no-install-recommends fonts-noto-core fonts-noto-color-emoji fonts-freefont-ttf
+          sudo fc-cache -f
       - name: Check complete runtime and command regression suite
         working-directory: mscc
         run: npm run check
@@ -119,10 +140,10 @@ jobs:
           bash -n tools/azure-source-stack-reuse-selftest.sh
           bash tools/azure-source-stack-reuse-selftest.sh
           bash -n tools/install-personality-art.sh tools/personality-art-selftest.sh
-          if ! command -v ffmpeg >/dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq ffmpeg
-          fi
+          command -v ffmpeg >/dev/null 2>&1 || {
+            echo 'FFmpeg was not added to PATH by the setup step.' >&2
+            exit 1
+          }
           bash tools/personality-art-selftest.sh
           node tools/azure-smoke-selftest.mjs
           grep -Fq 'readlink -f "$BASE/current/tools/azure-smoke.mjs"' install-azure.sh
@@ -150,11 +171,11 @@ jobs:
   deploy:
     name: Deploy tested MSCC commit to Azure
     needs: validate
-    # Deploy only a validated release-batch manifest (or explicit manual dispatch).
-    # Older or ordinary feature pushes cannot accumulate pending approvals.
-    # PRs never receive server credentials or deploy. Protected environment
-    # approval (if configured) is required before accessing production secrets.
-    if: github.ref == 'refs/heads/mscc-azure' && needs.validate.outputs.release_ready == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    # Merges only validate. Production deployment requires a separate manual
+    # workflow_dispatch on mscc-azure and the explicit "deploy" confirmation.
+    # The exact release manifest is revalidated on that manual run as well.
+    # PRs and ordinary pushes never receive server credentials or deploy.
+    if: github.ref == 'refs/heads/mscc-azure' && needs.validate.outputs.release_ready == 'true' && github.event_name == 'workflow_dispatch' && inputs.confirm_production == 'deploy'
     runs-on: ubuntu-latest
     timeout-minutes: 55
     environment: mscc-production

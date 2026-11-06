@@ -96,6 +96,7 @@ assert.deepEqual(nonRetryRefreshes, [false], 'non-network media errors must not 
   const previousCallLog = process.env.MSCC_FFMPEG_TEST_LOG
   try {
     await writeFile(fakeFfmpeg, `#!/bin/sh
+printf '%s\\n' '__CALL__' >> "$MSCC_FFMPEG_TEST_LOG"
 printf '%s\\n' "$@" >> "$MSCC_FFMPEG_TEST_LOG"
 for arg in "$@"; do
   if [ "$arg" = "-fps_mode" ]; then
@@ -109,11 +110,14 @@ exit 0
     process.env.FFMPEG_PATH = fakeFfmpeg
     process.env.MSCC_FFMPEG_TEST_LOG = callLog
     await runFfmpegWithFrameSyncFallback(['-i', 'input.gif', '-fps_mode', 'passthrough', 'output.webp'])
-    const calls = (await readFile(callLog, 'utf8')).split('\\n')
-    assert.ok(calls.includes('-fps_mode'), 'first attempt must use the modern option')
-    assert.ok(calls.includes('-vsync'), 'fallback must use the legacy option')
-    assert.ok(calls.includes('passthrough') === false, 'legacy fallback must not retain modern mode')
-    assert.ok(calls.includes('0'), 'passthrough must map to legacy -vsync 0')
+    const calls = (await readFile(callLog, 'utf8')).split('__CALL__').map(value => value.trim()).filter(Boolean)
+    assert.equal(calls.length, 2, 'unsupported modern option must cause exactly one legacy retry')
+    assert.ok(calls[0].includes('-fps_mode') && calls[0].includes('passthrough'),
+      'first attempt must use modern passthrough mode')
+    assert.ok(calls[1].includes('-vsync') && calls[1].includes('0'),
+      'fallback must map passthrough to legacy -vsync 0')
+    assert.ok(!calls[1].includes('-fps_mode') && !calls[1].includes('passthrough'),
+      'legacy fallback must not retain modern frame-sync arguments')
   } finally {
     if (previousFfmpegPath === undefined) delete process.env.FFMPEG_PATH
     else process.env.FFMPEG_PATH = previousFfmpegPath

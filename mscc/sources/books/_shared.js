@@ -238,7 +238,7 @@ export function validateBookDocument(data, { mimetype = '', fileName = 'book' } 
       .map(match => match[1])
     if (!spineIds.length) throw new Error('The EPUB contains no readable spine items.')
 
-    const packagePath = String(opfEntry.entryName || '').replace(/^\\//, '')
+    const packagePath = String(opfEntry.entryName || '').replace(/^\//, '')
     let readableBytes = 0
     for (const id of spineIds) {
       const href = manifest.get(id)

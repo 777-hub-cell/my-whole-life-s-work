@@ -180,11 +180,17 @@ jobs:
   deploy:
     name: Deploy tested MSCC commit to Azure
     needs: validate
-    # Merges only validate. Production deployment requires a separate manual
-    # workflow_dispatch on mscc-azure and the explicit "deploy" confirmation.
-    # The exact release manifest is revalidated on that manual run as well.
-    # PRs and ordinary pushes never receive server credentials or deploy.
-    if: github.ref == 'refs/heads/mscc-azure' && needs.validate.outputs.release_ready == 'true' && github.event_name == 'workflow_dispatch' && inputs.confirm_production == 'deploy'
+    # A merge to mscc-azure automatically queues deployment after the exact-base
+    # release manifest and full validation pass. GitHub pauses at the protected
+    # mscc-production environment for human approval before exposing SSH secrets.
+    # PRs cannot deploy. Manual dispatch remains available as an explicit fallback.
+    if: >-
+      github.ref == 'refs/heads/mscc-azure' &&
+      needs.validate.outputs.release_ready == 'true' &&
+      (
+        github.event_name == 'push' ||
+        (github.event_name == 'workflow_dispatch' && inputs.confirm_production == 'deploy')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 55
     environment: mscc-production

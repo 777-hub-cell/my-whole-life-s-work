@@ -1,8 +1,10 @@
 {
-  "releaseId": "night-books-integrity-20261106",
+  "releaseId": "night-books-integrity-20261107-auto-queue",
   "baseBranch": "mscc-azure",
-  "baseCommit": "bf2f9d6d7b9f1f6bdc384a19cf559f926f72fa95",
-  "pullRequests": [7],
-  "preparedAt": "2026-11-06T21:50:00.000Z",
-  "notes": "Fix book source relevance, file verification and whole-novel completeness. Requires passing validation before manual mscc-production approval and Azure deployment."
+  "baseCommit": "7d77d1c6a4e1610d38b43dc5f8bf202512861c41",
+  "pullRequests": [
+    7
+  ],
+  "preparedAt": "2026-11-07T06:05:30.472Z",
+  "notes": "Release the validated book source relevance, download integrity and whole-novel completeness fixes from PR #7. After this release-manifest commit is merged and Azure validation passes, automatically queue deployment for human approval in the protected mscc-production environment."
 }

@@ -1,4 +1,4 @@
-import { clean, fetchText, safeFileName, sendDocument, textFromHtml } from './_shared.js'
+import { clean, fetchText, rankBookSearchResults, safeFileName, sendDocument, textFromHtml } from './_shared.js'
 
 const ORIGIN = 'https://standardebooks.org'
 
@@ -16,7 +16,7 @@ function authorFromPath(pathname = '') {
     .join(' ')
 }
 
-function parseSearch(html) {
+function parseSearch(html, query = '') {
   const out = []
   const seen = new Set()
   const re = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi
@@ -44,7 +44,7 @@ function parseSearch(html) {
     })
     if (out.length >= 25) break
   }
-  return out
+  return query ? rankBookSearchResults(query, out, { limit:25 }) : out
 }
 
 function pageSynopsis(html = '') {
@@ -109,9 +109,7 @@ async function search(query) {
     headers:{ accept:'text/html,application/xhtml+xml', 'accept-language':'en-US,en;q=0.9' },
     timeoutMs:20000,
   })
-  const items = parseSearch(text)
-  if (!items.length) throw new Error('Standard Ebooks returned no books.')
-  return items
+  return parseSearch(text, query)
 }
 
 async function editions(item = {}) {

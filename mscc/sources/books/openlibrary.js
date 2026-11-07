@@ -1,4 +1,4 @@
-import { clean, fetchJson, safeFileName, sendDocument, sizeText } from './_shared.js'
+import { clean, fetchJson, rankBookSearchResults, safeFileName, sendDocument, sizeText } from './_shared.js'
 
 const OL = 'https://openlibrary.org'
 const IA = 'https://archive.org'
@@ -25,6 +25,9 @@ function archiveFormats(identifier, metadata = {}) {
     } else if (lower.endsWith('.txt')) {
       format = 'TXT'; mimetype = 'text/plain'; extension = 'txt'
     } else continue
+    const bytes = Number(file?.size || 0)
+    const maxBytes = format === 'PDF' ? 50 * 1024 * 1024 : format === 'EPUB' ? 40 * 1024 * 1024 : 10 * 1024 * 1024
+    if (bytes > 0 && bytes > maxBytes) continue
     const key = format + ':' + name
     if (seen.has(key)) continue
     seen.add(key)
@@ -72,9 +75,8 @@ async function search(query) {
           ? 'https://covers.openlibrary.org/b/olid/' + encodeURIComponent(String(doc.cover_edition_key)) + '-M.jpg'
           : '',
     }]
-  }).slice(0, 25)
-  if (!items.length) throw new Error('Open Library returned no publicly downloadable books for that search.')
-  return items
+  })
+  return rankBookSearchResults(query, items, { limit:25 })
 }
 
 async function editions(item = {}) {

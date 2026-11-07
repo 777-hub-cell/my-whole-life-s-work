@@ -51,12 +51,19 @@ function savedBookFormat(ctx) {
 
 function outcomeError(ctx, outcome, respond = value => ctx.reply(value)) {
   if (outcome?.status === 'no-sources') return respond('No book sources are installed yet.')
-  if (outcome?.status === 'source-error') return respond(`${outcome.source?.name || 'The book source'} could not complete that request.`)
+  if (outcome?.status === 'source-error') {
+    const source = outcome.source?.name || 'The book source'
+    const detail = String(outcome.error?.message || '').replace(/\s+/g, ' ').trim().slice(0, 180)
+    return respond(detail ? `${source} failed: ${detail}` : `${source} could not complete that request.`)
+  }
   if (outcome?.status === 'unknown-source') {
     const names = (outcome.sources || []).map(source => source.id).join(', ')
     return respond(`Unknown book source "${outcome.sourceId}". Available: ${names || 'none'}.`)
   }
-  if (outcome?.status === 'all-failed') return respond('All configured book sources failed for that request.')
+  if (outcome?.status === 'all-failed') {
+    const detail = String(outcome.error?.message || '').replace(/\s+/g, ' ').trim().slice(0, 180)
+    return respond(detail ? `All book sources failed: ${detail}` : 'All configured book sources failed for that request.')
+  }
   return respond('Could not complete that book request.')
 }
 
@@ -287,6 +294,11 @@ async function loadEditions(ctx, { sourceId, book }) {
 
 async function download(ctx, { sourceId, book, edition }) {
   ctx.clearCommandReplySession?.()
+  let progress = null
+  if (typeof ctx.progress === 'function') {
+    try { progress = await ctx.progress(`Preparing ${book.title} for delivery…`) } catch {}
+  }
+  const respond = value => progress?.done ? progress.done(value) : ctx.reply(value)
   const outcome = await ctx.executeSource({
     capability:'books',
     explicitSource:sourceId,
@@ -299,11 +311,13 @@ async function download(ctx, { sourceId, book, edition }) {
       delivery:'document',
     },
   })
-  if (outcome.status !== 'ok') return outcomeError(ctx, outcome)
-  if (outcome.result?.delivered === true) return true
-  if (typeof outcome.result === 'string') return ctx.reply(outcome.result)
-  if (outcome.result?.text) return ctx.reply(String(outcome.result.text))
-  return ctx.reply(`Book download started: ${book.title}.`)
+  if (outcome.status !== 'ok') return outcomeError(ctx, outcome, respond)
+  if (outcome.result?.delivered === true) {
+    return respond(`Sent ${book.title} successfully.`)
+  }
+  if (typeof outcome.result === 'string') return respond(outcome.result)
+  if (outcome.result?.text) return respond(String(outcome.result.text))
+  return respond(`The source did not confirm that ${book.title} was delivered. Please try another source.`)
 }
 
 async function handleNumbers(ctx) {

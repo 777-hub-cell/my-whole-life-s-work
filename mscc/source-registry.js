@@ -69,6 +69,7 @@ export class SourceRegistry {
       const module = await import(url.href)
       const source = module.default
       if (!source || typeof source.run !== 'function') throw new Error(`Invalid source module: ${rel}`)
+      if (source.disabled === true) continue
 
       const id = normalizeId(source.id || basename(file, extname(file)))
       const key = `${capability}:${id}`
@@ -247,6 +248,14 @@ export class SourceRegistry {
       return { status:'choice-required', capability:cap, sources:available }
     }
 
+    if (!this.get(cap, defaultId)) {
+      return {
+        status:'choice-required',
+        capability:cap,
+        sources:available,
+        unavailableDefault:defaultId,
+      }
+    }
     const preferred = available.find(source => source.id === defaultId)
     const fallbacks = available
       .filter(source => source.id !== preferred?.id)

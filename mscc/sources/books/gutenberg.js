@@ -1,4 +1,4 @@
-import { clean, fetchText, safeFileName, sendDocument, textFromHtml } from './_shared.js'
+import { clean, fetchText, rankBookSearchResults, safeFileName, sendDocument, textFromHtml } from './_shared.js'
 
 const ORIGIN = 'https://www.gutenberg.org'
 
@@ -6,7 +6,7 @@ function absolute(value = '') {
   try { return new URL(String(value || ''), ORIGIN).href } catch { return '' }
 }
 
-function parseSearch(html = '') {
+function parseSearch(html = '', query = '') {
   const blocks = String(html || '').match(/<li\b[^>]*class=["'][^"']*\bbooklink\b[^"']*["'][^>]*>[\s\S]*?<\/li>/gi) || []
   const items = []
   const seen = new Set()
@@ -30,7 +30,7 @@ function parseSearch(html = '') {
     })
     if (items.length >= 25) break
   }
-  return items
+  return query ? rankBookSearchResults(query, items, { limit:25 }) : items
 }
 
 function classifyDownload(href = '', label = '') {
@@ -91,9 +91,7 @@ async function search(query) {
       timeoutMs:20000,
     },
   )
-  const items = parseSearch(text)
-  if (!items.length) throw new Error('Project Gutenberg returned no books.')
-  return items
+  return parseSearch(text, query)
 }
 
 async function editions(item = {}) {

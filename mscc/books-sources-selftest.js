@@ -3,7 +3,7 @@ import gutenberg from './sources/books/gutenberg.js'
 import standardEbooks from './sources/books/standard-ebooks.js'
 import openLibrary from './sources/books/openlibrary.js'
 import novelBuddy from './sources/books/novelbuddy.js'
-import welib from './sources/books/welib.js'
+import { rankBookSearchResults } from './sources/books/_shared.js'
 
 const registry = new SourceRegistry({
   rootUrl:new URL('./sources/', import.meta.url),
@@ -12,7 +12,7 @@ const registry = new SourceRegistry({
 await registry.load()
 
 const ids = registry.list('books').map(source => source.id).sort()
-const expected = ['gutenberg','novelbuddy','openlibrary','standard-ebooks','welib'].sort()
+const expected = ['gutenberg','openlibrary','standard-ebooks'].sort()
 if (ids.join('|') !== expected.join('|')) {
   throw new Error('Unexpected books source set: ' + ids.join('|'))
 }
@@ -85,28 +85,106 @@ if (next?.props?.pageProps?.initialManga?.id !== '123') {
   throw new Error('NovelBuddy __NEXT_DATA__ parsing failed.')
 }
 
-if (novelBuddy.fallbackOrder !== 10 || welib.fallbackOrder !== 20) {
-  throw new Error('Books fallback order must remain NovelBuddy #1, WeLib #2.')
+if (novelBuddy.disabled !== true || registry.get('books', 'novelbuddy') !== null) {
+  throw new Error('NovelBuddy must remain disabled until automated access is authorized.')
 }
-const md5English = '2abb77f267f22b521acd1cece34f88e2'
-const md5French = '11111111111111111111111111111111'
-const welibItems = welib._test.parseSearch(`
-<div class="book-list">
-  <a href="/md5/${md5English}"><img src="/covers/a.jpg"></a>
-  <a href="/md5/${md5English}">Example English Book</a>
-  <span>English EPUB 4.2 MB 2024</span>
-</div>
-<div class="book-list">
-  <a href="/md5/${md5French}"><img src="/covers/b.jpg"></a>
-  <a href="/md5/${md5French}">Exemple Français</a>
-  <span>French PDF 6.1 MB 2023</span>
-</div>
-`, 'English')
-if (welibItems.length !== 1 || welibItems[0].id !== md5English) {
-  throw new Error('WeLib English-default search filtering failed.')
+if (registry.get('books', 'welib') !== null) {
+  throw new Error('WeLib must remain disabled without verified distribution rights.')
 }
-if (welibItems[0].format !== 'EPUB' || welibItems[0].language !== 'English') {
-  throw new Error('WeLib search metadata parsing failed.')
+
+const staleDefaultRegistry = new SourceRegistry({
+  rootUrl:new URL('./sources/', import.meta.url),
+  storage:{
+    brandForCapability:() => 'MSCC',
+    getSourceDefault:() => 'welib',
+  },
+})
+await staleDefaultRegistry.load()
+const staleDefaultOutcome = await staleDefaultRegistry.execute({
+  capability:'books',
+  userKey:'test-user',
+  payload:{ action:'search', query:'Peter and Jane' },
+})
+if (staleDefaultOutcome.status !== 'choice-required' ||
+    staleDefaultOutcome.unavailableDefault !== 'welib') {
+  throw new Error('A disabled saved book source must prompt for a new source instead of silently searching another catalogue.')
 }
+
+
+
+const percyMatches = rankBookSearchResults('percy jackson', [
+  { title:'Poetry', author:'Ring Lardner' },
+  { title:'The Sea of Monsters', author:'Rick Riordan', rawText:'Percy Jackson and the Olympians' },
+  { title:'Percy Jackson and the Lightning Thief', author:'Rick Riordan' },
+])
+if (percyMatches.length !== 2 || percyMatches.some(item => item.title === 'Poetry')) {
+  throw new Error('Book search relevance admitted an unrelated title.')
+}
+
+const peterMatches = rankBookSearchResults('Peter and Jane', [
+  { title:'Sense and Sensibility', author:'Jane Austen' },
+  { title:'Peter and Jane', author:'S. Macnaughtan' },
+])
+if (peterMatches.length !== 1 || peterMatches[0].author !== 'S. Macnaughtan') {
+  throw new Error('Book search relevance did not keep the exact Peter and Jane match.')
+}
+
+const unrelatedStandard = standardEbooks._test.parseSearch(
+  '<a href="/ebooks/ring-lardner/poetry">Poetry</a>',
+  'percy jackson',
+)
+if (unrelatedStandard.length) throw new Error('Standard Ebooks returned Poetry for Percy Jackson.')
+
+const unrelatedGutenberg = gutenberg._test.parseSearch(`
+<li class="booklink">
+  <a href="/ebooks/100"><span class="title">Poetry</span><span class="subtitle">Ring Lardner</span></a>
+</li>`, 'percy jackson')
+if (unrelatedGutenberg.length) throw new Error('Project Gutenberg returned an irrelevant Percy Jackson result.')
+
+const boundedFiles = openLibrary._test.archiveFormats('bounded-item', {
+  files:[
+    { name:'book.pdf', size:'213909504' },
+    { name:'book.txt', size:'614400' },
+  ],
+})
+if (boundedFiles.length !== 1 || boundedFiles[0].format !== 'TXT') {
+  throw new Error('Open Library exposed an oversized PDF edition.')
+}
+
+const incompleteNovelChapters = Array.from({ length:19 }, (_, index) => ({
+  id:String(index + 2),
+  name:'Chapter ' + (index + 2),
+}))
+let chapterGapRejected = false
+try {
+  novelBuddy._test.assertCompleteChapters({}, incompleteNovelChapters)
+} catch (error) {
+  chapterGapRejected = /chapter 1 is missing/i.test(String(error?.message || ''))
+}
+if (!chapterGapRejected) throw new Error('NovelBuddy accepted a novel whose first chapter is missing.')
+
+const orderedButMissingFirst = incompleteNovelChapters.map((chapter, index) => ({
+  ...chapter,
+  order:index,
+}))
+let indexedChapterGapRejected = false
+try {
+  novelBuddy._test.assertCompleteChapters({}, orderedButMissingFirst)
+} catch (error) {
+  indexedChapterGapRejected = /chapter 1 is missing/i.test(String(error?.message || ''))
+}
+if (!indexedChapterGapRejected) {
+  throw new Error('NovelBuddy trusted array position over explicit chapter titles and omitted Chapter 1.')
+}
+
+let chapterCountRejected = false
+try {
+  novelBuddy._test.assertCompleteChapters({ chapterCount:20 }, incompleteNovelChapters, 20)
+} catch (error) {
+  chapterCountRejected = /expected 20, received 19/i.test(String(error?.message || ''))
+}
+if (!chapterCountRejected) throw new Error('NovelBuddy accepted fewer chapters than the source declared.')
+
+console.log('PASS book search relevance, edition size limits and novel completeness')
 
 console.log('PASS books/novels sources: ' + expected.join(' | '))

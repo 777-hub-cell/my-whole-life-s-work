@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-books-integrity-20261107-auto-queue",
+  "releaseId": "night-tv-season-picker-20261109-auto-queue",
   "baseBranch": "mscc-azure",
-  "baseCommit": "7d77d1c6a4e1610d38b43dc5f8bf202512861c41",
+  "baseCommit": "ada62619ca73b933773537415f8058be2d7eae52",
   "pullRequests": [
-    7
+    10
   ],
-  "preparedAt": "2026-11-07T06:05:30.472Z",
-  "notes": "Release the validated book source relevance, download integrity and whole-novel completeness fixes from PR #7. After this release-manifest commit is merged and Azure validation passes, automatically queue deployment for human approval in the protected mscc-production environment."
+  "preparedAt": "2026-11-08T23:15:41.492Z",
+  "notes": "Release the WhatsApp TV season-picker delivery fix from PR #10. Multi-season shows now use the standard single-select list so season choices remain visible on WhatsApp clients that hide interactive-button selectors. The release is queued automatically after validation and remains subject to approval in the protected mscc-production environment."
 }

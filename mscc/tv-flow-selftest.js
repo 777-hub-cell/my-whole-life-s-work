@@ -3,6 +3,7 @@ import { runTvCommand } from './tv-flow.js'
 const calls = []
 const lists = []
 const replies = []
+const interactiveReplies = []
 let session = null
 let commandReplyInput = ''
 let saved = null
@@ -17,6 +18,7 @@ const ctx = {
   get commandReplyInput() { return commandReplyInput },
   reply:async value => { replies.push(String(value)); return value },
   replyList:async value => { lists.push(value); return value },
+  replyInteractive:async value => { interactiveReplies.push(value); return value },
   resolveTmdbTitles:async query => ({
     query,
     aliases:[query, 'Breaking Bad'],
@@ -85,6 +87,15 @@ if (searches.join('|') !== 'BrBa|Breaking Bad') {
 }
 
 const seasonList = lists.at(-1)
+if (!seasonList || seasonList.buttonText !== 'Choose season') {
+  throw new Error('TV season picker did not use the supported single-select list')
+}
+if (interactiveReplies.length) {
+  throw new Error('TV season picker used interactive-buttons layout instead of the single-select list')
+}
+if (!seasonList.rows?.some(row => row.title === 'Season 1') || !seasonList.rows?.some(row => row.title === 'Season 2')) {
+  throw new Error('TV season picker is missing one or more seasons')
+}
 const seasonOne = seasonList?.rows?.find(row => row.title === 'Season 1')
 if (!seasonOne) throw new Error('TV season picker missing Season 1')
 

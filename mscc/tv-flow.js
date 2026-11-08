@@ -240,40 +240,34 @@ async function showSeasons(ctx, { sourceId, series, seasons }) {
   const related = await tvBookRows(ctx, series)
   const counterpartRows = await movieCounterpartRows(ctx, series)
   const libraryAction = addToLibraryAction(ctx, 'tv', series, { prefix })
-  const instantActions = [...counterpartRows, libraryAction].filter(Boolean)
   const status = libraryStatusLine(ctx, 'tv', series)
 
+  // Always use the same single-select list used by the source picker.
+  // Some WhatsApp clients accept an interactive-buttons payload but display
+  // only its text, hiding the season selector. Keep every season accessible
+  // through the more widely supported list-message path.
+  const seasonRows = seasons.slice(0, 1000).map(season => ({
+    title:season.title || `Season ${season.number}`,
+    description:season.episodeCount ? `${season.episodeCount} episodes` : 'Open episodes',
+    id:`${prefix}tv ~season ${sourceId} ${token(series)} ${token(season)}`,
+  }))
   const rows = [
+    ...seasonRows,
     ...related,
-    ...seasons.slice(0, Math.max(0, 1000 - related.length)).map(season => ({
-      title:season.title || `Season ${season.number}`,
-      description:season.episodeCount ? `${season.episodeCount} episodes` : 'Open episodes',
-      id:`${prefix}tv ~season ${sourceId} ${token(series)} ${token(season)}`,
-    })),
-  ]
+    ...counterpartRows,
+    ...(libraryAction ? [libraryAction] : []),
+  ].slice(0, 1000)
 
   const text = [
     `${series.title} — ${seasons.length} season${seasons.length === 1 ? '' : 's'}.`,
     status,
   ].filter(Boolean).join('\n\n')
 
-  if (instantActions.length && typeof ctx.replyInteractive === 'function') {
-    return ctx.replyInteractive({
-      title:series.title,
-      text,
-      actions:instantActions,
-      selectors:[{
-        text:'Choose season',
-        title:series.title,
-        rows,
-      }],
-    })
-  }
-
   return ctx.replyList({
     title:series.title,
     text,
     buttonText:'Choose season',
+    footer:'Select a season to see its episodes.',
     rows,
   })
 }

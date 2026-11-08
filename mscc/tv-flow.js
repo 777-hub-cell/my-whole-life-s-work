@@ -261,7 +261,7 @@ async function showSeasons(ctx, { sourceId, series, seasons }) {
   const text = [
     `${series.title} — ${seasons.length} season${seasons.length === 1 ? '' : 's'}.`,
     status,
-  ].filter(Boolean).join('\\n\\n')
+  ].filter(Boolean).join('\n\n')
 
   return ctx.replyList({
     title:series.title,

@@ -1,0 +1,52 @@
+name: NIGHT Social — Chromium Reference Lab
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/night-social-engagement-controls-20261015
+    paths:
+      - ".github/workflows/night-social-chromium.yml"
+      - "night-social-browser/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: night-social-chromium-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inspect:
+    name: Inspect X and NIGHT Social in Chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install Playwright
+        working-directory: night-social-browser
+        run: npm install --no-audit --no-fund
+
+      - name: Install Chromium and Linux dependencies
+        working-directory: night-social-browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Inspect X and NIGHT Social
+        working-directory: night-social-browser
+        run: npm run inspect
+
+      - name: Upload screenshots and inspection report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: night-social-chromium-${{ github.run_number }}
+          path: night-social-browser/artifacts/
+          if-no-files-found: warn
+          retention-days: 14

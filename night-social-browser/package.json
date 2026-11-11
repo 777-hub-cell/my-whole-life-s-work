@@ -1,0 +1,11 @@
+{
+  "name": "night-social-browser-lab",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "inspect": "node inspect.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.65.0"
+  }
+}

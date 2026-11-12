@@ -42,7 +42,9 @@ if [[ "$same_manifest" == true ]]; then
   timeout --signal=TERM --kill-after=10s 300s \
     cp -a "$PREVIOUS/node_modules" "$RELEASE/node_modules"
   echo ">>> Existing MSCC dependencies copied; no registry access required."
-  node "$RELEASE/tools/patch-sticker-pack-probe-limit.mjs"
+  if [[ -f "$RELEASE/tools/patch-sticker-pack-probe-limit.mjs" ]]; then
+    node "$RELEASE/tools/patch-sticker-pack-probe-limit.mjs"
+  fi
   exit 0
 fi
 
@@ -55,4 +57,6 @@ timeout --signal=TERM --kill-after=15s 600s \
     --progress=false --fetch-retries=1 --fetch-timeout=30000 \
     --loglevel=verbose
 echo ">>> MSCC npm installation completed."
-node "$RELEASE/tools/patch-sticker-pack-probe-limit.mjs"
+if [[ -f "$RELEASE/tools/patch-sticker-pack-probe-limit.mjs" ]]; then
+    node "$RELEASE/tools/patch-sticker-pack-probe-limit.mjs"
+  fi

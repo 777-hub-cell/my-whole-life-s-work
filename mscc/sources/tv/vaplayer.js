@@ -137,7 +137,11 @@ async function deliverEpisode(item, seasonNumber, episode, quality, delivery, co
     }))
     const wrapped = new Error('VaPlayer failed at ' + episodeCode(season, number) + ': ' + safeError(error), { cause:error })
     wrapped.code = error?.code || 'vaplayer-episode-delivery-failed'
+    wrapped.statusCode = Number(error?.statusCode || 0) || 0
     wrapped.stage = stage
+    if (wrapped.code === 'vaplayer-stream-auth') {
+      wrapped.publicMessage = 'VaPlayer returned a stream link, but its host denied access (HTTP ' + (wrapped.statusCode || 401) + ') for ' + episodeCode(season, number) + '. No file was sent. Choose another TV source or restore authorized VaPlayer access.'
+    }
     throw wrapped
   } finally {
     if (media && typeof media.cleanup === 'function') await media.cleanup().catch(() => {})
@@ -189,14 +193,20 @@ async function downloadRange({
     const failedEpisode = chosen[completed] || chosen.at(-1)
     const failedCode = episodeCode(season, failedEpisode.number)
     const remainingEnd = chosen.at(-1).number
+    const streamAuth = failure.code === 'vaplayer-stream-auth'
     const hasNoStreams = failure.code === 'vaplayer-no-streams' || failure.code === 'vaplayer-no-playable-candidates'
+    const deniedStatus = Number(failure.statusCode || 401)
     const publicMessage = completed
-      ? hasNoStreams
-        ? 'VaPlayer delivered ' + completed + '/' + chosen.length + ' episodes, then found no playable stream for ' + failedCode + '. The delivered files remain in chat. Choose another TV source and retry episodes ' + failedEpisode.number + '-' + remainingEnd + '.'
-        : 'VaPlayer delivered ' + completed + '/' + chosen.length + ' episodes, then stopped at ' + failedCode + '. The delivered files are already in chat. Retry episodes ' + failedEpisode.number + '-' + remainingEnd + '.'
-      : hasNoStreams
-        ? 'VaPlayer has no playable stream for ' + failedCode + ' right now. No episodes were sent. Choose another TV source or try again later.'
-        : 'VaPlayer could not deliver ' + failedCode + '. No episodes in this batch were confirmed delivered. Try that episode on its own or choose a lower quality.'
+      ? streamAuth
+        ? 'VaPlayer delivered ' + completed + '/' + chosen.length + ' episodes, then its stream host denied access (HTTP ' + deniedStatus + ') at ' + failedCode + '. The delivered files remain in chat. Switch TV sources and retry episodes ' + failedEpisode.number + '-' + remainingEnd + '.'
+        : hasNoStreams
+          ? 'VaPlayer delivered ' + completed + '/' + chosen.length + ' episodes, then found no playable stream for ' + failedCode + '. The delivered files remain in chat. Choose another TV source and retry episodes ' + failedEpisode.number + '-' + remainingEnd + '.'
+          : 'VaPlayer delivered ' + completed + '/' + chosen.length + ' episodes, then stopped at ' + failedCode + '. The delivered files are already in chat. Retry episodes ' + failedEpisode.number + '-' + remainingEnd + '.'
+      : streamAuth
+        ? 'VaPlayer stream host denied access (HTTP ' + deniedStatus + ') for ' + failedCode + '. No episodes were sent. Choose another TV source or restore authorized VaPlayer access.'
+        : hasNoStreams
+          ? 'VaPlayer has no playable stream for ' + failedCode + ' right now. No episodes were sent. Choose another TV source or try again later.'
+          : 'VaPlayer could not deliver ' + failedCode + '. No episodes in this batch were confirmed delivered. Try that episode on its own or choose a lower quality.'
     failure.publicMessage = publicMessage
     failure.code = failure.code || 'vaplayer-tv-range-failed'
     await updateProgress(progress, publicMessage, 'fail')

@@ -188,8 +188,12 @@ export async function inspectVaPlayer(input) {
     }
   }
   if (!inspected.length) {
-    const error = new Error('VaPlayer streams were returned but none were playable.')
-    error.code = 'vaplayer-no-playable-candidates'
+    const denied = diagnostics.map(row => row.error || '').join(' ').match(/\\b(401|403)\\b/)
+    const error = new Error(denied
+      ? 'VaPlayer stream host denied access with HTTP ' + denied[1] + '.'
+      : 'VaPlayer streams were returned but none were playable.')
+    error.code = denied ? 'vaplayer-stream-auth' : 'vaplayer-no-playable-candidates'
+    error.statusCode = denied ? Number(denied[1]) : 0
     console.warn('[MSCC_MEDIA_TRANSFER] ' + JSON.stringify({
       source:'VaPlayer',
       phase:'inspection-no-playable-candidates',

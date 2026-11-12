@@ -1,4 +1,4 @@
-import { inspectCandidates, materializeCandidates, qualitiesFor } from './stream-copy.js'
+import { inspectInput, materializeCandidates, qualitiesFor } from './stream-copy.js'
 
 const API = 'https://streamdata.vaplayer.ru/api.php'
 const EMBED_BASE = 'https://nextgencloudfabric.com'
@@ -149,12 +149,58 @@ export async function resolveVaPlayer({ type = 'movie', imdbId, tmdbId, season =
   throw error
 }
 
+function safeDiagnosticMessage(error) {
+  return String(error && error.message || error || 'Unknown error')
+    .replace(/https?:\\/\\/[^\\s"'<>]+/gi, value => {
+      try { return new URL(value).origin } catch { return '[URL redacted]' }
+    })
+    .replace(/(token|key|sig|signature|auth|api[_-]?key)=([^&\\s]+)/gi, '$1=[redacted]')
+    .slice(0,320)
+}
+
+function candidateHost(value) {
+  try { return new URL(String(value || '')).host } catch { return 'unknown-host' }
+}
+
 export async function inspectVaPlayer(input) {
   const resolved = await resolveVaPlayer(input)
-  const inspected = await inspectCandidates(resolved.candidates)
+  const inspected = []
+  const diagnostics = []
+  for (const candidate of resolved.candidates) {
+    try {
+      const row = await inspectInput(candidate.url, candidate.headers || {})
+      if (row.playable) {
+        inspected.push({ ...candidate, ...row })
+      } else {
+        diagnostics.push({
+          host:candidateHost(candidate.url),
+          result:'no-video-stream',
+          format:String(row.probe?.format?.format_name || '').slice(0,80),
+          streams:(row.probe?.streams || []).map(stream => String(stream?.codec_type || 'unknown')).slice(0,8),
+        })
+      }
+    } catch (error) {
+      diagnostics.push({
+        host:candidateHost(candidate.url),
+        errorName:String(error && error.name || 'Error'),
+        error:safeDiagnosticMessage(error),
+      })
+    }
+  }
   if (!inspected.length) {
     const error = new Error('VaPlayer streams were returned but none were playable.')
     error.code = 'vaplayer-no-playable-candidates'
+    console.warn('[MSCC_MEDIA_TRANSFER] ' + JSON.stringify({
+      source:'VaPlayer',
+      phase:'inspection-no-playable-candidates',
+      type:resolved.type,
+      tmdbId:resolved.tmdbId || null,
+      imdbId:resolved.imdbId || null,
+      season:resolved.season,
+      episode:resolved.episode,
+      candidateCount:resolved.candidates.length,
+      diagnostics,
+    }))
     throw error
   }
   return { ...resolved, inspected, qualities:qualitiesFor(inspected) }
@@ -168,4 +214,4 @@ export async function materializeVaPlayer(input, quality = 'source', delivery = 
   })
 }
 
-export const _test = { normalizeImdb, normalizeTmdb, keyOf, identityAttempts, resolveVaPlayer }
+export const _test = { normalizeImdb, normalizeTmdb, keyOf, identityAttempts, safeDiagnosticMessage, candidateHost, resolveVaPlayer }

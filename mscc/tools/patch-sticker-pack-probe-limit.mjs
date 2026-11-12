@@ -7,9 +7,9 @@ export const EXPECTED_BAILEYS_VERSION = '0.3.18-final'
 export const STICKER_PACK_PROBE_LIMIT = 200
 
 const ORIGINAL_GUARD = 'if (stickers.length > 60) {'
-const PROBE_GUARD = \`if (stickers.length > \${STICKER_PACK_PROBE_LIMIT}) {\`
+const PROBE_GUARD = `if (stickers.length > ${STICKER_PACK_PROBE_LIMIT}) {`
 const ORIGINAL_ERROR = 'Sticker pack exceeds the maximum limit of 60 stickers'
-const PROBE_ERROR = \`Sticker pack exceeds the temporary probe ceiling of \${STICKER_PACK_PROBE_LIMIT} stickers\`
+const PROBE_ERROR = `Sticker pack exceeds the temporary probe ceiling of ${STICKER_PACK_PROBE_LIMIT} stickers`
 
 export function patchStickerPackGuard(source) {
   const text = String(source ?? '')
@@ -34,7 +34,7 @@ export async function patchInstalledBaileys() {
   const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf8'))
   if (packageJson.version !== EXPECTED_BAILEYS_VERSION) {
     throw new Error(
-      \`Expected @itsliaaa/baileys \${EXPECTED_BAILEYS_VERSION}, found \${packageJson.version || 'unknown'}. \` +
+      `Expected @itsliaaa/baileys ${EXPECTED_BAILEYS_VERSION}, found ${packageJson.version || 'unknown'}. ` +
       'Review the dependency before enabling sticker-pack probing.'
     )
   }
@@ -53,5 +53,5 @@ export async function patchInstalledBaileys() {
 const invokedPath = process.argv[1] ? fileURLToPath(pathToFileURL(process.argv[1])) : ''
 if (invokedPath && invokedPath === fileURLToPath(import.meta.url)) {
   const result = await patchInstalledBaileys()
-  console.log(\`Prepared @itsliaaa/baileys \${result.version} for owner-only sticker-pack probes up to \${result.limit}.\`)
+  console.log(`Prepared @itsliaaa/baileys ${result.version} for owner-only sticker-pack probes up to ${result.limit}.`)
 }

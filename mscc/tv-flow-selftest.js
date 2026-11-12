@@ -123,6 +123,10 @@ await runTvCommand(ctx, { args:option.id.split(/\s+/).slice(1) })
 if (!replies.some(value => value.includes('OK:downloadRange:1080:document:S1'))) {
   throw new Error('Contiguous TV number range did not use downloadRange')
 }
+const rangeRequest = calls.findLast(call => call.payload.action === 'downloadRange')
+if (!Array.isArray(rangeRequest?.payload.selection) || rangeRequest.payload.selection.map(row => Number(row.number)).join(',') !== '1,2,3') {
+  throw new Error('TV range download did not preserve the locked episode selection')
+}
 
 await runTvCommand(ctx, { args:['Breaking','Bad'] })
 const latestSeason = lists.at(-1)?.rows?.find(row => row.title === 'Season 1')

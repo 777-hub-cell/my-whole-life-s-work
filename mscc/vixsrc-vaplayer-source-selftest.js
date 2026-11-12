@@ -239,3 +239,35 @@ try {
 }
 
 console.log('PASS VaPlayer TMDB-first identity resolution with IMDb fallback')
+
+
+const authBlockedError = Object.assign(new Error('FFprobe returned 401 Unauthorized'), {
+  code:'vaplayer-stream-auth',
+  statusCode:401,
+})
+await assert.rejects(
+  vaTvTest.downloadRange({
+    item:{ title:'Avatar: The Last Airbender' },
+    seasonNumber:1,
+    range:{ start:{ number:1 }, end:{ number:3 } },
+    selection:[1,2,3].map(number => ({ number })),
+    quality:'1080',
+    delivery:'document',
+    context:{ progress:async () => ({ fail:async () => {} }) },
+    resolveIdentity:async () => ({ tmdbId:246, imdbId:'tt0417299' }),
+    deliver:async () => { throw authBlockedError },
+  }),
+  error => {
+    assert.equal(error.code, 'vaplayer-stream-auth')
+    assert.match(error.publicMessage, /HTTP 401/)
+    assert.match(error.publicMessage, /No episodes were sent/)
+    assert.match(error.publicMessage, /Choose another TV source/)
+    return true
+  },
+)
+
+const safeProviderDiagnostic = vaTest.safeDiagnosticMessage(new Error('GET https://cdn.example/video.m3u8?token=private failed; api_key=secret'))
+assert.doesNotMatch(safeProviderDiagnostic, /private|secret/)
+assert.equal(vaTest.candidateHost('https://cdn.example/video.m3u8?token=private'), 'cdn.example')
+
+console.log('PASS VaPlayer authorization-denied classification and safe diagnostics')

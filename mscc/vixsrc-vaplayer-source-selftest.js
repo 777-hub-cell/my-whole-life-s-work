@@ -187,7 +187,9 @@ assert.equal(failedRangeEvents.at(-1).method, 'fail')
 assert.match(failedRangeEvents.at(-1).text, /delivered 4\/6/)
 
 assert.equal(vaTvTest.episodeCode(1, 5), 'S01E05')
-assert.match(vaTvTest.safeError(new Error('Fetch https://cdn.example/episode.m3u8?token=secret&sig=private failed')), /cdn\\.example\\/episode\\.m3u8/)
-assert.doesNotMatch(vaTvTest.safeError(new Error('Fetch https://cdn.example/episode.m3u8?token=secret&sig=private failed')), /secret|private/)
 
 console.log('PASS VaPlayer TV range batching, single IMDb lookup, progress and partial-failure reporting')
+
+const redactedError = vaTvTest.safeError(new Error('Fetch https://cdn.example/episode.m3u8?token=secret&sig=private failed'))
+assert.match(redactedError, /cdn\.example\/episode\.m3u8/)
+assert.doesNotMatch(redactedError, /secret|private/)

@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
-import { loadCommands } from './command-registry.js'
+import { dispatchNamespacedCommand, loadCommands } from './command-registry.js'
+import { runStickerPackLimitCommand } from './sticker-pack-limit-command.js'
 import {
   buildStickerPackProbePayload,
   parseStickerPackProbeCount,
@@ -78,6 +79,117 @@ assert.equal(command.name, 'pslimit')
 assert.equal(command.ownerOnly, true, '.pslimit must be owner-only')
 assert.equal(command.capability, 'media')
 assert.equal(typeof command.run, 'function')
+
+const privateRegistry = await loadCommands(new URL('./private-commands/', import.meta.url), {
+  allowMissing:true,
+})
+const privateCommand = privateRegistry.commands.get('pslimit')
+assert.ok(privateCommand, 'The Account A private owner console must register .pslimit')
+
+let privateDispatchSendCount = 0
+let privateDispatchPayload
+const privateDispatchReplies = []
+await dispatchNamespacedCommand({
+  privateRegistry,
+  publicRegistry:registry,
+  rawText:'.pslimit 5',
+  context:{
+    publicPrefix:'.',
+    publicCommandsEnabled:true,
+    privateControl:true,
+    isSupremeOwner:true,
+    message:{ key:{ remoteJid:'15550000000@s.whatsapp.net', id:'private-probe' } },
+    account:{ sock:{ sendMessage:async (_chat,payload) => {
+      privateDispatchSendCount += 1
+      privateDispatchPayload = payload
+    } } },
+    reply:async message => privateDispatchReplies.push(String(message)),
+  },
+})
+assert.equal(privateDispatchSendCount,1, 'The Account A private route must send one native pack')
+assert.equal(privateDispatchPayload.stickers.length,5)
+assert(privateDispatchReplies.some(message => /Accepted: 5 stickers.*ONE pack/i.test(message)))
+
+const deniedReplies = []
+await dispatchNamespacedCommand({
+  privateRegistry:{ commands:new Map(), canonical:[] },
+  publicRegistry:registry,
+  rawText:'.pslimit 80',
+  context:{
+    publicPrefix:'.',
+    publicCommandsEnabled:true,
+    privateControl:false,
+    isPublicOwner:false,
+    isSessionOwner:false,
+    isSupremeOwner:false,
+    message:{ key:{ remoteJid:'15550000000@s.whatsapp.net' } },
+    reply:async message => deniedReplies.push(String(message)),
+  },
+})
+assert(deniedReplies.some(message => /could not verify this sender as an authorized NIGHT owner/i.test(message)),
+  'An owner-only probe denial must explain why it was ignored instead of failing silently')
+
+let syntheticSendCount = 0
+const syntheticReplies = []
+const synthetic = await runStickerPackLimitCommand({
+  args:['65'],
+  publicPrefix:'.',
+  privateControl:true,
+  message:{ key:{ remoteJid:'15550000000@s.whatsapp.net' } },
+  account:{ sock:{ sendMessage:async () => { syntheticSendCount += 1 } } },
+  reply:async message => syntheticReplies.push(String(message)),
+}, {
+  sendStickerPackProbe:async input => ({ count:input.count, name:'NIGHT Pack Test' }),
+})
+assert.equal(synthetic.ok,true)
+assert.equal(syntheticSendCount,0, 'Injected sender should be the only send path in this unit test')
+assert(syntheticReplies.some(message => /Accepted: 65 stickers.*ONE pack/i.test(message)))
+
+let querySendCount = 0
+let queryPack
+const queryReplies = []
+const queryResult = await runStickerPackLimitCommand({
+  args:['cat','4'],
+  publicPrefix:'.',
+  privateControl:true,
+  message:{ key:{ remoteJid:'15550000000@s.whatsapp.net' } },
+  account:{ sock:{ sendMessage:async () => {} } },
+  reply:async message => queryReplies.push(String(message)),
+}, {
+  searchPinterestImages:async (query, options) => {
+    assert.equal(query,'cat')
+    assert.equal(options.limit,4)
+    return Array.from({length:4},(_,i)=>({imageUrl:'https://images.example/' + i}))
+  },
+  downloadImageUrl:async url => ({ buffer:Buffer.from(url), contentType:'image/png' }),
+  mediaToSticker:async buffer => Buffer.from('sticker:' + buffer.toString()),
+  sendStickerPackProbe:async input => {
+    querySendCount += 1
+    queryPack = input
+    return { count:input.count, name:input.packName }
+  },
+})
+assert.equal(queryResult.ok,true)
+assert.equal(querySendCount,1)
+assert.equal(queryPack.count,4)
+assert.equal(queryPack.stickers.length,4)
+assert.match(queryPack.packName,/cat/i)
+assert(queryReplies.some(message => /Accepted: 4 stickers.*ONE pack/i.test(message)))
+
+const unauthorizedReplies = []
+const unauthorized = await runStickerPackLimitCommand({
+  args:['80'],
+  publicPrefix:'.',
+  privateControl:false,
+  isPublicOwner:false,
+  isSessionOwner:false,
+  isSupremeOwner:false,
+  message:{ key:{ remoteJid:'15550000000@s.whatsapp.net' } },
+  account:{ sock:{ sendMessage:async () => { throw new Error('must not send') } } },
+  reply:async message => unauthorizedReplies.push(String(message)),
+})
+assert.equal(unauthorized.reason,'owner-verification-failed')
+assert(unauthorizedReplies.some(message => /could not verify/i.test(message)))
 
 const groupReplies = []
 let groupSendCount = 0

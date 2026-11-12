@@ -12,8 +12,13 @@ function normalizeImdb(value) {
   return /^tt\d{5,12}$/i.test(imdb) ? imdb.toLowerCase() : ''
 }
 
-function keyOf(type, imdbId, season, episode) {
-  return [type, imdbId, season || '', episode || ''].join('|')
+function normalizeTmdb(value) {
+  const tmdb = Number(value)
+  return Number.isSafeInteger(tmdb) && tmdb > 0 ? tmdb : 0
+}
+
+function keyOf(type, tmdbId, imdbId, season, episode) {
+  return [type, normalizeTmdb(tmdbId) || '', normalizeImdb(imdbId) || '', season || '', episode || ''].join('|')
 }
 
 function cached(key) {
@@ -40,9 +45,22 @@ async function get(url, headers = {}) {
   return response
 }
 
-export async function resolveVaPlayer({ type = 'movie', imdbId, season = 0, episode = 0 } = {}) {
+function identityAttempts({ tmdbId, imdbId }) {
+  const tmdb = normalizeTmdb(tmdbId)
   const imdb = normalizeImdb(imdbId)
-  if (!imdb) throw new Error('VaPlayer requires a valid IMDb ID.')
+  const attempts = []
+  // TMDB is the preferred catalog identity; IMDb remains a compatibility fallback.
+  if (tmdb) attempts.push({ param:'tmdb', value:String(tmdb), tmdbId:tmdb, imdbId:imdb })
+  if (imdb) attempts.push({ param:'imdb', value:imdb, tmdbId:tmdb, imdbId:imdb })
+  return attempts
+}
+
+export async function resolveVaPlayer({ type = 'movie', imdbId, tmdbId, season = 0, episode = 0 } = {}) {
+  const imdb = normalizeImdb(imdbId)
+  const tmdb = normalizeTmdb(tmdbId)
+  const identities = identityAttempts({ tmdbId:tmdb, imdbId:imdb })
+  if (!identities.length) throw new Error('VaPlayer requires a valid TMDB or IMDb ID.')
+
   const kind = String(type || '').toLowerCase() === 'tv' ? 'tv' : 'movie'
   const seasonNumber = Number(season) || 0
   const episodeNumber = Number(episode) || 0
@@ -50,54 +68,93 @@ export async function resolveVaPlayer({ type = 'movie', imdbId, season = 0, epis
     throw new Error('VaPlayer TV resolution requires season and episode numbers.')
   }
 
-  const key = keyOf(kind, imdb, seasonNumber, episodeNumber)
+  const key = keyOf(kind, tmdb, imdb, seasonNumber, episodeNumber)
   const saved = cached(key)
   if (saved) return saved
 
-  const params = new URLSearchParams({ imdb, type:kind })
-  let referer
-  if (kind === 'tv') {
-    params.set('season', String(seasonNumber))
-    params.set('episode', String(episodeNumber))
-    referer = EMBED_BASE + '/embed/tv/' + imdb + '/' + seasonNumber + '/' + episodeNumber
-  } else {
-    referer = EMBED_BASE + '/embed/movie/' + imdb
+  const failures = []
+  for (const identity of identities) {
+    const params = new URLSearchParams({ [identity.param]:identity.value, type:kind })
+    let referer
+    if (kind === 'tv') {
+      params.set('season', String(seasonNumber))
+      params.set('episode', String(episodeNumber))
+      referer = EMBED_BASE + '/embed/tv/' + identity.value + '/' + seasonNumber + '/' + episodeNumber
+    } else {
+      referer = EMBED_BASE + '/embed/movie/' + identity.value
+    }
+
+    try {
+      const response = await get(API + '?' + params, {
+        Referer:referer,
+        Origin:EMBED_BASE,
+        Accept:'application/json,*/*',
+      })
+      let data
+      try { data = await response.json() } catch { data = {} }
+      const urls = Array.isArray(data?.data?.stream_urls)
+        ? data.data.stream_urls.filter(value => /^https?:\/\//i.test(String(value || '')))
+        : []
+      if (!urls.length) {
+        failures.push({
+          idType:identity.param,
+          httpStatus:response.status,
+          apiStatusCode:String(data?.status_code || ''),
+          responseFields:Object.keys(data || {}).slice(0,12),
+        })
+        continue
+      }
+
+      const candidates = urls.slice(0, 8).map(url => ({
+        url:String(url),
+        headers:{
+          Referer:EMBED_BASE + '/',
+          Origin:EMBED_BASE,
+          'User-Agent':UA,
+        },
+      }))
+      return store(key, {
+        type:kind,
+        tmdbId:tmdb || null,
+        imdbId:imdb,
+        season:seasonNumber,
+        episode:episodeNumber,
+        resolvedBy:identity.param,
+        apiStatusCode:String(data?.status_code || ''),
+        candidates,
+      })
+    } catch (error) {
+      failures.push({
+        idType:identity.param,
+        errorName:String(error && error.name || 'Error'),
+        error:String(error && error.message || error).slice(0,240),
+      })
+    }
   }
 
-  const response = await get(API + '?' + params, {
-    Referer:referer,
-    Origin:EMBED_BASE,
-    Accept:'application/json,*/*',
-  })
-  let data
-  try { data = await response.json() } catch { data = {} }
-  const urls = Array.isArray(data?.data?.stream_urls)
-    ? data.data.stream_urls.filter(value => /^https?:\/\//i.test(String(value || '')))
-    : []
-  if (!urls.length) throw new Error('VaPlayer returned no playable streams for this title.')
-
-  const candidates = urls.slice(0, 8).map(url => ({
-    url:String(url),
-    headers:{
-      Referer:EMBED_BASE + '/',
-      Origin:EMBED_BASE,
-      'User-Agent':UA,
-    },
-  }))
-  return store(key, {
+  const error = new Error('VaPlayer returned no playable streams for this title after checking its available TMDB and IMDb identities.')
+  error.code = 'vaplayer-no-streams'
+  console.warn('[MSCC_MEDIA_TRANSFER] ' + JSON.stringify({
+    source:'VaPlayer',
+    phase:'resolver-no-streams',
     type:kind,
-    imdbId:imdb,
+    tmdbId:tmdb || null,
+    imdbId:imdb || null,
     season:seasonNumber,
     episode:episodeNumber,
-    apiStatusCode:String(data?.status_code || ''),
-    candidates,
-  })
+    attempts:failures,
+  }))
+  throw error
 }
 
 export async function inspectVaPlayer(input) {
   const resolved = await resolveVaPlayer(input)
   const inspected = await inspectCandidates(resolved.candidates)
-  if (!inspected.length) throw new Error('VaPlayer streams were returned but none were playable.')
+  if (!inspected.length) {
+    const error = new Error('VaPlayer streams were returned but none were playable.')
+    error.code = 'vaplayer-no-playable-candidates'
+    throw error
+  }
   return { ...resolved, inspected, qualities:qualitiesFor(inspected) }
 }
 
@@ -109,4 +166,4 @@ export async function materializeVaPlayer(input, quality = 'source', delivery = 
   })
 }
 
-export const _test = { normalizeImdb, keyOf }
+export const _test = { normalizeImdb, normalizeTmdb, keyOf, identityAttempts, resolveVaPlayer }

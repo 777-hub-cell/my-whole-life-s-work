@@ -167,9 +167,9 @@ async function downloadRange({
 
   let completed = 0
   try {
-    const imdbId = await resolveImdb(context, item)
-    if (!/^tt\d{5,12}$/i.test(String(imdbId || ''))) {
-      throw new Error('VaPlayer series IMDb identity is invalid.')
+    const identity = await resolveIdentity(context, item)
+    if (!identity?.tmdbId && !/^tt\d{5,12}$/i.test(String(identity?.imdbId || ''))) {
+      throw new Error('VaPlayer series TMDB/IMDb identity is invalid.')
     }
 
     for (let index = 0; index < chosen.length; index += 1) {

@@ -32,11 +32,24 @@ async function updateProgress(progress, value, method = 'update') {
   try { await fn.call(progress, value) } catch {}
 }
 
-async function imdbIdentity(context, item) {
-  const details = await mediaDetails(context, item, 'tv')
-  const imdbId = String(details?.imdbId || '').trim()
-  if (!imdbId) throw new Error('VaPlayer could not resolve an IMDb ID for this TV series.')
-  return imdbId
+function tmdbIdOf(item) {
+  const direct = Number(item?.tmdbId || 0)
+  if (Number.isSafeInteger(direct) && direct > 0) return direct
+  const match = /^tmdb:(\\d+)$/.exec(String(item?.id || ''))
+  return match ? Number(match[1]) : 0
+}
+
+async function mediaIdentity(context, item) {
+  const tmdbId = tmdbIdOf(item)
+  let details = null
+  if (tmdbId) {
+    try { details = await mediaDetails(context, item, 'tv') } catch {}
+  }
+  const imdbId = String(details?.imdbId || item?.imdbId || '').trim()
+  if (!tmdbId && !/^tt\\d{5,12}$/i.test(imdbId)) {
+    throw new Error('VaPlayer could not resolve a valid TMDB or IMDb identity for this TV series.')
+  }
+  return { tmdbId, imdbId }
 }
 
 function normalizeRangeEpisodes(range, selection) {
@@ -65,7 +78,7 @@ function normalizeRangeEpisodes(range, selection) {
 }
 
 async function deliverEpisode(item, seasonNumber, episode, quality, delivery, context, {
-  imdbId:knownImdbId = '',
+  identity:knownIdentity = null,
   materialize = materializeVaPlayer,
 } = {}) {
   const season = Number(seasonNumber)
@@ -74,14 +87,14 @@ async function deliverEpisode(item, seasonNumber, episode, quality, delivery, co
     throw new Error('VaPlayer TV episode identity is incomplete.')
   }
 
-  let stage = 'resolve-imdb'
+  let stage = 'resolve-identities'
   let media = null
   let materializeMs = 0
   try {
-    const imdbId = knownImdbId || await imdbIdentity(context, item)
+    const identity = knownIdentity || await mediaIdentity(context, item)
     stage = 'materialize-copy'
     const materializeStartedAt = Date.now()
-    media = await materialize({ type:'tv', imdbId, season, episode:number }, quality, delivery)
+    media = await materialize({ type:'tv', ...identity, season, episode:number }, quality, delivery)
     materializeMs = Date.now() - materializeStartedAt
 
     const s = String(season).padStart(2,'0')
@@ -123,7 +136,7 @@ async function deliverEpisode(item, seasonNumber, episode, quality, delivery, co
       error:safeError(error),
     }))
     const wrapped = new Error('VaPlayer failed at ' + episodeCode(season, number) + ': ' + safeError(error), { cause:error })
-    wrapped.code = 'vaplayer-episode-delivery-failed'
+    wrapped.code = error?.code || 'vaplayer-episode-delivery-failed'
     wrapped.stage = stage
     throw wrapped
   } finally {
@@ -139,7 +152,7 @@ async function downloadRange({
   quality,
   delivery,
   context,
-  resolveImdb = () => imdbIdentity(context, item),
+  resolveIdentity = () => mediaIdentity(context, item),
   deliver = deliverEpisode,
 }) {
   const season = Number(seasonNumber)
@@ -163,7 +176,7 @@ async function downloadRange({
       const episode = chosen[index]
       const code = episodeCode(season, episode.number)
       await updateProgress(progress, 'VaPlayer — ' + title + '\nPreparing ' + (index + 1) + '/' + chosen.length + ': ' + code + '.')
-      await deliver(item, season, episode, quality, delivery, context, { imdbId })
+      await deliver(item, season, episode, quality, delivery, context, { identity })
       completed += 1
       await updateProgress(progress, 'VaPlayer — ' + title + '\nDelivered ' + completed + '/' + chosen.length + ': ' + code + '.')
     }
@@ -176,9 +189,14 @@ async function downloadRange({
     const failedEpisode = chosen[completed] || chosen.at(-1)
     const failedCode = episodeCode(season, failedEpisode.number)
     const remainingEnd = chosen.at(-1).number
+    const hasNoStreams = failure.code === 'vaplayer-no-streams' || failure.code === 'vaplayer-no-playable-candidates'
     const publicMessage = completed
-      ? 'VaPlayer delivered ' + completed + '/' + chosen.length + ' episodes, then stopped at ' + failedCode + '. The delivered files are already in chat. Retry episodes ' + failedEpisode.number + '-' + remainingEnd + '.'
-      : 'VaPlayer could not deliver ' + failedCode + '. No episodes in this batch were confirmed delivered. Try that episode on its own or choose a lower quality.'
+      ? hasNoStreams
+        ? 'VaPlayer delivered ' + completed + '/' + chosen.length + ' episodes, then found no playable stream for ' + failedCode + '. The delivered files remain in chat. Choose another TV source and retry episodes ' + failedEpisode.number + '-' + remainingEnd + '.'
+        : 'VaPlayer delivered ' + completed + '/' + chosen.length + ' episodes, then stopped at ' + failedCode + '. The delivered files are already in chat. Retry episodes ' + failedEpisode.number + '-' + remainingEnd + '.'
+      : hasNoStreams
+        ? 'VaPlayer has no playable stream for ' + failedCode + ' right now. No episodes were sent. Choose another TV source or try again later.'
+        : 'VaPlayer could not deliver ' + failedCode + '. No episodes in this batch were confirmed delivered. Try that episode on its own or choose a lower quality.'
     failure.publicMessage = publicMessage
     failure.code = failure.code || 'vaplayer-tv-range-failed'
     await updateProgress(progress, publicMessage, 'fail')
@@ -219,8 +237,8 @@ export default {
       const ep = Number(picked?.number || episodeId || 0)
       const s = Number(seasonNumber || season?.number || picked?.seasonNumber || 1)
       if (!ep) return { qualities:['source','1080','720','480','360'], deliveries:['document','video'] }
-      const imdbId = await imdbIdentity(context, item)
-      const resolved = await inspectVaPlayer({ type:'tv', imdbId, season:s, episode:ep })
+      const identity = await mediaIdentity(context, item)
+      const resolved = await inspectVaPlayer({ type:'tv', ...identity, season:s, episode:ep })
       return { qualities:resolved.qualities, deliveries:['document','video'] }
     }
     if (action === 'download') {
@@ -244,4 +262,4 @@ export default {
   },
 }
 
-export const _test = { safeError, episodeCode, normalizeRangeEpisodes, downloadRange }
+export const _test = { safeError, episodeCode, tmdbIdOf, mediaIdentity, normalizeRangeEpisodes, downloadRange }

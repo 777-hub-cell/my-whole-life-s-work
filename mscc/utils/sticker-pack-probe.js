@@ -16,7 +16,7 @@ function numberedStickerPng(index, total) {
   const context = canvas.getContext('2d')
   const hue = (index * 47) % 360
 
-  context.fillStyle = \`hsl(\${hue} 42% 18%)\`
+  context.fillStyle = `hsl(${hue} 42% 18%)`
   context.fillRect(0, 0, 512, 512)
   context.fillStyle = '#f2f2f2'
   context.textAlign = 'center'
@@ -24,7 +24,7 @@ function numberedStickerPng(index, total) {
   context.font = 'bold 112px sans-serif'
   context.fillText(String(index + 1).padStart(3, '0'), 256, 232)
   context.font = 'bold 30px sans-serif'
-  context.fillText(\`OF \${total}\`, 256, 318)
+  context.fillText(`OF ${total}`, 256, 318)
   context.font = '24px sans-serif'
   context.fillText('NIGHT PACK TEST', 256, 430)
 
@@ -33,20 +33,20 @@ function numberedStickerPng(index, total) {
 
 export function buildStickerPackProbePayload(count) {
   if (!Number.isSafeInteger(count) || count < STICKER_PACK_PROBE_MIN || count > STICKER_PACK_PROBE_LIMIT) {
-    throw new RangeError(\`Probe count must be between \${STICKER_PACK_PROBE_MIN} and \${STICKER_PACK_PROBE_LIMIT}.\`)
+    throw new RangeError(`Probe count must be between ${STICKER_PACK_PROBE_MIN} and ${STICKER_PACK_PROBE_LIMIT}.`)
   }
 
   const stickers = Array.from({ length:count }, (_, index) => ({
     data:numberedStickerPng(index, count),
   }))
-  const name = \`NIGHT Pack Test \${count}\`
+  const name = `NIGHT Pack Test ${count}`
 
   return {
     cover:stickers[0].data,
     stickers,
     name,
     publisher:'NIGHT Diagnostics',
-    description:\`One-pack capacity probe with \${count} numbered stickers.\`,
+    description:`One-pack capacity probe with ${count} numbered stickers.`,
   }
 }
 

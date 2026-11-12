@@ -35,7 +35,7 @@ async function updateProgress(progress, value, method = 'update') {
 function tmdbIdOf(item) {
   const direct = Number(item?.tmdbId || 0)
   if (Number.isSafeInteger(direct) && direct > 0) return direct
-  const match = /^tmdb:(\\d+)$/.exec(String(item?.id || ''))
+  const match = /^tmdb:(\d+)$/.exec(String(item?.id || ''))
   return match ? Number(match[1]) : 0
 }
 
@@ -46,7 +46,7 @@ async function mediaIdentity(context, item) {
     try { details = await mediaDetails(context, item, 'tv') } catch {}
   }
   const imdbId = String(details?.imdbId || item?.imdbId || '').trim()
-  if (!tmdbId && !/^tt\\d{5,12}$/i.test(imdbId)) {
+  if (!tmdbId && !/^tt\d{5,12}$/i.test(imdbId)) {
     throw new Error('VaPlayer could not resolve a valid TMDB or IMDb identity for this TV series.')
   }
   return { tmdbId, imdbId }

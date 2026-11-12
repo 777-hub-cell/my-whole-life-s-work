@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { runTvCommand } from './tv-flow.js'
 
 const calls = []

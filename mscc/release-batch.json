@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-sticker-pack-limit-probe-revalidated-20261112",
+  "releaseId": "night-pslimit-command-routing-20261112",
   "baseBranch": "mscc-azure",
-  "baseCommit": "d15e7476540c0effcc9805eca404cb516ab9a563",
+  "baseCommit": "bdabeccb427499571841dc39068c0c2ed3e7b7e0",
   "pullRequests": [
-    14
+    16
   ],
-  "preparedAt": "2026-11-12T08:24:19.176Z",
-  "notes": "Revalidate the already merged NIGHT sticker pack probe release from PR #14 against the updated mscc-azure parent. PR #12 was merged while the original batch was running, so this refreshed manifest pins the exact new first parent. No code changes; this manifest-only batch authorizes the single protected production approval for the code already in mscc-azure."
+  "preparedAt": "2026-11-12T11:51:21.856Z",
+  "notes": "Release the .pslimit dispatch fix from PR #16. Public owner-only command denials now explain why the command was ignored; the Account A private self-chat owner console also registers .pslimit; .pslimit 80 sends one numbered diagnostic pack and .pslimit <search> <count> (for example cat 80) builds exactly that many real stickers into one native pack. The normal .ps splitter remains at 60."
 }

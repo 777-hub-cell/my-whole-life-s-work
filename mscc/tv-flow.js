@@ -441,6 +441,21 @@ async function chooseSelectionOptions(ctx, { sourceId, series, season, selection
 async function deliverSelection(ctx, { sourceId, series, season, selection, spec, quality, delivery }) {
   if (!selection.length) return ctx.reply('That episode selection is empty. Run the TV command again.')
 
+  // Keep the chosen episodes as the active reply session until delivery succeeds.
+  // If a provider fails partway through a batch, the user can reply with the
+  // remaining episode numbers instead of rebuilding the TV selection.
+  ctx.setCommandReplySession?.({
+    kind:'number-selection',
+    command:'tv',
+    capability:'tv',
+    sourceId,
+    item:series,
+    season,
+    entries:selection,
+    unit:'episode',
+    expiresAt:Date.now() + 30 * 60000,
+  })
+
   if (selection.length === 1) {
     const episode = selection[0]
     const outcome = await ctx.executeSource({
@@ -459,9 +474,10 @@ async function deliverSelection(ctx, { sourceId, series, season, selection, spec
       },
     })
     if (outcome.status !== 'ok') return outcomeError(ctx, outcome)
-    if (outcome.result?.delivered === true) return true
-    if (typeof outcome.result === 'string') return ctx.reply(outcome.result)
-    if (outcome.result?.text) return ctx.reply(String(outcome.result.text))
+    if (outcome.result?.delivered === true) { ctx.clearCommandReplySession?.(); return true }
+    if (typeof outcome.result === 'string') { ctx.clearCommandReplySession?.(); return ctx.reply(outcome.result) }
+    if (outcome.result?.text) { ctx.clearCommandReplySession?.(); return ctx.reply(String(outcome.result.text)) }
+    ctx.clearCommandReplySession?.()
     return ctx.reply(`Download started: ${series.title} — S${season.number}E${episode.number} (${quality}, ${delivery}).`)
   }
 
@@ -482,9 +498,10 @@ async function deliverSelection(ctx, { sourceId, series, season, selection, spec
       },
     })
     if (outcome.status !== 'ok') return outcomeError(ctx, outcome)
-    if (outcome.result?.delivered === true) return true
-    if (typeof outcome.result === 'string') return ctx.reply(outcome.result)
-    if (outcome.result?.text) return ctx.reply(String(outcome.result.text))
+    if (outcome.result?.delivered === true) { ctx.clearCommandReplySession?.(); return true }
+    if (typeof outcome.result === 'string') { ctx.clearCommandReplySession?.(); return ctx.reply(outcome.result) }
+    if (outcome.result?.text) { ctx.clearCommandReplySession?.(); return ctx.reply(String(outcome.result.text)) }
+    ctx.clearCommandReplySession?.()
     return ctx.reply(`Download started: ${series.title} — S${season.number} episodes ${spec} (${quality}, ${delivery}).`)
   }
 
@@ -508,6 +525,7 @@ async function deliverSelection(ctx, { sourceId, series, season, selection, spec
     if (outcome.status !== 'ok') return outcomeError(ctx, outcome)
     completed += 1
   }
+  ctx.clearCommandReplySession?.()
   return ctx.reply(`Started ${completed} selected episodes from *${series.title}* Season ${season.number} (${spec}).`)
 }
 
@@ -537,7 +555,6 @@ async function handleNumberSelection(ctx) {
 
   const saved = ctx.getDeliveryDefault('tv')
   if (saved) {
-    ctx.clearCommandReplySession?.()
     return deliverSelection(ctx, {
       sourceId:session.sourceId,
       series:session.item,
@@ -581,7 +598,6 @@ export async function runTvCommand(ctx, { args = [] } = {}) {
       ) {
         return ctx.reply('That TV download selection expired. Run the TV command again.')
       }
-      ctx.clearCommandReplySession?.()
       return deliverSelection(ctx, {
         sourceId:session.sourceId,
         series:session.item,

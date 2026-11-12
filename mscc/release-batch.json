@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-sticker-pack-limit-probe-20261112",
+  "releaseId": "night-sticker-pack-limit-probe-revalidated-20261112",
   "baseBranch": "mscc-azure",
-  "baseCommit": "14231d36c1ba351c86da03c14097074fdeecc8eb",
+  "baseCommit": "d15e7476540c0effcc9805eca404cb516ab9a563",
   "pullRequests": [
-    13
+    14
   ],
-  "preparedAt": "2026-11-12T08:19:53.423Z",
-  "notes": "Release the owner-only private-chat .pslimit empirical native sticker pack probe, its bounded Baileys guard patch, the 60-item interim .ps splitter batching target, and regression/CI coverage. Only PR #13 is included."
+  "preparedAt": "2026-11-12T08:24:19.176Z",
+  "notes": "Revalidate the already merged NIGHT sticker pack probe release from PR #14 against the updated mscc-azure parent. PR #12 was merged while the original batch was running, so this refreshed manifest pins the exact new first parent. No code changes; this manifest-only batch authorizes the single protected production approval for the code already in mscc-azure."
 }

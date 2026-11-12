@@ -193,3 +193,47 @@ console.log('PASS VaPlayer TV range batching, single IMDb lookup, progress and p
 const redactedError = vaTvTest.safeError(new Error('Fetch https://cdn.example/episode.m3u8?token=secret&sig=private failed'))
 assert.match(redactedError, /cdn\.example\/episode\.m3u8/)
 assert.doesNotMatch(redactedError, /secret|private/)
+
+assert.deepEqual(
+  vaTest.identityAttempts({ tmdbId:'246', imdbId:'TT0417299' }).map(row => [row.param, row.value]),
+  [['tmdb','246'], ['imdb','tt0417299']],
+  'VaPlayer must try TMDB identity before IMDb fallback',
+)
+
+const originalFetch = globalThis.fetch
+const identityRequests = []
+globalThis.fetch = async (url, options = {}) => {
+  const parsed = new URL(String(url))
+  identityRequests.push({ url:parsed, headers:options.headers || {} })
+  const hasTmdb = parsed.searchParams.has('tmdb')
+  const payload = hasTmdb
+    ? { status_code:'200', data:{ stream_urls:[] } }
+    : { status_code:'200', data:{ stream_urls:['https://cdn.example/avatar-s1e1.m3u8?token=test-only'] } }
+  return new Response(JSON.stringify(payload), {
+    status:200,
+    headers:{ 'content-type':'application/json' },
+  })
+}
+try {
+  const resolvedByFallback = await vaTest.resolveVaPlayer({
+    type:'tv',
+    tmdbId:999999991,
+    imdbId:'tt99999991',
+    season:1,
+    episode:1,
+  })
+  assert.equal(resolvedByFallback.resolvedBy, 'imdb')
+  assert.equal(identityRequests.length, 2)
+  assert.equal(identityRequests[0].url.searchParams.get('tmdb'), '999999991')
+  assert.equal(identityRequests[0].url.searchParams.has('imdb'), false)
+  assert.equal(identityRequests[1].url.searchParams.get('imdb'), 'tt99999991')
+  assert.equal(identityRequests[1].url.searchParams.has('tmdb'), false)
+  assert.match(identityRequests[0].headers.Referer, /\\/embed\\/tv\\/999999991\\/1\\/1$/)
+  assert.match(identityRequests[1].headers.Referer, /\\/embed\\/tv\\/tt99999991\\/1\\/1$/)
+  assert.equal(resolvedByFallback.candidates.length, 1)
+  assert.match(resolvedByFallback.candidates[0].url, /avatar-s1e1\\.m3u8/)
+} finally {
+  globalThis.fetch = originalFetch
+}
+
+console.log('PASS VaPlayer TMDB-first identity resolution with IMDb fallback')

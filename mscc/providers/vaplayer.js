@@ -108,7 +108,9 @@ export async function resolveVaPlayer({ type = 'movie', imdbId, tmdbId, season =
       const candidates = urls.slice(0, 8).map(url => ({
         url:String(url),
         headers:{
-          Referer:EMBED_BASE + '/',
+          // The stream host must see the same episode embed context as the API
+          // lookup; sending only the provider homepage can fail Referer checks.
+          Referer:referer,
           Origin:EMBED_BASE,
           'User-Agent':UA,
         },

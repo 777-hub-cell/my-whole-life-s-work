@@ -14,9 +14,12 @@ export function parseStickerPackProbeCount(value) {
 function numberedStickerPng(index, total) {
   const canvas = createCanvas(512, 512)
   const context = canvas.getContext('2d')
-  const hue = (index * 47) % 360
+  // Give every index a distinct RGB background; hue quantization can collide.
+  const red = (index + 31) % 256
+  const green = (index * 73 + 50) % 256
+  const blue = (index * 151 + 90) % 256
 
-  context.fillStyle = `hsl(${hue} 42% 18%)`
+  context.fillStyle = `rgb(${red} ${green} ${blue})`
   context.fillRect(0, 0, 512, 512)
   context.fillStyle = '#f2f2f2'
   context.textAlign = 'center'

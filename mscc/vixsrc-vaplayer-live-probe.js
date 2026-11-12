@@ -42,7 +42,7 @@ async function runCase({ provider, kind, input, delivery, allowUnavailable = fal
     // A live provider may have no listing for a particular title; that is
     // availability data, not a media-copy regression. Keep the exact Avatar
     // S1E1 VaPlayer case required, while letting this unrelated movie probe report.
-    if (allowUnavailable && error?.code === 'vaplayer-no-streams') {
+    if (allowUnavailable && ['vaplayer-no-streams','vaplayer-no-playable-candidates'].includes(error?.code)) {
       return { provider, kind, delivery, available:false, reason:'no-playable-streams', complete:false }
     }
     throw error

@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { runTvCommand } from './tv-flow.js'
 
 const calls = []
@@ -123,6 +124,10 @@ await runTvCommand(ctx, { args:option.id.split(/\s+/).slice(1) })
 if (!replies.some(value => value.includes('OK:downloadRange:1080:document:S1'))) {
   throw new Error('Contiguous TV number range did not use downloadRange')
 }
+const rangeRequest = calls.findLast(call => call.payload.action === 'downloadRange')
+if (!Array.isArray(rangeRequest?.payload.selection) || rangeRequest.payload.selection.map(row => Number(row.number)).join(',') !== '1,2,3') {
+  throw new Error('TV range download did not preserve the locked episode selection')
+}
 
 await runTvCommand(ctx, { args:['Breaking','Bad'] })
 const latestSeason = lists.at(-1)?.rows?.find(row => row.title === 'Season 1')
@@ -198,3 +203,60 @@ if (!relatedEpisodeCard?.rows?.some(row => row.title === '📚 Book: Solo Show N
 }
 
 console.log('PASS single-season TV skips season picker and keeps related book action')
+
+const sourceFailureReplies = []
+const sourceFailureMessage = 'VaPlayer delivered 4/6 episodes, then stopped at S01E05. Retry episodes 5-6.'
+const sourceFailureCtx = {
+  publicPrefix:'.',
+  reply:async value => { sourceFailureReplies.push(String(value)); return value },
+  executeSource:async () => ({
+    status:'source-error',
+    source:{ id:'vaplayer', name:'VaPlayer' },
+    error:{ publicMessage:sourceFailureMessage },
+  }),
+}
+await runTvCommand(sourceFailureCtx, { args:['Avatar','The','Last','Airbender'] })
+assert.equal(sourceFailureReplies.at(-1), sourceFailureMessage)
+
+console.log('PASS TV flow surfaces safe provider partial-batch failures')
+
+
+let retrySession = {
+  kind:'media-download-options',
+  command:'tv',
+  sourceId:'vaplayer',
+  item:{ id:'avatar', title:'Avatar: The Last Airbender' },
+  season:{ number:1, title:'Book One: Water' },
+  selected:Array.from({ length:6 }, (_, index) => ({ number:String(index + 1), seasonNumber:1 })),
+  selectionSpec:'1-6',
+}
+let retryInput = ''
+const retryReplies = []
+const retryCtx = {
+  publicPrefix:'.',
+  get commandReplyInput(){ return retryInput },
+  getCommandReplySession:() => retrySession,
+  setCommandReplySession:value => { retrySession=value },
+  clearCommandReplySession:() => { retrySession=null },
+  getDeliveryDefault:() => ({ quality:'1080', delivery:'document' }),
+  reply:async value => { retryReplies.push(String(value)); return value },
+  executeSource:async () => ({
+    status:'source-error',
+    source:{ id:'vaplayer', name:'VaPlayer' },
+    error:{ publicMessage:'VaPlayer delivered 4/6 episodes, then stopped at S01E05. Retry episodes 5-6.' },
+  }),
+}
+await runTvCommand(retryCtx, { args:['~selection-download','1080','document'] })
+if (retrySession?.kind !== 'number-selection' || retrySession.entries?.length !== 6) {
+  throw new Error('TV batch failure did not preserve the episode reply session')
+}
+retryInput='5-6'
+await runTvCommand(retryCtx, { args:['~numbers'] })
+if (retrySession?.kind !== 'number-selection' || retrySession.entries?.map(row => Number(row.number)).join(',') !== '5,6') {
+  throw new Error('TV retry did not narrow and preserve the remaining episode selection')
+}
+if (!retryReplies.at(-1)?.includes('Retry episodes 5-6')) {
+  throw new Error('TV retry did not show the provider partial-delivery message')
+}
+
+console.log('PASS TV batch failure preserves the remaining episode reply session')

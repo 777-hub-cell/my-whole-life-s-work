@@ -3,6 +3,7 @@ import vixMovie from './sources/movies/vixsrc.js'
 import vaMovie from './sources/movies/vaplayer.js'
 import vixTv from './sources/tv/vixsrc.js'
 import vaTv from './sources/tv/vaplayer.js'
+import { _test as vaTvTest } from './sources/tv/vaplayer.js'
 import { _test as vixTest } from './providers/vixsrc.js'
 import { _test as vaTest } from './providers/vaplayer.js'
 import { _test as copyTest } from './providers/stream-copy.js'
@@ -109,3 +110,164 @@ assert.equal(Object.hasOwn(untimedProgress, 'percent'), false)
 assert.equal(untimedProgress.timeSeconds, 5)
 
 console.log('PASS VixSrc/VaPlayer movie+TV source fixtures')
+
+
+const rangeEvents = []
+const deliveredEpisodes = []
+let identityLookups = 0
+const rangeContext = {
+  progress:async initial => {
+    rangeEvents.push({ method:'initial', text:initial })
+    return {
+      update:async text => { rangeEvents.push({ method:'update', text }) },
+      done:async text => { rangeEvents.push({ method:'done', text }) },
+      fail:async text => { rangeEvents.push({ method:'fail', text }) },
+    }
+  },
+}
+const rangeResult = await vaTvTest.downloadRange({
+  item:{ title:'Avatar: The Last Airbender' },
+  seasonNumber:1,
+  range:{ start:{ number:1 }, end:{ number:20 } },
+  selection:Array.from({ length:20 }, (_, index) => ({ number:String(index + 1), title:'Episode ' + (index + 1) })),
+  quality:'1080',
+  delivery:'document',
+  context:rangeContext,
+  resolveIdentity:async () => { identityLookups += 1; return { tmdbId:246, imdbId:'tt0417299' } },
+  deliver:async (_item, seasonNumber, episode, quality, delivery, _context, options) => {
+    deliveredEpisodes.push({ seasonNumber, number:episode.number, quality, delivery, imdbId:options.identity.imdbId })
+    return { delivered:true }
+  },
+})
+assert.equal(rangeResult.count, 20)
+assert.equal(identityLookups, 1, 'TV batch must resolve IMDb identity only once')
+assert.equal(deliveredEpisodes.length, 20)
+assert.equal(deliveredEpisodes[0].number, 1)
+assert.equal(deliveredEpisodes[19].number, 20)
+assert(deliveredEpisodes.every(row => row.imdbId === 'tt0417299' && row.quality === '1080' && row.delivery === 'document'))
+assert.equal(rangeEvents.at(-1).method, 'done')
+assert.match(rangeEvents.at(-1).text, /all 20 episodes/)
+
+const failedRangeEvents = []
+let attempted = 0
+await assert.rejects(
+  vaTvTest.downloadRange({
+    item:{ title:'Avatar: The Last Airbender' },
+    seasonNumber:1,
+    range:{ start:{ number:1 }, end:{ number:6 } },
+    selection:Array.from({ length:6 }, (_, index) => ({ number:String(index + 1) })),
+    quality:'1080',
+    delivery:'document',
+    context:{
+      progress:async initial => {
+        failedRangeEvents.push({ method:'initial', text:initial })
+        return {
+          update:async text => { failedRangeEvents.push({ method:'update', text }) },
+          done:async text => { failedRangeEvents.push({ method:'done', text }) },
+          fail:async text => { failedRangeEvents.push({ method:'fail', text }) },
+        }
+      },
+    },
+    resolveIdentity:async () => ({ tmdbId:246, imdbId:'tt0417299' }),
+    deliver:async (_item, _season, episode) => {
+      attempted += 1
+      if (Number(episode.number) === 5) throw new Error('simulated materialization failure')
+      return { delivered:true }
+    },
+  }),
+  error => {
+    assert.equal(error.publicMessage.includes('4/6'), true)
+    assert.equal(error.publicMessage.includes('S01E05'), true)
+    assert.equal(error.publicMessage.includes('5-6'), true)
+    return true
+  },
+)
+assert.equal(attempted, 5, 'batch must stop at the first failed episode')
+assert.equal(failedRangeEvents.at(-1).method, 'fail')
+assert.match(failedRangeEvents.at(-1).text, /delivered 4\/6/)
+
+assert.equal(vaTvTest.episodeCode(1, 5), 'S01E05')
+
+console.log('PASS VaPlayer TV range batching, single IMDb lookup, progress and partial-failure reporting')
+
+const redactedError = vaTvTest.safeError(new Error('Fetch https://cdn.example/episode.m3u8?token=secret&sig=private failed'))
+assert.match(redactedError, /cdn\.example\/episode\.m3u8/)
+assert.doesNotMatch(redactedError, /secret|private/)
+
+assert.deepEqual(
+  vaTest.identityAttempts({ tmdbId:'246', imdbId:'TT0417299' }).map(row => [row.param, row.value]),
+  [['tmdb','246'], ['imdb','tt0417299']],
+  'VaPlayer must try TMDB identity before IMDb fallback',
+)
+
+const originalFetch = globalThis.fetch
+const identityRequests = []
+globalThis.fetch = async (url, options = {}) => {
+  const parsed = new URL(String(url))
+  identityRequests.push({ url:parsed, headers:options.headers || {} })
+  const hasTmdb = parsed.searchParams.has('tmdb')
+  const payload = hasTmdb
+    ? { status_code:'200', data:{ stream_urls:[] } }
+    : { status_code:'200', data:{ stream_urls:['https://cdn.example/avatar-s1e1.m3u8?token=test-only'] } }
+  return new Response(JSON.stringify(payload), {
+    status:200,
+    headers:{ 'content-type':'application/json' },
+  })
+}
+try {
+  const resolvedByFallback = await vaTest.resolveVaPlayer({
+    type:'tv',
+    tmdbId:999999991,
+    imdbId:'tt99999991',
+    season:1,
+    episode:1,
+  })
+  assert.equal(resolvedByFallback.resolvedBy, 'imdb')
+  assert.equal(identityRequests.length, 2)
+  assert.equal(identityRequests[0].url.searchParams.get('tmdb'), '999999991')
+  assert.equal(identityRequests[0].url.searchParams.has('imdb'), false)
+  assert.equal(identityRequests[1].url.searchParams.get('imdb'), 'tt99999991')
+  assert.equal(identityRequests[1].url.searchParams.has('tmdb'), false)
+  assert.equal(identityRequests[0].headers.Referer.endsWith('/embed/tv/999999991/1/1'), true)
+  assert.equal(identityRequests[1].headers.Referer.endsWith('/embed/tv/tt99999991/1/1'), true)
+  assert.equal(resolvedByFallback.candidates.length, 1)
+  assert.equal(resolvedByFallback.candidates[0].url.includes('avatar-s1e1.m3u8'), true)
+  assert.equal(resolvedByFallback.candidates[0].headers.Referer.endsWith('/embed/tv/tt99999991/1/1'), true)
+  assert.equal(resolvedByFallback.candidates[0].headers.Origin, 'https://nextgencloudfabric.com')
+} finally {
+  globalThis.fetch = originalFetch
+}
+
+console.log('PASS VaPlayer TMDB-first identity resolution with IMDb fallback')
+
+
+const authBlockedError = Object.assign(new Error('FFprobe returned 401 Unauthorized'), {
+  code:'vaplayer-stream-auth',
+  statusCode:401,
+})
+await assert.rejects(
+  vaTvTest.downloadRange({
+    item:{ title:'Avatar: The Last Airbender' },
+    seasonNumber:1,
+    range:{ start:{ number:1 }, end:{ number:3 } },
+    selection:[1,2,3].map(number => ({ number })),
+    quality:'1080',
+    delivery:'document',
+    context:{ progress:async () => ({ fail:async () => {} }) },
+    resolveIdentity:async () => ({ tmdbId:246, imdbId:'tt0417299' }),
+    deliver:async () => { throw authBlockedError },
+  }),
+  error => {
+    assert.equal(error.code, 'vaplayer-stream-auth')
+    assert.match(error.publicMessage, /HTTP 401/)
+    assert.match(error.publicMessage, /No episodes were sent/)
+    assert.match(error.publicMessage, /Choose another TV source/)
+    return true
+  },
+)
+
+const safeProviderDiagnostic = vaTest.safeDiagnosticMessage(new Error('GET https://cdn.example/video.m3u8?token=private failed; api_key=secret'))
+assert.doesNotMatch(safeProviderDiagnostic, /private|secret/)
+assert.equal(vaTest.candidateHost('https://cdn.example/video.m3u8?token=private'), 'cdn.example')
+
+console.log('PASS VaPlayer authorization-denied classification and safe diagnostics')

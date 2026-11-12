@@ -1,4 +1,4 @@
-import { inspectCandidates, materializeCandidates, qualitiesFor } from './stream-copy.js'
+import { inspectInput, materializeCandidates, qualitiesFor } from './stream-copy.js'
 
 const API = 'https://streamdata.vaplayer.ru/api.php'
 const EMBED_BASE = 'https://nextgencloudfabric.com'
@@ -12,8 +12,13 @@ function normalizeImdb(value) {
   return /^tt\d{5,12}$/i.test(imdb) ? imdb.toLowerCase() : ''
 }
 
-function keyOf(type, imdbId, season, episode) {
-  return [type, imdbId, season || '', episode || ''].join('|')
+function normalizeTmdb(value) {
+  const tmdb = Number(value)
+  return Number.isSafeInteger(tmdb) && tmdb > 0 ? tmdb : 0
+}
+
+function keyOf(type, tmdbId, imdbId, season, episode) {
+  return [type, normalizeTmdb(tmdbId) || '', normalizeImdb(imdbId) || '', season || '', episode || ''].join('|')
 }
 
 function cached(key) {
@@ -40,9 +45,22 @@ async function get(url, headers = {}) {
   return response
 }
 
-export async function resolveVaPlayer({ type = 'movie', imdbId, season = 0, episode = 0 } = {}) {
+function identityAttempts({ tmdbId, imdbId }) {
+  const tmdb = normalizeTmdb(tmdbId)
   const imdb = normalizeImdb(imdbId)
-  if (!imdb) throw new Error('VaPlayer requires a valid IMDb ID.')
+  const attempts = []
+  // TMDB is the preferred catalog identity; IMDb remains a compatibility fallback.
+  if (tmdb) attempts.push({ param:'tmdb', value:String(tmdb), tmdbId:tmdb, imdbId:imdb })
+  if (imdb) attempts.push({ param:'imdb', value:imdb, tmdbId:tmdb, imdbId:imdb })
+  return attempts
+}
+
+export async function resolveVaPlayer({ type = 'movie', imdbId, tmdbId, season = 0, episode = 0 } = {}) {
+  const imdb = normalizeImdb(imdbId)
+  const tmdb = normalizeTmdb(tmdbId)
+  const identities = identityAttempts({ tmdbId:tmdb, imdbId:imdb })
+  if (!identities.length) throw new Error('VaPlayer requires a valid TMDB or IMDb ID.')
+
   const kind = String(type || '').toLowerCase() === 'tv' ? 'tv' : 'movie'
   const seasonNumber = Number(season) || 0
   const episodeNumber = Number(episode) || 0
@@ -50,54 +68,148 @@ export async function resolveVaPlayer({ type = 'movie', imdbId, season = 0, epis
     throw new Error('VaPlayer TV resolution requires season and episode numbers.')
   }
 
-  const key = keyOf(kind, imdb, seasonNumber, episodeNumber)
+  const key = keyOf(kind, tmdb, imdb, seasonNumber, episodeNumber)
   const saved = cached(key)
   if (saved) return saved
 
-  const params = new URLSearchParams({ imdb, type:kind })
-  let referer
-  if (kind === 'tv') {
-    params.set('season', String(seasonNumber))
-    params.set('episode', String(episodeNumber))
-    referer = EMBED_BASE + '/embed/tv/' + imdb + '/' + seasonNumber + '/' + episodeNumber
-  } else {
-    referer = EMBED_BASE + '/embed/movie/' + imdb
+  const failures = []
+  for (const identity of identities) {
+    const params = new URLSearchParams({ [identity.param]:identity.value, type:kind })
+    let referer
+    if (kind === 'tv') {
+      params.set('season', String(seasonNumber))
+      params.set('episode', String(episodeNumber))
+      referer = EMBED_BASE + '/embed/tv/' + identity.value + '/' + seasonNumber + '/' + episodeNumber
+    } else {
+      referer = EMBED_BASE + '/embed/movie/' + identity.value
+    }
+
+    try {
+      const response = await get(API + '?' + params, {
+        Referer:referer,
+        Origin:EMBED_BASE,
+        Accept:'application/json,*/*',
+      })
+      let data
+      try { data = await response.json() } catch { data = {} }
+      const urls = Array.isArray(data?.data?.stream_urls)
+        ? data.data.stream_urls.filter(value => /^https?:\/\//i.test(String(value || '')))
+        : []
+      if (!urls.length) {
+        failures.push({
+          idType:identity.param,
+          httpStatus:response.status,
+          apiStatusCode:String(data?.status_code || ''),
+          responseFields:Object.keys(data || {}).slice(0,12),
+        })
+        continue
+      }
+
+      const candidates = urls.slice(0, 8).map(url => ({
+        url:String(url),
+        headers:{
+          // The stream host must see the same episode embed context as the API
+          // lookup; sending only the provider homepage can fail Referer checks.
+          Referer:referer,
+          Origin:EMBED_BASE,
+          'User-Agent':UA,
+        },
+      }))
+      return store(key, {
+        type:kind,
+        tmdbId:tmdb || null,
+        imdbId:imdb,
+        season:seasonNumber,
+        episode:episodeNumber,
+        resolvedBy:identity.param,
+        apiStatusCode:String(data?.status_code || ''),
+        candidates,
+      })
+    } catch (error) {
+      failures.push({
+        idType:identity.param,
+        errorName:String(error && error.name || 'Error'),
+        error:String(error && error.message || error).slice(0,240),
+      })
+    }
   }
 
-  const response = await get(API + '?' + params, {
-    Referer:referer,
-    Origin:EMBED_BASE,
-    Accept:'application/json,*/*',
-  })
-  let data
-  try { data = await response.json() } catch { data = {} }
-  const urls = Array.isArray(data?.data?.stream_urls)
-    ? data.data.stream_urls.filter(value => /^https?:\/\//i.test(String(value || '')))
-    : []
-  if (!urls.length) throw new Error('VaPlayer returned no playable streams for this title.')
-
-  const candidates = urls.slice(0, 8).map(url => ({
-    url:String(url),
-    headers:{
-      Referer:EMBED_BASE + '/',
-      Origin:EMBED_BASE,
-      'User-Agent':UA,
-    },
-  }))
-  return store(key, {
+  const error = new Error('VaPlayer returned no playable streams for this title after checking its available TMDB and IMDb identities.')
+  error.code = 'vaplayer-no-streams'
+  console.warn('[MSCC_MEDIA_TRANSFER] ' + JSON.stringify({
+    source:'VaPlayer',
+    phase:'resolver-no-streams',
     type:kind,
-    imdbId:imdb,
+    tmdbId:tmdb || null,
+    imdbId:imdb || null,
     season:seasonNumber,
     episode:episodeNumber,
-    apiStatusCode:String(data?.status_code || ''),
-    candidates,
-  })
+    attempts:failures,
+  }))
+  throw error
+}
+
+function safeDiagnosticMessage(error) {
+  return String(error && error.message || error || 'Unknown error')
+    .replace(/https?:\/\/[^\s"'<>]+/gi, value => {
+      try { return new URL(value).origin } catch { return '[URL redacted]' }
+    })
+    .replace(/(token|key|sig|signature|auth|api[_-]?key)=([^& ]+)/gi, '$1=[redacted]')
+    .slice(0,320)
+}
+
+function candidateHost(value) {
+  try { return new URL(String(value || '')).host } catch { return 'unknown-host' }
 }
 
 export async function inspectVaPlayer(input) {
   const resolved = await resolveVaPlayer(input)
-  const inspected = await inspectCandidates(resolved.candidates)
-  if (!inspected.length) throw new Error('VaPlayer streams were returned but none were playable.')
+  const inspected = []
+  const diagnostics = []
+  for (const candidate of resolved.candidates) {
+    try {
+      const row = await inspectInput(candidate.url, candidate.headers || {})
+      if (row.playable) {
+        inspected.push({ ...candidate, ...row })
+      } else {
+        diagnostics.push({
+          host:candidateHost(candidate.url),
+          result:'no-video-stream',
+          format:String(row.probe?.format?.format_name || '').slice(0,80),
+          streams:(row.probe?.streams || []).map(stream => String(stream?.codec_type || 'unknown')).slice(0,8),
+        })
+      }
+    } catch (error) {
+      diagnostics.push({
+        host:candidateHost(candidate.url),
+        errorName:String(error && error.name || 'Error'),
+        error:safeDiagnosticMessage(error),
+      })
+    }
+  }
+  if (!inspected.length) {
+    const denied = diagnostics.map(row => row.error || '').join(' ').match(/(401|403)/)
+    const error = new Error(denied
+      ? 'VaPlayer stream host denied access with HTTP ' + denied[1] + '.'
+      : 'VaPlayer streams were returned but none were playable.')
+    error.code = denied ? 'vaplayer-stream-auth' : 'vaplayer-no-playable-candidates'
+    error.statusCode = denied ? Number(denied[1]) : 0
+    if (denied) {
+      error.publicMessage = 'VaPlayer stream host denied access (HTTP ' + denied[1] + '). Choose another TV source or restore authorized VaPlayer access.'
+    }
+    console.warn('[MSCC_MEDIA_TRANSFER] ' + JSON.stringify({
+      source:'VaPlayer',
+      phase:'inspection-no-playable-candidates',
+      type:resolved.type,
+      tmdbId:resolved.tmdbId || null,
+      imdbId:resolved.imdbId || null,
+      season:resolved.season,
+      episode:resolved.episode,
+      candidateCount:resolved.candidates.length,
+      diagnostics,
+    }))
+    throw error
+  }
   return { ...resolved, inspected, qualities:qualitiesFor(inspected) }
 }
 
@@ -109,4 +221,4 @@ export async function materializeVaPlayer(input, quality = 'source', delivery = 
   })
 }
 
-export const _test = { normalizeImdb, keyOf }
+export const _test = { normalizeImdb, normalizeTmdb, keyOf, identityAttempts, safeDiagnosticMessage, candidateHost, resolveVaPlayer }

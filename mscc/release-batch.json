@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-tv-season-picker-20261109-auto-queue",
+  "releaseId": "night-sticker-pack-limit-probe-20261112",
   "baseBranch": "mscc-azure",
-  "baseCommit": "ada62619ca73b933773537415f8058be2d7eae52",
+  "baseCommit": "14231d36c1ba351c86da03c14097074fdeecc8eb",
   "pullRequests": [
-    10
+    13
   ],
-  "preparedAt": "2026-11-08T23:15:41.492Z",
-  "notes": "Release the WhatsApp TV season-picker delivery fix from PR #10. Multi-season shows now use the standard single-select list so season choices remain visible on WhatsApp clients that hide interactive-button selectors. The release is queued automatically after validation and remains subject to approval in the protected mscc-production environment."
+  "preparedAt": "2026-11-12T08:19:53.423Z",
+  "notes": "Release the owner-only private-chat .pslimit empirical native sticker pack probe, its bounded Baileys guard patch, the 60-item interim .ps splitter batching target, and regression/CI coverage. Only PR #13 is included."
 }

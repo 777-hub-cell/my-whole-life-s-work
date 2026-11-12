@@ -75,8 +75,10 @@ rows.push(await runCase({
 rows.push(await runCase({
   provider:'VaPlayer',
   kind:'tv',
-  input:{ type:'tv', imdbId:'tt0055662', season:1, episode:1 },
-  delivery:'video',
+  // Use the exact Avatar S1E1 title from the reported WhatsApp failure.
+  // VaPlayer accepts TMDB or IMDb identity; the resolver tries TMDB first.
+  input:{ type:'tv', tmdbId:246, imdbId:'tt0417299', season:1, episode:1 },
+  delivery:'document',
 }))
 
 const summary = {

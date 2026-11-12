@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { DEFAULT_STICKER_PUBLISHER, applyStickerMetadata } from './sticker-metadata.js'
 
-export const NATIVE_STICKER_PACK_MAX = 50
+export const NATIVE_STICKER_PACK_MAX = 60
 
 export function splitStickerPackBuffers(buffers, maxPerPack = NATIVE_STICKER_PACK_MAX) {
   const source = Array.isArray(buffers) ? buffers.filter(Buffer.isBuffer) : []

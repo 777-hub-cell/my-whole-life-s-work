@@ -17,7 +17,7 @@ import {
 import { loadCommands } from './command-registry.js'
 
 assert.equal(PINTEREST_SEARCH_MAX, 150)
-assert.equal(NATIVE_STICKER_PACK_MAX, 50)
+assert.equal(NATIVE_STICKER_PACK_MAX, 60)
 
 assert.deepEqual(
   parsePinterestSearchArgs(['SpongeBob', 'SquarePants', 'funny', 'reaction', '80']),
@@ -35,12 +35,12 @@ assert.equal(pinterestPackName('SpongeBob SquarePants funny reaction'), 'SpongeB
 
 const buffers = count => Array.from({ length:count }, (_, index) => Buffer.from([index % 251]))
 assert.deepEqual(splitStickerPackBuffers(buffers(50)).map(chunk => chunk.length), [50])
-assert.deepEqual(splitStickerPackBuffers(buffers(51)).map(chunk => chunk.length), [26,25])
-assert.deepEqual(splitStickerPackBuffers(buffers(100)).map(chunk => chunk.length), [50,50])
-assert.deepEqual(splitStickerPackBuffers(buffers(101)).map(chunk => chunk.length), [34,34,33])
-assert.deepEqual(splitStickerPackBuffers(buffers(150)).map(chunk => chunk.length), [50,50,50])
+assert.deepEqual(splitStickerPackBuffers(buffers(60)).map(chunk => chunk.length), [60])
+assert.deepEqual(splitStickerPackBuffers(buffers(61)).map(chunk => chunk.length), [31,30])
+assert.deepEqual(splitStickerPackBuffers(buffers(120)).map(chunk => chunk.length), [60,60])
+assert.deepEqual(splitStickerPackBuffers(buffers(121)).map(chunk => chunk.length), [41,40,40])
 assert.equal(splitStickerPackBuffers(buffers(2)).length, 0)
-assert.ok(splitStickerPackBuffers(buffers(150)).every(chunk => chunk.length <= 50))
+assert.ok(splitStickerPackBuffers(buffers(150)).every(chunk => chunk.length <= 60))
 
 assert.equal(psPackNameFromFile('Teletubis.txt'), 'Teletubis')
 assert.deepEqual(parsePsRangeArgs(['1-50'], 200), {

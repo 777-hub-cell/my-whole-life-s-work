@@ -232,6 +232,8 @@ try {
   assert.equal(identityRequests[1].headers.Referer.endsWith('/embed/tv/tt99999991/1/1'), true)
   assert.equal(resolvedByFallback.candidates.length, 1)
   assert.equal(resolvedByFallback.candidates[0].url.includes('avatar-s1e1.m3u8'), true)
+  assert.equal(resolvedByFallback.candidates[0].headers.Referer.endsWith('/embed/tv/tt99999991/1/1'), true)
+  assert.equal(resolvedByFallback.candidates[0].headers.Origin, 'https://nextgencloudfabric.com')
 } finally {
   globalThis.fetch = originalFetch
 }

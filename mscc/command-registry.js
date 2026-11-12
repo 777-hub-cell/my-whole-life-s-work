@@ -157,6 +157,11 @@ async function publicCommandAllowed(command, context) {
     context.isSessionOwner === true ||
     context.isSupremeOwner === true
   )) {
+    if (command.notifyOnPermissionDenied === true &&
+        typeof context.reply === 'function' &&
+        String(command.permissionDeniedMessage || '').trim()) {
+      await context.reply(String(command.permissionDeniedMessage).trim())
+    }
     return false
   }
 

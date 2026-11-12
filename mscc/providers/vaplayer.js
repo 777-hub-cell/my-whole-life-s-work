@@ -151,7 +151,7 @@ export async function resolveVaPlayer({ type = 'movie', imdbId, tmdbId, season =
 
 function safeDiagnosticMessage(error) {
   return String(error && error.message || error || 'Unknown error')
-    .replace(/https?:\\/\\/[^\\s"'<>]+/gi, value => {
+    .replace(/https?:\/\/[^\s"'<>]+/gi, value => {
       try { return new URL(value).origin } catch { return '[URL redacted]' }
     })
     .replace(/(token|key|sig|signature|auth|api[_-]?key)=([^&\\s]+)/gi, '$1=[redacted]')

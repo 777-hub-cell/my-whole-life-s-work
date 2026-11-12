@@ -194,6 +194,9 @@ export async function inspectVaPlayer(input) {
       : 'VaPlayer streams were returned but none were playable.')
     error.code = denied ? 'vaplayer-stream-auth' : 'vaplayer-no-playable-candidates'
     error.statusCode = denied ? Number(denied[1]) : 0
+    if (denied) {
+      error.publicMessage = 'VaPlayer stream host denied access (HTTP ' + denied[1] + '). Choose another TV source or restore authorized VaPlayer access.'
+    }
     console.warn('[MSCC_MEDIA_TRANSFER] ' + JSON.stringify({
       source:'VaPlayer',
       phase:'inspection-no-playable-candidates',

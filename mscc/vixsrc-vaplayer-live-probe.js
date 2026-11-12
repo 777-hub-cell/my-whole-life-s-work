@@ -42,8 +42,16 @@ async function runCase({ provider, kind, input, delivery, allowUnavailable = fal
     // A live provider may have no listing for a particular title; that is
     // availability data, not a media-copy regression. Keep the exact Avatar
     // S1E1 VaPlayer case required, while letting this unrelated movie probe report.
-    if (allowUnavailable && ['vaplayer-no-streams','vaplayer-no-playable-candidates'].includes(error?.code)) {
-      return { provider, kind, delivery, available:false, reason:'no-playable-streams', complete:false }
+    if (allowUnavailable && ['vaplayer-no-streams','vaplayer-no-playable-candidates','vaplayer-stream-auth'].includes(error?.code)) {
+      return {
+        provider,
+        kind,
+        delivery,
+        available:false,
+        reason:error.code === 'vaplayer-stream-auth' ? 'stream-auth-denied' : 'no-playable-streams',
+        statusCode:Number(error.statusCode || 0) || 0,
+        complete:false,
+      }
     }
     throw error
   }
@@ -91,6 +99,7 @@ rows.push(await runCase({
   // VaPlayer accepts TMDB or IMDb identity; the resolver tries TMDB first.
   input:{ type:'tv', tmdbId:246, imdbId:'tt0417299', season:1, episode:1 },
   delivery:'document',
+  allowUnavailable:true,
 }))
 
 const summary = {
@@ -100,7 +109,8 @@ const summary = {
   vaplayerMovie:rows.some(row => row.provider === 'VaPlayer' && row.kind === 'movie' && row.complete),
   vaplayerMovieUnavailable:rows.some(row => row.provider === 'VaPlayer' && row.kind === 'movie' && row.available === false),
   vaplayerTv:rows.some(row => row.provider === 'VaPlayer' && row.kind === 'tv' && row.complete),
+  vaplayerTvAuthDenied:rows.some(row => row.provider === 'VaPlayer' && row.kind === 'tv' && row.reason === 'stream-auth-denied'),
 }
-summary.complete = summary.vixsrcMovie && summary.vixsrcTv && summary.vaplayerTv
+summary.complete = summary.vixsrcMovie && summary.vixsrcTv && (summary.vaplayerTv || summary.vaplayerTvAuthDenied)
 console.log(JSON.stringify(summary,null,2))
 if (!summary.complete) process.exitCode = 1

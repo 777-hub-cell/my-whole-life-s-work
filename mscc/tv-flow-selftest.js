@@ -202,3 +202,19 @@ if (!relatedEpisodeCard?.rows?.some(row => row.title === '📚 Book: Solo Show N
 }
 
 console.log('PASS single-season TV skips season picker and keeps related book action')
+
+const sourceFailureReplies = []
+const sourceFailureMessage = 'VaPlayer delivered 4/6 episodes, then stopped at S01E05. Retry episodes 5-6.'
+const sourceFailureCtx = {
+  publicPrefix:'.',
+  reply:async value => { sourceFailureReplies.push(String(value)); return value },
+  executeSource:async () => ({
+    status:'source-error',
+    source:{ id:'vaplayer', name:'VaPlayer' },
+    error:{ publicMessage:sourceFailureMessage },
+  }),
+}
+await runTvCommand(sourceFailureCtx, { args:['Avatar','The','Last','Airbender'] })
+assert.equal(sourceFailureReplies.at(-1), sourceFailureMessage)
+
+console.log('PASS TV flow surfaces safe provider partial-batch failures')

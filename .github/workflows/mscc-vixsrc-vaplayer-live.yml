@@ -43,9 +43,6 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
-      - name: Install MSCC dependencies
-        working-directory: mscc
-        run: npm install --omit=dev --no-audit --no-fund
       - name: Ensure FFmpeg
         run: |
           if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then

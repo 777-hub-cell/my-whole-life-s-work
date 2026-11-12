@@ -56,7 +56,11 @@ function uniqueQueries(values = []) {
 
 function outcomeError(ctx, outcome) {
   if (outcome?.status === 'no-sources') return ctx.reply('No TV sources are installed yet.')
-  if (outcome?.status === 'source-error') return ctx.reply(`${outcome.source?.name || 'The source'} could not complete that TV request.`)
+  if (outcome?.status === 'source-error') {
+    const publicMessage = String(outcome.error?.publicMessage || '').trim()
+    if (publicMessage) return ctx.reply(publicMessage)
+    return ctx.reply(`${outcome.source?.name || 'The source'} could not complete that TV request.`)
+  }
   if (outcome?.status === 'all-failed') return ctx.reply('All configured TV sources failed for that request.')
   return ctx.reply('Could not complete that TV request.')
 }
@@ -472,6 +476,7 @@ async function deliverSelection(ctx, { sourceId, series, season, selection, spec
         season,
         seasonNumber:season.number,
         range:{ start:selection[0], end:selection.at(-1) },
+        selection,
         quality,
         delivery,
       },

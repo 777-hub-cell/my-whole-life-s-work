@@ -3,6 +3,7 @@ import vixMovie from './sources/movies/vixsrc.js'
 import vaMovie from './sources/movies/vaplayer.js'
 import vixTv from './sources/tv/vixsrc.js'
 import vaTv from './sources/tv/vaplayer.js'
+import { _test as vaTvTest } from './sources/tv/vaplayer.js'
 import { _test as vixTest } from './providers/vixsrc.js'
 import { _test as vaTest } from './providers/vaplayer.js'
 import { _test as copyTest } from './providers/stream-copy.js'
@@ -109,3 +110,84 @@ assert.equal(Object.hasOwn(untimedProgress, 'percent'), false)
 assert.equal(untimedProgress.timeSeconds, 5)
 
 console.log('PASS VixSrc/VaPlayer movie+TV source fixtures')
+
+
+const rangeEvents = []
+const deliveredEpisodes = []
+let identityLookups = 0
+const rangeContext = {
+  progress:async initial => {
+    rangeEvents.push({ method:'initial', text:initial })
+    return {
+      update:async text => { rangeEvents.push({ method:'update', text }) },
+      done:async text => { rangeEvents.push({ method:'done', text }) },
+      fail:async text => { rangeEvents.push({ method:'fail', text }) },
+    }
+  },
+}
+const rangeResult = await vaTvTest.downloadRange({
+  item:{ title:'Avatar: The Last Airbender' },
+  seasonNumber:1,
+  range:{ start:{ number:1 }, end:{ number:20 } },
+  selection:Array.from({ length:20 }, (_, index) => ({ number:String(index + 1), title:'Episode ' + (index + 1) })),
+  quality:'1080',
+  delivery:'document',
+  context:rangeContext,
+  resolveImdb:async () => { identityLookups += 1; return 'tt0417299' },
+  deliver:async (_item, seasonNumber, episode, quality, delivery, _context, options) => {
+    deliveredEpisodes.push({ seasonNumber, number:episode.number, quality, delivery, imdbId:options.imdbId })
+    return { delivered:true }
+  },
+})
+assert.equal(rangeResult.count, 20)
+assert.equal(identityLookups, 1, 'TV batch must resolve IMDb identity only once')
+assert.equal(deliveredEpisodes.length, 20)
+assert.equal(deliveredEpisodes[0].number, 1)
+assert.equal(deliveredEpisodes[19].number, 20)
+assert(deliveredEpisodes.every(row => row.imdbId === 'tt0417299' && row.quality === '1080' && row.delivery === 'document'))
+assert.equal(rangeEvents.at(-1).method, 'done')
+assert.match(rangeEvents.at(-1).text, /all 20 episodes/)
+
+const failedRangeEvents = []
+let attempted = 0
+await assert.rejects(
+  vaTvTest.downloadRange({
+    item:{ title:'Avatar: The Last Airbender' },
+    seasonNumber:1,
+    range:{ start:{ number:1 }, end:{ number:6 } },
+    selection:Array.from({ length:6 }, (_, index) => ({ number:String(index + 1) })),
+    quality:'1080',
+    delivery:'document',
+    context:{
+      progress:async initial => {
+        failedRangeEvents.push({ method:'initial', text:initial })
+        return {
+          update:async text => { failedRangeEvents.push({ method:'update', text }) },
+          done:async text => { failedRangeEvents.push({ method:'done', text }) },
+          fail:async text => { failedRangeEvents.push({ method:'fail', text }) },
+        }
+      },
+    },
+    resolveImdb:async () => 'tt0417299',
+    deliver:async (_item, _season, episode) => {
+      attempted += 1
+      if (Number(episode.number) === 5) throw new Error('simulated materialization failure')
+      return { delivered:true }
+    },
+  }),
+  error => {
+    assert.equal(error.publicMessage.includes('4/6'), true)
+    assert.equal(error.publicMessage.includes('S01E05'), true)
+    assert.equal(error.publicMessage.includes('5-6'), true)
+    return true
+  },
+)
+assert.equal(attempted, 5, 'batch must stop at the first failed episode')
+assert.equal(failedRangeEvents.at(-1).method, 'fail')
+assert.match(failedRangeEvents.at(-1).text, /delivered 4\/6/)
+
+assert.equal(vaTvTest.episodeCode(1, 5), 'S01E05')
+assert.match(vaTvTest.safeError(new Error('Fetch https://cdn.example/episode.m3u8?token=secret&sig=private failed')), /cdn\\.example\\/episode\\.m3u8/)
+assert.doesNotMatch(vaTvTest.safeError(new Error('Fetch https://cdn.example/episode.m3u8?token=secret&sig=private failed')), /secret|private/)
+
+console.log('PASS VaPlayer TV range batching, single IMDb lookup, progress and partial-failure reporting')

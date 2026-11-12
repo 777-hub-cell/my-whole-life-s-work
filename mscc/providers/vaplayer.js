@@ -154,7 +154,7 @@ function safeDiagnosticMessage(error) {
     .replace(/https?:\/\/[^\s"'<>]+/gi, value => {
       try { return new URL(value).origin } catch { return '[URL redacted]' }
     })
-    .replace(/(token|key|sig|signature|auth|api[_-]?key)=([^&\\s]+)/gi, '$1=[redacted]')
+    .replace(/(token|key|sig|signature|auth|api[_-]?key)=([^& ]+)/gi, '$1=[redacted]')
     .slice(0,320)
 }
 

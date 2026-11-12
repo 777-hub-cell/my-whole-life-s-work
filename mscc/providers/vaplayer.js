@@ -188,7 +188,7 @@ export async function inspectVaPlayer(input) {
     }
   }
   if (!inspected.length) {
-    const denied = diagnostics.map(row => row.error || '').join(' ').match(/\\b(401|403)\\b/)
+    const denied = diagnostics.map(row => row.error || '').join(' ').match(/(401|403)/)
     const error = new Error(denied
       ? 'VaPlayer stream host denied access with HTTP ' + denied[1] + '.'
       : 'VaPlayer streams were returned but none were playable.')

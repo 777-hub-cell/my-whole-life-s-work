@@ -86,6 +86,30 @@ const privateRegistry = await loadCommands(new URL('./private-commands/', import
 const privateCommand = privateRegistry.commands.get('pslimit')
 assert.ok(privateCommand, 'The Account A private owner console must register .pslimit')
 
+let privateDispatchSendCount = 0
+let privateDispatchPayload
+const privateDispatchReplies = []
+await dispatchNamespacedCommand({
+  privateRegistry,
+  publicRegistry:registry,
+  rawText:'.pslimit 5',
+  context:{
+    publicPrefix:'.',
+    publicCommandsEnabled:true,
+    privateControl:true,
+    isSupremeOwner:true,
+    message:{ key:{ remoteJid:'15550000000@s.whatsapp.net', id:'private-probe' } },
+    account:{ sock:{ sendMessage:async (_chat,payload) => {
+      privateDispatchSendCount += 1
+      privateDispatchPayload = payload
+    } } },
+    reply:async message => privateDispatchReplies.push(String(message)),
+  },
+})
+assert.equal(privateDispatchSendCount,1, 'The Account A private route must send one native pack')
+assert.equal(privateDispatchPayload.stickers.length,5)
+assert(privateDispatchReplies.some(message => /Accepted: 5 stickers.*ONE pack/i.test(message)))
+
 const deniedReplies = []
 await dispatchNamespacedCommand({
   privateRegistry:{ commands:new Map(), canonical:[] },

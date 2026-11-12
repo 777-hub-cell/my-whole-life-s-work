@@ -19,12 +19,12 @@ assert.equal(parseStickerPackProbeCount('60'), 60)
 assert.equal(parseStickerPackProbeCount('120'), 120)
 assert.equal(parseStickerPackProbeCount(String(STICKER_PACK_PROBE_LIMIT)), STICKER_PACK_PROBE_LIMIT)
 for (const invalid of ['', '2', '201', '80.5', '-5', 'abc', '8 0']) {
-  assert.equal(parseStickerPackProbeCount(invalid), null, \`invalid probe count accepted: \${invalid}\`)
+  assert.equal(parseStickerPackProbeCount(invalid), null, `invalid probe count accepted: ${invalid}`)
 }
 
-const original = \`const prepare = () => {\\n  if (stickers.length > 60) {\\n    throw new Boom('Sticker pack exceeds the maximum limit of 60 stickers', { statusCode: 400 });\\n  }\\n}\`
+const original = `const prepare = () => {\n  if (stickers.length > 60) {\n    throw new Boom('Sticker pack exceeds the maximum limit of 60 stickers', { statusCode: 400 });\n  }\n}`
 const patched = patchStickerPackGuard(original)
-assert.match(patched, /stickers\\.length > 200/)
+assert.match(patched, /stickers\.length > 200/)
 assert.match(patched, /temporary probe ceiling of 200 stickers/)
 assert.equal(patchStickerPackGuard(patched), patched, 'dependency patch must be idempotent')
 assert.throws(() => patchStickerPackGuard('different upstream implementation'), /Unexpected/)
@@ -66,7 +66,7 @@ const baileysRoot = dirname(dirname(baileysEntry))
 const pkg = JSON.parse(await readFile(join(baileysRoot, 'package.json'), 'utf8'))
 assert.equal(pkg.version, EXPECTED_BAILEYS_VERSION)
 const messagesSource = await readFile(join(baileysRoot, 'lib', 'Utils', 'messages.js'), 'utf8')
-assert.match(messagesSource, /if \\(stickers\\.length > 200\\)/, 'installed Baileys guard must be patched before live probing')
+assert.match(messagesSource, /if \(stickers\.length > 200\)/, 'installed Baileys guard must be patched before live probing')
 
 const registry = await loadCommands(new URL('./commands/', import.meta.url), {
   allowMissing:true,

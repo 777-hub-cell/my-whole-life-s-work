@@ -133,9 +133,9 @@ const rangeResult = await vaTvTest.downloadRange({
   quality:'1080',
   delivery:'document',
   context:rangeContext,
-  resolveImdb:async () => { identityLookups += 1; return 'tt0417299' },
+  resolveIdentity:async () => { identityLookups += 1; return { tmdbId:246, imdbId:'tt0417299' } },
   deliver:async (_item, seasonNumber, episode, quality, delivery, _context, options) => {
-    deliveredEpisodes.push({ seasonNumber, number:episode.number, quality, delivery, imdbId:options.imdbId })
+    deliveredEpisodes.push({ seasonNumber, number:episode.number, quality, delivery, imdbId:options.identity.imdbId })
     return { delivered:true }
   },
 })
@@ -168,7 +168,7 @@ await assert.rejects(
         }
       },
     },
-    resolveImdb:async () => 'tt0417299',
+    resolveIdentity:async () => ({ tmdbId:246, imdbId:'tt0417299' }),
     deliver:async (_item, _season, episode) => {
       attempted += 1
       if (Number(episode.number) === 5) throw new Error('simulated materialization failure')
@@ -228,10 +228,10 @@ try {
   assert.equal(identityRequests[0].url.searchParams.has('imdb'), false)
   assert.equal(identityRequests[1].url.searchParams.get('imdb'), 'tt99999991')
   assert.equal(identityRequests[1].url.searchParams.has('tmdb'), false)
-  assert.match(identityRequests[0].headers.Referer, /\\/embed\\/tv\\/999999991\\/1\\/1$/)
-  assert.match(identityRequests[1].headers.Referer, /\\/embed\\/tv\\/tt99999991\\/1\\/1$/)
+  assert.equal(identityRequests[0].headers.Referer.endsWith('/embed/tv/999999991/1/1'), true)
+  assert.equal(identityRequests[1].headers.Referer.endsWith('/embed/tv/tt99999991/1/1'), true)
   assert.equal(resolvedByFallback.candidates.length, 1)
-  assert.match(resolvedByFallback.candidates[0].url, /avatar-s1e1\\.m3u8/)
+  assert.equal(resolvedByFallback.candidates[0].url.includes('avatar-s1e1.m3u8'), true)
 } finally {
   globalThis.fetch = originalFetch
 }

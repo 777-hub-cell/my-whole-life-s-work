@@ -260,10 +260,19 @@ NIGHT.MockAdapter = (function () {
       });
     },
     async listAccounts() { await latency(); return clone(accounts); },
-    async createAccount({ name, phone, profileId }) {
+    async getAccountSlots() {
+      await latency();
+      const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      const claimed = new Map(accounts.map((a, i) => [a.slot || letters[i] || '', a]));
+      return [...letters].map(slot => ({
+        slot, occupied: claimed.has(slot), id: claimed.get(slot)?.id || null,
+        name: claimed.get(slot)?.name || ''
+      }));
+    },
+    async createAccount({ name, phone, profileId, slot }) {
       await latency(); maybeFail('creating the account');
       if (!name || !name.trim()) throw new NIGHT.ApiError('VALIDATION', 'Account name is required.', 422);
-      const acc = { id: 'acc_' + Date.now().toString(36), name: name.trim(), phone: phone || 'Not linked', profileId: profileId || null, status: 'pairing', lastSeen: Date.now(), createdAt: Date.now(), session: 'sess_' + Math.random().toString(16).slice(2, 6), messages24h: 0, pairStarted: false };
+      const acc = { id: 'acc_' + Date.now().toString(36), slot: slot || '', name: name.trim(), phone: phone || 'Not linked', profileId: profileId || null, status: 'pairing', lastSeen: Date.now(), createdAt: Date.now(), session: 'sess_' + Math.random().toString(16).slice(2, 6), messages24h: 0, pairStarted: false };
       accounts.push(acc);
       logEvent('success', 'Account created', acc.name + ' was added and is awaiting pairing.', acc.id, 'accounts');
       return clone(acc);

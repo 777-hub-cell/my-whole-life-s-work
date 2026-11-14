@@ -69,7 +69,7 @@ Profile create/edit/delete, capability-priority writes, and per-account module o
 | Method | Path | Behavior |
 |---|---|---|
 | `GET` | `/env` | Lists only selected key names and configured metadata. Secret values are never returned. A small explicit allowlist of non-secret keys may return safe values. |
-| `PUT` | `/env/:key` | Returns `501 READ_ONLY`. Configure deployment variables through protected service configuration, not through the browser. |
+| `PUT` | `/env/:key` | Changes only backend-declared managed allowlist keys marked `editable`, with validation, CSRF and audit. All other keys reject with `403 READ_ONLY`; secret values are never read back. |
 
 ## Files
 
@@ -77,12 +77,12 @@ Profile create/edit/delete, capability-priority writes, and per-account module o
 |---|---|---|
 | `GET` | `/files/tree` | Tree of approved source/document roots only. Hidden, runtime, auth, session, database and secret-named paths are excluded. |
 | `GET` | `/files/preview?path=...` | Read-only text preview for approved file types up to 512 KiB. Path containment, symlink checks and `O_NOFOLLOW` are applied. |
-| `POST`, `PUT`, `DELETE` | `/files/*` | Rejected with `403 READ_ONLY`. Releases are immutable; modifications must go through reviewed source releases. |
+| `POST`, `PUT`, `DELETE` | `/files/*` | General source changes reject with `403 READ_ONLY`. Restricted, validated create/edit/rename/delete operations in `/custom-commands` are supported and audited. |
 
 ## Audit and invariants
 
 - Mutations require administrator session, same-origin request, and session CSRF token.
-- Login attempts are rate-limited by socket address; caller-supplied forwarded IP headers are not trusted.
+- Login attempts are rate-limited by Azure socket peer; caller-supplied forwarded IP headers are not trusted. A shared website proxy may coalesce users into one throttle bucket until a separately authenticated client identity mechanism is established.
 - Mutation metadata is appended to `/var/lib/mscc/data/mscc-admin-audit.jsonl` by default; the audit file is mode `0600` and stores no secret values.
 - Account A is constrained to the private `control` profile. Other accounts cannot receive `control`. The existing MSCC account/profile callbacks remain the final authority.
 - The legacy `/api/*` panel routes and their existing `mscc_session` cookie remain separate and unchanged.

@@ -94,6 +94,7 @@ function statusOf(account) {
 function accountDto(account) {
   return {
     id: String(account.id),
+    slot: String(account.slot || account.id),
     name: cleanText(account.displayName || `Account ${account.id}`, 80),
     phone: String(account.numberMasked || 'Not linked'),
     profileId: String(account.profile || 'unassigned'),
@@ -216,7 +217,8 @@ export function createControlCentreApi(options = {}) {
   function state() { return options.getState() }
   async function stateAccount(id) {
     const current = await state()
-    const account = current.accounts.find(item => String(item.id) === String(id))
+    const requested = String(id).toUpperCase()
+    const account = current.accounts.find(item => String(item.id) === String(id) || String(item.slot || '').toUpperCase() === requested)
     if (!account) throw Object.assign(new Error('Unknown account.'), { status: 404, code: 'NOT_FOUND' })
     return account
   }
@@ -467,7 +469,7 @@ export function createControlCentreApi(options = {}) {
         const modules = modulesFromState(current)
         return success(req.res, {
           bot: { status: 'online', version: String(current.version || 'unknown'), uptimeSeconds: Math.floor(process.uptime()) },
-          fleet: { total: accounts.length, online, offline: accounts.length - online - pairing - attention, pairing, attention },
+          fleet: { total: accounts.length, capacity: Number(current.entitlements?.maxAccounts || 26), online, offline: accounts.length - online - pairing - attention, pairing, attention },
           messages24h: null,
           modulesEnabled: modules.filter(item => item.enabled).length,
           modulesTotal: modules.length,
@@ -477,14 +479,18 @@ export function createControlCentreApi(options = {}) {
       }
       if (method === 'GET' && path === '/health') return success(req.res, { ok: true, adapter: 'live', serverTime: new Date().toISOString() })
       if (method === 'GET' && path === '/accounts') return success(req.res, current.accounts.map(accountDto))
+      if (method === 'GET' && path === '/account-slots') return success(req.res, (current.accountSlots || []).map(row => ({ slot: row.slot, occupied: row.occupied === true, id: row.id || null, name: cleanText(row.displayName || '', 48) })))
       if (method === 'POST' && path === '/accounts') {
         const body = await readBody(req)
         const name = cleanText(body.name, 80)
         const phone = String(body.phone || '').replace(/[^0-9]/g, '')
         if (!name || phone.length < 7 || phone.length > 15) return failure(req.res, 400, 'VALIDATION', 'Enter an account name and a phone number with country code.')
         if (body.profileId && (!(current.botProfiles || []).some(profile => profile.id === body.profileId) || body.profileId === 'control')) return failure(req.res, 400, 'PROFILE_NOT_ALLOWED', 'Choose an existing public profile. The private Control profile is reserved for Account A.')
+        const slot = String(body.slot || '').trim().toUpperCase()
+        if (slot && !/^[B-Z]$/.test(slot)) return failure(req.res, 400, 'VALIDATION', 'Choose an available slot from B to Z.')
+        if (slot && !(current.accountSlots || []).some(row => row.slot === slot && !row.occupied)) return failure(req.res, 409, 'SLOT_OCCUPIED', 'That account slot is not available.')
         const created = await mutation(req, 'account.create', 'new linked account', async () => {
-          const result = await options.createAccount({ displayName: name, phoneNumber: phone })
+          const result = await options.createAccount({ displayName: name, phoneNumber: phone, slot })
           const id = result?.account?.id
           if (!id) throw new Error('MSCC did not return the new account ID.')
           if (body.profileId) await options.assignAccountProfile(id, body.profileId)

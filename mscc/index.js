@@ -19,7 +19,7 @@ import { megaStorageDashboard, megaAvailableMounts, megaVerifyFolder } from './m
 import { dispatchNamespacedCommand, loadCommands, mergeCommandRegistries } from './command-registry.js'
 import { AccountRegistry, legacyAccountRecords } from './account-registry.js'
 import { selectCcDestination } from './cc-routing.js'
-import { isPrivateOwnerDm } from './control-context.js'
+import { resolveOwnerAuthority } from './owner-authority.js'
 import { canStartScheduledReconnect, classifyDisconnect, disconnectOrigin, disconnectProtocolDetail, jidPhoneNumber, reconnectDelay, serializeSessionOperation, sessionStatus } from './session-policy.js'
 import { createAccountSocketOptions } from './account-socket-options.js'
 import { assertSeparateAuthDirectories, useDurableMultiFileAuthState } from './account-auth-state.js'
@@ -139,7 +139,7 @@ let customCommandRegistry = EMPTY_COMMAND_REGISTRY()
 let publicCommandRegistry = builtInPublicCommandRegistry
 try {
   customCommandRegistry = await loadCommands(CUSTOM_COMMANDS_URL, { cacheBust: Date.now(), allowMissing: true, capabilityFromDirectory: true })
-  publicCommandRegistry = mergeCommandRegistries(builtInPublicCommandRegistry, customCommandRegistry)
+  publicCommandRegistry = mergeCommandRegistries(builtInPublicCommandRegistry, customCommandRegistry, { protectedRegistry:privateCommandRegistry })
 } catch (error) {
   console.error('NIGHT custom command startup load failed; built-in commands remain available:', error?.message || error)
   customCommandRegistry = EMPTY_COMMAND_REGISTRY()
@@ -1716,18 +1716,16 @@ async function authorityContext(account, msg) {
   const senderNumber = verifiedPhoneNumber(senderJid)
   const senderKey = canonicalUserKey(sharedStorage, senderJid)
   const senderIdentityKeys = verifiedIdentityKeys(sharedStorage, senderJid)
-  const isSupremeOwner = Boolean(senderNumber && controlNumbers.has(senderNumber))
-  const isSudo = isPublicSudoNumber(senderNumber)
-  return {
-    senderJid,
+  // Legacy control numbers and public sudo grant public owner privileges,
+  // never supreme-owner status or private command authorization.
+  const permissions = resolveOwnerAuthority({
     senderNumber,
-    senderKey,
-    senderIdentityKeys,
-    isSupremeOwner,
-    isSudo,
-    isPublicOwner:isSupremeOwner || isSudo,
-    isSessionOwner: isSupremeOwner || Boolean(senderNumber && senderNumber === account.number),
-  }
+    primaryOwnerNumber:OWNER_NUMBER,
+    controlNumbers,
+    sudo:isPublicSudoNumber(senderNumber),
+    sessionNumber:account.number,
+  })
+  return { senderJid, senderNumber, senderKey, senderIdentityKeys, ...permissions }
 }
 
 async function isController(account, msg) {
@@ -1790,27 +1788,6 @@ async function setPublicSudoTarget(account, msg, raw, enabled) {
     phoneNumber:phone,
     enabled:Boolean(enabled),
   }
-}
-
-async function resolveDirectPeer(account, msg) {
-  const jid = normalizeJid(msg?.key?.remoteJid)
-  if (!jid || isGroup(jid)) return ''
-  return resolvePhoneJid(account, jid)
-}
-
-async function isPrivateControlContext(account, msg, authority = null) {
-  const chat = normalizeJid(msg?.key?.remoteJid)
-  const sender = verifiedPhoneNumber(authority?.senderJid || await resolveSender(account, msg))
-  const peer = verifiedPhoneNumber(await resolveDirectPeer(account, msg))
-  return isPrivateOwnerDm({
-    account,
-    mainAccountId: destinationIdFor(),
-    chat,
-    group: isGroup(chat),
-    senderNumber: sender,
-    peerNumber: peer,
-    controlNumbers,
-  })
 }
 
 function invalidateGroupMetadata(accountId = '', groupJid = '') {
@@ -2650,7 +2627,12 @@ async function processInboundMessage(account, msg) {
       // Channels must be rejected BEFORE identity resolution, command dispatch,
       // reactions, moderation and data retention. Missing DB/config = OFF.
       if (channelPost && !channelAiAllowed(sharedStorage, inboundChat, account.id)) return
-      if (!acceptInboundCommand(account.id, msg)) return
+      // Use one durable receipt key for verified PN and LID aliases of
+      // Account A self-chat so a duplicated private command cannot replay.
+      const receiptMessage = ownerSelfControl
+        ? { ...msg, key:{ ...msg.key, remoteJid:normalizeJid(selfJid(account)) } }
+        : msg
+      if (!acceptInboundCommand(account.id, receiptMessage)) return
 
       if (channelPost) {
         const channelText = commandText(msg.message)
@@ -2677,7 +2659,8 @@ async function processInboundMessage(account, msg) {
       // The exact Account A self-chat check is an owner proof for this one
       // private command path; it does not grant public/group command access.
       const controller = authority.isSupremeOwner || ownerSelfControl
-      const privateControl = ownerSelfControl || await isPrivateControlContext(account, msg, authority)
+      // The Account A verified self-chat is the sole private entry point.
+      const privateControl = ownerSelfControl
       probe?.mark('identity')
 
       remember(account, msg)
@@ -3688,7 +3671,7 @@ async function reloadCommandsDetailed() {
   // Build the next registries completely before swapping. Invalid custom code or
   // a command-name collision leaves the currently working registry untouched.
   const nextCustom = await loadCommands(CUSTOM_COMMANDS_URL, { cacheBust, allowMissing: true, capabilityFromDirectory: true })
-  const nextPublic = mergeCommandRegistries(nextBuiltInPublic, nextCustom)
+  const nextPublic = mergeCommandRegistries(nextBuiltInPublic, nextCustom, { protectedRegistry:nextPrivate })
   const nextSources = sourceRegistry ? await sourceRegistry.load({ cacheBust }) : []
   privateCommandRegistry = nextPrivate
   customCommandRegistry = nextCustom

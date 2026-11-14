@@ -1,4 +1,4 @@
-import { appendFile, chmod, cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, chmod, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
@@ -432,9 +432,18 @@ async function getAccountDiagnostics(value, limit = 40) {
   const account = resolved ? accounts.get(resolved) : null
   if (!account) return null
 
+  // Only expose backup existence, never backup paths or auth contents.
+  let backupAvailable = false
+  try {
+    const names = await readdir(AUTH_BACKUP_DIR)
+    backupAvailable = names.some(name => name.startsWith('account-' + account.id + '-'))
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
   const snapshot = sessionSnapshot({
     ...account,
     slot: account.slot,
+    backupAvailable,
     profile: sharedStorage?.profileForAccount(account.id)?.id || 'unassigned',
     numberMasked: masked(account.number),
     status: statusOf(account),

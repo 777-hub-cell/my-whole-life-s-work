@@ -77,15 +77,15 @@
   }
 
   async function accountsPage(root, ctx) {
-    let list, profiles;
-    try { [list, profiles] = await Promise.all([api.listAccounts(), api.listProfiles()]); }
+    let list, profiles, slots;
+    try { [list, profiles, slots] = await Promise.all([api.listAccounts(), api.listProfiles(), api.getAccountSlots()]); }
     catch (e) { root.append(ui.errorState(e, () => ctx.reload())); return; }
     root.innerHTML = '';
     const pName = (id) => (profiles.find((p) => p.id === id) || {}).name || 'No profile';
     let filter = 'all', query = '';
     const listEl = h('div', { class: 'list' });
     const side = () => { ctx.refreshNav(); ctx.refreshBand(); };
-    async function reload() { list = await api.listAccounts(); draw(); side(); }
+    async function reload() { [list, slots] = await Promise.all([api.listAccounts(), api.getAccountSlots()]); draw(); side(); }
 
     async function run(a) {
       const kind = nextAction(a)[2];
@@ -97,7 +97,7 @@
 
     function draw() {
       const q = query.toLowerCase();
-      const rows = list.filter((a) => (filter === 'all' || a.status === filter) && (!q || (a.name + a.phone + pName(a.profileId)).toLowerCase().includes(q)));
+      const rows = list.filter((a) => (filter === 'all' || a.status === filter) && (!q || ((a.slot || '') + a.name + a.phone + pName(a.profileId)).toLowerCase().includes(q)));
       listEl.innerHTML = '';
       listEl.append(h('div', { class: 'list-head' },
         h('div', { class: 'col-id' }, 'WhatsApp account'), h('div', { class: 'col-profile' }, 'Behaviour profile'),
@@ -107,8 +107,8 @@
         const [label, ic] = nextAction(a);
         listEl.append(h('div', { class: 'row', tabindex: '0', role: 'button', onclick: () => openAccount(a.id),
           onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openAccount(a.id); } } },
-          h('div', { class: 'col-id' }, h('div', { class: 'avatar' }, a.name[0].toUpperCase()),
-            h('div', { style: { minWidth: '0' } }, h('div', { class: 'name truncate' }, a.name), h('div', { class: 'meta truncate' }, a.phone))),
+          h('div', { class: 'col-id' }, h('div', { class: 'avatar' }, a.slot || a.name[0].toUpperCase()),
+            h('div', { style: { minWidth: '0' } }, h('div', { class: 'name truncate' }, (a.slot ? a.slot + ' · ' : '') + a.name), h('div', { class: 'meta truncate' }, a.phone))),
           h('div', { class: 'col-profile' }, h('span', { class: 'mono tiny mute' }, pName(a.profileId))),
           h('div', { class: 'col-status' }, ui.status(a.status)),
           h('div', { class: 'col-time' }, timeAgo(a.lastSeen)),
@@ -133,12 +133,12 @@
         h('button', { class: 'btn primary', onclick: openCreate }, icon('plus', 16), 'New account')),
       listEl);
     draw();
-    if (!list.length) listEl.replaceChildren(ui.emptyState('accounts', 'No accounts yet', 'Create one, then pair it with WhatsApp.'));
+    if (!list.length) listEl.replaceChildren(ui.emptyState('accounts', 'No accounts yet', 'Create permanent Account A before adding linked slots.'));
 
     function openAccount(id) {
       const body = h('div', { class: 'stack', style: { gap: '16px' } });
       const a0 = list.find((x) => x.id === id); if (!a0) return;
-      const m = ui.modal({ title: a0.name, subtitle: a0.phone + ' · ' + a0.session, body, wide: true });
+      const m = ui.modal({ title: (a0.slot ? a0.slot + ' · ' : '') + a0.name, subtitle: a0.phone + ' · ' + a0.session, body, wide: true });
       const btn = (ic, label, fn) => h('button', { class: 'btn', onclick: fn }, icon(ic, 16), label);
       function paint() {
         const a = list.find((x) => x.id === id); if (!a) { m.close(); return; }
@@ -148,7 +148,7 @@
           h('div', { class: 'hstack', style: { justifyContent: 'space-between' } }, h('div', { class: 'hstack' },
             h('div', { class: 'avatar lg' }, a.name[0].toUpperCase()), h('div', {}, h('div', { class: 'name' }, a.name), h('div', { class: 'meta' }, 'WhatsApp identity'))), ui.status(a.status)),
           h('dl', { class: 'kv' },
-            h('dt', {}, 'Phone'), h('dd', {}, a.phone), h('dt', {}, 'Session'), h('dd', { class: 'mono' }, a.session),
+            h('dt', {}, 'Slot'), h('dd', {}, a.slot || 'Unassigned'), h('dt', {}, 'Phone'), h('dd', {}, a.phone), h('dt', {}, 'Session'), h('dd', { class: 'mono' }, a.session),
             h('dt', {}, 'Behaviour'), h('dd', {}, pName(a.profileId)), h('dt', {}, 'Created'), h('dd', {}, a.createdAt ? dateTime(a.createdAt) : 'Not recorded'),
             h('dt', {}, 'Last seen'), h('dd', {}, a.lastSeen ? timeAgo(a.lastSeen) : 'Not recorded'), h('dt', {}, 'Messages 24h'), h('dd', {}, a.messages24h == null ? '—' : num(a.messages24h))),
           h('div', { class: 'divider' }), h('div', { class: 'section-label' }, 'Session'),
@@ -162,7 +162,7 @@
           h('div', { class: 'action-grid' }, btn('layers', 'Profile & overrides', () => { m.close(); openBehaviour(id); })),
           h('div', { class: 'section-label', style: { marginTop: '6px' } }, 'Danger zone'),
           h('div', { class: 'action-grid' }, h('button', { class: 'btn danger', onclick: async () => {
-            if (!await ui.confirmAction({ title: 'Remove ' + a.name + '?', message: 'This permanently removes the account and its stored session.', confirmLabel: 'Remove account', danger: true })) return;
+            if (!await ui.confirmAction({ title: 'Remove ' + a.name + '?', message: 'This removes the account from the registry and frees its letter slot. Authentication data is preserved for recovery and is not reused by a new account.', confirmLabel: 'Remove account', danger: true })) return;
             try { await api.removeAccount(id); ui.success('Account removed'); m.close(); await reload(); } catch (e) { ui.failure(e); }
           } }, icon('trash', 16), 'Remove account')));
       }
@@ -170,17 +170,21 @@
     }
 
     function openCreate() {
+      const isFirst = list.length === 0;
+      const available = slots.filter(row => !row.occupied && (isFirst ? row.slot === 'A' : row.slot !== 'A'));
+      const slotIn = h('select', { class: 'select' }, available.map(row => h('option', { value: row.slot }, 'Account ' + row.slot)));
       const nameIn = ui.textInput({ placeholder: 'e.g. Atlas' });
       const phoneIn = ui.textInput({ placeholder: '+44 7000 000000', inputmode: 'tel' });
       const sel = h('select', { class: 'select' }, h('option', { value: '' }, 'No profile'), profiles.filter((p) => p.id !== 'control').map((p) => h('option', { value: p.id }, p.name)));
       const go = h('button', { class: 'btn primary', onclick: submit }, 'Create & link');
       const m = ui.modal({ title: 'New account', subtitle: 'Add a WhatsApp identity. You\u2019ll link it right here next.',
-        body: [ui.field('Account name', nameIn), ui.field('Phone number', phoneIn, 'Needed for pairing-code linking.'), ui.field('Behaviour profile', sel, 'How this account behaves. You can change it later.')],
+        body: [ui.field('Account slot', slotIn, available.length ? (isFirst ? 'Account A is permanently reserved for your main control number.' : 'Choose an unused personal slot (A is permanent main).') : 'No personal slots available.'), ui.field('Account name', nameIn), ui.field('Phone number', phoneIn, 'Needed for pairing-code linking.'), ...(isFirst ? [] : [ui.field('Behaviour profile', sel, 'How this account behaves. You can change it later.')])],
         footer: [h('button', { class: 'btn', onclick: () => m.close() }, 'Cancel'), go] });
       async function submit() {
         go.disabled = true;
         try {
-          const acc = await api.createAccount({ name: nameIn.value, phone: phoneIn.value, profileId: sel.value || null });
+          if (!slotIn.value) throw new Error('No available A–Z account slot.');
+          const acc = await api.createAccount({ name: nameIn.value, phone: phoneIn.value, profileId: isFirst ? null : (sel.value || null), slot: slotIn.value });
           await reload(); openLink(acc.id, m);
         } catch (e) { ui.failure(e); go.disabled = false; }
       }

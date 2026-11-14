@@ -17,11 +17,9 @@
 
 **A single approval is needed for each new release batch, not one lifetime approval for all future batches.** An expired/cancelled/failed deployment or a separately requested emergency release may require another approval. Never tell the user that merely approving one run approves all future production changes.
 
-## Production branch protection — currently not enabled
+## Production branch protection — enabled as of 2026-11-14
 
-At the 2026-11-05 migration audit, GitHub reported `mscc-azure` as `protected: false`, with protection disabled, and the repository had no rulesets. The connected GitHub integration could read this status but could not change branch-protection settings.
-
-Until an owner enables a GitHub branch rule/ruleset for `mscc-azure`, PR review and required-check rules in this document are operating policy, **not technically enforced by GitHub**. Before the first post-migration production merge, enable protection that:
+On 2026-11-14, GitHub reported `mscc-azure` as `protected: true`, requiring the `validate` status check. The full branch protection policy could not be read through the current GitHub App integration (HTTP 403), so the remaining detailed rules have **not** been independently confirmed. Recheck the live status before each merge. Desired additional protection:
 - Requires changes to enter through a pull request (no direct pushes).
 - Requires the MSCC Azure validation job and workflow-syntax guard to pass.
 - Blocks force-pushes and branch deletion.

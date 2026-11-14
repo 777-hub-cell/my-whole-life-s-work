@@ -485,9 +485,10 @@ export function createControlCentreApi(options = {}) {
         const name = cleanText(body.name, 80)
         const phone = String(body.phone || '').replace(/[^0-9]/g, '')
         if (!name || phone.length < 7 || phone.length > 15) return failure(req.res, 400, 'VALIDATION', 'Enter an account name and a phone number with country code.')
-        if (body.profileId && (!(current.botProfiles || []).some(profile => profile.id === body.profileId) || body.profileId === 'control')) return failure(req.res, 400, 'PROFILE_NOT_ALLOWED', 'Choose an existing public profile. The private Control profile is reserved for Account A.')
-        const slot = String(body.slot || '').trim().toUpperCase()
-        if (slot && !/^[B-Z]$/.test(slot)) return failure(req.res, 400, 'VALIDATION', 'Choose an available slot from B to Z.')
+        const firstAccount = current.accounts.length === 0
+        if (body.profileId && (firstAccount || !(current.botProfiles || []).some(profile => profile.id === body.profileId) || body.profileId === 'control')) return failure(req.res, 400, 'PROFILE_NOT_ALLOWED', firstAccount ? 'Permanent Account A receives its private Control profile automatically.' : 'Choose an existing public profile. The private Control profile is reserved for Account A.')
+        const slot = String(body.slot || (firstAccount ? 'A' : '')).trim().toUpperCase()
+        if (slot && !(firstAccount ? /^[A]$/ : /^[B-Z]$/).test(slot)) return failure(req.res, 400, 'VALIDATION', firstAccount ? 'The first account must be permanent Account A.' : 'Choose an available slot from B to Z.')
         if (slot && !(current.accountSlots || []).some(row => row.slot === slot && !row.occupied)) return failure(req.res, 409, 'SLOT_OCCUPIED', 'That account slot is not available.')
         const created = await mutation(req, 'account.create', 'new linked account', async () => {
           const result = await options.createAccount({ displayName: name, phoneNumber: phone, slot })

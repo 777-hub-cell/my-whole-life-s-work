@@ -73,7 +73,7 @@ export async function loadCommands(directoryUrl, {
  * Combine built-in public commands with administrator-owned extensions.
  * Built-ins always win: custom modules may not shadow a command or alias.
  */
-export function mergeCommandRegistries(baseRegistry, extensionRegistry) {
+export function mergeCommandRegistries(baseRegistry, extensionRegistry, { protectedRegistry = null } = {}) {
   const commands = new Map(baseRegistry?.commands || [])
   const canonical = [...(baseRegistry?.canonical || [])]
 
@@ -82,7 +82,7 @@ export function mergeCommandRegistries(baseRegistry, extensionRegistry) {
       .map(value => String(value).trim().toLowerCase())
       .filter(Boolean)
     for (const key of keys) {
-      if (commands.has(key)) {
+      if (commands.has(key) || protectedRegistry?.commands?.has(key)) {
         throw new Error(`Custom command conflicts with an existing MSCC command or alias: ${key}`)
       }
     }

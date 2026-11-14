@@ -3291,7 +3291,7 @@ async function startAccount(account) {
       account.pairingQr = ''
       account.pairingError = ''
       account.lastQr = ''
-      console.log(`[${account.id}] connected as ${sock.user?.id || account.number}`)
+      console.log(`[${account.id}] connected (${masked(account.number)})`)
       await recordActivity('account.connected', {
         account: account.id,
         displayName: account.displayName,

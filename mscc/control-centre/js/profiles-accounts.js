@@ -170,20 +170,21 @@
     }
 
     function openCreate() {
-      const available = slots.filter(row => row.slot !== 'A' && !row.occupied);
+      const isFirst = list.length === 0;
+      const available = slots.filter(row => !row.occupied && (isFirst ? row.slot === 'A' : row.slot !== 'A'));
       const slotIn = h('select', { class: 'select' }, available.map(row => h('option', { value: row.slot }, 'Account ' + row.slot)));
       const nameIn = ui.textInput({ placeholder: 'e.g. Atlas' });
       const phoneIn = ui.textInput({ placeholder: '+44 7000 000000', inputmode: 'tel' });
       const sel = h('select', { class: 'select' }, h('option', { value: '' }, 'No profile'), profiles.filter((p) => p.id !== 'control').map((p) => h('option', { value: p.id }, p.name)));
       const go = h('button', { class: 'btn primary', onclick: submit }, 'Create & link');
       const m = ui.modal({ title: 'New account', subtitle: 'Add a WhatsApp identity. You\u2019ll link it right here next.',
-        body: [ui.field('Account slot', slotIn, available.length ? 'Choose an unused personal slot (A is permanent main).' : 'No personal slots available.'), ui.field('Account name', nameIn), ui.field('Phone number', phoneIn, 'Needed for pairing-code linking.'), ui.field('Behaviour profile', sel, 'How this account behaves. You can change it later.')],
+        body: [ui.field('Account slot', slotIn, available.length ? (isFirst ? 'Account A is permanently reserved for your main control number.' : 'Choose an unused personal slot (A is permanent main).') : 'No personal slots available.'), ui.field('Account name', nameIn), ui.field('Phone number', phoneIn, 'Needed for pairing-code linking.'), ...(isFirst ? [] : [ui.field('Behaviour profile', sel, 'How this account behaves. You can change it later.')])],
         footer: [h('button', { class: 'btn', onclick: () => m.close() }, 'Cancel'), go] });
       async function submit() {
         go.disabled = true;
         try {
           if (!slotIn.value) throw new Error('No available A–Z account slot.');
-          const acc = await api.createAccount({ name: nameIn.value, phone: phoneIn.value, profileId: sel.value || null, slot: slotIn.value });
+          const acc = await api.createAccount({ name: nameIn.value, phone: phoneIn.value, profileId: isFirst ? null : (sel.value || null), slot: slotIn.value });
           await reload(); openLink(acc.id, m);
         } catch (e) { ui.failure(e); go.disabled = false; }
       }

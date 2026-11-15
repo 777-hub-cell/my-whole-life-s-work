@@ -1,0 +1,77 @@
+name: Aharane Azure
+
+on:
+  pull_request:
+    branches: [mscc-azure]
+    paths:
+      - 'aharane/**'
+      - '.github/workflows/aharane-azure.yml'
+  push:
+    branches: [mscc-azure]
+    paths:
+      - 'aharane/**'
+      - '.github/workflows/aharane-azure.yml'
+  workflow_dispatch:
+    inputs:
+      confirm_production:
+        description: 'Choose "deploy" only when you explicitly want to install Aharane on the shared Azure host.'
+        required: true
+        type: choice
+        options: [hold, deploy]
+        default: hold
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aharane-azure-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate standalone Aharane runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - name: Install Aharane dependencies
+        working-directory: aharane
+        run: npm install --no-audit --no-fund
+      - name: Run Aharane policy, isolation and syntax checks
+        working-directory: aharane
+        run: npm run check
+      - name: Validate deployment shell scripts
+        run: |
+          set -euo pipefail
+          bash -n aharane/install-azure.sh
+          bash -n aharane/scripts/deploy-azure-ssh.sh
+
+  deploy:
+    name: Deploy Aharane as a separate Azure service
+    needs: validate
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/mscc-azure' &&
+      inputs.confirm_production == 'deploy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: mscc-production
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Install Aharane without changing MSCC
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          MSCC_SSH_HOST: ${{ secrets.MSCC_SSH_HOST }}
+          MSCC_SSH_USER: ${{ secrets.MSCC_SSH_USER }}
+          MSCC_SSH_KEY: ${{ secrets.MSCC_SSH_KEY }}
+          MSCC_SSH_KNOWN_HOSTS: ${{ secrets.MSCC_SSH_KNOWN_HOSTS }}
+          MSCC_SSH_PORT: ${{ vars.MSCC_SSH_PORT }}
+        run: bash aharane/scripts/deploy-azure-ssh.sh

@@ -33,15 +33,20 @@ This is the independent runtime foundation. Additional Aharane commands and AI f
 
 The service binds to loopback at `127.0.0.1:8790`. Do not expose this port directly to the public internet.
 
-From the server shell (for example, through ConnectBot), read the token from the protected environment file and use the local API:
+From the server shell (for example, through ConnectBot), request a pairing code without exposing the local API publicly:
 
 ```bash
-sudo grep '^AHARANE_ADMIN_TOKEN=' /etc/aharane.env
+TOKEN="$(sudo sed -n 's/^AHARANE_ADMIN_TOKEN=//p' /etc/aharane.env | tail -1)"
+curl --fail-with-body -fsS -X POST http://127.0.0.1:8790/api/pair-code \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"phoneNumber":"2348012345678"}'
+unset TOKEN
 ```
 
-You can also open the pairing page through a trusted authenticated reverse proxy to this local port. Do not put the token in a URL, shell history, a chat, or source control.
+Replace the sample number with the number that will become Aharane. Enter the returned code in WhatsApp → Linked devices → Link with phone number. The linked identity is Aharane's own; it is not an MSCC linked account.
 
-Enter the bot's own WhatsApp number in international digits at the pairing page, request a code, then complete WhatsApp → Linked devices → Link with phone number. The linked identity is Aharane's own; it is not an MSCC linked account.
+The page at `http://127.0.0.1:8790/` can also be opened through a trusted authenticated reverse proxy to this local port. Do not put the token in a URL, shell history, a chat, or source control.
 
 ## Configure inbound access
 

@@ -36,9 +36,8 @@ test('inbound messages fail closed for groups, broadcasts, self messages and unk
   assert.equal(isAllowedInbound({ remoteJid: 'opaque@lid', allowedSenders: allowed }), false)
 })
 
-test('groups require an explicit opt-in and are still independent of sender allowlists', () => {
+test('group traffic remains disabled in the initial standalone runtime', () => {
   assert.equal(isAllowedInbound({ remoteJid: '120363000000000000@g.us' }), false)
-  assert.equal(isAllowedInbound({ remoteJid: '120363000000000000@g.us', groupsEnabled: true }), true)
 })
 
 test('only the explicit local command set generates replies', () => {

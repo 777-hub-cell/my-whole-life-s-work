@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>Aharane · Pairing</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; background: #fff; color: #111; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    main { width: min(100%, 430px); }
+    .mark { width: 34px; height: 34px; display: block; margin-bottom: 26px; }
+    h1 { margin: 0 0 8px; font-size: 28px; font-weight: 650; letter-spacing: -.04em; }
+    p { color: #555; line-height: 1.55; margin: 0 0 24px; }
+    label { display: block; font-size: 13px; font-weight: 600; margin: 16px 0 7px; }
+    input { width: 100%; min-height: 46px; padding: 10px 12px; border: 1px solid #bbb; border-radius: 4px; background: #fff; color: #111; font: inherit; }
+    button { min-height: 46px; width: 100%; margin-top: 14px; border: 0; border-radius: 4px; background: #111; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: wait; }
+    .line { height: 1px; background: #e7e7e7; margin: 24px 0; }
+    .status { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid #eee; font-size: 14px; }
+    .muted { color: #666; }
+    .code { font: 700 26px ui-monospace, monospace; letter-spacing: .12em; padding: 18px 0 6px; overflow-wrap: anywhere; }
+    .error { color: #a40000; }
+    .success { color: #176b38; }
+    .hidden { display: none; }
+    footer { color: #777; font-size: 12px; margin-top: 30px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <main>
+    <svg class="mark" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+      <path d="M24 4v40M4 24h40M10 10l28 28M38 10L10 38M15 5l9 11 9-11M15 43l9-11 9 11M5 15l11 9-11 9M43 15l-11 9 11 9" stroke="#111" stroke-width="1.7" stroke-linecap="round"/>
+      <circle cx="24" cy="24" r="7" stroke="#111" stroke-width="1.7"/>
+      <circle cx="21.5" cy="22" r="1" fill="#111"/><circle cx="26.5" cy="22" r="1" fill="#111"/>
+    </svg>
+    <h1>Aharane</h1>
+    <p>Independent WhatsApp bot pairing. This service has its own account and authentication storage, separate from NIGHT/MSCC.</p>
+
+    <section id="login">
+      <label for="token">Admin token</label>
+      <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the server-generated token">
+      <button id="connect">Connect to Aharane</button>
+    </section>
+
+    <section id="panel" class="hidden">
+      <div class="status"><span class="muted">Runtime</span><strong id="runtime">Checking…</strong></div>
+      <div class="status"><span class="muted">WhatsApp</span><strong id="whatsapp">Checking…</strong></div>
+      <div class="status"><span class="muted">Allowed senders</span><strong id="senders">—</strong></div>
+      <div class="line"></div>
+      <label for="phone">WhatsApp number to link</label>
+      <input id="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="International digits, e.g. 2348012345678">
+      <button id="pair">Generate pairing code</button>
+      <div id="code" class="code" aria-live="polite"></div>
+      <p id="message" class="muted" aria-live="polite">Enter the number for Aharane's WhatsApp account, then enter the code in WhatsApp → Linked devices → Link with phone number.</p>
+      <button id="refresh" type="button">Refresh status</button>
+      <button id="logout" type="button" style="background:#fff;color:#111;border:1px solid #bbb">Forget admin token</button>
+    </section>
+    <footer>Keep this page private. The admin token can generate WhatsApp pairing codes. Groups and unknown senders are denied by default.</footer>
+  </main>
+  <script>
+    let token = '';
+    const $ = id => document.getElementById(id);
+    const auth = () => ({ Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' });
+    async function api(path, options = {}) {
+      const response = await fetch(path, { ...options, headers: { ...auth(), ...(options.headers || {}) }, cache: 'no-store' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Request failed (' + response.status + ')');
+      return data;
+    }
+    function showMessage(message, kind = 'muted') {
+      $('message').textContent = message;
+      $('message').className = kind;
+    }
+    async function refresh() {
+      const data = await api('/api/status');
+      $('runtime').textContent = 'Running';
+      $('whatsapp').textContent = data.connected ? 'Connected' : data.state;
+      $('senders').textContent = String(data.allowlistedSenderCount);
+      $('panel').classList.remove('hidden');
+      $('login').classList.add('hidden');
+    }
+    $('connect').addEventListener('click', async () => {
+      token = $('token').value;
+      try { await refresh(); showMessage('Admin access granted.'); }
+      catch (error) { token = ''; showMessage(error.message, 'error'); }
+    });
+    $('pair').addEventListener('click', async () => {
+      $('pair').disabled = true;
+      $('code').textContent = '';
+      try {
+        const data = await api('/api/pair-code', { method: 'POST', body: JSON.stringify({ phoneNumber: $('phone').value }) });
+        $('code').textContent = data.pairingCode;
+        showMessage('On the phone that will become Aharane, open WhatsApp → Linked devices → Link with phone number and enter this code.', 'success');
+      } catch (error) { showMessage(error.message, 'error'); }
+      finally { $('pair').disabled = false; }
+    });
+    $('refresh').addEventListener('click', () => refresh().catch(error => showMessage(error.message, 'error')));
+    $('logout').addEventListener('click', () => {
+      token = '';
+      $('token').value = '';
+      $('code').textContent = '';
+      $('panel').classList.add('hidden');
+      $('login').classList.remove('hidden');
+      showMessage('Admin token cleared from this page.');
+    });
+  </script>
+</body>
+</html>

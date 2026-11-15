@@ -23,11 +23,11 @@ export function senderNumberFromJid(jid) {
   return normalizePhone(local)
 }
 
-export function isAllowedInbound({ remoteJid, fromMe = false, allowedSenders = new Set(), groupsEnabled = false } = {}) {
+export function isAllowedInbound({ remoteJid, fromMe = false, allowedSenders = new Set() } = {}) {
   if (fromMe === true) return false
   const jid = String(remoteJid ?? '')
   if (!jid || jid === 'status@broadcast' || jid.endsWith('@broadcast')) return false
-  if (jid.endsWith('@g.us')) return groupsEnabled === true
+  if (jid.endsWith('@g.us')) return false
   const sender = senderNumberFromJid(jid)
   return Boolean(sender && allowedSenders instanceof Set && allowedSenders.has(sender))
 }

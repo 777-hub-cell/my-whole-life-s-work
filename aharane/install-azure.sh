@@ -11,6 +11,7 @@ command -v systemctl >/dev/null
 command -v node >/dev/null
 command -v npm >/dev/null
 command -v curl >/dev/null
+command -v openssl >/dev/null
 node -e 'if (Number(process.versions.node.split(".")[0]) < 24) process.exit(1)' || {
   echo "Aharane requires Node.js 24 or newer." >&2
   exit 2
@@ -170,4 +171,4 @@ fi
 SUCCESS=1
 echo "Aharane deployment verified: $SOURCE_SHA"
 echo "Aharane service is active on 127.0.0.1:8790."
-echo "MSCC files, auth, configuration and mscc.service were not modified."
+echo "The existing NIGHT service and its files were not modified."

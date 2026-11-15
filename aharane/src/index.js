@@ -23,6 +23,9 @@ const EXTRA_ALLOWED_SENDERS = String(process.env.AHARANE_ALLOWED_SENDERS || '')
 const ALLOWED_SENDERS = parseAllowedSenders([OWNER_NUMBER, EXTRA_ALLOWED_SENDERS].filter(Boolean).join(','))
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' })
 
+if (HOST !== '127.0.0.1') {
+  throw new Error('AHARANE_HOST must remain bound to 127.0.0.1')
+}
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
   throw new Error('AHARANE_PORT must be a valid TCP port')
 }
@@ -47,6 +50,14 @@ let shuttingDown = false
 const seenMessageIds = new Map()
 const commandTimes = new Map()
 const pairAttempts = new Map()
+
+function waitWithTimeout(promise, timeoutMs, message) {
+  let timer
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), timeoutMs) }),
+  ]).finally(() => clearTimeout(timer))
+}
 
 function tokenMatches(candidate) {
   const supplied = Buffer.from(String(candidate || ''))
@@ -283,10 +294,7 @@ app.post('/api/pair-code', requireAdmin, async (req, res) => {
   try {
     const currentSocket = socket || await startSocket()
     if (!currentSocket) throw new Error('WhatsApp socket is unavailable')
-    await Promise.race([
-      socketReady,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('WhatsApp connection is not ready; retry shortly')), 12_000)),
-    ])
+    await waitWithTimeout(socketReady, 12_000, 'WhatsApp connection is not ready; retry shortly')
     const pairingCode = await currentSocket.requestPairingCode(phoneNumber)
     state = 'pairing'
     res.json({ ok: true, pairingCode: String(pairingCode).replace(/\s/g, '') })

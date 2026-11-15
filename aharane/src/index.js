@@ -1,5 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { timingSafeEqual } from 'node:crypto'
 import express from 'express'
 import pino from 'pino'
@@ -12,28 +13,27 @@ import {
 } from './policy.js'
 
 const APP_NAME = 'Aharane'
-const HOST = process.env.AHARENE_HOST || '127.0.0.1'
-const PORT = Number(process.env.AHARENE_PORT || 8790)
-const DATA_DIR = resolve(process.env.AHARENE_DATA_DIR || '/var/lib/aharane')
+const HOST = process.env.AHARANE_HOST || '127.0.0.1'
+const PORT = Number(process.env.AHARANE_PORT || 8790)
+const DATA_DIR = resolve(process.env.AHARANE_DATA_DIR || '/var/lib/aharane')
 const AUTH_DIR = join(DATA_DIR, 'whatsapp-auth')
-const ADMIN_TOKEN = String(process.env.AHARENE_ADMIN_TOKEN || '')
-const OWNER_NUMBER = String(process.env.AHARENE_OWNER_NUMBER || '')
-const EXTRA_ALLOWED_SENDERS = String(process.env.AHARENE_ALLOWED_SENDERS || '')
+const ADMIN_TOKEN = String(process.env.AHARANE_ADMIN_TOKEN || '')
+const OWNER_NUMBER = String(process.env.AHARANE_OWNER_NUMBER || '')
+const EXTRA_ALLOWED_SENDERS = String(process.env.AHARANE_ALLOWED_SENDERS || '')
 const ALLOWED_SENDERS = parseAllowedSenders([OWNER_NUMBER, EXTRA_ALLOWED_SENDERS].filter(Boolean).join(','))
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' })
 
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
-  throw new Error('AHARENE_PORT must be a valid TCP port')
+  throw new Error('AHARANE_PORT must be a valid TCP port')
 }
 if (ADMIN_TOKEN.length < 32) {
-  throw new Error('AHARENE_ADMIN_TOKEN must contain at least 32 characters')
+  throw new Error('AHARANE_ADMIN_TOKEN must contain at least 32 characters')
 }
 
 await mkdir(DATA_DIR, { recursive: true, mode: 0o700 })
 await mkdir(AUTH_DIR, { recursive: true, mode: 0o700 })
 
 let socket = null
-let socketAuth = null
 let socketReady = Promise.resolve()
 let state = 'starting'
 let registered = false
@@ -167,7 +167,6 @@ async function startSocket() {
 
   startPromise = (async () => {
     const auth = await useMultiFileAuthState(AUTH_DIR)
-    socketAuth = auth
     registered = auth.state.creds.registered === true
     let signalReady
     socketReady = new Promise(resolveReady => { signalReady = resolveReady })
@@ -275,6 +274,10 @@ app.post('/api/pair-code', requireAdmin, async (req, res) => {
     res.status(409).json({ ok: false, error: 'Aharane is already paired; disconnect the existing linked device before pairing another number' })
     return
   }
+  if (state === 'needs-pairing') {
+    res.status(409).json({ ok: false, error: 'WhatsApp rejected this saved session. Back up and repair only Aharane authentication before pairing again.' })
+    return
+  }
 
   pairRequestActive = true
   try {
@@ -293,7 +296,7 @@ app.post('/api/pair-code', requireAdmin, async (req, res) => {
     pairRequestActive = false
   }
 })
-app.use(express.static(new URL('../public/', import.meta.url), {
+app.use(express.static(fileURLToPath(new URL('../public/', import.meta.url)), {
   index: 'index.html',
   fallthrough: true,
   etag: false,

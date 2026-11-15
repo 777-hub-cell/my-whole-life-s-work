@@ -35,7 +35,7 @@ rollback() {
   local failed=0
   set +e
   if [[ -n "$PREVIOUS_RELEASE" && -d "$PREVIOUS_RELEASE" ]]; then
-    local rollback_link="$BASE/.current-rollback-$"
+    local rollback_link="$BASE/.current-rollback-$$"
     ln -s "$PREVIOUS_RELEASE" "$rollback_link" && mv -Tf "$rollback_link" "$BASE/current" || failed=1
   else
     rm -f "$BASE/current" || failed=1

@@ -17,7 +17,6 @@ node -e 'if (Number(process.versions.node.split(".")[0]) < 24) process.exit(1)' 
   exit 2
 }
 
-APP="aharane"
 SERVICE_USER="aharane"
 BASE="/opt/aharane"
 STATE="/var/lib/aharane"
@@ -30,15 +29,54 @@ SERVICE_BACKUP="$(mktemp /tmp/aharane-service-backup.XXXXXXXX)"
 SERVICE_EXISTED=0
 SWITCHED=0
 SUCCESS=0
+ROLLBACK_OK=0
+
+rollback() {
+  local failed=0
+  set +e
+  if [[ -n "$PREVIOUS_RELEASE" && -d "$PREVIOUS_RELEASE" ]]; then
+    local rollback_link="$BASE/.current-rollback-$"
+    ln -s "$PREVIOUS_RELEASE" "$rollback_link" && mv -Tf "$rollback_link" "$BASE/current" || failed=1
+  else
+    rm -f "$BASE/current" || failed=1
+  fi
+  if [[ "$SERVICE_EXISTED" -eq 1 ]]; then
+    cp -p "$SERVICE_BACKUP" "$SERVICE_FILE" || failed=1
+  else
+    rm -f "$SERVICE_FILE" || failed=1
+  fi
+  systemctl daemon-reload || failed=1
+  if [[ -n "$PREVIOUS_RELEASE" && -d "$PREVIOUS_RELEASE" ]]; then
+    systemctl restart aharane.service || failed=1
+  else
+    systemctl disable --now aharane.service >/dev/null 2>&1 || true
+  fi
+  set -e
+  [[ "$failed" -eq 0 ]] && ROLLBACK_OK=1
+}
 
 cleanup() {
   rm -rf "$STAGING"
   rm -f "$SERVICE_BACKUP"
-  if [[ "$SUCCESS" -ne 1 ]]; then
+  if [[ "$SUCCESS" -ne 1 && ( "$SWITCHED" -eq 0 || "$ROLLBACK_OK" -eq 1 ) ]]; then
     rm -rf "$RELEASE"
   fi
 }
-trap cleanup EXIT
+
+finish() {
+  local status=$?
+  trap - EXIT
+  if [[ "$status" -ne 0 && "$SWITCHED" -eq 1 ]]; then
+    echo "Aharane install failed; rolling back only Aharane resources." >&2
+    rollback
+    if [[ "$ROLLBACK_OK" -ne 1 ]]; then
+      echo "Aharane rollback was incomplete; preserving the failed release for recovery." >&2
+    fi
+  fi
+  cleanup
+  exit "$status"
+}
+trap finish EXIT
 
 if [[ -e "$SERVICE_FILE" ]] && ! grep -Fq 'Description=Aharane independent WhatsApp bot' "$SERVICE_FILE"; then
   echo "An unrelated aharane.service already exists; refusing to overwrite it." >&2
@@ -77,17 +115,23 @@ if grep -q '^AHARANE_ADMIN_TOKEN=GENERATE_ON_INSTALL$' "$ENV_FILE" || ! grep -q 
     printf '\nAHARANE_ADMIN_TOKEN=%s\n' "$token" >> "$ENV_FILE"
   fi
 fi
-if ! grep -q '^AHARANE_DATA_DIR=' "$ENV_FILE"; then
+if grep -q '^AHARANE_DATA_DIR=' "$ENV_FILE"; then
+  sed -i "s|^AHARANE_DATA_DIR=.*|AHARANE_DATA_DIR=$STATE|" "$ENV_FILE"
+else
   printf '\nAHARANE_DATA_DIR=%s\n' "$STATE" >> "$ENV_FILE"
 fi
 if ! grep -q '^AHARANE_HOST=' "$ENV_FILE"; then
   printf 'AHARANE_HOST=127.0.0.1\n' >> "$ENV_FILE"
 fi
-if ! grep -q '^AHARANE_PORT=' "$ENV_FILE"; then
+if grep -q '^AHARANE_PORT=' "$ENV_FILE"; then
+  sed -i 's/^AHARANE_PORT=.*/AHARANE_PORT=8790/' "$ENV_FILE"
+else
   printf 'AHARANE_PORT=8790\n' >> "$ENV_FILE"
 fi
-# Keep the private API on loopback even if the env file was edited manually.
+# Keep Aharane's state root, listener and port private and fixed.
 sed -i 's/^AHARANE_HOST=.*/AHARANE_HOST=127.0.0.1/' "$ENV_FILE"
+admin_token="$(sed -n 's/^AHARANE_ADMIN_TOKEN=//p' "$ENV_FILE" | tail -1 | tr -d '\r')"
+[[ ${#admin_token} -ge 32 ]] || { echo "AHARANE_ADMIN_TOKEN must contain at least 32 characters." >&2; exit 2; }
 chown root:"$SERVICE_USER" "$ENV_FILE"
 chmod 0640 "$ENV_FILE"
 
@@ -96,6 +140,7 @@ printf '%s\n' "$SOURCE_SHA" > "$RELEASE/.deployed-source-ref"
 chown root:"$SERVICE_USER" "$RELEASE/.deployed-source-ref"
 chmod 0440 "$RELEASE/.deployed-source-ref"
 
+SWITCHED=1
 cat > "$SERVICE_FILE" <<'UNIT'
 [Unit]
 Description=Aharane independent WhatsApp bot
@@ -146,25 +191,7 @@ for _ in $(seq 1 25); do
 done
 
 if [[ "$healthy" -ne 1 ]]; then
-  echo "Aharane failed its local health check; restoring its previous release." >&2
-  if [[ -n "$PREVIOUS_RELEASE" && -d "$PREVIOUS_RELEASE" ]]; then
-    rollback_link="$BASE/.current-rollback-$$"
-    ln -s "$PREVIOUS_RELEASE" "$rollback_link"
-    mv -Tf "$rollback_link" "$BASE/current"
-  else
-    rm -f "$BASE/current"
-  fi
-  if [[ "$SERVICE_EXISTED" -eq 1 ]]; then
-    cp -p "$SERVICE_BACKUP" "$SERVICE_FILE"
-  else
-    rm -f "$SERVICE_FILE"
-  fi
-  systemctl daemon-reload
-  if [[ -n "$PREVIOUS_RELEASE" ]]; then
-    systemctl restart aharane.service || true
-  else
-    systemctl disable --now aharane.service >/dev/null 2>&1 || true
-  fi
+  echo "Aharane failed its local health check." >&2
   exit 1
 fi
 

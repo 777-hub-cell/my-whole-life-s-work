@@ -52,14 +52,21 @@ rollback() {
     systemctl disable --now aharane.service >/dev/null 2>&1 || true
   fi
   set -e
-  [[ "$failed" -eq 0 ]] && ROLLBACK_OK=1
+  if [[ "$failed" -eq 0 ]]; then ROLLBACK_OK=1; fi
+  return 0
 }
 
 cleanup() {
   rm -rf "$STAGING"
-  rm -f "$SERVICE_BACKUP"
+  if [[ "$SUCCESS" -eq 1 || "$ROLLBACK_OK" -eq 1 || "$SWITCHED" -eq 0 ]]; then
+    rm -f "$SERVICE_BACKUP"
+  else
+    echo "Preserving the prior service unit backup for manual recovery: $SERVICE_BACKUP" >&2
+  fi
   if [[ "$SUCCESS" -ne 1 && ( "$SWITCHED" -eq 0 || "$ROLLBACK_OK" -eq 1 ) ]]; then
     rm -rf "$RELEASE"
+  elif [[ "$SUCCESS" -ne 1 ]]; then
+    echo "Preserving failed Aharane release for manual recovery: $RELEASE" >&2
   fi
 }
 

@@ -318,3 +318,22 @@ input:focus { border-color: #222; box-shadow: 0 0 0 2px #11111112; }
   .studio-preview-toolbar .button { margin-left:auto; }
   .studio-preview-frame-wrap { height:60vh; min-height:360px; }
 }
+
+
+/* Live Aharane connection and event feed */
+.live-link-pill i { background:#b1a36a; }
+.live-link-pill.ok i { background:#39865a; }
+.live-link-pill.bad i { background:#a64b4b; }
+.live-activity-list { display:grid; gap:0; background:#fff; border:1px solid #e6e6e3; border-radius:6px; padding:3px 14px; }
+.live-activity-list > .muted { font-size:10px; padding:10px 0; }
+.live-activity-row { display:flex; align-items:center; gap:10px; min-height:38px; border-bottom:1px solid #f0f0ed; font-size:10px; color:#555; }
+.live-activity-row:last-child { border-bottom:0; }
+.live-activity-row span { flex:1; min-width:0; overflow-wrap:anywhere; }
+.live-activity-row time { color:#999; font-size:9px; white-space:nowrap; }
+.live-activity-dot { width:6px; height:6px; flex:none; border-radius:50%; background:#aaa; }
+.live-activity-dot.good { background:#39865a; }
+.live-activity-dot.bad { background:#a64b4b; }
+@media (max-width:760px) {
+  .live-link-pill { padding:5px 7px; font-size:9px; }
+  .live-activity-list { padding:2px 11px; }
+}

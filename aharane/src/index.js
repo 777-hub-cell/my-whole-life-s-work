@@ -124,7 +124,30 @@ function adminSessionSignature(expiry){return createHmac('sha256',ADMIN_TOKEN).u
 function adminSessionMatches(candidate){const parts=String(candidate||'').split('.');if(parts.length!==2)return false;const expiry=Number(parts[0]),now=Math.floor(Date.now()/1000);if(!Number.isSafeInteger(expiry)||expiry<=now||expiry>now+ADMIN_SESSION_SECONDS+60)return false;const a=Buffer.from(parts[1]),b=Buffer.from(adminSessionSignature(parts[0]));return a.length===b.length&&timingSafeEqual(a,b)}
 function sameOriginRequest(req){const origin=String(req.headers?.origin||req.get?.('origin')||''),host=String(req.headers?.host||req.get?.('host')||'').toLowerCase();if(!origin||!host)return false;try{const u=new URL(origin),local=/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host);return u.host.toLowerCase()===host&&(u.protocol==='https:'||(local&&u.protocol==='http:'))}catch{return false}}
 function allowAdminLogin(ip){const now=Date.now(),win=15*60*1000,old=adminLoginAttempts.get(ip),r=!old||now-old.startedAt>=win?{startedAt:now,count:0}:old;r.count++;adminLoginAttempts.set(ip,r);for(const [k,v] of adminLoginAttempts)if(now-v.startedAt>=win)adminLoginAttempts.delete(k);return r.count<=8}
-function requireAdmin(req,res,next){const auth=String(req.get('authorization')||''),m=auth.match(/^Bearer\s+(.+)$/i),bearer=m?.[1]||'',cookie=requestCookie(req,ADMIN_SESSION_COOKIE),ok=tokenMatches(bearer)||adminSessionMatches(bearer)||(sameOriginRequest(req)&&adminSessionMatches(cookie));if(!ok){res.status(401).json({ok:false,error:'Admin authentication required'});return}next()}
+function requireAdmin(req, res, next) {
+  const authorization = String(req.get('authorization') || '')
+  const match = authorization.match(/^Bearer\\s+(.+)$/i)
+  const bearer = match?.[1] || ''
+  const cookieSession = adminSessionMatches(requestCookie(req, ADMIN_SESSION_COOKIE))
+  const bearerSession = adminSessionMatches(bearer)
+  const adminBearer = tokenMatches(bearer)
+
+  if (!adminBearer && !bearerSession && !cookieSession) {
+    res.status(401).json({ ok: false, error: 'Admin authentication required' })
+    return
+  }
+
+  // SameSite=Strict and a host-only HttpOnly cookie protect normal reads.
+  // Require a verified same-origin Origin header for every cookie-authenticated mutation.
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) &&
+      !adminBearer && !bearerSession && !sameOriginRequest(req)) {
+    res.status(403).json({ ok: false, error: 'Cross-origin requests are not allowed.' })
+    return
+  }
+
+  next()
+}
+
 function allowPairAttempt(ip) {
   const now = Date.now()
   const windowMs = 15 * 60 * 1000

@@ -1,8 +1,51 @@
-const CACHE_NAME='aharane-local-studio-shell-v2'
-const APP_SHELL=['/studio/','/studio/index.html','/studio/styles.css','/studio/app.js','/studio/manifest.webmanifest','/studio/icon.svg','/studio/recover.html']
-const SOURCE_PATHS=new Map([['/studio/','index.html'],['/studio/index.html','index.html'],['/studio/styles.css','styles.css'],['/studio/app.js','app.js'],['/studio/manifest.webmanifest','manifest.webmanifest']])
-function readOverride(path){return new Promise(resolve=>{let req;try{req=indexedDB.open('aharane-local-studio',2)}catch{resolve(null);return}req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains('files'))db.createObjectStore('files',{keyPath:'path'});if(!db.objectStoreNames.contains('appOverrides'))db.createObjectStore('appOverrides',{keyPath:'path'})};req.onerror=()=>resolve(null);req.onsuccess=()=>{const db=req.result;if(!db.objectStoreNames.contains('appOverrides')){db.close();resolve(null);return}let g;try{g=db.transaction('appOverrides','readonly').objectStore('appOverrides').get(path)}catch{db.close();resolve(null);return}g.onsuccess=()=>{const v=g.result||null;db.close();resolve(v)};g.onerror=()=>{db.close();resolve(null)}}})}
-function mime(p){return p==='index.html'?'text/html; charset=utf-8':p==='styles.css'?'text/css; charset=utf-8':p==='app.js'?'text/javascript; charset=utf-8':p==='manifest.webmanifest'?'application/manifest+json; charset=utf-8':'text/plain'}
-self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(APP_SHELL)).then(()=>self.skipWaiting())))
-self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('aharane-local-studio-shell-')&&k!==CACHE_NAME).map(k=>caches.delete(k)))).then(()=>self.clients.claim())))
-self.addEventListener('fetch',e=>{const q=e.request;if(q.method!=='GET')return;const u=new URL(q.url);if(u.origin!==self.location.origin||u.pathname.startsWith('/api/'))return;e.respondWith((async()=>{const p=SOURCE_PATHS.get(u.pathname);if(p){const v=await readOverride(p);if(typeof v?.content==='string')return new Response(v.content,{status:200,headers:{'Content-Type':mime(p),'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}})}try{const r=await fetch(q);if(r?.ok&&r.type==='basic'){const c=await caches.open(CACHE_NAME);c.put(q,r.clone()).catch(()=>{})}return r}catch{const c=await caches.match(q);if(c)return c;if(q.mode==='navigate')return(await caches.match('/studio/index.html'))||Response.error();return Response.error()}})())})
+const CACHE_NAME = 'aharane-local-studio-shell-v1'
+const APP_SHELL = [
+  '/',
+  '/index.html',
+  '/styles.css',
+  '/app.js',
+  '/manifest.webmanifest',
+  '/icon.svg'
+]
+
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting())
+  )
+})
+
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(key => key.startsWith('aharane-local-studio-') && key !== CACHE_NAME).map(key => caches.delete(key))))
+      .then(() => self.clients.claim())
+  )
+})
+
+self.addEventListener('fetch', event => {
+  const request = event.request
+  if (request.method !== 'GET') return
+
+  const url = new URL(request.url)
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return
+
+  event.respondWith((async () => {
+    try {
+      const response = await fetch(request)
+      if (response && response.ok && response.type === 'basic') {
+        const cache = await caches.open(CACHE_NAME)
+        cache.put(request, response.clone()).catch(() => {})
+      }
+      return response
+    } catch {
+      const cached = await caches.match(request)
+      if (cached) return cached
+      if (request.mode === 'navigate') {
+        return (await caches.match('/index.html')) || Response.error()
+      }
+      return Response.error()
+    }
+  })())
+})

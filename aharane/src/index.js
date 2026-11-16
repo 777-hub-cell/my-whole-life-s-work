@@ -4,10 +4,11 @@ import { fileURLToPath } from 'node:url'
 import { timingSafeEqual } from 'node:crypto'
 import express from 'express'
 import pino from 'pino'
-import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState } from '@itsliaaa/baileys'
+import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys'
 import {
   commandResponse,
   isAllowedInbound,
+  isSafeMessageUpsert,
   normalizePhone,
   parseAllowedSenders,
 } from './policy.js'
@@ -127,7 +128,7 @@ function markMessageSeen(id) {
 }
 
 async function handleMessages(currentSocket, event) {
-  if (event?.type !== 'notify' || !Array.isArray(event.messages)) return
+  if (!isSafeMessageUpsert(event)) return
   for (const message of event.messages) {
     if (!message?.message || message.key?.fromMe) continue
     if (markMessageSeen(message.key?.id)) continue
@@ -188,6 +189,7 @@ async function startSocket() {
       browser: Browsers.macOS(APP_NAME),
       markOnlineOnConnect: false,
       syncFullHistory: false,
+      shouldSyncHistoryMessage: () => false,
       generateHighQualityLinkPreview: false,
     })
     socket = currentSocket

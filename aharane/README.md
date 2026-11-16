@@ -16,6 +16,10 @@ Aharane is deployed beside NIGHT/MSCC on the same Azure host, but it is a separa
 
 Aharane has its own Node process, Baileys socket, auth state, allowlist and release directory. It shares only the host's CPU, memory, disk and network. Restarting or updating one system must not restart, rewrite, or delete the other's files or process.
 
+## Baileys security baseline
+
+Aharane uses the official `@whiskeysockets/baileys` package, pinned to `7.0.0-rc14`. The upstream maintainer's advisory for CVE-2026-48063 identifies `7.0.0-rc12` as the first patched v7 release; Aharane is pinned beyond that threshold. Aharane also disables history-message sync and rejects `messages.upsert` events containing `requestId` as defense in depth. Do not replace this pin with a third-party fork without reviewing its published source and package contents.
+
 ## Initial behavior
 
 - One independent WhatsApp identity.

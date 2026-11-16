@@ -40,3 +40,17 @@ export function commandResponse(rawText) {
   if (command === 'help') return 'Aharane commands:\n!ping — check whether I am online\n!help — show this message'
   return null
 }
+
+/**
+ * Reject Baileys message-upsert events associated with placeholder-resend
+ * spoofing attempts. The pinned upstream release is patched as well; this
+ * additional guard is defense in depth.
+ */
+export function isSafeMessageUpsert(event) {
+  return Boolean(
+    event
+    && !event.requestId
+    && event.type === 'notify'
+    && Array.isArray(event.messages)
+  )
+}

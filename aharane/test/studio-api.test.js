@@ -33,3 +33,15 @@ test('the Control Centre API proxy exposes the authenticated studio snapshot', a
   const proxy = await read('../control-centre/api/aharane/[...path].js')
   assert.match(proxy, /\['studio\/snapshot', '\/api\/studio\/snapshot'\]/)
 })
+
+test('the shared router forwards only Aharane API and WebSocket paths to port 8790', async () => {
+  const router = await read('../infra/aharane-ngrok-router.mjs')
+  assert.match(router, /NIGHT_PORT.*8787/)
+  assert.match(router, /AHARANE_PORT.*8790/)
+  assert.match(router, /ROUTER_PORT.*8786/)
+  assert.match(router, /pathname\.startsWith\(AHARANE_PREFIX \+ '\/api\/'\)/)
+  assert.match(router, /incoming\.pathname !== AHARANE_PREFIX \+ '\/ws'/)
+  assert.match(router, /path: '\/ws' \+ incoming\.search/)
+  assert.match(router, /socket\.pipe\(client\)/)
+  assert.match(router, /client\.pipe\(socket\)/)
+})

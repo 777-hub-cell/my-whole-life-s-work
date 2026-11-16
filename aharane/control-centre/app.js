@@ -330,7 +330,7 @@ async function deleteSourceFile(path) {
 }
 
 async function applySourceChanges(discard = false) {
-  const action = discard ? 'Discard saved file edits and restore the previous source release?' : 'Apply the saved source edits and restart Aharane?'
+  const action = discard ? 'Discard the saved file edits? The running bot will remain unchanged.' : 'Apply the saved source edits and restart Aharane?'
   if (!window.confirm(action)) return
   const button = discard ? $('#source-discard') : $('#source-apply')
   button.disabled = true
@@ -339,8 +339,17 @@ async function applySourceChanges(discard = false) {
       method: 'POST',
       body: JSON.stringify({ confirm: true }),
     })
-    setSourceMessage(discard ? 'Restoring the clean backup and restarting Aharane…' : 'Checks passed. Restarting Aharane with your saved edits…', 'success')
-    pollManualEditStatus()
+    if (discard) {
+      sourceFile = null
+      sourceDirty = false
+      $('#source-editor-panel').hidden = true
+      await refreshDraftStatus()
+      await loadSourceFolder(sourceFolder)
+      setSourceMessage('Saved edits discarded. The live Aharane release was never changed.', 'success')
+    } else {
+      setSourceMessage('Checks passed. Restarting Aharane with your saved edits…', 'success')
+      pollManualEditStatus()
+    }
   } catch (error) {
     button.disabled = false
     setSourceMessage(error.message, 'error')

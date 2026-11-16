@@ -62,7 +62,7 @@ test('manual source editor is separate, scoped and protected by backup/apply/rol
     "app.post('/api/files/apply'",
     "app.post('/api/files/discard'",
   ]) assert.ok(runtime.includes(route), `Missing manual file route: ${route}`)
-  assert.ok(runtime.includes('before-manual-edit-'), 'Manual edits must create a clean backup release')
+  assert.ok(runtime.includes('manual-edit-workspace-'), 'Manual edits must use a separate staged workspace')
   assert.ok(runtime.includes("execFileAsync('npm', ['run', 'check']"), 'Manual edits must pass the project checks before restart')
   assert.ok(runtime.includes('MANUAL_EDIT_STATE_FILE'), 'Manual edits must remain pending until applied or discarded')
   assert.ok(proxy.includes("['files/content', '/api/files/content']"), 'The Vercel proxy must whitelist manual source editing')
@@ -72,4 +72,17 @@ test('manual source editor is separate, scoped and protected by backup/apply/rol
     assert.ok(!runtime.includes(forbidden), `Unexpected NIGHT/MSCC reference: ${forbidden}`)
     assert.ok(!proxy.includes(forbidden), `Unexpected NIGHT/MSCC reference: ${forbidden}`)
   }
+})
+
+
+test('manual file changes are staged in a separate release until explicitly applied', async () => {
+  const runtime = await read('../src/index.js')
+  assert.match(runtime, /async function sourceWorkspaceDirectory\(\)/)
+  assert.match(runtime, /workspaceRelease/)
+  assert.match(runtime, /manual-edit-workspace-/)
+  assert.match(runtime, /previousRelease: current/)
+  assert.match(runtime, /candidateRelease: actualWorkspace/)
+  assert.match(runtime, /await rename\(nextLink, CURRENT_RELEASE\)/)
+  assert.match(runtime, /The running Aharane release was never changed/)
+  assert.ok(!runtime.includes("source: 'manual-discard'"), 'Discarding a draft must not trigger a server restart')
 })

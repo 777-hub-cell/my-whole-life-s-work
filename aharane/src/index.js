@@ -137,8 +137,8 @@ function requireAdmin(req, res, next) {
     return
   }
 
-  // SameSite=Strict and a host-only HttpOnly cookie protect normal reads.
-  // Require a verified same-origin Origin header for every cookie-authenticated mutation.
+  // SameSite=Strict and the host-only HttpOnly cookie protect normal reads.
+  // Require a verified same-origin Origin header for cookie-authenticated mutations.
   if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) &&
       !adminBearer && !bearerSession && !sameOriginRequest(req)) {
     res.status(403).json({ ok: false, error: 'Cross-origin requests are not allowed.' })

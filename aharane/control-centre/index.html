@@ -7,22 +7,22 @@
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#f5f5f2">
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" href="/icon.svg" type="image/svg+xml">
-  <title>Aharane Control Centre</title>
-  <link rel="stylesheet" href="/styles.css">
-  <script type="module" src="/app.js"></script>
+  <link rel="manifest" href="/studio/manifest.webmanifest">
+  <link rel="icon" href="/studio/icon.svg" type="image/svg+xml">
+  <title>Aharane Local Studio</title>
+  <link rel="stylesheet" href="/studio/styles.css">
+  <script type="module" src="/studio/app.js"></script>
 </head>
 <body>
   <div id="login-screen" class="login-screen">
     <div class="login-panel">
-      <a class="brand" href="/" aria-label="Aharane Control Centre">
+      <a class="brand" href="/studio/" aria-label="Aharane Control Centre">
         <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 3v42M3 24h42M9 9l30 30M39 9 9 39M15 4l9 12 9-12M15 44l9-12 9 12M4 15l12 9-12 9M44 15l-12 9 12 9" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round"/><circle cx="24" cy="24" r="7" fill="none" stroke="currentColor" stroke-width="1.65"/></svg>
-        <span><strong>AHARANE</strong><small>CONTROL CENTRE</small></span>
+        <span><strong>AHARANE</strong><small>LOCAL STUDIO</small></span>
       </a>
-      <p class="eyebrow">INDEPENDENT BOT MANAGEMENT</p>
-      <h1>Sign in to Aharane</h1>
-      <p class="muted">Use the Aharane admin token to open its private control interface.</p>
+      <p class="eyebrow">PERSONAL BOT CONTROL + DEVELOPMENT</p>
+      <h1>Connect to Aharane</h1>
+      <p class="muted">Sign in to unlock remote bot controls. Your local workspace stays on this phone and works offline.</p>
       <form id="login-form">
         <label for="admin-token">Admin token</label>
         <input id="admin-token" type="password" autocomplete="current-password" spellcheck="false" placeholder="Enter the server-generated token" required>
@@ -31,8 +31,8 @@
       <p class="tiny muted">The token is exchanged server-side for a protected, short-lived session. It is not saved in browser storage.</p>
       <p id="login-message" class="message" role="status"></p>
       <div class="login-local-divider"><span>OR</span></div>
-      <button class="button button-outline button-wide" id="open-local-studio" type="button">Open Local Studio</button>
-      <p class="tiny muted">Your local workspace works without signing in. Bot controls still require a connection.</p>
+      <button class="button button-outline button-wide" id="open-local-studio" type="button">Open offline workspace</button>
+      <p class="tiny muted">This is the same Aharane app in offline mode. Connect when you need remote bot management.</p>
     </div>
   </div>
 
@@ -40,7 +40,7 @@
     <aside class="sidebar">
       <a class="brand" href="#" data-view="overview">
         <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 3v42M3 24h42M9 9l30 30M39 9 9 39M15 4l9 12 9-12M15 44l9-12 9 12M4 15l12 9-12 9M44 15l-12 9 12 9" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round"/><circle cx="24" cy="24" r="7" fill="none" stroke="currentColor" stroke-width="1.65"/></svg>
-        <span><strong>AHARANE</strong><small>CONTROL CENTRE</small></span>
+        <span><strong>AHARANE</strong><small>LOCAL STUDIO</small></span>
       </a>
       <nav class="main-nav" aria-label="Main navigation">
         <div class="nav-label">BUILD</div>
@@ -78,6 +78,7 @@
               <button class="button button-outline" id="studio-import-folder" type="button">Import folder</button>
               <button class="button button-dark" id="studio-new-file" type="button">New file</button>
               <button class="button button-outline" id="studio-export-backup" type="button">Export backup</button>
+              <button class="button button-outline" id="studio-edit-app-source" type="button">Edit this app</button>
             </div>
             <input id="studio-files-input" type="file" multiple hidden>
             <input id="studio-folder-input" type="file" webkitdirectory directory multiple hidden>
@@ -107,6 +108,7 @@
             </div>
           </div>
 
+<section class="studio-app-source"><div class="studio-app-source-heading"><div><p class="eyebrow">PERSONAL CUSTOMISATION</p><h2>Edit Aharane Local Studio itself</h2><p class="muted">Change this app's own HTML, CSS and JavaScript. Your edits apply to this phone only.</p></div><button class="button button-outline" id="studio-app-source-export" type="button">Export source backup</button></div><div id="studio-app-source-panel" class="studio-app-source-panel" hidden><div class="studio-app-source-toolbar"><label for="studio-app-source-file">Application file</label><select id="studio-app-source-file"><option value="index.html">index.html</option><option value="styles.css">styles.css</option><option value="app.js">app.js</option><option value="manifest.webmanifest">manifest.webmanifest</option></select><button class="button button-outline" id="studio-app-source-reload" type="button">Reload file</button></div><textarea id="studio-app-source-editor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Edit Aharane Local Studio source"></textarea><div class="studio-app-source-footer"><span id="studio-app-source-status" role="status">Original app files are unchanged.</span><div class="studio-app-source-actions"><button class="button button-outline" id="studio-app-source-close" type="button">Close</button><button class="button button-outline" id="studio-app-source-restore" type="button">Restore original</button><button class="button button-outline" id="studio-app-source-save" type="button" disabled>Save draft</button><button class="button button-dark" id="studio-app-source-apply" type="button" disabled>Apply to this phone</button></div></div><p class="studio-app-source-note">Changes affect this installed copy only. Export a backup first. If an edit breaks the interface, open <a href="/studio/recover.html" target="_blank" rel="noopener">the recovery page</a>.</p></div></section>
           <div class="studio-footnote"><strong>Local means local.</strong> Edits here do not change the running WhatsApp bot or the deployed Control Centre. Export a backup regularly. Connect to Aharane when you need remote bot management.</div>
           <p id="studio-message" class="message" role="status"></p>
         </section>

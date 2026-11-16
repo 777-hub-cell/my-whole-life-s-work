@@ -62,7 +62,7 @@ test('manual source editor is separate, scoped and protected by backup/apply/rol
     "app.post('/api/files/apply'",
     "app.post('/api/files/discard'",
   ]) assert.ok(runtime.includes(route), `Missing manual file route: ${route}`)
-  assert.ok(runtime.includes('before-manual-edit-'), 'Manual edits must create a clean backup release')
+  assert.ok(runtime.includes('manual-edit-workspace-'), 'Manual edits must use a separate staged workspace')
   assert.ok(runtime.includes("execFileAsync('npm', ['run', 'check']"), 'Manual edits must pass the project checks before restart')
   assert.ok(runtime.includes('MANUAL_EDIT_STATE_FILE'), 'Manual edits must remain pending until applied or discarded')
   assert.ok(proxy.includes("['files/content', '/api/files/content']"), 'The Vercel proxy must whitelist manual source editing')

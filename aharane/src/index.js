@@ -544,10 +544,10 @@ async function handleMessages(currentSocket, event) {
     const sender = remoteJid.slice(0, remoteJid.indexOf('@'))
     if (!allowCommand(sender)) continue
 
-    publishStudioEvent('whatsapp.command.received', { command: text.split(/\\s+/, 1)[0].slice(0, 40) })
+    publishStudioEvent('whatsapp.command.received', { command: text.split(/\s+/, 1)[0].slice(0, 40) })
     try {
       await currentSocket.sendMessage(remoteJid, { text: reply }, { quoted: message })
-      publishStudioEvent('whatsapp.command.replied', { command: text.split(/\\s+/, 1)[0].slice(0, 40) })
+      publishStudioEvent('whatsapp.command.replied', { command: text.split(/\s+/, 1)[0].slice(0, 40) })
     } catch {
       logger.warn({ event: 'message.reply-failed' })
     }

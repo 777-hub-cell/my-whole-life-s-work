@@ -25,6 +25,8 @@ test('Aharane has its own start command, dependencies and private environment', 
   const env = await read('../.env.example')
   assert.equal(pkg.name, 'aharane-whatsapp-bot')
   assert.equal(pkg.scripts.start, 'node src/index.js')
+  assert.equal(pkg.dependencies['@whiskeysockets/baileys'], '7.0.0-rc14')
+  assert.equal(pkg.dependencies['@itsliaaa/baileys'], undefined)
   assert.match(env, /AHARANE_DATA_DIR=\/var\/lib\/aharane/)
   assert.doesNotMatch(env, /MSCC_|ACCOUNT_AUTH_ROOT/)
 })

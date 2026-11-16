@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   commandResponse,
   isAllowedInbound,
+  isSafeMessageUpsert,
   normalizePhone,
   parseAllowedSenders,
   senderNumberFromJid,
@@ -46,4 +47,11 @@ test('only the explicit local command set generates replies', () => {
   assert.equal(commandResponse('hello'), null)
   assert.equal(commandResponse('!delete everything'), null)
   assert.equal(commandResponse('!PING'), 'Aharane is online.')
+})
+
+test('rejects suspicious message-upsert events carrying a requestId', () => {
+  assert.equal(isSafeMessageUpsert({ type: 'notify', messages: [] }), true)
+  assert.equal(isSafeMessageUpsert({ type: 'notify', messages: [], requestId: 'resend-123' }), false)
+  assert.equal(isSafeMessageUpsert({ type: 'append', messages: [] }), false)
+  assert.equal(isSafeMessageUpsert({ type: 'notify', messages: null }), false)
 })

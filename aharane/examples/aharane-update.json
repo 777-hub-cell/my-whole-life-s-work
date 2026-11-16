@@ -1,0 +1,6 @@
+{
+  "package_type": "aharane-bot-update",
+  "target": "aharane",
+  "format_version": 1,
+  "bot_version": "1.0.0"
+}

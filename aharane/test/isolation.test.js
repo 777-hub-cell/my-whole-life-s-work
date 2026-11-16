@@ -30,3 +30,19 @@ test('Aharane has its own start command, dependencies and private environment', 
   assert.match(env, /AHARANE_DATA_DIR=\/var\/lib\/aharane/)
   assert.doesNotMatch(env, /MSCC_|ACCOUNT_AUTH_ROOT/)
 })
+
+
+test('ZIP deployment stays within the Aharane release and data roots', async () => {
+  const runtime = await read('../src/index.js')
+  const updater = await read('../src/update-manager.js')
+  const installer = await read('../install-azure.sh')
+  assert.match(runtime, /\/opt\/aharane/)
+  assert.match(runtime, /\/var\/lib\/aharane\/updates/)
+  assert.match(installer, /ExecStartPost=.*verify-update\.mjs/)
+  assert.match(installer, /ReadWritePaths=\/var\/lib\/aharane \/opt\/aharane/)
+  for (const source of [runtime, updater, installer]) {
+    for (const forbidden of ['/opt/mscc', '/var/lib/mscc', '/etc/mscc.env', 'mscc.service']) {
+      assert.ok(!source.includes(forbidden), `Unexpected NIGHT/MSCC reference: ${forbidden}`)
+    }
+  }
+})

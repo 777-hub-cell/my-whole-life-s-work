@@ -243,3 +243,78 @@ input:focus { border-color: #222; box-shadow: 0 0 0 2px #11111112; }
   .source-file-row { gap: 2px; }
   .source-editor-footer { align-items: flex-start; }
 }
+
+
+/* Local Studio */
+.login-local-divider { display:flex; align-items:center; gap:12px; margin:19px 0 13px; color:#aaa; font-size:9px; letter-spacing:.14em; }
+.login-local-divider::before,.login-local-divider::after { content:""; height:1px; flex:1; background:#e8e8e4; }
+.button-wide { width:100%; }
+.local-only [data-remote-only],.local-only .sidebar-bottom { display:none !important; }
+.local-only #service-pill,.local-only #refresh-button { display:none !important; }
+.install-app-button { min-height:30px; padding:0 10px; font-size:10px; }
+.studio-heading { align-items:flex-start; }
+.studio-heading .button { margin-top:18px; }
+.studio-toolbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; padding:13px 0; border-top:1px solid #e8e8e4; border-bottom:1px solid #e8e8e4; }
+.studio-project-name { min-width:150px; display:grid; gap:6px; }
+.studio-project-name label { color:#888; font-size:9px; letter-spacing:.13em; font-weight:750; }
+.studio-project-name input { width:100%; border:0; border-bottom:1px solid #dcdcd7; border-radius:0; padding:7px 0; background:transparent; font-size:13px; font-weight:650; }
+.studio-toolbar-actions { display:flex; flex-wrap:wrap; gap:7px; justify-content:flex-end; }
+.studio-toolbar-actions .button { min-height:34px; padding:0 10px; font-size:10px; }
+.studio-workbench { display:grid; grid-template-columns:minmax(190px,.32fr) minmax(0,1fr); min-height:480px; margin-top:16px; border:1px solid #e5e5e1; background:#fff; }
+.studio-file-pane { min-width:0; border-right:1px solid #e8e8e4; }
+.studio-pane-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:14px 12px; border-bottom:1px solid #eee; }
+.studio-pane-heading strong { font-size:11px; }
+.studio-pane-heading span { font-size:9px; color:#888; white-space:nowrap; }
+.studio-file-list { padding:7px; max-height:620px; overflow:auto; }
+.studio-file-list > .muted { padding:9px; font-size:10px; line-height:1.5; }
+.studio-file-row { display:flex; align-items:center; gap:4px; border-bottom:1px solid #f0f0ed; min-width:0; }
+.studio-file-row.active { background:#f3f3f0; }
+.studio-file-open { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border:0; background:transparent; color:#333; text-align:left; padding:10px 7px; font:10px ui-monospace,SFMono-Regular,Menlo,monospace; }
+.studio-file-open:hover { color:#000; background:#f8f8f6; }
+.studio-file-remove { width:25px; height:28px; flex:none; border:0; background:transparent; color:#999; font-size:17px; }
+.studio-file-remove:hover { color:#9d3333; }
+.studio-main-pane { min-width:0; display:flex; flex-direction:column; }
+.studio-tabs { display:flex; align-items:center; gap:4px; padding:8px 12px 0; border-bottom:1px solid #e9e9e5; }
+.studio-tab { border:0; border-bottom:2px solid transparent; background:transparent; color:#777; padding:9px 9px 10px; font-size:10px; }
+.studio-tab.active { border-bottom-color:#222; color:#171717; font-weight:700; }
+.studio-save-state { margin-left:auto; padding:0 2px 8px; color:#888; font-size:9px; white-space:nowrap; }
+.studio-code-pane { display:flex; min-height:420px; flex:1; flex-direction:column; }
+.studio-editor-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:43px; padding:8px 14px; border-bottom:1px solid #eee; }
+.studio-editor-heading strong { min-width:0; overflow-wrap:anywhere; font:10px ui-monospace,SFMono-Regular,Menlo,monospace; }
+#studio-editor { display:block; width:100%; min-height:360px; flex:1; resize:vertical; border:0; border-radius:0; outline:none; padding:16px; background:#fcfcfb; color:#242424; font:11px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; tab-size:2; white-space:pre; overflow:auto; }
+#studio-editor:focus { box-shadow:inset 0 0 0 1px #deded9; }
+#studio-editor:disabled { color:#888; }
+.studio-editor-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 13px; border-top:1px solid #eee; }
+.studio-editor-footer span { color:#888; font-size:9px; }
+.studio-editor-footer .button { min-height:33px; font-size:10px; }
+.studio-preview-pane { min-width:0; padding:12px; }
+.studio-preview-toolbar { display:flex; align-items:center; gap:9px; margin-bottom:12px; }
+.studio-preview-toolbar label { color:#777; font-size:10px; white-space:nowrap; }
+.studio-preview-toolbar select { flex:1; min-width:0; min-height:34px; padding:0 8px; font-size:10px; }
+.studio-preview-toolbar .button { min-height:34px; font-size:10px; padding:0 10px; }
+.studio-preview-frame-wrap { height:520px; overflow:hidden; border:1px solid #e4e4e0; background:#fff; }
+#studio-preview-frame { display:block; width:100%; height:100%; border:0; background:#fff; }
+.studio-preview-note { color:#888; font-size:9px; line-height:1.5; }
+.studio-footnote { margin-top:17px; padding:13px 0; border-top:1px solid #e8e8e4; color:#777; font-size:10px; line-height:1.6; }
+.studio-footnote strong { color:#444; font-size:10px; }
+#studio-message { margin-top:8px; }
+@media (max-width:760px) {
+  .studio-heading { flex-direction:column; gap:8px; margin-bottom:18px; }
+  .studio-heading .button { margin-top:0; }
+  .studio-toolbar { align-items:stretch; flex-direction:column; gap:11px; }
+  .studio-project-name { max-width:none; }
+  .studio-toolbar-actions { justify-content:flex-start; }
+  .studio-toolbar-actions .button { flex:1; }
+  .studio-workbench { grid-template-columns:1fr; min-height:0; }
+  .studio-file-pane { border-right:0; border-bottom:1px solid #e8e8e4; }
+  .studio-file-list { max-height:180px; }
+  .studio-code-pane { min-height:350px; }
+  #studio-editor { min-height:300px; font-size:10px; }
+  .studio-tabs { padding-left:7px; padding-right:7px; }
+  .studio-tab { padding-left:7px; padding-right:7px; }
+  .studio-save-state { font-size:8px; }
+  .studio-preview-toolbar { flex-wrap:wrap; }
+  .studio-preview-toolbar select { min-width:100%; order:2; }
+  .studio-preview-toolbar .button { margin-left:auto; }
+  .studio-preview-frame-wrap { height:60vh; min-height:360px; }
+}

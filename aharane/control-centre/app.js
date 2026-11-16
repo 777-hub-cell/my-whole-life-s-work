@@ -1115,7 +1115,7 @@ function blobToDataUrl(blob) {
 
 
 async function rewriteStudioCss(css, cssPath, lookup) {
-  const matches = [...css.matchAll(/url\\(\\s*(['"]?)([^'")]+)\\1\\s*\\)/gi)]
+  const matches = [...css.matchAll(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi)]
   for (const match of matches) {
     const targetPath = resolveStudioAsset(cssPath, match[2])
     const asset = lookup.get(targetPath)

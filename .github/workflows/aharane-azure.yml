@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Validate standalone Aharane runtime
+    name: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

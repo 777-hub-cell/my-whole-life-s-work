@@ -4,6 +4,12 @@ import {readFile} from 'node:fs/promises'
 const read=p=>readFile(new URL(p,import.meta.url),'utf8')
 test('Aharane serves Local Studio PWA from its private listener',async()=>{const s=await read('../src/index.js');for(const x of ["app.use('/studio',","new URL('../control-centre/',import.meta.url)","app.use('/studio/api'","app.get('/api/status', requireAdmin","app.post('/api/login'","app.post('/api/logout'","HOST !== '127.0.0.1'"])assert.ok(s.includes(x),x)})
 test('sessions are signed, short-lived and HttpOnly',async()=>{const s=await read('../src/index.js');for(const x of ["createHmac('sha256',ADMIN_TOKEN)","ADMIN_SESSION_COOKIE='aharane_admin_session'","HttpOnly; Secure; SameSite=Strict","adminSessionMatches(cookie)","sameOriginRequest(req)","allowAdminLogin(ip)","Max-Age=0"])assert.ok(s.includes(x),x)})
+test('HttpOnly session cookies authenticate same-origin GETs without relying on an Origin header',async()=>{
+ const s=await read('../src/index.js')
+ assert.ok(s.includes("const cookieSession = adminSessionMatches(requestCookie(req, ADMIN_SESSION_COOKIE))"))
+ assert.ok(s.includes("!['GET', 'HEAD', 'OPTIONS'].includes(req.method)"))
+ assert.ok(s.includes("!sameOriginRequest(req)"))
+})
 test('browser uses same-origin API and WebSocket, not Vercel relay',async()=>{const s=await read('../control-centre/app.js');for(const x of ["fetch('/api/' + path.replace","location.host + '/ws'","navigator.serviceWorker.register('/studio/sw.js'"])assert.ok(s.includes(x),x);assert.ok(!s.includes('/api/aharane/'));assert.ok(!s.includes('/api/studio/socket'))})
 test('whole app opens offline; remote views require login',async()=>{const s=await read('../control-centre/app.js');assert.ok(s.includes("localStudioMode('overview')"));assert.ok(s.includes("['pairing', 'deploy', 'files'].includes(name)"))})
 test('user can edit, apply, back up and recover app source',async()=>{const a=await read('../control-centre/app.js'),w=await read('../control-centre/sw.js'),h=await read('../control-centre/index.html'),r=await read('../control-centre/recover.html');for(const f of ['index.html','styles.css','app.js','manifest.webmanifest'])assert.ok(a.includes("'"+f+"'"));assert.ok(h.includes('studio-edit-app-source'));assert.ok(a.includes('appOverrides'));assert.ok(h.includes('Apply to this phone'));assert.ok(w.includes('SOURCE_PATHS'));assert.ok(w.includes('readOverride'));assert.ok(r.includes("objectStore('appOverrides').clear()"));assert.ok(w.includes("u.pathname.startsWith('/api/')"))})

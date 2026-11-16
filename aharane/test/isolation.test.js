@@ -37,7 +37,7 @@ test('ZIP deployment stays within the Aharane release and data roots', async () 
   const updater = await read('../src/update-manager.js')
   const installer = await read('../install-azure.sh')
   assert.match(runtime, /\/opt\/aharane/)
-  assert.match(runtime, /\/var\/lib\/aharane\/updates/)
+  assert.match(runtime, /join\(DATA_DIR, 'updates'\)/)
   assert.match(installer, /ExecStartPost=.*verify-update\.mjs/)
   assert.match(installer, /ReadWritePaths=\/var\/lib\/aharane \/opt\/aharane/)
   for (const source of [runtime, updater, installer]) {

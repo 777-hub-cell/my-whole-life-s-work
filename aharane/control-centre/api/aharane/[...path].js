@@ -82,7 +82,8 @@ async function upstreamRequest(path, token, body, method = 'GET', search = '') {
     headers['CF-Access-Client-Id'] = clientId
     headers['CF-Access-Client-Secret'] = clientSecret
   }
-  const target = new URL(path + search, url.origin)
+  // The shared ngrok hostname routes Aharane traffic through its dedicated local path prefix.
+  const target = new URL('/aharane' + path + search, url.origin)
   const response = await fetch(target, {
     method,
     headers,

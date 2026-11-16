@@ -12,6 +12,7 @@ let sourceHash = ''
 let sourceDirty = false
 
 let localOnly = false
+let remoteSession = false
 let studioDbPromise = null
 let studioFiles = []
 let studioCurrentPath = ''
@@ -643,6 +644,7 @@ async function connect() {
   showMessage('#login-message', 'Connecting…')
   try {
     await api('login', { method: 'POST', body: JSON.stringify({ token: $('#admin-token').value }) })
+    remoteSession = true
     $('#admin-token').value = ''
     $('#login-screen').hidden = true
     $('#application').hidden = false
@@ -658,6 +660,7 @@ async function connect() {
 }
 
 async function logout() {
+  remoteSession = false
   localOnly = false
   document.body.classList.remove('local-only')
   try { await api('logout', { method: 'POST', body: '{}' }) } catch {}
@@ -846,6 +849,9 @@ function studioCanEdit(path, type = '') {
 }
 
 function localStudioMode() {
+  const savedTitle = localStorage.getItem('aharane-local-studio-title')
+  if (savedTitle) $('#studio-project-title').value = savedTitle
+  $('#studio-connect-button').textContent = remoteSession ? 'Back to bot controls' : 'Connect to Aharane'
   localOnly = true
   document.body.classList.add('local-only')
   $('#login-screen').hidden = true
@@ -1107,6 +1113,20 @@ function blobToDataUrl(blob) {
   })
 }
 
+
+async function rewriteStudioCss(css, cssPath, lookup) {
+  const matches = [...css.matchAll(/url\\(\\s*(['"]?)([^'")]+)\\1\\s*\\)/gi)]
+  for (const match of matches) {
+    const targetPath = resolveStudioAsset(cssPath, match[2])
+    const asset = lookup.get(targetPath)
+    if (asset?.blob) {
+      const dataUrl = await blobToDataUrl(asset.blob)
+      css = css.replace(match[0], 'url("' + dataUrl + '")')
+    }
+  }
+  return css
+}
+
 async function renderStudioPreview() {
   const pagePath = $('#studio-preview-file').value
   const page = studioFiles.find(item => item.path === pagePath)
@@ -1126,14 +1146,15 @@ async function renderStudioPreview() {
       const targetPath = resolveStudioAsset(pagePath, link.getAttribute('href'))
       const asset = lookup.get(targetPath)
       if (asset) {
-        const cssText = typeof asset.content === 'string' ? asset.content : await asset.blob.text()
+        const cssText = await rewriteStudioCss(typeof asset.content === 'string' ? asset.content : await asset.blob.text(), targetPath, lookup)
         const cssUrl = URL.createObjectURL(new Blob([cssText], { type: 'text/css' }))
         studioObjectUrls.push(cssUrl)
         link.setAttribute('href', cssUrl)
       }
     }
     for (const style of [...documentPreview.querySelectorAll('style')]) {
-      const cssUrl = URL.createObjectURL(new Blob([style.textContent || ''], { type: 'text/css' }))
+      const styleText = await rewriteStudioCss(style.textContent || '', pagePath, lookup)
+      const cssUrl = URL.createObjectURL(new Blob([styleText], { type: 'text/css' }))
       studioObjectUrls.push(cssUrl)
       const link = documentPreview.createElement('link')
       link.rel = 'stylesheet'
@@ -1175,6 +1196,12 @@ async function renderStudioPreview() {
 
 $('#open-local-studio').addEventListener('click', () => localStudioMode())
 $('#studio-connect-button').addEventListener('click', () => {
+  if (remoteSession) {
+    localOnly = false
+    document.body.classList.remove('local-only')
+    setView('overview')
+    return
+  }
   localOnly = false
   document.body.classList.remove('local-only')
   $('#application').hidden = true
@@ -1206,7 +1233,10 @@ $('#studio-editor').addEventListener('input', () => {
 })
 $('#studio-project-title').addEventListener('change', () => {
   const title = $('#studio-project-title').value.trim()
-  if (title) document.title = title + ' · Aharane Local Studio'
+  if (title) {
+    localStorage.setItem('aharane-local-studio-title', title)
+    document.title = title + ' · Aharane Local Studio'
+  }
 })
 
 window.addEventListener('beforeinstallprompt', event => {
@@ -1229,6 +1259,7 @@ if ('serviceWorker' in navigator) {
 
 // A valid session cookie is HttpOnly; status is the session check.
 api('status').then(async () => {
+  remoteSession = true
   $('#login-screen').hidden = true
   $('#application').hidden = false
   await refreshStatus()

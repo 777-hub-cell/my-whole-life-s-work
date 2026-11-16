@@ -60,7 +60,7 @@
     <div class="main-column">
       <header class="topbar">
         <div class="breadcrumb"><span>Aharane</span><span class="slash">/</span><strong id="page-name">Overview</strong></div>
-        <div class="top-actions"><button id="install-app-button" class="button button-outline install-app-button" type="button" hidden>Install app</button><span id="service-pill" data-remote-only class="status-pill"><i></i><span id="service-pill-label">Checking</span></span><button id="refresh-button" data-remote-only class="icon-button" type="button" aria-label="Refresh status" title="Refresh status">↻</button></div>
+        <div class="top-actions"><button id="install-app-button" class="button button-outline install-app-button" type="button" hidden>Install app</button><span id="live-link-pill" data-remote-only class="status-pill live-link-pill"><i></i><span id="live-link-label">Live link off</span></span><span id="service-pill" data-remote-only class="status-pill"><i></i><span id="service-pill-label">Checking</span></span><button id="refresh-button" data-remote-only class="icon-button" type="button" aria-label="Refresh status" title="Refresh status">↻</button></div>
       </header>
 
       <main class="page-content">
@@ -141,6 +141,8 @@
             <div><span class="field-label">VERSION</span><strong id="last-update-version">—</strong></div>
             <div><span class="field-label">UPDATED</span><strong id="last-update-date">—</strong></div>
           </div>
+          <div class="section-heading"><h2>Live activity</h2><span class="muted">Events from Aharane</span></div>
+          <div id="live-activity-list" class="live-activity-list" aria-live="polite"><p class="muted">Sign in to receive live bot events.</p></div>
           <p id="overview-message" class="message" role="status"></p>
         </section>
 

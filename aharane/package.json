@@ -10,11 +10,12 @@
   "scripts": {
     "start": "node src/index.js",
     "test": "node --test",
-    "check": "node --check src/index.js && node --check src/policy.js && node scripts/check.mjs && node --test"
+    "check": "node --check src/index.js && node --check src/policy.js && node --check src/update-manager.js && node --check control-centre/app.js && node --check 'control-centre/api/aharane/[...path].js' && node scripts/check.mjs && node --test"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "7.0.0-rc14",
     "express": "^4.21.2",
-    "pino": "^9.5.0"
+    "pino": "^9.5.0",
+    "yauzl": "3.4.0"
   }
 }

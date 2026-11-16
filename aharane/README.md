@@ -88,3 +88,21 @@ Set `AHARANE_DATA_DIR` to a dedicated local directory and set `AHARANE_ADMIN_TOK
 The separate GitHub workflow `.github/workflows/aharane-azure.yml` runs tests on pull requests and pushes. Production deployment is available only through an explicit manual dispatch on `mscc-azure` with the confirmation value `deploy`, followed by the existing protected Azure environment approval.
 
 The installer creates a dedicated `aharane` Linux service account and only changes `/opt/aharane`, `/var/lib/aharane`, `/etc/aharane.env` and `aharane.service`. It does not edit or restart `mscc.service`, the MSCC release symlink, MSCC configuration, or MSCC auth data.
+
+
+## ZIP update packages
+
+The Aharane Control Centre has a separate **Deploy update** workflow. It does not replace the Files Manager. A ZIP is eligible only when it contains a root-level `aharane-update.json` manifest identifying it as an Aharane update. See [UPDATE-PACKAGE.md](UPDATE-PACKAGE.md) for the exact format and file rules.
+
+ZIP updates install to a fresh directory under `/opt/aharane/releases`, atomically switch only `/opt/aharane/current`, and preserve `/var/lib/aharane` and `/etc/aharane.env`. The service checks the new release on startup and restores the previous release when the local health check fails. The updater never changes the NIGHT/MSCC service or files.
+
+
+## Aharane Control Centre
+
+The separate Vercel project lives under `aharane/control-centre`. It provides private sign-in, runtime status, WhatsApp pairing, direct ZIP deployment and a ZIP package library in the Files Manager. Each stored package has a three-dot menu with **Update Aharane** and **Remove ZIP** actions. The Files Manager also includes a separately saved source-file browser/editor for approved Aharane code and text files under `src`, `public`, `scripts`, `test` and `examples`. It creates a clean release backup before the first edit, runs project checks before applying changes, restarts Aharane and uses the startup health check to roll back failures. Pending edits can be discarded to restore the clean backup. The editor does not expose environment variables, WhatsApp auth or persistent data.
+
+The Control Centre requires an authenticated HTTPS tunnel to Aharane's loopback API at `127.0.0.1:8790`. Never bind that listener to a public interface. See [control-centre/README.md](control-centre/README.md).
+
+## ZIP update packages
+
+See [UPDATE-PACKAGE.md](UPDATE-PACKAGE.md) for the required root-level `aharane-update.json` marker, ZIP layout, protected paths, file limits and rollback behavior. A valid package can be generated independently by an AI coding assistant or another build environment; it does not need to come from GitHub.

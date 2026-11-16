@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light">
+  <title>Aharane Control Centre</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div id="login-screen" class="login-screen">
+    <div class="login-panel">
+      <a class="brand" href="/" aria-label="Aharane Control Centre">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 3v42M3 24h42M9 9l30 30M39 9 9 39M15 4l9 12 9-12M15 44l9-12 9 12M4 15l12 9-12 9M44 15l-12 9 12 9" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round"/><circle cx="24" cy="24" r="7" fill="none" stroke="currentColor" stroke-width="1.65"/></svg>
+        <span><strong>AHARANE</strong><small>CONTROL CENTRE</small></span>
+      </a>
+      <p class="eyebrow">INDEPENDENT BOT MANAGEMENT</p>
+      <h1>Sign in to Aharane</h1>
+      <p class="muted">Use the Aharane admin token to open its private control interface.</p>
+      <form id="login-form">
+        <label for="admin-token">Admin token</label>
+        <input id="admin-token" type="password" autocomplete="current-password" spellcheck="false" placeholder="Enter the server-generated token" required>
+        <button class="button button-dark button-wide" type="submit" id="login-button">Connect</button>
+      </form>
+      <p class="tiny muted">The token is exchanged server-side for a protected, short-lived session. It is not saved in browser storage.</p>
+      <p id="login-message" class="message" role="status"></p>
+    </div>
+  </div>
+
+  <div id="application" class="application" hidden>
+    <aside class="sidebar">
+      <a class="brand" href="#" data-view="overview">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 3v42M3 24h42M9 9l30 30M39 9 9 39M15 4l9 12 9-12M15 44l9-12 9 12M4 15l12 9-12 9M44 15l-12 9 12 9" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round"/><circle cx="24" cy="24" r="7" fill="none" stroke="currentColor" stroke-width="1.65"/></svg>
+        <span><strong>AHARANE</strong><small>CONTROL CENTRE</small></span>
+      </a>
+      <div class="nav-label">MANAGE</div>
+      <nav class="main-nav" aria-label="Main navigation">
+        <button class="nav-item active" data-view="overview"><span class="nav-symbol">⌂</span> Overview</button>
+        <button class="nav-item" data-view="pairing"><span class="nav-symbol">↔</span> WhatsApp pairing</button>
+        <button class="nav-item" data-view="deploy"><span class="nav-symbol">↑</span> Deploy update</button>
+        <button class="nav-item" data-view="files"><span class="nav-symbol">▤</span> Files Manager</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="isolation-note"><span class="dot"></span><span><strong>Standalone service</strong><small>Independent of NIGHT/MSCC</small></span></div>
+        <button class="nav-item logout" id="logout-button"><span class="nav-symbol">↪</span> Sign out</button>
+      </div>
+    </aside>
+
+    <div class="main-column">
+      <header class="topbar">
+        <div class="breadcrumb"><span>Aharane</span><span class="slash">/</span><strong id="page-name">Overview</strong></div>
+        <div class="top-actions"><span id="service-pill" class="status-pill"><i></i><span id="service-pill-label">Checking</span></span><button id="refresh-button" class="icon-button" type="button" aria-label="Refresh status" title="Refresh status">↻</button></div>
+      </header>
+
+      <main class="page-content">
+        <section class="view-section" id="view-overview">
+          <div class="page-heading">
+            <div><p class="eyebrow">YOUR BOT</p><h1>Aharane</h1><p class="muted">A separate WhatsApp identity and runtime, managed here.</p></div>
+            <button class="button button-outline" data-view="deploy">Deploy an update</button>
+          </div>
+
+          <div class="status-overview">
+            <div class="status-overview-main">
+              <span class="field-label">WHATSAPP CONNECTION</span>
+              <div class="large-status"><span id="whatsapp-dot" class="connection-dot"></span><strong id="whatsapp-state">Checking…</strong></div>
+              <p id="connection-detail" class="muted">Retrieving Aharane status.</p>
+            </div>
+            <div class="status-overview-side">
+              <div><span class="field-label">BOT VERSION</span><strong id="bot-version">—</strong></div>
+              <div><span class="field-label">ALLOWED SENDERS</span><strong id="allowed-senders">—</strong></div>
+            </div>
+          </div>
+
+          <div class="section-heading"><h2>Quick actions</h2></div>
+          <div class="quick-actions">
+            <button class="action-row" data-view="pairing"><span class="action-icon">↔</span><span><strong>Pair WhatsApp</strong><small>Generate a phone-linking code</small></span><span class="action-arrow">→</span></button>
+            <button class="action-row" data-view="deploy"><span class="action-icon">↑</span><span><strong>Update the bot</strong><small>Upload and deploy a signed-format ZIP package</small></span><span class="action-arrow">→</span></button>
+          </div>
+
+          <div class="section-heading"><h2>Latest deployment</h2><button class="text-button" data-view="deploy">Open updates</button></div>
+          <div class="deployment-summary">
+            <div><span class="field-label">STATUS</span><strong id="last-update-status">No update recorded</strong></div>
+            <div><span class="field-label">VERSION</span><strong id="last-update-version">—</strong></div>
+            <div><span class="field-label">UPDATED</span><strong id="last-update-date">—</strong></div>
+          </div>
+          <p id="overview-message" class="message" role="status"></p>
+        </section>
+
+        <section class="view-section" id="view-pairing" hidden>
+          <div class="page-heading"><div><p class="eyebrow">WHATSAPP</p><h1>Pairing</h1><p class="muted">Link the phone number that will become Aharane.</p></div></div>
+          <div class="form-panel">
+            <label for="phone-number">WhatsApp phone number</label>
+            <input id="phone-number" type="tel" inputmode="numeric" autocomplete="tel" placeholder="International digits, e.g. 2348012345678">
+            <p class="help-text">Include the country code. Do not include spaces or punctuation.</p>
+            <button class="button button-dark" id="pair-button" type="button">Generate pairing code</button>
+            <div id="pair-code" class="pair-code" aria-live="polite"></div>
+            <p id="pair-message" class="message" role="status">On that phone, open WhatsApp → Linked devices → Link with phone number.</p>
+          </div>
+        </section>
+
+        <section class="view-section" id="view-deploy" hidden>
+          <div class="page-heading"><div><p class="eyebrow">RELEASE MANAGEMENT</p><h1>Deploy update</h1><p class="muted">Replace Aharane's application code with a complete ZIP package.</p></div></div>
+          <div class="deploy-note"><strong>This is separate from the Files Manager.</strong><p>You can deploy a ZIP directly here, or store it in the Files Manager first and choose **Update Aharane** from its three-dot menu. Both routes use the same validation and rollback process.</p></div>
+
+          <div id="drop-zone" class="drop-zone" tabindex="0" role="button" aria-label="Choose or drop an Aharane update ZIP">
+            <div class="upload-mark">↑</div>
+            <strong>Drop an Aharane update ZIP here</strong>
+            <span>or choose a file from your device</span>
+            <input id="zip-input" type="file" accept=".zip,application/zip" hidden>
+            <button class="button button-outline" id="choose-zip" type="button">Choose ZIP</button>
+            <small>Maximum 50 MB · Required root file: aharane-update.json</small>
+          </div>
+
+          <div id="selected-file" class="selected-file" hidden>
+            <div class="file-mark">ZIP</div>
+            <div class="selected-file-info"><strong id="selected-name">—</strong><small id="selected-size">—</small></div>
+            <button class="text-button" id="remove-zip" type="button">Remove</button>
+          </div>
+
+          <div class="progress-wrap" id="upload-progress" hidden>
+            <div class="progress-label"><span id="progress-label">Uploading</span><strong id="progress-value">0%</strong></div>
+            <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+          </div>
+
+          <div class="deploy-actions">
+            <button class="button button-dark" id="validate-zip" type="button" disabled>Validate ZIP</button>
+            <span id="validation-message" class="message" role="status"></span>
+          </div>
+
+          <div id="preview-panel" class="preview-panel" hidden>
+            <div class="preview-header"><div><p class="eyebrow">PACKAGE CHECK</p><h2>Ready for review</h2></div><span class="valid-pill"><i></i> Valid package</span></div>
+            <div class="preview-meta">
+              <div><span class="field-label">TARGET</span><strong id="preview-target">—</strong></div>
+              <div><span class="field-label">NEW VERSION</span><strong id="preview-version">—</strong></div>
+              <div><span class="field-label">CURRENT VERSION</span><strong id="preview-current-version">—</strong></div>
+              <div><span class="field-label">FILES IN ZIP</span><strong id="preview-file-count">—</strong></div>
+            </div>
+            <div class="change-counts">
+              <div><strong id="added-count">0</strong><span>New files</span></div>
+              <div><strong id="replaced-count">0</strong><span>Replaced files</span></div>
+              <div><strong id="removed-count">0</strong><span>Removed files</span></div>
+            </div>
+            <details class="file-change-details">
+              <summary>Review file changes</summary>
+              <div id="change-list" class="change-list"></div>
+            </details>
+            <div class="preserve-note"><strong>Protected from this update</strong><p>WhatsApp pairing, environment variables, API keys, databases and persistent data are kept outside the application release.</p></div>
+            <p class="warning-note">Dependency install scripts are disabled during ZIP deployment. Deploy only code and dependencies you trust. New environment variables must be configured separately.</p>
+            <button class="button button-dark" id="deploy-button" type="button">Update Aharane</button>
+            <p id="deploy-message" class="message" role="status"></p>
+          </div>
+
+          <div class="section-heading history-heading"><h2>Deployment status</h2></div>
+          <div class="deployment-summary">
+            <div><span class="field-label">LATEST STATUS</span><strong id="deployment-state">—</strong></div>
+            <div><span class="field-label">VERSION</span><strong id="deployment-version">—</strong></div>
+            <div><span class="field-label">FINISHED</span><strong id="deployment-finished">—</strong></div>
+          </div>
+        </section>
+
+        <section class="view-section" id="view-files" hidden>
+          <div class="page-heading"><div><p class="eyebrow">SOURCE WORKSPACE</p><h1>Files Manager</h1><p class="muted">Edit individual source files without using the ZIP deployment workflow.</p></div></div>
+
+          <div class="source-workspace">
+            <div class="source-toolbar">
+              <div class="source-location"><span class="field-label">CURRENT FOLDER</span><strong id="source-breadcrumb">/</strong></div>
+              <div class="source-toolbar-actions">
+                <button class="button button-outline" id="source-up" type="button" disabled>Up</button>
+                <button class="button button-outline" id="source-new-folder" type="button">New folder</button>
+                <button class="button button-dark" id="source-new-file" type="button">New file</button>
+                <button class="icon-button" id="source-refresh" type="button" aria-label="Refresh source files">↻</button>
+              </div>
+            </div>
+            <div class="source-status-row">
+              <span id="source-draft-status" class="draft-status">No unsaved file changes</span>
+              <span class="source-status-actions">
+                <button class="text-button" id="source-discard" type="button" hidden>Discard edits</button>
+                <button class="button button-dark" id="source-apply" type="button" disabled>Apply changes &amp; restart</button>
+              </span>
+            </div>
+            <div id="source-message" class="message" role="status"></div>
+            <div class="source-body">
+              <div id="source-file-list" class="source-file-list"><p class="muted">Loading Aharane source files…</p></div>
+              <div id="source-editor-panel" class="source-editor-panel" hidden>
+                <div class="source-editor-head">
+                  <div><span class="field-label">SOURCE FILE</span><strong id="source-editor-name">—</strong></div>
+                  <button class="text-button" id="source-close-editor" type="button">Close editor</button>
+                </div>
+                <textarea id="source-editor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Source code editor"></textarea>
+                <div class="source-editor-footer">
+                  <span id="source-editor-meta" class="muted">Plain text editor · 512 KB limit</span>
+                  <button class="button button-dark" id="source-save" type="button" disabled>Save file</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="manual-editor-note">
+            <strong>Manual edits are not deployed automatically</strong>
+            <p>Save individual files first. Then choose Apply changes &amp; restart to run syntax and project checks, back up the previous release and restart Aharane. You can discard pending changes to restore the clean backup.</p>
+          </div>
+
+          <div class="section-heading"><h2>ZIP package library</h2><button class="text-button" id="refresh-packages" type="button">Refresh</button></div>
+          <div class="files-manager-intro files-package-intro">
+            <p>ZIPs stored here do not change the running bot. Open a package's three-dot menu and choose <strong>Update Aharane</strong> when you want to replace the complete application release.</p>
+            <div class="files-upload" id="files-dropzone" tabindex="0" role="button" aria-label="Choose or drop a ZIP package">
+              <strong>Drop a ZIP package here</strong>
+              <span>or select one from your phone</span>
+              <input id="files-zip-input" type="file" accept=".zip,application/zip" hidden>
+              <button class="button button-outline" id="files-choose-zip" type="button">Upload ZIP to Files Manager</button>
+              <small>Only ZIPs with a valid Aharane update manifest can be stored as deployable packages.</small>
+            </div>
+            <p id="files-upload-message" class="message" role="status"></p>
+          </div>
+          <div id="package-list" class="package-list"><p class="muted">Loading packages…</p></div>
+        </section>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

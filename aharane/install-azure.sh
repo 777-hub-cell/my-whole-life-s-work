@@ -104,7 +104,88 @@ if ! id "$SERVICE_USER" >/dev/null 2>&1; then
   useradd --system --home-dir "$STATE" --create-home --shell /usr/sbin/nologin "$SERVICE_USER"
 fi
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$BASE" "$BASE/releases" "$STATE" "$STATE/whatsapp-auth"
-install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$STATE/data"
+install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$STATE/data" "$STATE/updates" "$STATE/updates/uploads"
+install -d -o root -g root -m 0755 /usr/local/lib/aharane
+cat > /usr/local/lib/aharane/verify-update.mjs <<'VERIFY'
+import { readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+import { randomUUID } from 'node:crypto'
+
+const root = '/opt/aharane'
+const current = path.join(root, 'current')
+const releases = path.join(root, 'releases')
+const stateFile = '/var/lib/aharane/updates/state.json'
+
+async function readState() {
+  try { return JSON.parse(await readFile(stateFile, 'utf8')) }
+  catch { return null }
+}
+async function writeState(value) {
+  const temporary = stateFile + '.verify-' + randomUUID()
+  await writeFile(temporary, JSON.stringify(value, null, 2), { mode: 0o600, flag: 'wx' })
+  await rename(temporary, stateFile)
+}
+async function pause(ms) {
+  await new Promise(resolve => setTimeout(resolve, ms))
+}
+
+const state = await readState()
+if (!state || state.status !== 'awaiting-healthcheck') process.exit(0)
+
+const previous = path.resolve(String(state.previousRelease || ''))
+if (!previous.startsWith(releases + path.sep)) {
+  await writeState({ ...state, status: 'rollback_failed', message: 'Previous release path was invalid.', finishedAt: new Date().toISOString() })
+  process.exit(1)
+}
+
+let healthy = false
+for (let attempt = 0; attempt < 25; attempt += 1) {
+  try {
+    const response = await fetch('http://127.0.0.1:8790/healthz', { signal: AbortSignal.timeout(1500) })
+    if (response.ok) {
+      const body = await response.json()
+      if (body?.ok === true && body?.service === 'aharane') {
+        healthy = true
+        break
+      }
+    }
+  } catch {}
+  await pause(1000)
+}
+
+if (healthy) {
+  await writeState({ ...state, status: 'succeeded', finishedAt: new Date().toISOString() })
+  if (['manual-files', 'manual-discard'].includes(state.source)) {
+    await rm('/var/lib/aharane/updates/manual-edit-state.json', { force: true }).catch(() => {})
+  }
+  process.exit(0)
+}
+
+const temporaryLink = path.join(root, '.current-rollback-' + randomUUID())
+try {
+  await symlink(previous, temporaryLink, 'dir')
+  await rename(temporaryLink, current)
+  await writeState({
+    ...state,
+    status: 'rolled_back',
+    message: 'The new release did not pass its local health check. The previous Aharane release was restored.',
+    finishedAt: new Date().toISOString(),
+  })
+  if (state.source === 'manual-files') {
+    await rm('/var/lib/aharane/updates/manual-edit-state.json', { force: true }).catch(() => {})
+  }
+} catch (error) {
+  await writeState({
+    ...state,
+    status: 'rollback_failed',
+    message: String(error?.message || 'Could not restore the previous release.'),
+    finishedAt: new Date().toISOString(),
+  })
+}
+process.exit(1)
+VERIFY
+chown root:root /usr/local/lib/aharane/verify-update.mjs
+chmod 0644 /usr/local/lib/aharane/verify-update.mjs
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$RELEASE"
 cp -a "$STAGING/." "$RELEASE/"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$RELEASE"
@@ -162,6 +243,7 @@ WorkingDirectory=/opt/aharane/current
 EnvironmentFile=/etc/aharane.env
 Environment=NODE_ENV=production
 ExecStart=/usr/bin/node /opt/aharane/current/src/index.js
+ExecStartPost=/usr/bin/node /usr/local/lib/aharane/verify-update.mjs
 Restart=on-failure
 RestartSec=5
 KillSignal=SIGTERM
@@ -171,7 +253,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/aharane
+ReadWritePaths=/var/lib/aharane /opt/aharane
 RestrictSUIDSGID=true
 LockPersonality=true
 

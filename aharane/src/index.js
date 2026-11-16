@@ -126,7 +126,7 @@ function sameOriginRequest(req){const origin=String(req.headers?.origin||req.get
 function allowAdminLogin(ip){const now=Date.now(),win=15*60*1000,old=adminLoginAttempts.get(ip),r=!old||now-old.startedAt>=win?{startedAt:now,count:0}:old;r.count++;adminLoginAttempts.set(ip,r);for(const [k,v] of adminLoginAttempts)if(now-v.startedAt>=win)adminLoginAttempts.delete(k);return r.count<=8}
 function requireAdmin(req, res, next) {
   const authorization = String(req.get('authorization') || '')
-  const match = authorization.match(/^Bearer\\s+(.+)$/i)
+  const match = authorization.match(/^Bearer\s+(.+)$/i)
   const bearer = match?.[1] || ''
   const cookieSession = adminSessionMatches(requestCookie(req, ADMIN_SESSION_COOKIE))
   const bearerSession = adminSessionMatches(bearer)

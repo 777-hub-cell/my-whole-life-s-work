@@ -107,7 +107,7 @@ install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$BASE" "$BASE/releases
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$STATE/data" "$STATE/updates" "$STATE/updates/uploads"
 install -d -o root -g root -m 0755 /usr/local/lib/aharane
 cat > /usr/local/lib/aharane/verify-update.mjs <<'VERIFY'
-import { readFile, rename, symlink, writeFile } from 'node:fs/promises'
+import { readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 
@@ -155,6 +155,9 @@ for (let attempt = 0; attempt < 25; attempt += 1) {
 
 if (healthy) {
   await writeState({ ...state, status: 'succeeded', finishedAt: new Date().toISOString() })
+  if (['manual-files', 'manual-discard'].includes(state.source)) {
+    await rm('/var/lib/aharane/updates/manual-edit-state.json', { force: true }).catch(() => {})
+  }
   process.exit(0)
 }
 
@@ -168,6 +171,9 @@ try {
     message: 'The new release did not pass its local health check. The previous Aharane release was restored.',
     finishedAt: new Date().toISOString(),
   })
+  if (state.source === 'manual-files') {
+    await rm('/var/lib/aharane/updates/manual-edit-state.json', { force: true }).catch(() => {})
+  }
 } catch (error) {
   await writeState({
     ...state,

@@ -23,4 +23,4 @@ See [../UPDATE-PACKAGE.md](../UPDATE-PACKAGE.md) for the required ZIP structure 
 
 ## Current scope
 
-The Control Centre includes sign-in, runtime status, WhatsApp pairing, direct ZIP deployment and a Files Manager ZIP package library. Each stored ZIP has a three-dot menu with Update Aharane and Remove ZIP actions. The individual source-file browser/editor remains a separate feature and is not yet connected in this first delivery.
+The Control Centre includes sign-in, runtime status, WhatsApp pairing, direct ZIP deployment and a Files Manager ZIP package library. Each stored ZIP has a three-dot menu with Update Aharane and Remove ZIP actions. The Files Manager also includes a separately saved source-file browser/editor for approved Aharane code and text files. Save operations do not restart the bot; Apply changes runs the project checks and restarts with automatic backup/rollback. The editor is limited to the Azure Aharane application release and does not edit the Vercel Control Centre source or environment secrets.

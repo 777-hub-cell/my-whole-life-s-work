@@ -65,3 +65,10 @@ The update only replaces application code. It does not write to `/etc/aharane.en
 **Important:** dependency installation uses npm's `--ignore-scripts` option, so package lifecycle scripts are disabled. Only deploy code and dependencies you trust. Any new environment variables required by the new code must be configured separately before the update.
 
 A valid ZIP can be created by an AI coding assistant, a local build process or another development environment. The marker file and layout are the contract; the ZIP does not need to come from GitHub.
+
+
+## Manual Files Manager editing
+
+The source-file editor is a separate workflow from ZIP deployment. It can browse approved source folders and text files. Saving individual files creates a clean backup of the active release and marks a pending manual draft; it does not restart the running bot.
+
+Choose **Apply changes & restart** to run source syntax and project checks before restarting Aharane. The systemd startup check confirms that the service becomes healthy and restores the clean backup release if the restart fails. **Discard edits** switches back to the clean backup. ZIP deployment is blocked while a manual draft is pending, so the two update methods cannot overwrite one another.

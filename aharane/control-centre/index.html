@@ -162,11 +162,50 @@
         </section>
 
         <section class="view-section" id="view-files" hidden>
-          <div class="page-heading"><div><p class="eyebrow">SOURCE WORKSPACE</p><h1>Files Manager</h1><p class="muted">Store and manage code packages independently from deployment.</p></div></div>
-          <div class="files-manager-intro">
-            <div class="files-symbol">▤</div>
-            <h2>ZIP package library</h2>
-            <p>ZIPs uploaded here are stored in Aharane's private update library. They do not change the running bot. Open a package's three-dot menu and choose <strong>Update Aharane</strong> when you are ready.</p>
+          <div class="page-heading"><div><p class="eyebrow">SOURCE WORKSPACE</p><h1>Files Manager</h1><p class="muted">Edit individual source files without using the ZIP deployment workflow.</p></div></div>
+
+          <div class="source-workspace">
+            <div class="source-toolbar">
+              <div class="source-location"><span class="field-label">CURRENT FOLDER</span><strong id="source-breadcrumb">/</strong></div>
+              <div class="source-toolbar-actions">
+                <button class="button button-outline" id="source-up" type="button" disabled>Up</button>
+                <button class="button button-outline" id="source-new-folder" type="button">New folder</button>
+                <button class="button button-dark" id="source-new-file" type="button">New file</button>
+                <button class="icon-button" id="source-refresh" type="button" aria-label="Refresh source files">↻</button>
+              </div>
+            </div>
+            <div class="source-status-row">
+              <span id="source-draft-status" class="draft-status">No unsaved file changes</span>
+              <span class="source-status-actions">
+                <button class="text-button" id="source-discard" type="button" hidden>Discard edits</button>
+                <button class="button button-dark" id="source-apply" type="button" disabled>Apply changes &amp; restart</button>
+              </span>
+            </div>
+            <div id="source-message" class="message" role="status"></div>
+            <div class="source-body">
+              <div id="source-file-list" class="source-file-list"><p class="muted">Loading Aharane source files…</p></div>
+              <div id="source-editor-panel" class="source-editor-panel" hidden>
+                <div class="source-editor-head">
+                  <div><span class="field-label">SOURCE FILE</span><strong id="source-editor-name">—</strong></div>
+                  <button class="text-button" id="source-close-editor" type="button">Close editor</button>
+                </div>
+                <textarea id="source-editor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Source code editor"></textarea>
+                <div class="source-editor-footer">
+                  <span id="source-editor-meta" class="muted">Plain text editor · 512 KB limit</span>
+                  <button class="button button-dark" id="source-save" type="button" disabled>Save file</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="manual-editor-note">
+            <strong>Manual edits are not deployed automatically</strong>
+            <p>Save individual files first. Then choose Apply changes &amp; restart to run syntax and project checks, back up the previous release and restart Aharane. You can discard pending changes to restore the clean backup.</p>
+          </div>
+
+          <div class="section-heading"><h2>ZIP package library</h2><button class="text-button" id="refresh-packages" type="button">Refresh</button></div>
+          <div class="files-manager-intro files-package-intro">
+            <p>ZIPs stored here do not change the running bot. Open a package's three-dot menu and choose <strong>Update Aharane</strong> when you want to replace the complete application release.</p>
             <div class="files-upload" id="files-dropzone" tabindex="0" role="button" aria-label="Choose or drop a ZIP package">
               <strong>Drop a ZIP package here</strong>
               <span>or select one from your phone</span>
@@ -176,12 +215,7 @@
             </div>
             <p id="files-upload-message" class="message" role="status"></p>
           </div>
-          <div class="section-heading"><h2>Stored ZIP packages</h2><button class="text-button" id="refresh-packages" type="button">Refresh</button></div>
           <div id="package-list" class="package-list"><p class="muted">Loading packages…</p></div>
-          <div class="manual-editor-note">
-            <strong>Manual file editing is separate</strong>
-            <p>The individual source-file browser and editor will live here as a separate workspace. It will not silently deploy saved edits. This first delivery connects the ZIP library and its three-dot deployment action; the manual editor is not yet enabled.</p>
-          </div>
         </section>
       </main>
     </div>

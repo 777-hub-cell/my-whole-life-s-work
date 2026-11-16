@@ -6,6 +6,14 @@ const ROUTES = new Map([
   ['update/status', '/api/update/status'],
   ['files/packages', '/api/files/packages'],
   ['files/packages/remove', '/api/files/packages/remove'],
+  ['files/tree', '/api/files/tree'],
+  ['files/preview', '/api/files/preview'],
+  ['files/content', '/api/files/content'],
+  ['files', '/api/files'],
+  ['files/delete', '/api/files/delete'],
+  ['files/apply', '/api/files/apply'],
+  ['files/discard', '/api/files/discard'],
+  ['files/draft-status', '/api/files/draft-status'],
   ['update/upload/start', '/api/update/upload/start'],
   ['update/upload/chunk', '/api/update/upload/chunk'],
   ['update/validate', '/api/update/validate'],
@@ -62,7 +70,7 @@ function getUpstream() {
   return { url, clientId, clientSecret }
 }
 
-async function upstreamRequest(path, token, body, method = 'GET') {
+async function upstreamRequest(path, token, body, method = 'GET', search = '') {
   const { url, clientId, clientSecret } = getUpstream()
   const headers = {
     Accept: 'application/json',
@@ -74,7 +82,7 @@ async function upstreamRequest(path, token, body, method = 'GET') {
     headers['CF-Access-Client-Id'] = clientId
     headers['CF-Access-Client-Secret'] = clientSecret
   }
-  const target = new URL(path, url.origin)
+  const target = new URL(path + search, url.origin)
   const response = await fetch(target, {
     method,
     headers,
@@ -97,8 +105,8 @@ export const config = {
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, max-age=0')
   res.setHeader('X-Content-Type-Options', 'nosniff')
-  if (!['GET', 'POST'].includes(req.method)) {
-    res.setHeader('Allow', 'GET, POST')
+  if (!['GET', 'POST', 'PUT'].includes(req.method)) {
+    res.setHeader('Allow', 'GET, POST, PUT')
     return sendJson(res, 405, { ok: false, error: 'Method not allowed.' })
   }
 
@@ -108,7 +116,7 @@ export default async function handler(req, res) {
     return sendJson(res, 404, { ok: false, error: 'Not found.' })
   }
 
-  if (req.method === 'POST' && !sameOrigin(req)) {
+  if (req.method !== 'GET' && !sameOrigin(req)) {
     return sendJson(res, 403, { ok: false, error: 'Cross-origin requests are not allowed.' })
   }
 
@@ -132,13 +140,14 @@ export default async function handler(req, res) {
 
   const upstreamPath = ROUTES.get(route)
   if (!upstreamPath) return sendJson(res, 404, { ok: false, error: 'This control-centre action is not available.' })
-  if (req.method === 'POST' && !req.body) return sendJson(res, 400, { ok: false, error: 'A JSON request body is required.' })
+  if (req.method !== 'GET' && !req.body) return sendJson(res, 400, { ok: false, error: 'A JSON request body is required.' })
 
   const token = getCookie(req, SESSION_COOKIE)
   if (token.length < 32 || token.length > 512) return sendJson(res, 401, { ok: false, error: 'Sign in to Aharane again.' })
 
   try {
-    const result = await upstreamRequest(upstreamPath, token, req.method === 'POST' ? req.body : undefined, req.method)
+    const requestUrl = new URL(req.url || '/', 'https://aharane-control-centre.invalid')
+    const result = await upstreamRequest(upstreamPath, token, req.method === 'GET' ? undefined : req.body, req.method, requestUrl.search)
     res.statusCode = result.status
     res.setHeader('Content-Type', result.contentType)
     res.end(result.text)

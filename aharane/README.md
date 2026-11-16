@@ -99,7 +99,7 @@ ZIP updates install to a fresh directory under `/opt/aharane/releases`, atomical
 
 ## Aharane Control Centre
 
-The separate Vercel project lives under `aharane/control-centre`. It provides private sign-in, runtime status, WhatsApp pairing, direct ZIP deployment and a ZIP package library in the Files Manager. Each stored package has a three-dot menu with **Update Aharane** and **Remove ZIP** actions. The manual source-file browser/editor remains separate and is planned as a distinct feature.
+The separate Vercel project lives under `aharane/control-centre`. It provides private sign-in, runtime status, WhatsApp pairing, direct ZIP deployment and a ZIP package library in the Files Manager. Each stored package has a three-dot menu with **Update Aharane** and **Remove ZIP** actions. The Files Manager also includes a separately saved source-file browser/editor for approved Aharane code and text files under `src`, `public`, `scripts`, `test` and `examples`. It creates a clean release backup before the first edit, runs project checks before applying changes, restarts Aharane and uses the startup health check to roll back failures. Pending edits can be discarded to restore the clean backup. The editor does not expose environment variables, WhatsApp auth or persistent data.
 
 The Control Centre requires an authenticated HTTPS tunnel to Aharane's loopback API at `127.0.0.1:8790`. Never bind that listener to a public interface. See [control-centre/README.md](control-centre/README.md).
 

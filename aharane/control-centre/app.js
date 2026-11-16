@@ -5,6 +5,11 @@ const MAX_ZIP_BYTES = 50 * 1024 * 1024
 let selectedFile = null
 let validatedUpdateId = ''
 let pollingTimer = null
+let sourceFolder = ''
+let sourceFile = null
+let sourceOriginal = ''
+let sourceHash = ''
+let sourceDirty = false
 
 function showMessage(target, message, kind = '') {
   const element = typeof target === 'string' ? $(target) : target
@@ -51,7 +56,11 @@ function setView(name) {
   $('#page-name').textContent = titles[name] || 'Overview'
   if (name === 'overview') refreshStatus().catch(error => showMessage('#overview-message', error.message, 'error'))
   if (name === 'deploy') refreshUpdateStatus().catch(error => showMessage('#deploy-message', error.message, 'error'))
-  if (name === 'files') refreshPackages().catch(error => showMessage('#files-upload-message', error.message, 'error'))
+  if (name === 'files') {
+    refreshPackages().catch(error => showMessage('#files-upload-message', error.message, 'error'))
+    refreshDraftStatus().catch(error => showMessage('#source-message', error.message, 'error'))
+    loadSourceFolder('').catch(error => showMessage('#source-message', error.message, 'error'))
+  }
 }
 
 async function refreshStatus() {
@@ -141,6 +150,231 @@ async function refreshPackages() {
     row.append(icon, info, version, actions)
     list.append(row)
   }
+}
+
+function setSourceMessage(message, kind = '') {
+  showMessage('#source-message', message, kind)
+}
+
+async function refreshDraftStatus() {
+  const status = await api('files/draft-status')
+  $('#source-draft-status').textContent = status.pending
+    ? `${status.changedCount} saved file change${status.changedCount === 1 ? '' : 's'} waiting to be applied`
+    : 'No saved file changes'
+  $('#source-apply').disabled = !status.pending
+  $('#source-discard').hidden = !status.pending
+  return status
+}
+
+function updateSourceBreadcrumb() {
+  const parts = sourceFolder ? sourceFolder.split('/') : []
+  const root = document.createElement('button')
+  root.type = 'button'
+  root.className = 'crumb-button'
+  root.textContent = 'Aharane'
+  root.addEventListener('click', () => { void loadSourceFolder('') })
+  const breadcrumb = $('#source-breadcrumb')
+  breadcrumb.replaceChildren(root)
+  for (let index = 0; index < parts.length; index += 1) {
+    const separator = document.createElement('span')
+    separator.textContent = '/'
+    separator.className = 'crumb-separator'
+    breadcrumb.append(separator)
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'crumb-button'
+    button.textContent = parts[index]
+    const path = parts.slice(0, index + 1).join('/')
+    button.addEventListener('click', () => { void loadSourceFolder(path) })
+    breadcrumb.append(button)
+  }
+  $('#source-up').disabled = !sourceFolder
+  $('#source-new-file').disabled = !sourceFolder
+  $('#source-new-folder').disabled = !sourceFolder
+}
+
+async function loadSourceFolder(folder) {
+  if (sourceDirty && !window.confirm('Discard unsaved editor typing and close this file?')) return
+  sourceFolder = String(folder || '')
+  sourceFile = null
+  sourceOriginal = ''
+  sourceHash = ''
+  sourceDirty = false
+  $('#source-editor-panel').hidden = true
+  updateSourceBreadcrumb()
+  $('#source-file-list').replaceChildren()
+  const loading = document.createElement('p')
+  loading.className = 'muted'
+  loading.textContent = 'Loading source files…'
+  $('#source-file-list').append(loading)
+  const query = sourceFolder ? '?item=' + encodeURIComponent(sourceFolder) : ''
+  const result = await api('files/tree' + query)
+  const list = $('#source-file-list')
+  list.replaceChildren()
+  if (!result.children?.length) {
+    const empty = document.createElement('p')
+    empty.className = 'muted'
+    empty.textContent = 'This folder is empty.'
+    list.append(empty)
+  }
+  for (const item of result.children || []) {
+    const row = document.createElement('div')
+    row.className = 'source-file-row'
+    const name = document.createElement('button')
+    name.className = 'source-file-open'
+    name.type = 'button'
+    const icon = document.createElement('span')
+    icon.className = 'source-file-icon'
+    icon.textContent = item.type === 'folder' ? '▰' : '▤'
+    const text = document.createElement('span')
+    text.className = 'source-file-label'
+    const title = document.createElement('strong')
+    title.textContent = item.name
+    const meta = document.createElement('small')
+    meta.textContent = item.type === 'folder' ? 'Folder' : formatBytes(item.size)
+    text.append(title, meta)
+    name.append(icon, text)
+    name.addEventListener('click', () => {
+      if (item.type === 'folder') void loadSourceFolder(item.path)
+      else void openSourceFile(item.path)
+    })
+    row.append(name)
+    if (item.type === 'file' && !['README.md', 'UPDATE-PACKAGE.md', 'LICENSE', 'AGENTS.md'].includes(item.name)) {
+      const deleteButton = document.createElement('button')
+      deleteButton.className = 'source-file-delete'
+      deleteButton.type = 'button'
+      deleteButton.textContent = 'Delete'
+      deleteButton.addEventListener('click', () => { void deleteSourceFile(item.path) })
+      row.append(deleteButton)
+    }
+    list.append(row)
+  }
+  await refreshDraftStatus()
+}
+
+async function openSourceFile(path) {
+  if (sourceDirty && !window.confirm('Discard unsaved editor typing and open another file?')) return
+  try {
+    const result = await api('files/preview?item=' + encodeURIComponent(path))
+    sourceFile = result.path
+    sourceOriginal = result.content
+    sourceHash = result.sha256
+    sourceDirty = false
+    $('#source-editor-name').textContent = result.path
+    $('#source-editor').value = result.content
+    $('#source-save').disabled = true
+    $('#source-editor-meta').textContent = `${result.language.toUpperCase() || 'TEXT'} · ${formatBytes(result.size)} · 512 KB limit`
+    $('#source-editor-panel').hidden = false
+    $('#source-editor').focus()
+    setSourceMessage('Opened ' + result.path + '.', 'success')
+  } catch (error) {
+    setSourceMessage(error.message, 'error')
+  }
+}
+
+async function saveSourceFile() {
+  if (!sourceFile) return
+  const content = $('#source-editor').value
+  $('#source-save').disabled = true
+  try {
+    const result = await api('files/content', {
+      method: 'PUT',
+      body: JSON.stringify({ path: sourceFile, content, expectedSha256: sourceHash }),
+    })
+    sourceOriginal = content
+    sourceHash = result.sha256
+    sourceDirty = false
+    $('#source-save').disabled = true
+    await refreshDraftStatus()
+    const savedPath = sourceFile
+    setSourceMessage('Saved ' + savedPath + '. It is not running until you apply the changes.', 'success')
+    await loadSourceFolder(sourceFolder)
+    await openSourceFile(savedPath)
+  } catch (error) {
+    setSourceMessage(error.message, 'error')
+  } finally {
+    $('#source-save').disabled = false
+  }
+}
+
+async function createSourceItem(type) {
+  const name = window.prompt(type === 'folder' ? 'New folder name' : 'New source filename')
+  if (!name || !name.trim()) return
+  try {
+    const result = await api('files', {
+      method: 'POST',
+      body: JSON.stringify({ parentPath: sourceFolder, name: name.trim(), type, content: type === 'file' ? '' : undefined }),
+    })
+    await loadSourceFolder(sourceFolder)
+    if (type === 'file') await openSourceFile(result.path)
+    setSourceMessage((type === 'folder' ? 'Created folder ' : 'Created file ') + result.path + '.', 'success')
+  } catch (error) {
+    setSourceMessage(error.message, 'error')
+  }
+}
+
+async function deleteSourceFile(path) {
+  if (!window.confirm('Delete ' + path + '? A backup will be kept until the edits are applied or discarded.')) return
+  try {
+    await api('files/delete', { method: 'POST', body: JSON.stringify({ paths: [path] }) })
+    if (sourceFile === path) {
+      sourceFile = null
+      sourceDirty = false
+      $('#source-editor-panel').hidden = true
+    }
+    await loadSourceFolder(sourceFolder)
+    setSourceMessage('Deleted ' + path + '. Apply changes to make the deletion active.', 'success')
+  } catch (error) {
+    setSourceMessage(error.message, 'error')
+  }
+}
+
+async function applySourceChanges(discard = false) {
+  const action = discard ? 'Discard saved file edits and restore the previous source release?' : 'Apply the saved source edits and restart Aharane?'
+  if (!window.confirm(action)) return
+  const button = discard ? $('#source-discard') : $('#source-apply')
+  button.disabled = true
+  try {
+    await api(discard ? 'files/discard' : 'files/apply', {
+      method: 'POST',
+      body: JSON.stringify({ confirm: true }),
+    })
+    setSourceMessage(discard ? 'Restoring the clean backup and restarting Aharane…' : 'Checks passed. Restarting Aharane with your saved edits…', 'success')
+    pollManualEditStatus()
+  } catch (error) {
+    button.disabled = false
+    setSourceMessage(error.message, 'error')
+  }
+}
+
+function pollManualEditStatus() {
+  if (pollingTimer) clearInterval(pollingTimer)
+  let attempts = 0
+  pollingTimer = setInterval(async () => {
+    attempts += 1
+    try {
+      const update = await refreshUpdateStatus()
+      const draft = await refreshDraftStatus()
+      if (['succeeded', 'rolled_back', 'failed', 'rollback_failed'].includes(update.status)) {
+        clearInterval(pollingTimer)
+        pollingTimer = null
+        const success = update.status === 'succeeded'
+        setSourceMessage(update.message || (success ? 'Aharane restarted successfully.' : 'The restart did not pass its health check.'), success ? 'success' : 'error')
+        if (!draft.pending) {
+          sourceFile = null
+          sourceDirty = false
+          await loadSourceFolder(sourceFolder)
+        }
+      }
+    } catch (error) {
+      setSourceMessage(error.message, 'error')
+    }
+    if (attempts > 90) {
+      clearInterval(pollingTimer)
+      pollingTimer = null
+      setSourceMessage('Status polling stopped. Refresh the Files Manager to check the deployment result.', 'error')
+    }
+  }, 2000)
 }
 
 async function useStoredPackage(updateId) {
@@ -505,6 +739,28 @@ $('#files-zip-input').addEventListener('change', event => {
 })
 $('#refresh-packages').addEventListener('click', () => {
   refreshPackages().catch(error => showMessage('#files-upload-message', error.message, 'error'))
+})
+$('#source-up').addEventListener('click', () => {
+  const parts = sourceFolder.split('/').filter(Boolean)
+  void loadSourceFolder(parts.slice(0, -1).join('/'))
+})
+$('#source-refresh').addEventListener('click', () => {
+  loadSourceFolder(sourceFolder).catch(error => setSourceMessage(error.message, 'error'))
+})
+$('#source-new-file').addEventListener('click', () => { void createSourceItem('file') })
+$('#source-new-folder').addEventListener('click', () => { void createSourceItem('folder') })
+$('#source-save').addEventListener('click', () => { void saveSourceFile() })
+$('#source-close-editor').addEventListener('click', () => {
+  if (sourceDirty && !window.confirm('Discard unsaved editor typing and close this file?')) return
+  sourceDirty = false
+  sourceFile = null
+  $('#source-editor-panel').hidden = true
+})
+$('#source-discard').addEventListener('click', () => { void applySourceChanges(true) })
+$('#source-apply').addEventListener('click', () => { void applySourceChanges(false) })
+$('#source-editor').addEventListener('input', () => {
+  sourceDirty = $('#source-editor').value !== sourceOriginal
+  $('#source-save').disabled = !sourceDirty
 })
 
 // A valid session cookie is HttpOnly; status is the session check.

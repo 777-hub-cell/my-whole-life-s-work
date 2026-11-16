@@ -193,3 +193,53 @@ input:focus { border-color: #222; box-shadow: 0 0 0 2px #11111112; }
 .manual-editor-note strong { font-size: 11px; }
 .manual-editor-note p { max-width: 650px; color: #777; font-size: 10px; line-height: 1.6; }
 @media (max-width:760px) { .package-version { display:none; } .package-row { gap: 9px; padding: 10px; } }
+
+.source-workspace { background: #fff; border: 1px solid #e5e5e1; border-radius: 6px; overflow: hidden; }
+.source-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 13px; padding: 15px 17px; border-bottom: 1px solid #eee; }
+.source-location { min-width: 0; }
+.source-location strong { font-size: 12px; overflow-wrap: anywhere; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.source-toolbar-actions { display: flex; gap: 6px; align-items: center; }
+.source-toolbar-actions .button { min-height: 35px; padding: 0 10px; font-size: 10px; }
+.source-toolbar-actions .icon-button { flex: none; }
+.crumb-button { border: 0; background: transparent; padding: 0; color: #444; font-size: 11px; font-weight: 650; }
+.crumb-button:hover { text-decoration: underline; }
+.crumb-separator { color: #aaa; font-size: 10px; padding: 0 3px; }
+.source-status-row { min-height: 49px; padding: 8px 17px; background: #fafaf9; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #eee; }
+.draft-status { color: #777; font-size: 10px; }
+.source-status-actions { display: flex; align-items: center; gap: 14px; }
+.source-status-actions .button { min-height: 33px; font-size: 10px; }
+.source-status-actions .button:disabled { opacity: .35; }
+.source-body { display: grid; grid-template-columns: minmax(220px, .75fr) minmax(0, 1.25fr); min-height: 300px; }
+.source-file-list { min-width: 0; border-right: 1px solid #eee; padding: 9px; }
+.source-file-row { display: flex; align-items: center; gap: 5px; border-bottom: 1px solid #f0f0ed; padding: 2px 4px; min-width: 0; }
+.source-file-open { border: 0; background: transparent; color: #171717; display: flex; align-items: center; gap: 9px; text-align: left; flex: 1; min-width: 0; padding: 9px 4px; }
+.source-file-open:hover { background: #f8f8f6; }
+.source-file-icon { width: 21px; flex: none; text-align: center; font-size: 14px; color: #777; }
+.source-file-label { display: grid; gap: 3px; min-width: 0; }
+.source-file-label strong { font-size: 11px; font-weight: 600; overflow-wrap: anywhere; }
+.source-file-label small { color: #888; font-size: 9px; }
+.source-file-delete { border: 0; background: transparent; color: #999; font-size: 9px; padding: 6px; }
+.source-file-delete:hover { color: #a12525; }
+.source-editor-panel { min-width: 0; display: flex; flex-direction: column; }
+.source-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid #eee; }
+.source-editor-head strong { font-size: 11px; overflow-wrap: anywhere; }
+#source-editor { display: block; width: 100%; min-height: 300px; resize: vertical; border: 0; border-radius: 0; outline: none; padding: 14px; background: #fbfbfa; color: #252525; font: 11px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; tab-size: 2; white-space: pre; overflow: auto; }
+#source-editor:focus { box-shadow: inset 0 0 0 1px #ddd; }
+.source-editor-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 13px; border-top: 1px solid #eee; }
+.source-editor-footer .muted { font-size: 9px; }
+.source-editor-footer .button { min-height: 34px; font-size: 10px; }
+.files-package-intro { max-width: none; padding: 12px 15px; }
+.files-package-intro > p:first-child { margin-top: 3px; }
+.manual-editor-note { padding: 13px 2px 17px; }
+@media (max-width:760px) {
+  .source-toolbar { align-items: flex-start; flex-direction: column; padding: 13px; }
+  .source-toolbar-actions { width: 100%; flex-wrap: wrap; }
+  .source-toolbar-actions .button { flex: 1; }
+  .source-status-row { align-items: flex-start; flex-direction: column; padding: 10px 13px; }
+  .source-status-actions { width: 100%; justify-content: space-between; }
+  .source-body { grid-template-columns: 1fr; }
+  .source-file-list { border-right: 0; border-bottom: 1px solid #eee; }
+  #source-editor { min-height: 260px; font-size: 10px; }
+  .source-file-row { gap: 2px; }
+  .source-editor-footer { align-items: flex-start; }
+}

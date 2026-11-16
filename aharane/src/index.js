@@ -1,9 +1,9 @@
-import { appendFile, mkdir, readFile, realpath, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
-import { createReadStream } from 'node:fs'
+import { appendFile, cp, lstat, mkdir, open, readFile, realpath, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { constants as fsConstants, createReadStream } from 'node:fs'
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { resolve, join, dirname, sep } from 'node:path'
+import { resolve, join, dirname, sep, relative, isAbsolute, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import pino from 'pino'
@@ -32,7 +32,12 @@ const RELEASES_DIR = join(APP_BASE, 'releases')
 const UPDATE_DIR = join(DATA_DIR, 'updates')
 const UPLOADS_DIR = join(UPDATE_DIR, 'uploads')
 const UPDATE_STATE_FILE = join(UPDATE_DIR, 'state.json')
+const MANUAL_EDIT_STATE_FILE = join(UPDATE_DIR, 'manual-edit-state.json')
 const UPDATE_CHUNK_BYTES = 1024 * 1024
+const MAX_SOURCE_FILE_BYTES = 512 * 1024
+const SOURCE_DIRS = new Set(['src', 'public', 'scripts', 'test', 'examples'])
+const SOURCE_ROOT_FILES = new Set(['README.md', 'UPDATE-PACKAGE.md', 'LICENSE', 'AGENTS.md'])
+const SOURCE_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.json', '.md', '.html', '.css', '.txt', '.yml', '.yaml'])
 const execFileAsync = promisify(execFile)
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' })
 
@@ -151,6 +156,172 @@ async function currentBotVersion() {
 
 async function currentUpdateState() {
   return await readJsonFile(UPDATE_STATE_FILE) || { status: 'idle' }
+}
+
+function sourcePathError(status, code, message) {
+  throw Object.assign(new Error(message), { status, code })
+}
+
+async function safeSourceTarget(value, { allowMissing = false } = {}) {
+  let relativePath = String(value || '').replace(/^\/+/, '')
+  if (!relativePath || relativePath.length > 512) sourcePathError(400, 'PATH_REQUIRED', 'Choose a source file or folder using a path shorter than 512 characters.')
+  const normalized = normalizeUpdatePath(relativePath)
+  const parts = normalized.path.split('/')
+  if (parts.length > 8 || parts.some(part => part.startsWith('.'))) sourcePathError(403, 'PATH_NOT_ALLOWED', 'Hidden files and deeply nested paths are not available in the source editor.')
+  if (!SOURCE_DIRS.has(parts[0]) && !(parts.length === 1 && SOURCE_ROOT_FILES.has(parts[0]))) {
+    sourcePathError(403, 'PATH_NOT_ALLOWED', 'That path is outside the editable Aharane source workspace.')
+  }
+  if (parts.length > 1 && SOURCE_ROOT_FILES.has(parts[0])) {
+    sourcePathError(403, 'PATH_NOT_ALLOWED', 'A root documentation file cannot contain child paths.')
+  }
+  if (parts.length > 1 && !SOURCE_EXTENSIONS.has(extname(parts.at(-1)).toLowerCase())) {
+    sourcePathError(403, 'FILE_TYPE_NOT_ALLOWED', 'Only approved text and source files are available in the editor.')
+  }
+  const base = await currentReleaseDirectory()
+  let full = base
+  let info = null
+  for (let index = 0; index < parts.length; index += 1) {
+    full = join(full, parts[index])
+    info = await lstat(full).catch(error => {
+      if (error?.code === 'ENOENT') return null
+      throw error
+    })
+    if (!info && (!allowMissing || index < parts.length - 1)) {
+      sourcePathError(404, 'FILE_NOT_FOUND', 'The selected source file or folder does not exist.')
+    }
+    if (info?.isSymbolicLink()) sourcePathError(403, 'SYMLINK_BLOCKED', 'Symbolic links are not available in the source editor.')
+    if (info && index < parts.length - 1 && !info.isDirectory()) {
+      sourcePathError(400, 'NOT_A_FOLDER', 'A parent path is not a folder.')
+    }
+  }
+  const relativePathFromRoot = relative(base, full)
+  if (!relativePathFromRoot || relativePathFromRoot === '..' || relativePathFromRoot.startsWith('..' + sep) || isAbsolute(relativePathFromRoot)) {
+    sourcePathError(403, 'PATH_ESCAPE', 'The selected path is outside Aharane’s release directory.')
+  }
+  if (info) {
+    const actual = await realpath(full)
+    const actualRelative = relative(base, actual)
+    if (actualRelative === '..' || actualRelative.startsWith('..' + sep) || isAbsolute(actualRelative)) {
+      sourcePathError(403, 'PATH_ESCAPE', 'The selected file resolves outside Aharane’s release directory.')
+    }
+  }
+  return { path: normalized.path, parts, full, info, base }
+}
+
+async function listSourceFiles(relativePath = '') {
+  if (!relativePath) {
+    const rootEntries = []
+    for (const name of [...SOURCE_DIRS, ...SOURCE_ROOT_FILES]) {
+      const target = await safeSourceTarget(name).catch(() => null)
+      if (!target?.info) continue
+      rootEntries.push({
+        name,
+        path: name,
+        type: target.info.isDirectory() ? 'folder' : 'file',
+        size: target.info.isFile() ? target.info.size : null,
+        modified: target.info.mtime.toISOString(),
+        readOnly: false,
+      })
+    }
+    rootEntries.sort((a, b) => Number(b.type === 'folder') - Number(a.type === 'folder') || a.name.localeCompare(b.name))
+    return { path: '', children: rootEntries }
+  }
+
+  const parent = await safeSourceTarget(relativePath)
+  if (!parent.info.isDirectory()) sourcePathError(400, 'NOT_A_FOLDER', 'Choose a folder to browse.')
+  const rows = await readdir(parent.full, { withFileTypes: true })
+  const children = []
+  for (const row of rows) {
+    if (row.name.startsWith('.')) continue
+    const childPath = parent.path + '/' + row.name
+    const target = await safeSourceTarget(childPath).catch(() => null)
+    if (!target?.info || target.info.isSymbolicLink()) continue
+    if (target.info.isDirectory()) {
+      children.push({ name: row.name, path: childPath, type: 'folder', size: null, modified: target.info.mtime.toISOString(), readOnly: false })
+    } else if (target.info.isFile() && SOURCE_EXTENSIONS.has(extname(row.name).toLowerCase())) {
+      children.push({
+        name: row.name,
+        path: childPath,
+        type: 'file',
+        size: target.info.size,
+        modified: target.info.mtime.toISOString(),
+        readOnly: false,
+      })
+    }
+  }
+  children.sort((a, b) => Number(b.type === 'folder') - Number(a.type === 'folder') || a.name.localeCompare(b.name))
+  return { path: parent.path, children: children.slice(0, 500) }
+}
+
+async function ensureManualEditBackup() {
+  const currentRelease = await currentReleaseDirectory()
+  const existing = await readJsonFile(MANUAL_EDIT_STATE_FILE)
+  if (existing?.status === 'pending') {
+    if (existing.currentRelease !== currentRelease) {
+      sourcePathError(409, 'MANUAL_CHANGES_STALE', 'Saved file edits belong to a previous release. Apply or discard those edits before editing this version.')
+    }
+    return existing
+  }
+  if (!currentRelease.startsWith(RELEASES_DIR + sep)) {
+    sourcePathError(409, 'RELEASE_PATH_INVALID', 'The current Aharane release cannot be backed up safely.')
+  }
+  const backup = join(RELEASES_DIR, `before-manual-edit-${Date.now()}-${randomUUID().slice(0, 8)}`)
+  await cp(currentRelease, backup, {
+    recursive: true,
+    errorOnExist: true,
+    force: false,
+    filter: source => {
+      const segments = source.split(sep)
+      return !segments.includes('node_modules') && !segments.includes('.git')
+    },
+  })
+  const modulesPath = join(currentRelease, 'node_modules')
+  const modulesInfo = await stat(modulesPath).catch(() => null)
+  if (modulesInfo?.isDirectory()) {
+    await symlink(await realpath(modulesPath), join(backup, 'node_modules'), 'dir')
+  }
+  const state = {
+    status: 'pending',
+    currentRelease,
+    previousRelease: backup,
+    modifiedPaths: [],
+    createdAt: new Date().toISOString(),
+  }
+  await writeJsonAtomic(MANUAL_EDIT_STATE_FILE, state)
+  return state
+}
+
+async function recordManualEdit(sourcePath, action) {
+  const state = await ensureManualEditBackup()
+  const byPath = new Map((state.modifiedPaths || []).map(item => [item.path, item]))
+  byPath.set(sourcePath, { path: sourcePath, action, modifiedAt: new Date().toISOString() })
+  state.modifiedPaths = [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path))
+  await writeJsonAtomic(MANUAL_EDIT_STATE_FILE, state)
+  return state
+}
+
+async function validateSourceContent(sourcePath, content) {
+  if (Buffer.byteLength(content, 'utf8') > MAX_SOURCE_FILE_BYTES) {
+    sourcePathError(413, 'FILE_TOO_LARGE', 'Source files must be 512 KB or smaller in the editor.')
+  }
+  const extension = extname(sourcePath).toLowerCase()
+  if (extension === '.json') {
+    try { JSON.parse(content) }
+    catch { sourcePathError(400, 'INVALID_JSON', 'The JSON file is not valid JSON.') }
+  }
+  if (['.js', '.mjs', '.cjs'].includes(extension)) {
+    const temporary = join(UPDATE_DIR, '.source-check-' + randomUUID() + extension)
+    try {
+      await writeFile(temporary, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+      await execFileAsync(process.execPath, ['--check', temporary], { timeout: 10_000, maxBuffer: 32 * 1024 })
+    } catch (error) {
+      const message = String(error?.stderr || error?.message || 'JavaScript syntax validation failed.')
+        .replaceAll(temporary, sourcePath).split('\n').slice(0, 4).join(' ').slice(0, 360)
+      sourcePathError(400, 'INVALID_SOURCE_SYNTAX', message || 'JavaScript syntax validation failed.')
+    } finally {
+      await rm(temporary, { force: true }).catch(() => {})
+    }
+  }
 }
 
 async function assembleUpdateArchive(updateId) {
@@ -487,10 +658,12 @@ app.post('/api/pair-code', requireAdmin, async (req, res) => {
   }
 })
 app.get('/api/update/status', requireAdmin, async (_req, res) => {
+  const manual = await readJsonFile(MANUAL_EDIT_STATE_FILE)
   res.json({
     ok: true,
     currentVersion: await currentBotVersion(),
     update: await currentUpdateState(),
+    manualEdits: { pending: manual?.status === 'pending', changedCount: manual?.modifiedPaths?.length || 0 },
     maxArchiveBytes: MAX_ARCHIVE_BYTES,
   })
 })
@@ -574,6 +747,224 @@ app.post('/api/update/upload/chunk', requireAdmin, async (req, res) => {
   }
 })
 
+app.get('/api/files/tree', requireAdmin, async (req, res) => {
+  try {
+    const result = await listSourceFiles(String(req.query.item || ''))
+    const manual = await readJsonFile(MANUAL_EDIT_STATE_FILE)
+    res.json({ ok: true, ...result, pending: manual?.status === 'pending', changedCount: manual?.modifiedPaths?.length || 0 })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not list Aharane source files.') })
+  }
+})
+
+app.get('/api/files/preview', requireAdmin, async (req, res) => {
+  let handle
+  try {
+    const target = await safeSourceTarget(req.query.item)
+    if (!target.info?.isFile()) return res.status(400).json({ ok: false, error: 'Choose a source file to preview.' })
+    if (!SOURCE_EXTENSIONS.has(extname(target.path).toLowerCase()) && !SOURCE_ROOT_FILES.has(target.parts[0])) {
+      return res.status(403).json({ ok: false, error: 'This file type is not available in the source editor.' })
+    }
+    if (target.info.size > MAX_SOURCE_FILE_BYTES) return res.status(413).json({ ok: false, error: 'This source file exceeds the 512 KB editor limit.' })
+    handle = await open(target.full, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0))
+    const info = await handle.stat()
+    if (!info.isFile() || info.size > MAX_SOURCE_FILE_BYTES) return res.status(413).json({ ok: false, error: 'The file changed or exceeds the editor limit.' })
+    const content = await handle.readFile('utf8')
+    const sha256 = createHash('sha256').update(content).digest('hex')
+    const manual = await readJsonFile(MANUAL_EDIT_STATE_FILE)
+    res.json({
+      ok: true,
+      path: target.path,
+      name: target.parts.at(-1),
+      content,
+      size: info.size,
+      modified: info.mtime.toISOString(),
+      sha256,
+      language: extname(target.path).slice(1) || 'text',
+      pending: manual?.status === 'pending',
+    })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not read the selected source file.') })
+  } finally {
+    await handle?.close().catch(() => {})
+  }
+})
+
+app.get('/api/files/draft-status', requireAdmin, async (_req, res) => {
+  const manual = await readJsonFile(MANUAL_EDIT_STATE_FILE)
+  res.json({
+    ok: true,
+    pending: manual?.status === 'pending',
+    modifiedPaths: manual?.status === 'pending' ? (manual.modifiedPaths || []) : [],
+    changedCount: manual?.status === 'pending' ? (manual.modifiedPaths || []).length : 0,
+  })
+})
+
+app.post('/api/files', requireAdmin, async (req, res) => {
+  try {
+    if (updateInProgress) return res.status(409).json({ ok: false, error: 'Aharane is currently deploying. File changes are disabled.' })
+    const parentPath = String(req.body?.parentPath || '')
+    const name = String(req.body?.name || '').trim()
+    const type = String(req.body?.type || 'file')
+    const parent = await safeSourceTarget(parentPath)
+    if (!parent.info?.isDirectory()) return res.status(400).json({ ok: false, error: 'Choose an existing source folder.' })
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/.test(name) || name.startsWith('.')) {
+      return res.status(400).json({ ok: false, error: 'Use a simple file or folder name without hidden path segments.' })
+    }
+    const childPath = parent.path + '/' + name
+    const target = await safeSourceTarget(childPath, { allowMissing: true })
+    if (target.info) return res.status(409).json({ ok: false, error: 'A file or folder with that name already exists.' })
+    if (type === 'folder') {
+      if (req.body?.content !== undefined) return res.status(400).json({ ok: false, error: 'Folders cannot contain file content.' })
+      await ensureManualEditBackup()
+      await mkdir(target.full, { mode: 0o750 })
+      await recordManualEdit(target.path, 'created-folder')
+      return res.status(201).json({ ok: true, path: target.path, type: 'folder' })
+    }
+    if (type !== 'file' || !SOURCE_EXTENSIONS.has(extname(name).toLowerCase())) {
+      return res.status(400).json({ ok: false, error: 'Choose a supported source-file extension such as .js, .json, .md, .html or .css.' })
+    }
+    const content = String(req.body?.content ?? '')
+    await validateSourceContent(target.path, content)
+    await ensureManualEditBackup()
+    await writeFile(target.full, content, { encoding: 'utf8', mode: 0o640, flag: 'wx' })
+    await recordManualEdit(target.path, 'created-file')
+    res.status(201).json({ ok: true, path: target.path, type: 'file', size: Buffer.byteLength(content) })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not create the source file or folder.') })
+  }
+})
+
+app.put('/api/files/content', requireAdmin, async (req, res) => {
+  let handle
+  try {
+    if (updateInProgress) return res.status(409).json({ ok: false, error: 'Aharane is currently deploying. File changes are disabled.' })
+    const target = await safeSourceTarget(req.body?.path)
+    if (!target.info?.isFile()) return res.status(400).json({ ok: false, error: 'Choose an existing source file.' })
+    const content = String(req.body?.content ?? '')
+    await validateSourceContent(target.path, content)
+    handle = await open(target.full, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0))
+    const original = await handle.readFile()
+    const currentHash = createHash('sha256').update(original).digest('hex')
+    await handle.close()
+    handle = null
+    if (req.body?.expectedSha256 && req.body.expectedSha256 !== currentHash) {
+      return res.status(409).json({ ok: false, error: 'This file changed after you opened it. Reload it before saving to avoid overwriting newer content.' })
+    }
+    await ensureManualEditBackup()
+    const temporary = target.full + '.aharane-edit-' + randomUUID()
+    try {
+      await writeFile(temporary, content, { encoding: 'utf8', mode: 0o640, flag: 'wx' })
+      await rename(temporary, target.full)
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => {})
+      throw error
+    }
+    await recordManualEdit(target.path, 'modified-file')
+    res.json({
+      ok: true,
+      path: target.path,
+      size: Buffer.byteLength(content),
+      sha256: createHash('sha256').update(content).digest('hex'),
+      pending: true,
+    })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not save the source file.') })
+  } finally {
+    await handle?.close().catch(() => {})
+  }
+})
+
+app.post('/api/files/delete', requireAdmin, async (req, res) => {
+  try {
+    if (updateInProgress) return res.status(409).json({ ok: false, error: 'Aharane is currently deploying. File changes are disabled.' })
+    const paths = Array.isArray(req.body?.paths) ? [...new Set(req.body.paths.map(String))] : []
+    if (!paths.length || paths.length > 50) return res.status(400).json({ ok: false, error: 'Choose between 1 and 50 source files.' })
+    const targets = []
+    for (const sourcePath of paths) {
+      const target = await safeSourceTarget(sourcePath)
+      if (!target.info?.isFile()) return res.status(400).json({ ok: false, error: 'Only individual source files can be deleted.' })
+      if (SOURCE_ROOT_FILES.has(target.parts[0])) return res.status(403).json({ ok: false, error: 'Root package and documentation files are protected from deletion.' })
+      targets.push(target)
+    }
+    await ensureManualEditBackup()
+    for (const target of targets) {
+      await rm(target.full, { force: false })
+      await recordManualEdit(target.path, 'deleted-file')
+    }
+    res.json({ ok: true, deleted: targets.map(target => target.path), pending: true })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not delete the selected source files.') })
+  }
+})
+
+app.post('/api/files/apply', requireAdmin, async (req, res) => {
+  if (req.body?.confirm !== true) return res.status(400).json({ ok: false, error: 'Explicit confirmation is required to apply saved file edits.' })
+  if (updateInProgress) return res.status(409).json({ ok: false, error: 'Another Aharane deployment is already running.' })
+  const manual = await readJsonFile(MANUAL_EDIT_STATE_FILE)
+  if (!manual || manual.status !== 'pending' || !Array.isArray(manual.modifiedPaths) || !manual.modifiedPaths.length) {
+    return res.status(409).json({ ok: false, error: 'There are no saved manual file edits to apply.' })
+  }
+  try {
+    const current = await currentReleaseDirectory()
+    if (current !== manual.currentRelease) return res.status(409).json({ ok: false, error: 'The active release changed. Reload the Files Manager before applying these edits.' })
+    await execFileAsync(process.execPath, ['--check', join(current, 'src/index.js')], { cwd: current, timeout: 15_000, maxBuffer: 1024 * 1024 })
+    await execFileAsync('npm', ['run', 'check'], {
+      cwd: current,
+      timeout: 2 * 60 * 1000,
+      maxBuffer: 8 * 1024 * 1024,
+      env: { PATH: process.env.PATH || '/usr/bin:/bin', HOME: DATA_DIR, NODE_ENV: 'test', NPM_CONFIG_CACHE: join(UPDATE_DIR, 'npm-cache'), NPM_CONFIG_IGNORE_SCRIPTS: 'true', NPM_CONFIG_FUND: 'false', NPM_CONFIG_AUDIT: 'false' },
+    })
+    updateInProgress = true
+    const updateId = randomUUID()
+    await writeJsonAtomic(UPDATE_STATE_FILE, {
+      status: 'awaiting-healthcheck',
+      source: 'manual-files',
+      updateId,
+      version: await currentBotVersion(),
+      previousRelease: manual.previousRelease,
+      candidateRelease: current,
+      startedAt: new Date().toISOString(),
+    })
+    res.status(202).json({ ok: true, status: 'awaiting-healthcheck', updateId, message: 'Saved file changes passed validation. Aharane is restarting.' })
+    setTimeout(() => process.exit(1), 350)
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.stderr || error?.message || 'Source validation failed.').slice(0, 1200) })
+  }
+})
+
+app.post('/api/files/discard', requireAdmin, async (req, res) => {
+  if (req.body?.confirm !== true) return res.status(400).json({ ok: false, error: 'Explicit confirmation is required to discard saved file edits.' })
+  if (updateInProgress) return res.status(409).json({ ok: false, error: 'Another Aharane deployment is already running.' })
+  const manual = await readJsonFile(MANUAL_EDIT_STATE_FILE)
+  if (!manual || manual.status !== 'pending') return res.status(409).json({ ok: false, error: 'There are no saved manual edits to discard.' })
+  try {
+    const current = await currentReleaseDirectory()
+    if (current !== manual.currentRelease || !String(manual.previousRelease || '').startsWith(RELEASES_DIR + sep)) {
+      return res.status(409).json({ ok: false, error: 'The saved edits no longer match the active release.' })
+    }
+    updateInProgress = true
+    const updateId = randomUUID()
+    await writeJsonAtomic(UPDATE_STATE_FILE, {
+      status: 'awaiting-healthcheck',
+      source: 'manual-discard',
+      updateId,
+      version: await currentBotVersion(),
+      previousRelease: current,
+      candidateRelease: manual.previousRelease,
+      startedAt: new Date().toISOString(),
+    })
+    const nextLink = join(APP_BASE, '.current-discard-' + randomUUID())
+    await symlink(manual.previousRelease, nextLink, 'dir')
+    await rename(nextLink, CURRENT_RELEASE)
+    res.status(202).json({ ok: true, status: 'awaiting-healthcheck', updateId, message: 'Saved manual edits were discarded. Aharane is restarting on the clean backup.' })
+    setTimeout(() => process.exit(1), 350)
+  } catch (error) {
+    updateInProgress = false
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not discard saved file edits.') })
+  }
+})
+
 app.get('/api/files/packages', requireAdmin, async (_req, res) => {
   try {
     const entries = await readdir(UPLOADS_DIR, { withFileTypes: true })
@@ -648,6 +1039,8 @@ app.post('/api/update/deploy', requireAdmin, async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Explicit deployment confirmation is required.' })
   }
   if (updateInProgress) return res.status(409).json({ ok: false, error: 'An Aharane update is already running.' })
+  const manualEdits = await readJsonFile(MANUAL_EDIT_STATE_FILE)
+  if (manualEdits?.status === 'pending') return res.status(409).json({ ok: false, error: 'Apply or discard saved Files Manager edits before deploying a ZIP update.' })
   const metadata = await readJsonFile(join(uploadDirectory(updateId), 'upload.json'))
   if (!metadata || metadata.status !== 'validated' || !metadata.inspection) {
     return res.status(409).json({ ok: false, error: 'Validate this Aharane ZIP before deploying it.' })

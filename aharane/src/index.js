@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import { resolve, join, dirname, sep, relative, isAbsolute, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
+import { WebSocket, WebSocketServer } from 'ws'
 import pino from 'pino'
 import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys'
 import {
@@ -71,6 +72,35 @@ let shuttingDown = false
 const seenMessageIds = new Map()
 const commandTimes = new Map()
 const pairAttempts = new Map()
+const studioClients = new Set()
+let studioEventSequence = 0
+
+function studioRuntimeSnapshot() {
+  return {
+    state,
+    connected: state === 'connected',
+    registered,
+    reconnectAttempts,
+    lastConnectedAt: lastConnectedAt || null,
+    allowlistedSenderCount: ALLOWED_SENDERS.size,
+    groupsEnabled: false,
+  }
+}
+
+function publishStudioEvent(type, data = {}) {
+  const event = {
+    id: ++studioEventSequence,
+    type,
+    at: new Date().toISOString(),
+    data,
+  }
+  const payload = JSON.stringify(event)
+  for (const client of studioClients) {
+    if (client.readyState === WebSocket.OPEN) {
+      try { client.send(payload) } catch {}
+    }
+  }
+}
 
 function waitWithTimeout(promise, timeoutMs, message) {
   let timer
@@ -514,8 +544,10 @@ async function handleMessages(currentSocket, event) {
     const sender = remoteJid.slice(0, remoteJid.indexOf('@'))
     if (!allowCommand(sender)) continue
 
+    publishStudioEvent('whatsapp.command.received', { command: text.split(/\s+/, 1)[0].slice(0, 40) })
     try {
       await currentSocket.sendMessage(remoteJid, { text: reply }, { quoted: message })
+      publishStudioEvent('whatsapp.command.replied', { command: text.split(/\s+/, 1)[0].slice(0, 40) })
     } catch {
       logger.warn({ event: 'message.reply-failed' })
     }
@@ -532,6 +564,7 @@ function scheduleReconnect() {
   }
   const delayMs = Math.min(60_000, 2_000 * (2 ** Math.min(5, reconnectAttempts - 1)))
   state = 'reconnecting'
+  publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
   logger.warn({ event: 'whatsapp.reconnect-scheduled', attempt: reconnectAttempts, delayMs })
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
@@ -565,6 +598,7 @@ async function startSocket() {
     })
     socket = currentSocket
     state = registered ? 'connecting' : 'pairing'
+    publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
 
     currentSocket.ev.on('creds.update', () => {
       registered = auth.state.creds.registered === true
@@ -579,6 +613,7 @@ async function startSocket() {
       if (update?.connection === 'open') {
         registered = true
         state = 'connected'
+        publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
         reconnectAttempts = 0
         lastConnectedAt = Date.now()
         logger.info({ event: 'whatsapp.connected' })
@@ -589,10 +624,12 @@ async function startSocket() {
         if (code === DisconnectReason.loggedOut || code === 401) {
           registered = false
           state = 'needs-pairing'
+          publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
           logger.error({ event: 'whatsapp.auth-rejected' })
           return
         }
         state = 'disconnected'
+        publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
         logger.warn({ event: 'whatsapp.connection-closed', code: Number.isFinite(code) ? code : null })
         scheduleReconnect()
       }
@@ -630,13 +667,17 @@ app.get('/api/status', requireAdmin, (_req, res) => {
   res.json({
     ok: true,
     service: APP_NAME,
-    state,
-    connected: state === 'connected',
-    registered,
-    reconnectAttempts,
-    lastConnectedAt: lastConnectedAt || null,
-    allowlistedSenderCount: ALLOWED_SENDERS.size,
-    groupsEnabled: false,
+    ...studioRuntimeSnapshot(),
+  })
+})
+app.get('/api/studio/snapshot', requireAdmin, async (_req, res) => {
+  res.json({
+    ok: true,
+    service: APP_NAME,
+    runtime: studioRuntimeSnapshot(),
+    currentVersion: await currentBotVersion(),
+    update: await currentUpdateState(),
+    serverTime: new Date().toISOString(),
   })
 })
 app.post('/api/pair-code', requireAdmin, async (req, res) => {
@@ -670,6 +711,7 @@ app.post('/api/pair-code', requireAdmin, async (req, res) => {
     await waitWithTimeout(socketReady, 12_000, 'WhatsApp connection is not ready; retry shortly')
     const pairingCode = await currentSocket.requestPairingCode(phoneNumber)
     state = 'pairing'
+    publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
     res.json({ ok: true, pairingCode: String(pairingCode).replace(/\s/g, '') })
   } catch {
     res.status(503).json({ ok: false, error: 'Pairing code could not be generated. Check the server connection and retry shortly.' })
@@ -1117,6 +1159,90 @@ app.use(express.static(fileURLToPath(new URL('../public/', import.meta.url)), {
 const server = app.listen(PORT, HOST, () => {
   logger.info({ event: 'http.listening', host: HOST, port: PORT })
 })
+
+const studioWss = new WebSocketServer({
+  noServer: true,
+  maxPayload: 64 * 1024,
+  perMessageDeflate: false,
+})
+
+server.on('upgrade', (req, transport, head) => {
+  let pathname = ''
+  try { pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname } catch {}
+  if (pathname !== '/ws') {
+    transport.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n')
+    transport.destroy()
+    return
+  }
+
+  const authorization = String(req.headers.authorization || '')
+  const match = authorization.match(/^Bearer\s+(.+)$/i)
+  if (!match || !tokenMatches(match[1])) {
+    transport.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
+    transport.destroy()
+    return
+  }
+
+  studioWss.handleUpgrade(req, transport, head, client => {
+    studioWss.emit('connection', client, req)
+  })
+})
+
+studioWss.on('connection', client => {
+  studioClients.add(client)
+  client.send(JSON.stringify({
+    id: ++studioEventSequence,
+    type: 'studio.connected',
+    at: new Date().toISOString(),
+    data: studioRuntimeSnapshot(),
+  }))
+
+  let messageWindowStartedAt = Date.now()
+  let messageCount = 0
+  client.on('message', (raw, isBinary) => {
+    if (isBinary) {
+      client.close(1003, 'Text messages only')
+      return
+    }
+    const now = Date.now()
+    if (now - messageWindowStartedAt >= 10_000) {
+      messageWindowStartedAt = now
+      messageCount = 0
+    }
+    messageCount += 1
+    if (messageCount > 30) {
+      client.close(1008, 'Message rate limit exceeded')
+      return
+    }
+
+    let message
+    try { message = JSON.parse(String(raw)) } catch {
+      client.send(JSON.stringify({ type: 'studio.error', data: { error: 'Send a valid JSON message.' } }))
+      return
+    }
+
+    if (message?.type === 'ping') {
+      client.send(JSON.stringify({ type: 'pong', at: new Date().toISOString() }))
+      return
+    }
+    if (message?.type === 'status.get') {
+      client.send(JSON.stringify({
+        id: ++studioEventSequence,
+        type: 'studio.snapshot',
+        at: new Date().toISOString(),
+        data: studioRuntimeSnapshot(),
+      }))
+      return
+    }
+    client.send(JSON.stringify({
+      type: 'studio.error',
+      data: { error: 'Unsupported message type. Available messages: ping, status.get.' },
+    }))
+  })
+
+  client.on('close', () => studioClients.delete(client))
+  client.on('error', () => studioClients.delete(client))
+})
 server.on('error', error => {
   logger.error({ event: 'http.server-failed', code: error?.code || 'unknown' })
   process.exitCode = 1
@@ -1124,6 +1250,7 @@ server.on('error', error => {
 
 await startSocket().catch(() => {
   state = 'degraded'
+  publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
   logger.error({ event: 'whatsapp.initial-start-failed' })
   scheduleReconnect()
 })
@@ -1132,6 +1259,8 @@ async function shutdown(signal) {
   if (shuttingDown) return
   shuttingDown = true
   state = 'stopping'
+  publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
+  for (const client of studioClients) client.close(1001, 'Aharane is shutting down')
   if (reconnectTimer) clearTimeout(reconnectTimer)
   try { socket?.end?.(undefined) } catch {}
   await new Promise(resolveClose => server.close(() => resolveClose()))

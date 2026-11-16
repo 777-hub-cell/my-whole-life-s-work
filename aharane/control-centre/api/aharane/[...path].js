@@ -2,6 +2,7 @@ const SESSION_COOKIE = 'aharane_cc_session'
 const SESSION_MAX_AGE = 60 * 60 * 12
 const ROUTES = new Map([
   ['status', '/api/status'],
+  ['studio/snapshot', '/api/studio/snapshot'],
   ['pair-code', '/api/pair-code'],
   ['update/status', '/api/update/status'],
   ['files/packages', '/api/files/packages'],

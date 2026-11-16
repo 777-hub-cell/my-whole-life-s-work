@@ -2,5 +2,8 @@
   "name": "aharane-control-centre",
   "private": true,
   "version": "1.0.0",
-  "description": "Private Vercel-hosted control centre for the independent Aharane bot"
+  "description": "Private Vercel-hosted control centre for the independent Aharane bot",
+  "dependencies": {
+    "ws": "8.23.0"
+  }
 }

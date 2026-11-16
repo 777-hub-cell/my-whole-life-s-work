@@ -6,6 +6,9 @@
   <meta name="robots" content="noindex,nofollow">
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5f5f2">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <title>Aharane Control Centre</title>
   <link rel="stylesheet" href="/styles.css">
   <script type="module" src="/app.js"></script>
@@ -27,6 +30,9 @@
       </form>
       <p class="tiny muted">The token is exchanged server-side for a protected, short-lived session. It is not saved in browser storage.</p>
       <p id="login-message" class="message" role="status"></p>
+      <div class="login-local-divider"><span>OR</span></div>
+      <button class="button button-outline button-wide" id="open-local-studio" type="button">Open Local Studio</button>
+      <p class="tiny muted">Your local workspace works without signing in. Bot controls still require a connection.</p>
     </div>
   </div>
 
@@ -36,26 +42,75 @@
         <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 3v42M3 24h42M9 9l30 30M39 9 9 39M15 4l9 12 9-12M15 44l9-12 9 12M4 15l12 9-12 9M44 15l-12 9 12 9" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round"/><circle cx="24" cy="24" r="7" fill="none" stroke="currentColor" stroke-width="1.65"/></svg>
         <span><strong>AHARANE</strong><small>CONTROL CENTRE</small></span>
       </a>
-      <div class="nav-label">MANAGE</div>
       <nav class="main-nav" aria-label="Main navigation">
+        <div class="nav-label">BUILD</div>
+        <button class="nav-item" data-view="studio"><span class="nav-symbol">⌘</span> Local Studio</button>
+        <div class="nav-label">MANAGE</div>
         <button class="nav-item active" data-view="overview"><span class="nav-symbol">⌂</span> Overview</button>
-        <button class="nav-item" data-view="pairing"><span class="nav-symbol">↔</span> WhatsApp pairing</button>
-        <button class="nav-item" data-view="deploy"><span class="nav-symbol">↑</span> Deploy update</button>
-        <button class="nav-item" data-view="files"><span class="nav-symbol">▤</span> Files Manager</button>
+        <button class="nav-item" data-remote-only data-view="pairing"><span class="nav-symbol">↔</span> WhatsApp pairing</button>
+        <button class="nav-item" data-remote-only data-view="deploy"><span class="nav-symbol">↑</span> Deploy update</button>
+        <button class="nav-item" data-remote-only data-view="files"><span class="nav-symbol">▤</span> Files Manager</button>
       </nav>
       <div class="sidebar-bottom">
         <div class="isolation-note"><span class="dot"></span><span><strong>Standalone service</strong><small>Independent of NIGHT/MSCC</small></span></div>
-        <button class="nav-item logout" id="logout-button"><span class="nav-symbol">↪</span> Sign out</button>
+        <button class="nav-item logout" id="logout-button" data-remote-only><span class="nav-symbol">↪</span> Sign out</button>
       </div>
     </aside>
 
     <div class="main-column">
       <header class="topbar">
         <div class="breadcrumb"><span>Aharane</span><span class="slash">/</span><strong id="page-name">Overview</strong></div>
-        <div class="top-actions"><span id="service-pill" class="status-pill"><i></i><span id="service-pill-label">Checking</span></span><button id="refresh-button" class="icon-button" type="button" aria-label="Refresh status" title="Refresh status">↻</button></div>
+        <div class="top-actions"><button id="install-app-button" class="button button-outline install-app-button" type="button" hidden>Install app</button><span id="live-link-pill" data-remote-only class="status-pill live-link-pill"><i></i><span id="live-link-label">Live link off</span></span><span id="service-pill" data-remote-only class="status-pill"><i></i><span id="service-pill-label">Checking</span></span><button id="refresh-button" data-remote-only class="icon-button" type="button" aria-label="Refresh status" title="Refresh status">↻</button></div>
       </header>
 
       <main class="page-content">
+
+        <section class="view-section" id="view-studio" hidden>
+          <div class="page-heading studio-heading">
+            <div><p class="eyebrow">ON THIS DEVICE</p><h1>Local Studio</h1><p class="muted">Edit project files and preview websites. Your work stays on this phone.</p></div>
+            <button class="button button-outline" id="studio-connect-button" type="button">Connect to Aharane</button>
+          </div>
+
+          <div class="studio-toolbar">
+            <div class="studio-project-name"><label for="studio-project-title">PROJECT</label><input id="studio-project-title" type="text" value="My project" maxlength="80"></div>
+            <div class="studio-toolbar-actions">
+              <button class="button button-outline" id="studio-import-files" type="button">Import files</button>
+              <button class="button button-outline" id="studio-import-folder" type="button">Import folder</button>
+              <button class="button button-dark" id="studio-new-file" type="button">New file</button>
+              <button class="button button-outline" id="studio-export-backup" type="button">Export backup</button>
+            </div>
+            <input id="studio-files-input" type="file" multiple hidden>
+            <input id="studio-folder-input" type="file" webkitdirectory directory multiple hidden>
+          </div>
+
+          <div class="studio-workbench">
+            <aside class="studio-file-pane">
+              <div class="studio-pane-heading"><strong>Project files</strong><span id="studio-file-count">0 files</span></div>
+              <div id="studio-file-list" class="studio-file-list"><p class="muted">Import a folder or files to begin.</p></div>
+            </aside>
+            <div class="studio-main-pane">
+              <div class="studio-tabs" role="tablist" aria-label="Studio workspace">
+                <button class="studio-tab active" id="studio-code-tab" type="button" role="tab" aria-selected="true">Code editor</button>
+                <button class="studio-tab" id="studio-preview-tab" type="button" role="tab" aria-selected="false">Website preview</button>
+                <span id="studio-save-state" class="studio-save-state">Saved on this device</span>
+              </div>
+              <section id="studio-code-pane" class="studio-code-pane">
+                <div class="studio-editor-heading"><strong id="studio-current-file">Choose a project file</strong><button class="text-button" id="studio-export-file" type="button" disabled>Export file</button></div>
+                <textarea id="studio-editor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Local project code editor" placeholder="Import or create a text file to start editing." disabled></textarea>
+                <div class="studio-editor-footer"><span id="studio-editor-hint">Files are stored in this browser on this device.</span><button class="button button-dark" id="studio-save-file" type="button" disabled>Save locally</button></div>
+              </section>
+              <section id="studio-preview-pane" class="studio-preview-pane" hidden>
+                <div class="studio-preview-toolbar"><label for="studio-preview-file">HTML page</label><select id="studio-preview-file"><option value="">Import an HTML file first</option></select><button class="button button-outline" id="studio-refresh-preview" type="button">Refresh preview</button></div>
+                <div class="studio-preview-frame-wrap"><iframe id="studio-preview-frame" title="Local website preview" sandbox="allow-scripts allow-forms"></iframe></div>
+                <p class="studio-preview-note">Preview runs locally in an isolated frame. Some server features, external services and module imports may need a deployed preview.</p>
+              </section>
+            </div>
+          </div>
+
+          <div class="studio-footnote"><strong>Local means local.</strong> Edits here do not change the running WhatsApp bot or the deployed Control Centre. Export a backup regularly. Connect to Aharane when you need remote bot management.</div>
+          <p id="studio-message" class="message" role="status"></p>
+        </section>
+
         <section class="view-section" id="view-overview">
           <div class="page-heading">
             <div><p class="eyebrow">YOUR BOT</p><h1>Aharane</h1><p class="muted">A separate WhatsApp identity and runtime, managed here.</p></div>
@@ -86,6 +141,8 @@
             <div><span class="field-label">VERSION</span><strong id="last-update-version">—</strong></div>
             <div><span class="field-label">UPDATED</span><strong id="last-update-date">—</strong></div>
           </div>
+          <div class="section-heading"><h2>Live activity</h2><span class="muted">Events from Aharane</span></div>
+          <div id="live-activity-list" class="live-activity-list" aria-live="polite"><p class="muted">Sign in to receive live bot events.</p></div>
           <p id="overview-message" class="message" role="status"></p>
         </section>
 

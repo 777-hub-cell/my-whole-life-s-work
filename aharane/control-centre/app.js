@@ -11,6 +11,21 @@ let sourceOriginal = ''
 let sourceHash = ''
 let sourceDirty = false
 
+let localOnly = false
+let remoteSession = false
+let studioSocket = null
+let studioSocketRetryTimer = null
+let studioSocketRetryDelay = 1000
+let studioDbPromise = null
+let studioFiles = []
+let studioCurrentPath = ''
+let studioOriginalText = ''
+let studioInstallPrompt = null
+let studioObjectUrls = []
+const STUDIO_MAX_FILE_BYTES = 2 * 1024 * 1024
+const STUDIO_MAX_PROJECT_BYTES = 20 * 1024 * 1024
+const STUDIO_MAX_FILES = 250
+
 function showMessage(target, message, kind = '') {
   const element = typeof target === 'string' ? $(target) : target
   if (!element) return
@@ -50,17 +65,131 @@ function formatDate(value) {
 }
 
 function setView(name) {
-  const titles = { overview: 'Overview', pairing: 'WhatsApp pairing', deploy: 'Deploy update', files: 'Files Manager' }
-  $$('.view-section').forEach(section => { section.hidden = section.id !== 'view-' + name })
-  $$('.nav-item[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === name))
+  const titles = { overview: 'Overview', pairing: 'WhatsApp pairing', deploy: 'Deploy update', files: 'Files Manager', studio: 'Local Studio' }
+  if (localOnly && name !== 'studio') name = 'studio'
+  $('.view-section').forEach(section => { section.hidden = section.id !== 'view-' + name })
+  $('.nav-item[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === name))
   $('#page-name').textContent = titles[name] || 'Overview'
-  if (name === 'overview') refreshStatus().catch(error => showMessage('#overview-message', error.message, 'error'))
-  if (name === 'deploy') refreshUpdateStatus().catch(error => showMessage('#deploy-message', error.message, 'error'))
-  if (name === 'files') {
+  if (name === 'studio') loadStudioFiles().catch(error => showMessage('#studio-message', error.message, 'error'))
+  if (!localOnly && name === 'overview') refreshStatus().catch(error => showMessage('#overview-message', error.message, 'error'))
+  if (!localOnly && name === 'deploy') refreshUpdateStatus().catch(error => showMessage('#deploy-message', error.message, 'error'))
+  if (!localOnly && name === 'files') {
     refreshPackages().catch(error => showMessage('#files-upload-message', error.message, 'error'))
     refreshDraftStatus().catch(error => showMessage('#source-message', error.message, 'error'))
     loadSourceFolder('').catch(error => showMessage('#source-message', error.message, 'error'))
   }
+}
+
+function setLiveLinkState(label, state = '') {
+  const pill = $('#live-link-pill')
+  if (!pill) return
+  pill.classList.toggle('ok', state === 'connected')
+  pill.classList.toggle('bad', state === 'error')
+  $('#live-link-label').textContent = label
+}
+
+function addLiveActivity(label, kind = '') {
+  const list = $('#live-activity-list')
+  if (!list) return
+  const empty = list.querySelector('.muted')
+  if (empty) list.replaceChildren()
+  const row = document.createElement('div')
+  row.className = 'live-activity-row'
+  const dot = document.createElement('i')
+  dot.className = 'live-activity-dot' + (kind ? ' ' + kind : '')
+  const message = document.createElement('span')
+  message.textContent = label
+  const time = document.createElement('time')
+  time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  row.append(dot, message, time)
+  list.prepend(row)
+  while (list.children.length > 12) list.lastElementChild.remove()
+}
+
+function applyLiveRuntime(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return
+  const online = snapshot.state === 'connected'
+  $('#service-pill')?.classList.toggle('ok', online)
+  $('#service-pill')?.classList.toggle('bad', ['degraded', 'needs-pairing', 'disconnected'].includes(snapshot.state))
+  if ($('#service-pill-label')) $('#service-pill-label').textContent = online ? 'Connected' : 'Aharane ' + String(snapshot.state || 'unknown')
+  if ($('#whatsapp-state')) $('#whatsapp-state').textContent = snapshot.connected ? 'Connected' : snapshot.state || 'Unknown'
+  if ($('#whatsapp-dot')) {
+    $('#whatsapp-dot').classList.toggle('connected', Boolean(snapshot.connected))
+    $('#whatsapp-dot').classList.toggle('offline', !snapshot.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(snapshot.state))
+  }
+  if ($('#allowed-senders')) $('#allowed-senders').textContent = String(snapshot.allowlistedSenderCount ?? '—')
+  if ($('#connection-detail')) {
+    $('#connection-detail').textContent = snapshot.connected
+      ? 'Aharane is connected to WhatsApp.'
+      : snapshot.registered ? 'The saved WhatsApp session is not currently connected.' : 'This Aharane instance has not completed WhatsApp pairing.'
+  }
+}
+
+function handleStudioEvent(event) {
+  if (!event || typeof event.type !== 'string') return
+  if (['studio.connected', 'studio.snapshot', 'whatsapp.status'].includes(event.type)) {
+    applyLiveRuntime(event.data)
+    if (event.type === 'whatsapp.status') {
+      const state = event.data?.state || 'unknown'
+      addLiveActivity('WhatsApp connection: ' + state, state === 'connected' ? 'good' : 'neutral')
+    }
+    return
+  }
+  if (event.type === 'whatsapp.command.received') {
+    addLiveActivity('Received command ' + String(event.data?.command || 'unknown').slice(0, 40), 'neutral')
+    return
+  }
+  if (event.type === 'whatsapp.command.replied') {
+    addLiveActivity('Replied to ' + String(event.data?.command || 'command').slice(0, 40), 'good')
+    return
+  }
+  if (event.type === 'studio.error') addLiveActivity('Live connection error: ' + String(event.data?.error || 'unknown'), 'bad')
+}
+
+function stopStudioSocket() {
+  if (studioSocketRetryTimer) clearTimeout(studioSocketRetryTimer)
+  studioSocketRetryTimer = null
+  const active = studioSocket
+  studioSocket = null
+  if (active) {
+    active.onclose = null
+    try { active.close(1000, 'Signed out') } catch {}
+  }
+  setLiveLinkState('Live link off')
+}
+
+function connectStudioSocket() {
+  if (!remoteSession || localOnly) return
+  if (studioSocket && [WebSocket.CONNECTING, WebSocket.OPEN].includes(studioSocket.readyState)) return
+  if (studioSocketRetryTimer) clearTimeout(studioSocketRetryTimer)
+  studioSocketRetryTimer = null
+  setLiveLinkState('Connecting…')
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const socket = new WebSocket(protocol + '//' + location.host + '/api/studio/socket')
+  studioSocket = socket
+  socket.addEventListener('open', () => {
+    studioSocketRetryDelay = 1000
+    setLiveLinkState('Live', 'connected')
+    addLiveActivity('Live connection established', 'good')
+    try { socket.send(JSON.stringify({ type: 'status.get' })) } catch {}
+  })
+  socket.addEventListener('message', event => {
+    try { handleStudioEvent(JSON.parse(String(event.data))) } catch {}
+  })
+  socket.addEventListener('error', () => {
+    setLiveLinkState('Connection issue', 'error')
+    try { socket.close() } catch {}
+  })
+  socket.addEventListener('close', () => {
+    if (studioSocket === socket) studioSocket = null
+    if (!remoteSession || localOnly) return
+    setLiveLinkState('Reconnecting…', 'error')
+    studioSocketRetryTimer = setTimeout(() => {
+      studioSocketRetryTimer = null
+      connectStudioSocket()
+    }, studioSocketRetryDelay)
+    studioSocketRetryDelay = Math.min(30_000, studioSocketRetryDelay * 2)
+  })
 }
 
 async function refreshStatus() {
@@ -624,16 +753,20 @@ function startDeploymentPolling() {
 }
 
 async function connect() {
+  localOnly = false
+  document.body.classList.remove('local-only')
   $('#login-button').disabled = true
   showMessage('#login-message', 'Connecting…')
   try {
     await api('login', { method: 'POST', body: JSON.stringify({ token: $('#admin-token').value }) })
+    remoteSession = true
     $('#admin-token').value = ''
     $('#login-screen').hidden = true
     $('#application').hidden = false
     await refreshStatus()
     await refreshUpdateStatus()
     setView('overview')
+    connectStudioSocket()
     showMessage('#overview-message', 'Connected to Aharane.', 'success')
   } catch (error) {
     showMessage('#login-message', error.message, 'error')
@@ -643,6 +776,10 @@ async function connect() {
 }
 
 async function logout() {
+  remoteSession = false
+  stopStudioSocket()
+  localOnly = false
+  document.body.classList.remove('local-only')
   try { await api('logout', { method: 'POST', body: '{}' }) } catch {}
   if (pollingTimer) clearInterval(pollingTimer)
   $('#application').hidden = true
@@ -772,10 +909,477 @@ $('#source-editor').addEventListener('input', () => {
   $('#source-save').disabled = !sourceDirty
 })
 
+
+function openStudioDatabase() {
+  if (studioDbPromise) return studioDbPromise
+  studioDbPromise = new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) return reject(new Error('This browser does not support local project storage.'))
+    const request = indexedDB.open('aharane-local-studio', 1)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains('files')) db.createObjectStore('files', { keyPath: 'path' })
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error || new Error('Could not open local project storage.'))
+  })
+  return studioDbPromise
+}
+
+async function studioGetAll() {
+  const db = await openStudioDatabase()
+  return new Promise((resolve, reject) => {
+    const request = db.transaction('files', 'readonly').objectStore('files').getAll()
+    request.onsuccess = () => resolve(request.result || [])
+    request.onerror = () => reject(request.error)
+  })
+}
+
+async function studioPut(item) {
+  const db = await openStudioDatabase()
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('files', 'readwrite')
+    transaction.objectStore('files').put(item)
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error || new Error('Could not save this file locally.'))
+    transaction.onabort = () => reject(transaction.error || new Error('Local save was cancelled.'))
+  })
+}
+
+function normalizeStudioPath(path) {
+  const parts = String(path || '').replace(/\\/g, '/').split('/').filter(part => part && part !== '.')
+  if (!parts.length || parts.some(part => part === '..')) return ''
+  return parts.join('/')
+}
+
+function blockedStudioPath(path) {
+  const parts = path.toLowerCase().split('/')
+  const name = parts[parts.length - 1]
+  if (parts.some(part => ['node_modules', '.git', 'whatsapp-auth', 'auth', 'backups', 'backup', 'logs'].includes(part))) return true
+  if (name === '.env' || (name.startsWith('.env.') && name !== '.env.example')) return true
+  if (/\.(log|bak|backup|pem|key|p12|pfx)$/i.test(name)) return true
+  return false
+}
+
+function studioCanEdit(path, type = '') {
+  return /\.(js|mjs|cjs|ts|tsx|jsx|json|html?|css|md|txt|ya?ml|xml|svg|sh|py|java|go|sql|toml|ini|conf|example|gitignore)$/i.test(path) ||
+    String(type).startsWith('text/')
+}
+
+function localStudioMode() {
+  const savedTitle = localStorage.getItem('aharane-local-studio-title')
+  if (savedTitle) $('#studio-project-title').value = savedTitle
+  $('#studio-connect-button').textContent = remoteSession ? 'Back to bot controls' : 'Connect to Aharane'
+  localOnly = true
+  document.body.classList.add('local-only')
+  $('#login-screen').hidden = true
+  $('#application').hidden = false
+  setView('studio')
+  showMessage('#studio-message', 'Local workspace opened. Files and edits are stored on this device.', 'success')
+}
+
+function downloadStudioBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 30000)
+}
+
+function renderStudioFiles() {
+  const root = $('#studio-file-list')
+  root.replaceChildren()
+  $('#studio-file-count').textContent = studioFiles.length + (studioFiles.length === 1 ? ' file' : ' files')
+  if (!studioFiles.length) {
+    const empty = document.createElement('p')
+    empty.className = 'muted'
+    empty.textContent = 'No local files yet. Import a folder or create a file.'
+    root.appendChild(empty)
+    return
+  }
+  for (const item of studioFiles) {
+    const row = document.createElement('div')
+    row.className = 'studio-file-row' + (item.path === studioCurrentPath ? ' active' : '')
+    const open = document.createElement('button')
+    open.type = 'button'
+    open.className = 'studio-file-open'
+    open.textContent = item.path
+    open.title = item.path
+    open.addEventListener('click', () => openStudioFile(item.path))
+    const remove = document.createElement('button')
+    remove.type = 'button'
+    remove.className = 'studio-file-remove'
+    remove.textContent = '×'
+    remove.setAttribute('aria-label', 'Remove ' + item.path)
+    remove.addEventListener('click', () => removeStudioFile(item.path))
+    row.append(open, remove)
+    root.appendChild(row)
+  }
+}
+
+async function loadStudioFiles() {
+  studioFiles = (await studioGetAll()).sort((a, b) => a.path.localeCompare(b.path))
+  renderStudioFiles()
+  await updateStudioPreviewOptions()
+  if (studioCurrentPath && studioFiles.some(item => item.path === studioCurrentPath)) {
+    const current = studioFiles.find(item => item.path === studioCurrentPath)
+    if (studioCanEdit(current.path, current.type)) await openStudioFile(studioCurrentPath, true)
+  } else if (!studioFiles.length) {
+    studioCurrentPath = ''
+    $('#studio-current-file').textContent = 'Choose a project file'
+    $('#studio-editor').value = ''
+    $('#studio-editor').disabled = true
+    $('#studio-save-file').disabled = true
+    $('#studio-export-file').disabled = true
+  }
+}
+
+async function importStudioFiles(fileList) {
+  const files = Array.from(fileList || [])
+  if (!files.length) return
+  let added = 0
+  let skipped = 0
+  let total = studioFiles.reduce((sum, item) => sum + Number(item.size || 0), 0)
+  if (studioFiles.length + files.length > STUDIO_MAX_FILES) {
+    showMessage('#studio-message', 'This workspace supports up to 250 files. Import a smaller selection.', 'error')
+    return
+  }
+  for (const file of files) {
+    const path = normalizeStudioPath(file.webkitRelativePath || file.name)
+    if (!path || blockedStudioPath(path) || file.size > STUDIO_MAX_FILE_BYTES) {
+      skipped++
+      continue
+    }
+    const existing = studioFiles.find(item => item.path === path)
+    const newTotal = total - Number(existing?.size || 0) + file.size
+    if (newTotal > STUDIO_MAX_PROJECT_BYTES) {
+      skipped++
+      continue
+    }
+    const type = file.type || 'application/octet-stream'
+    const item = { path, type, size: file.size, blob: file, updatedAt: Date.now() }
+    if (studioCanEdit(path, type)) item.content = await file.text()
+    try {
+      await studioPut(item)
+      total = newTotal
+      added++
+    } catch (error) {
+      showMessage('#studio-message', 'Local storage could not save the import. Export a backup or free device storage.', 'error')
+      break
+    }
+  }
+  await loadStudioFiles()
+  showMessage('#studio-message', added + ' file(s) imported.' + (skipped ? ' ' + skipped + ' skipped (protected, too large or over the workspace limit).' : ''), skipped ? '' : 'success')
+}
+
+async function openStudioFile(path, skipDirtyCheck = false) {
+  if (!skipDirtyCheck && studioCurrentPath && $('#studio-editor').value !== studioOriginalText) {
+    if (!window.confirm('Discard unsaved typing and open another file?')) return
+  }
+  const item = studioFiles.find(file => file.path === path)
+  if (!item) return
+  studioCurrentPath = path
+  renderStudioFiles()
+  $('#studio-current-file').textContent = path
+  $('#studio-export-file').disabled = false
+  const editable = studioCanEdit(path, item.type)
+  $('#studio-editor').disabled = !editable
+  $('#studio-save-file').disabled = true
+  if (editable) {
+    const text = typeof item.content === 'string' ? item.content : item.blob ? await item.blob.text() : ''
+    $('#studio-editor').value = text
+    studioOriginalText = text
+    $('#studio-editor-hint').textContent = 'Plain text · ' + formatBytes(item.size || new Blob([text]).size)
+  } else {
+    $('#studio-editor').value = 'This file is stored locally as a project asset and is not editable as text.'
+    studioOriginalText = $('#studio-editor').value
+    $('#studio-editor-hint').textContent = 'Binary asset · use it in the website preview.'
+  }
+  $('#studio-save-state').textContent = 'Saved on this device'
+}
+
+async function saveStudioFile() {
+  const item = studioFiles.find(file => file.path === studioCurrentPath)
+  if (!item || !studioCanEdit(item.path, item.type)) return
+  const content = $('#studio-editor').value
+  const blob = new Blob([content], { type: item.type || 'text/plain;charset=utf-8' })
+  await studioPut({ ...item, content, blob, size: blob.size, updatedAt: Date.now() })
+  studioOriginalText = content
+  $('#studio-save-file').disabled = true
+  $('#studio-save-state').textContent = 'Saved'
+  await loadStudioFiles()
+  showMessage('#studio-message', 'Saved ' + studioCurrentPath + ' on this device.', 'success')
+}
+
+async function createStudioFile() {
+  const raw = window.prompt('New file path', 'index.html')
+  if (!raw) return
+  const path = normalizeStudioPath(raw)
+  if (!path || blockedStudioPath(path)) {
+    showMessage('#studio-message', 'That file path is not allowed in the local workspace.', 'error')
+    return
+  }
+  if (studioFiles.some(item => item.path === path)) {
+    showMessage('#studio-message', 'A file with that path already exists.', 'error')
+    return
+  }
+  const blob = new Blob([''], { type: 'text/plain;charset=utf-8' })
+  await studioPut({ path, type: 'text/plain', size: 0, content: '', blob, updatedAt: Date.now() })
+  await loadStudioFiles()
+  await openStudioFile(path, true)
+  showMessage('#studio-message', 'Created ' + path + '.', 'success')
+}
+
+async function removeStudioFile(path) {
+  if (!window.confirm('Remove ' + path + ' from this device workspace?')) return
+  const db = await openStudioDatabase()
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction('files', 'readwrite')
+    transaction.objectStore('files').delete(path)
+    transaction.oncomplete = resolve
+    transaction.onerror = () => reject(transaction.error)
+  })
+  if (studioCurrentPath === path) studioCurrentPath = ''
+  await loadStudioFiles()
+}
+
+async function exportStudioFile() {
+  const item = studioFiles.find(file => file.path === studioCurrentPath)
+  if (!item) return
+  const blob = item.blob || new Blob([item.content || ''], { type: item.type || 'application/octet-stream' })
+  downloadStudioBlob(blob, item.path.split('/').pop() || 'project-file.txt')
+}
+
+async function blobToBase64(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  let binary = ''
+  const size = 0x8000
+  for (let i = 0; i < bytes.length; i += size) binary += String.fromCharCode(...bytes.subarray(i, i + size))
+  return btoa(binary)
+}
+
+async function exportStudioBackup() {
+  const files = await studioGetAll()
+  if (!files.length) {
+    showMessage('#studio-message', 'There are no project files to back up yet.', 'error')
+    return
+  }
+  const backup = []
+  for (const item of files) {
+    const blob = item.blob || new Blob([item.content || ''], { type: item.type || 'application/octet-stream' })
+    backup.push({ path: item.path, type: item.type, content: await blobToBase64(blob) })
+  }
+  const payload = {
+    format: 'aharane-local-studio-backup',
+    version: 1,
+    projectName: $('#studio-project-title').value || 'My project',
+    exportedAt: new Date().toISOString(),
+    files: backup,
+  }
+  downloadStudioBlob(new Blob([JSON.stringify(payload)], { type: 'application/json' }), 'aharane-local-studio-backup.json')
+  showMessage('#studio-message', 'Local project backup exported.', 'success')
+}
+
+function studioSetTab(tab) {
+  const preview = tab === 'preview'
+  $('#studio-code-pane').hidden = preview
+  $('#studio-preview-pane').hidden = !preview
+  $('#studio-code-tab').classList.toggle('active', !preview)
+  $('#studio-preview-tab').classList.toggle('active', preview)
+  $('#studio-code-tab').setAttribute('aria-selected', String(!preview))
+  $('#studio-preview-tab').setAttribute('aria-selected', String(preview))
+  if (preview) void renderStudioPreview()
+}
+
+async function updateStudioPreviewOptions() {
+  const select = $('#studio-preview-file')
+  const previous = select.value
+  const htmlFiles = studioFiles.filter(item => /\.html?$/i.test(item.path))
+  select.replaceChildren()
+  if (!htmlFiles.length) {
+    const option = document.createElement('option')
+    option.value = ''
+    option.textContent = 'Import an HTML file first'
+    select.appendChild(option)
+    return
+  }
+  for (const item of htmlFiles) {
+    const option = document.createElement('option')
+    option.value = item.path
+    option.textContent = item.path
+    select.appendChild(option)
+  }
+  select.value = htmlFiles.some(item => item.path === previous) ? previous : htmlFiles[0].path
+}
+
+function resolveStudioAsset(basePath, reference) {
+  const raw = String(reference || '').trim().split(/[?#]/)[0]
+  if (!raw || /^(data:|https?:|blob:|\/\/|#|mailto:|tel:|javascript:)/i.test(raw)) return ''
+  const base = raw.startsWith('/') ? '' : basePath.split('/').slice(0, -1).join('/')
+  return normalizeStudioPath((base ? base + '/' : '') + raw.replace(/^\/+/, ''))
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('Could not read preview asset.'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+
+async function rewriteStudioCss(css, cssPath, lookup) {
+  const matches = [...css.matchAll(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi)]
+  for (const match of matches) {
+    const targetPath = resolveStudioAsset(cssPath, match[2])
+    const asset = lookup.get(targetPath)
+    if (asset?.blob) {
+      const dataUrl = await blobToDataUrl(asset.blob)
+      css = css.replace(match[0], 'url("' + dataUrl + '")')
+    }
+  }
+  return css
+}
+
+async function renderStudioPreview() {
+  const pagePath = $('#studio-preview-file').value
+  const page = studioFiles.find(item => item.path === pagePath)
+  const frame = $('#studio-preview-frame')
+  for (const url of studioObjectUrls) URL.revokeObjectURL(url)
+  studioObjectUrls = []
+  if (!page) {
+    frame.removeAttribute('src')
+    return
+  }
+  try {
+    const htmlText = typeof page.content === 'string' ? page.content : await page.blob.text()
+    const parser = new DOMParser()
+    const documentPreview = parser.parseFromString(htmlText, 'text/html')
+    const lookup = new Map(studioFiles.map(item => [item.path, item]))
+    for (const link of [...documentPreview.querySelectorAll('link[rel~="stylesheet"][href]')]) {
+      const targetPath = resolveStudioAsset(pagePath, link.getAttribute('href'))
+      const asset = lookup.get(targetPath)
+      if (asset) {
+        const cssText = await rewriteStudioCss(typeof asset.content === 'string' ? asset.content : await asset.blob.text(), targetPath, lookup)
+        const cssUrl = URL.createObjectURL(new Blob([cssText], { type: 'text/css' }))
+        studioObjectUrls.push(cssUrl)
+        link.setAttribute('href', cssUrl)
+      }
+    }
+    for (const style of [...documentPreview.querySelectorAll('style')]) {
+      const styleText = await rewriteStudioCss(style.textContent || '', pagePath, lookup)
+      const cssUrl = URL.createObjectURL(new Blob([styleText], { type: 'text/css' }))
+      studioObjectUrls.push(cssUrl)
+      const link = documentPreview.createElement('link')
+      link.rel = 'stylesheet'
+      link.href = cssUrl
+      style.replaceWith(link)
+    }
+    for (const script of [...documentPreview.querySelectorAll('script')]) {
+      if (script.src) {
+        const targetPath = resolveStudioAsset(pagePath, script.getAttribute('src'))
+        const asset = lookup.get(targetPath)
+        if (asset) {
+          const scriptText = typeof asset.content === 'string' ? asset.content : await asset.blob.text()
+          const scriptUrl = URL.createObjectURL(new Blob([scriptText], { type: 'text/javascript' }))
+          studioObjectUrls.push(scriptUrl)
+          script.src = scriptUrl
+        }
+      } else if (script.textContent.trim()) {
+        const scriptUrl = URL.createObjectURL(new Blob([script.textContent], { type: 'text/javascript' }))
+        studioObjectUrls.push(scriptUrl)
+        script.textContent = ''
+        script.src = scriptUrl
+      }
+    }
+    for (const element of [...documentPreview.querySelectorAll('[src]')]) {
+      if (element.tagName === 'SCRIPT') continue
+      const targetPath = resolveStudioAsset(pagePath, element.getAttribute('src'))
+      const asset = lookup.get(targetPath)
+      if (asset?.blob) element.setAttribute('src', await blobToDataUrl(asset.blob))
+    }
+    const previewBlob = new Blob(['<!doctype html>\n' + documentPreview.documentElement.outerHTML], { type: 'text/html' })
+    const previewUrl = URL.createObjectURL(previewBlob)
+    studioObjectUrls.push(previewUrl)
+    frame.src = previewUrl
+    showMessage('#studio-message', 'Preview refreshed from local project files.', 'success')
+  } catch (error) {
+    showMessage('#studio-message', 'Preview error: ' + error.message, 'error')
+  }
+}
+
+$('#open-local-studio').addEventListener('click', () => localStudioMode())
+$('#studio-connect-button').addEventListener('click', () => {
+  if (remoteSession) {
+    localOnly = false
+    document.body.classList.remove('local-only')
+    setView('overview')
+    return
+  }
+  localOnly = false
+  document.body.classList.remove('local-only')
+  $('#application').hidden = true
+  $('#login-screen').hidden = false
+  showMessage('#login-message', 'Sign in to manage the remote Aharane bot.')
+})
+$('#studio-import-files').addEventListener('click', () => $('#studio-files-input').click())
+$('#studio-import-folder').addEventListener('click', () => $('#studio-folder-input').click())
+$('#studio-files-input').addEventListener('change', event => {
+  void importStudioFiles(event.target.files).catch(error => showMessage('#studio-message', error.message, 'error'))
+  event.target.value = ''
+})
+$('#studio-folder-input').addEventListener('change', event => {
+  void importStudioFiles(event.target.files).catch(error => showMessage('#studio-message', error.message, 'error'))
+  event.target.value = ''
+})
+$('#studio-new-file').addEventListener('click', () => { void createStudioFile().catch(error => showMessage('#studio-message', error.message, 'error')) })
+$('#studio-save-file').addEventListener('click', () => { void saveStudioFile().catch(error => showMessage('#studio-message', error.message, 'error')) })
+$('#studio-export-file').addEventListener('click', () => { void exportStudioFile() })
+$('#studio-export-backup').addEventListener('click', () => { void exportStudioBackup().catch(error => showMessage('#studio-message', error.message, 'error')) })
+$('#studio-code-tab').addEventListener('click', () => studioSetTab('code'))
+$('#studio-preview-tab').addEventListener('click', () => studioSetTab('preview'))
+$('#studio-refresh-preview').addEventListener('click', () => { void renderStudioPreview() })
+$('#studio-preview-file').addEventListener('change', () => { void renderStudioPreview() })
+$('#studio-editor').addEventListener('input', () => {
+  const dirty = $('#studio-editor').value !== studioOriginalText
+  $('#studio-save-file').disabled = !dirty || !studioCurrentPath
+  $('#studio-save-state').textContent = dirty ? 'Unsaved local changes' : 'Saved on this device'
+})
+$('#studio-project-title').addEventListener('change', () => {
+  const title = $('#studio-project-title').value.trim()
+  if (title) {
+    localStorage.setItem('aharane-local-studio-title', title)
+    document.title = title + ' · Aharane Local Studio'
+  }
+})
+
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault()
+  studioInstallPrompt = event
+  $('#install-app-button').hidden = false
+})
+$('#install-app-button').addEventListener('click', async () => {
+  if (!studioInstallPrompt) return
+  studioInstallPrompt.prompt()
+  await studioInstallPrompt.userChoice.catch(() => null)
+  studioInstallPrompt = null
+  $('#install-app-button').hidden = true
+})
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}
+
 // A valid session cookie is HttpOnly; status is the session check.
 api('status').then(async () => {
+  remoteSession = true
   $('#login-screen').hidden = true
   $('#application').hidden = false
   await refreshStatus()
   await refreshUpdateStatus()
+  connectStudioSocket()
 }).catch(() => {})

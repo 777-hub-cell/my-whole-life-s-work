@@ -106,3 +106,18 @@ The Control Centre requires an authenticated HTTPS tunnel to Aharane's loopback 
 ## ZIP update packages
 
 See [UPDATE-PACKAGE.md](UPDATE-PACKAGE.md) for the required root-level `aharane-update.json` marker, ZIP layout, protected paths, file limits and rollback behavior. A valid package can be generated independently by an AI coding assistant or another build environment; it does not need to come from GitHub.
+
+
+## Local Studio live connection
+
+The Aharane runtime provides an authenticated WebSocket endpoint at `/ws` on its existing loopback-only HTTP server. It is not a second listener and does not change the private bind address.
+
+- `GET /api/studio/snapshot` returns a safe runtime snapshot for the local workspace.
+- `/ws` requires the existing `AHARANE_ADMIN_TOKEN` as a bearer credential during the WebSocket handshake.
+- Client messages currently allow only `ping` and `status.get`. Unknown actions are rejected; this endpoint is not a remote shell or arbitrary command runner.
+- Server events include WhatsApp connection changes and command names handled by Aharane. Message bodies, pairing codes, auth data and environment values are never broadcast.
+- The server accepts small text frames only and rate-limits client messages.
+
+The separate Control Centre exposes `/api/studio/socket`. Its server-side Vercel function validates the same-origin HttpOnly session cookie, verifies the session against Aharane, then opens the upstream WebSocket and relays frames. The admin bearer token and any Cloudflare Access service token remain on the server side and are never sent to browser JavaScript.
+
+The reverse tunnel must forward both `/aharane/api/*` HTTP requests and the `/aharane/ws` WebSocket upgrade to Aharane's private port 8790. The shared tunnel router must support HTTP Upgrade and the ngrok endpoint must target that router; the router must continue forwarding ordinary root traffic to NIGHT/MSCC. Do not expose port 8790 publicly or repoint the shared tunnel directly at Aharane.

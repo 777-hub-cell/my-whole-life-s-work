@@ -39,3 +39,12 @@ The Control Centre also includes an installable, offline-capable Local Studio. I
 The service worker caches only the static application shell. It never caches `/api/` responses, admin sessions, bot status, pairing codes or deployment data. Local Studio can be opened offline after its first successful online load; remote bot management still requires an internet connection and a valid sign-in.
 
 Local Studio edits do not modify the live Azure bot or the deployed Control Centre. Use the existing remote Files Manager or validated ZIP deployment workflow when you intentionally want to change Aharane.
+
+
+## Live bot connection
+
+After sign-in, the dashboard opens `/api/studio/socket` using the browser's same-origin secure session cookie. The Vercel function verifies the request origin and session, then proxies the WebSocket to Aharane's `/aharane/ws` endpoint. The permanent Aharane admin token and any tunnel service credentials never enter browser JavaScript.
+
+The first live protocol supports status snapshots, pings, WhatsApp connection changes and safe command activity events. It does not expose message contents or arbitrary command execution. The client reconnects automatically when a Vercel Function reaches its configured maximum duration.
+
+The shared reverse tunnel must route WebSocket upgrades for `/aharane/ws` to Aharane's loopback port 8790 as well as the existing `/aharane/api/*` HTTP routes. Port 8790 remains private; the router and ngrok configuration must not bypass or replace NIGHT/MSCC root routing.

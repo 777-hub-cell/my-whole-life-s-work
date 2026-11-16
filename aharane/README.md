@@ -99,7 +99,7 @@ ZIP updates install to a fresh directory under `/opt/aharane/releases`, atomical
 
 ## Aharane Local Studio PWA
 
-The complete Aharane Control Centre is an installable PWA served by Aharane at `/studio/`. It uses same-origin `/api/*` and `/ws`, not Vercel or ngrok. Aharane stays on `127.0.0.1:8790`; use a normal HTTPS reverse proxy such as Caddy without exposing port 8790. See [infra/DIRECT-HTTPS.md](infra/DIRECT-HTTPS.md).
+The complete Aharane Control Centre is an installable PWA served by Aharane at `/aharane/studio/` through the existing Nginx HTTPS site. It uses same-origin `/aharane/api/*` and `/aharane/ws`, not Vercel or ngrok. Aharane stays on `127.0.0.1:8790`; Nginx strips the isolated `/aharane/` prefix and forwards to that loopback listener. See [infra/DIRECT-HTTPS.md](infra/DIRECT-HTTPS.md).
 
 The plain HTML/CSS/JS app includes its own on-device source editor for `index.html`, `styles.css`, `app.js` and the manifest. Overrides are stored in IndexedDB and applied locally by the service worker. `/studio/recover.html` restores the original PWA if custom code breaks it. Local project files remain usable offline; remote bot functions need internet and sign-in.
 ## ZIP update packages
@@ -109,6 +109,6 @@ See [UPDATE-PACKAGE.md](UPDATE-PACKAGE.md) for the required root-level `aharane-
 
 ## Direct same-origin authentication
 
-The PWA submits the admin token only to Aharane over HTTPS. Aharane issues a short-lived HMAC-signed HttpOnly, Secure, SameSite=Strict cookie; browser JavaScript cannot read it. API requests and WebSocket upgrades use that same-origin cookie. The permanent admin token stays in `/etc/aharane.env`.
+The PWA submits the admin token only to Aharane over HTTPS at the isolated same-origin `/aharane/api/` route. Aharane issues a short-lived HMAC-signed HttpOnly, Secure, SameSite=Strict cookie; browser JavaScript cannot read it. API requests and WebSocket upgrades use that same-origin cookie. The permanent admin token stays in `/etc/aharane.env`.
 
 The old Vercel proxy and ngrok-router path are not used by the PWA. Do not change NIGHT/MSCC's existing public routing when enabling the Aharane HTTPS hostname.

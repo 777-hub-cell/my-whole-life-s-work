@@ -37,7 +37,7 @@ function showMessage(target, message, kind = '') {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch('/api/' + path.replace(/^\//, ''), {
+  const response = await fetch('/aharane/api/' + path.replace(/^\//, ''), {
     credentials: 'same-origin',
     cache: 'no-store',
     ...options,
@@ -173,7 +173,7 @@ function connectStudioSocket() {
   studioSocketRetryTimer = null
   setLiveLinkState('Connecting…')
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const socket = new WebSocket(protocol + '//' + location.host + '/ws')
+  const socket = new WebSocket(protocol + '//' + location.host + '/aharane/ws')
   studioSocket = socket
   socket.addEventListener('open', () => {
     studioSocketRetryDelay = 1000
@@ -1385,7 +1385,7 @@ $('#install-app-button').addEventListener('click', async () => {
 })
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/studio/sw.js', { scope: '/studio/' }).catch(() => {})
+    navigator.serviceWorker.register('/aharane/studio/sw.js', { scope: '/aharane/studio/' }).catch(() => {})
   })
 }
 
@@ -1405,11 +1405,11 @@ api('status').then(async () => {
 async function appSourceGet(path){const db=await openStudioDatabase();return new Promise((ok,no)=>{const r=db.transaction('appOverrides','readonly').objectStore('appOverrides').get(path);r.onsuccess=()=>ok(r.result||null);r.onerror=()=>no(r.error)})}
 async function appSourceGetAll(){const db=await openStudioDatabase();return new Promise((ok,no)=>{const r=db.transaction('appOverrides','readonly').objectStore('appOverrides').getAll();r.onsuccess=()=>ok(r.result||[]);r.onerror=()=>no(r.error)})}
 async function appSourcePut(path,content){if(!APP_SOURCE_FILES.includes(path))throw Error('Unsupported app source file.');if(typeof content!=='string'||content.length>1024*1024)throw Error('App source must be text and no larger than 1 MB.');const db=await openStudioDatabase();return new Promise((ok,no)=>{const tx=db.transaction('appOverrides','readwrite');tx.objectStore('appOverrides').put({path,content,updatedAt:Date.now()});tx.oncomplete=ok;tx.onerror=()=>no(tx.error)})}
-async function loadAppSourceFile(path){if(!APP_SOURCE_FILES.includes(path))throw Error('Unsupported app source file.');const saved=await appSourceGet(path);let content=saved?.content;if(typeof content!=='string'){const r=await fetch('/studio/'+path,{cache:'no-store'});if(!r.ok)throw Error('Could not load '+path+'.');content=await r.text()}studioAppSourcePath=path;studioAppSourceOriginal=content;$('#studio-app-source-file').value=path;$('#studio-app-source-editor').value=content;$('#studio-app-source-save').disabled=true;$('#studio-app-source-apply').disabled=(await appSourceGetAll()).length===0;$('#studio-app-source-status').textContent=saved?'Saved local override.':'Editing original '+path+'.'}
+async function loadAppSourceFile(path){if(!APP_SOURCE_FILES.includes(path))throw Error('Unsupported app source file.');const saved=await appSourceGet(path);let content=saved?.content;if(typeof content!=='string'){const r=await fetch('/aharane/studio/'+path,{cache:'no-store'});if(!r.ok)throw Error('Could not load '+path+'.');content=await r.text()}studioAppSourcePath=path;studioAppSourceOriginal=content;$('#studio-app-source-file').value=path;$('#studio-app-source-editor').value=content;$('#studio-app-source-save').disabled=true;$('#studio-app-source-apply').disabled=(await appSourceGetAll()).length===0;$('#studio-app-source-status').textContent=saved?'Saved local override.':'Editing original '+path+'.'}
 async function openAppSourceEditor(){$('#studio-app-source-panel').hidden=false;try{await loadAppSourceFile($('#studio-app-source-file').value||'index.html')}catch(e){$('#studio-app-source-status').textContent=e.message}}
 async function saveAppSourceDraft(){const content=$('#studio-app-source-editor').value;await appSourcePut(studioAppSourcePath,content);studioAppSourceOriginal=content;$('#studio-app-source-save').disabled=true;$('#studio-app-source-apply').disabled=false;$('#studio-app-source-status').textContent=studioAppSourcePath+' saved on this phone.'}
 async function applyAppSourceChanges(){if($('#studio-app-source-editor').value!==studioAppSourceOriginal)await saveAppSourceDraft();if(!(await appSourceGetAll()).length)return;if(!confirm('Apply saved source changes to this phone and reload Aharane Local Studio?'))return;location.reload()}
-async function exportAppSourceBackup(){const files=[];for(const path of APP_SOURCE_FILES){const saved=await appSourceGet(path);let content=typeof saved?.content==='string'?saved.content:null;if(content===null){const r=await fetch('/studio/'+path,{cache:'no-store'});if(!r.ok)throw Error('Could not export '+path+'.');content=await r.text()}files.push({path,content})}const data={format:'aharane-local-studio-source-backup',version:1,createdAt:new Date().toISOString(),files};downloadStudioBlob(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),'aharane-local-studio-source-backup.json')}
+async function exportAppSourceBackup(){const files=[];for(const path of APP_SOURCE_FILES){const saved=await appSourceGet(path);let content=typeof saved?.content==='string'?saved.content:null;if(content===null){const r=await fetch('/aharane/studio/'+path,{cache:'no-store'});if(!r.ok)throw Error('Could not export '+path+'.');content=await r.text()}files.push({path,content})}const data={format:'aharane-local-studio-source-backup',version:1,createdAt:new Date().toISOString(),files};downloadStudioBlob(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),'aharane-local-studio-source-backup.json')}
 async function restoreAppSource(){if(!confirm('Restore the original app source on this phone? Project files will remain untouched.'))return;const db=await openStudioDatabase();await new Promise((ok,no)=>{const tx=db.transaction('appOverrides','readwrite');tx.objectStore('appOverrides').clear();tx.oncomplete=ok;tx.onerror=()=>no(tx.error)});location.reload()}
 $('#studio-edit-app-source').addEventListener('click',()=>{void openAppSourceEditor()})
 $('#studio-app-source-file').addEventListener('change',e=>{void loadAppSourceFile(e.target.value).catch(err=>$('#studio-app-source-status').textContent=err.message)})

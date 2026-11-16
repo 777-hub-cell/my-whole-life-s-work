@@ -13,6 +13,9 @@ let sourceDirty = false
 
 let localOnly = false
 let remoteSession = false
+let studioSocket = null
+let studioSocketRetryTimer = null
+let studioSocketRetryDelay = 1000
 let studioDbPromise = null
 let studioFiles = []
 let studioCurrentPath = ''
@@ -75,6 +78,118 @@ function setView(name) {
     refreshDraftStatus().catch(error => showMessage('#source-message', error.message, 'error'))
     loadSourceFolder('').catch(error => showMessage('#source-message', error.message, 'error'))
   }
+}
+
+function setLiveLinkState(label, state = '') {
+  const pill = $('#live-link-pill')
+  if (!pill) return
+  pill.classList.toggle('ok', state === 'connected')
+  pill.classList.toggle('bad', state === 'error')
+  $('#live-link-label').textContent = label
+}
+
+function addLiveActivity(label, kind = '') {
+  const list = $('#live-activity-list')
+  if (!list) return
+  const empty = list.querySelector('.muted')
+  if (empty) list.replaceChildren()
+  const row = document.createElement('div')
+  row.className = 'live-activity-row'
+  const dot = document.createElement('i')
+  dot.className = 'live-activity-dot' + (kind ? ' ' + kind : '')
+  const message = document.createElement('span')
+  message.textContent = label
+  const time = document.createElement('time')
+  time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  row.append(dot, message, time)
+  list.prepend(row)
+  while (list.children.length > 12) list.lastElementChild.remove()
+}
+
+function applyLiveRuntime(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return
+  const online = snapshot.state === 'connected'
+  $('#service-pill')?.classList.toggle('ok', online)
+  $('#service-pill')?.classList.toggle('bad', ['degraded', 'needs-pairing', 'disconnected'].includes(snapshot.state))
+  if ($('#service-pill-label')) $('#service-pill-label').textContent = online ? 'Connected' : 'Aharane ' + String(snapshot.state || 'unknown')
+  if ($('#whatsapp-state')) $('#whatsapp-state').textContent = snapshot.connected ? 'Connected' : snapshot.state || 'Unknown'
+  if ($('#whatsapp-dot')) {
+    $('#whatsapp-dot').classList.toggle('connected', Boolean(snapshot.connected))
+    $('#whatsapp-dot').classList.toggle('offline', !snapshot.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(snapshot.state))
+  }
+  if ($('#allowed-senders')) $('#allowed-senders').textContent = String(snapshot.allowlistedSenderCount ?? '—')
+  if ($('#connection-detail')) {
+    $('#connection-detail').textContent = snapshot.connected
+      ? 'Aharane is connected to WhatsApp.'
+      : snapshot.registered ? 'The saved WhatsApp session is not currently connected.' : 'This Aharane instance has not completed WhatsApp pairing.'
+  }
+}
+
+function handleStudioEvent(event) {
+  if (!event || typeof event.type !== 'string') return
+  if (['studio.connected', 'studio.snapshot', 'whatsapp.status'].includes(event.type)) {
+    applyLiveRuntime(event.data)
+    if (event.type === 'whatsapp.status') {
+      const state = event.data?.state || 'unknown'
+      addLiveActivity('WhatsApp connection: ' + state, state === 'connected' ? 'good' : 'neutral')
+    }
+    return
+  }
+  if (event.type === 'whatsapp.command.received') {
+    addLiveActivity('Received command ' + String(event.data?.command || 'unknown').slice(0, 40), 'neutral')
+    return
+  }
+  if (event.type === 'whatsapp.command.replied') {
+    addLiveActivity('Replied to ' + String(event.data?.command || 'command').slice(0, 40), 'good')
+    return
+  }
+  if (event.type === 'studio.error') addLiveActivity('Live connection error: ' + String(event.data?.error || 'unknown'), 'bad')
+}
+
+function stopStudioSocket() {
+  if (studioSocketRetryTimer) clearTimeout(studioSocketRetryTimer)
+  studioSocketRetryTimer = null
+  const active = studioSocket
+  studioSocket = null
+  if (active) {
+    active.onclose = null
+    try { active.close(1000, 'Signed out') } catch {}
+  }
+  setLiveLinkState('Live link off')
+}
+
+function connectStudioSocket() {
+  if (!remoteSession || localOnly) return
+  if (studioSocket && [WebSocket.CONNECTING, WebSocket.OPEN].includes(studioSocket.readyState)) return
+  if (studioSocketRetryTimer) clearTimeout(studioSocketRetryTimer)
+  studioSocketRetryTimer = null
+  setLiveLinkState('Connecting…')
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const socket = new WebSocket(protocol + '//' + location.host + '/api/studio/socket')
+  studioSocket = socket
+  socket.addEventListener('open', () => {
+    studioSocketRetryDelay = 1000
+    setLiveLinkState('Live', 'connected')
+    addLiveActivity('Live connection established', 'good')
+    try { socket.send(JSON.stringify({ type: 'status.get' })) } catch {}
+  })
+  socket.addEventListener('message', event => {
+    try { handleStudioEvent(JSON.parse(String(event.data))) } catch {}
+  })
+  socket.addEventListener('error', () => {
+    setLiveLinkState('Connection issue', 'error')
+    try { socket.close() } catch {}
+  })
+  socket.addEventListener('close', () => {
+    if (studioSocket === socket) studioSocket = null
+    if (!remoteSession || localOnly) return
+    setLiveLinkState('Reconnecting…', 'error')
+    studioSocketRetryTimer = setTimeout(() => {
+      studioSocketRetryTimer = null
+      connectStudioSocket()
+    }, studioSocketRetryDelay)
+    studioSocketRetryDelay = Math.min(30_000, studioSocketRetryDelay * 2)
+  })
 }
 
 async function refreshStatus() {
@@ -651,6 +766,7 @@ async function connect() {
     await refreshStatus()
     await refreshUpdateStatus()
     setView('overview')
+    connectStudioSocket()
     showMessage('#overview-message', 'Connected to Aharane.', 'success')
   } catch (error) {
     showMessage('#login-message', error.message, 'error')
@@ -661,6 +777,7 @@ async function connect() {
 
 async function logout() {
   remoteSession = false
+  stopStudioSocket()
   localOnly = false
   document.body.classList.remove('local-only')
   try { await api('logout', { method: 'POST', body: '{}' }) } catch {}
@@ -1264,4 +1381,5 @@ api('status').then(async () => {
   $('#application').hidden = false
   await refreshStatus()
   await refreshUpdateStatus()
+  connectStudioSocket()
 }).catch(() => {})

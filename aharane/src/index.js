@@ -1,6 +1,6 @@
 import { appendFile, cp, lstat, mkdir, open, readFile, realpath, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { constants as fsConstants, createReadStream } from 'node:fs'
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { resolve, join, dirname, sep, relative, isAbsolute, extname } from 'node:path'
@@ -116,16 +116,15 @@ function tokenMatches(candidate) {
   return supplied.length === expected.length && timingSafeEqual(supplied, expected)
 }
 
-function requireAdmin(req, res, next) {
-  const authorization = String(req.get('authorization') || '')
-  const match = authorization.match(/^Bearer\s+(.+)$/i)
-  if (!match || !tokenMatches(match[1])) {
-    res.status(401).json({ ok: false, error: 'Admin authentication required' })
-    return
-  }
-  next()
-}
-
+const ADMIN_SESSION_COOKIE='aharane_admin_session'
+const ADMIN_SESSION_SECONDS=12*60*60
+const adminLoginAttempts=new Map()
+function requestCookie(req,name){const raw=String(req.headers?.cookie||'');for(const part of raw.split(';')){const [key,...value]=part.trim().split('=');if(key===name){try{return decodeURIComponent(value.join('='))}catch{return ''}}}return ''}
+function adminSessionSignature(expiry){return createHmac('sha256',ADMIN_TOKEN).update('aharane-admin-session-v1:'+String(expiry)).digest('base64url')}
+function adminSessionMatches(candidate){const parts=String(candidate||'').split('.');if(parts.length!==2)return false;const expiry=Number(parts[0]),now=Math.floor(Date.now()/1000);if(!Number.isSafeInteger(expiry)||expiry<=now||expiry>now+ADMIN_SESSION_SECONDS+60)return false;const a=Buffer.from(parts[1]),b=Buffer.from(adminSessionSignature(parts[0]));return a.length===b.length&&timingSafeEqual(a,b)}
+function sameOriginRequest(req){const origin=String(req.headers?.origin||req.get?.('origin')||''),host=String(req.headers?.host||req.get?.('host')||'').toLowerCase();if(!origin||!host)return false;try{const u=new URL(origin),local=/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host);return u.host.toLowerCase()===host&&(u.protocol==='https:'||(local&&u.protocol==='http:'))}catch{return false}}
+function allowAdminLogin(ip){const now=Date.now(),win=15*60*1000,old=adminLoginAttempts.get(ip),r=!old||now-old.startedAt>=win?{startedAt:now,count:0}:old;r.count++;adminLoginAttempts.set(ip,r);for(const [k,v] of adminLoginAttempts)if(now-v.startedAt>=win)adminLoginAttempts.delete(k);return r.count<=8}
+function requireAdmin(req,res,next){const auth=String(req.get('authorization')||''),m=auth.match(/^Bearer\s+(.+)$/i),bearer=m?.[1]||'',cookie=requestCookie(req,ADMIN_SESSION_COOKIE),ok=tokenMatches(bearer)||adminSessionMatches(bearer)||(sameOriginRequest(req)&&adminSessionMatches(cookie));if(!ok){res.status(401).json({ok:false,error:'Admin authentication required'});return}next()}
 function allowPairAttempt(ip) {
   const now = Date.now()
   const windowMs = 15 * 60 * 1000
@@ -663,6 +662,17 @@ app.use('/api', (req, res, next) => {
 app.get('/healthz', (_req, res) => {
   res.json({ ok: true, service: 'aharane' })
 })
+app.post('/api/login',(req,res)=>{
+ if(!sameOriginRequest(req))return res.status(403).json({ok:false,error:'Cross-origin requests are not allowed.'})
+ const ip=String(req.ip||'unknown');if(!allowAdminLogin(ip))return res.status(429).json({ok:false,error:'Too many sign-in attempts. Try again in 15 minutes.'})
+ const token=String(req.body?.token||'');if(token.length<32||token.length>512||!tokenMatches(token))return res.status(401).json({ok:false,error:'The Aharane admin token was rejected.'})
+ adminLoginAttempts.delete(ip);const exp=Math.floor(Date.now()/1000)+ADMIN_SESSION_SECONDS,session=exp+'.'+adminSessionSignature(exp)
+ res.set('Set-Cookie',`${ADMIN_SESSION_COOKIE}=${encodeURIComponent(session)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${ADMIN_SESSION_SECONDS}`);res.json({ok:true,expiresAt:exp})
+})
+app.post('/api/logout',(req,res)=>{
+ if(!sameOriginRequest(req))return res.status(403).json({ok:false,error:'Cross-origin requests are not allowed.'})
+ res.set('Set-Cookie',`${ADMIN_SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);res.json({ok:true})
+})
 app.get('/api/status', requireAdmin, (_req, res) => {
   res.json({
     ok: true,
@@ -1149,6 +1159,8 @@ app.post('/api/update/deploy', requireAdmin, async (req, res) => {
   setImmediate(() => { void prepareAndActivateUpdate(updateId) })
 })
 
+app.use('/studio/api',(_req,res)=>res.status(404).end())
+app.use('/studio',(req,res,next)=>{res.set('X-Content-Type-Options','nosniff');res.set('Referrer-Policy','no-referrer');next()},express.static(fileURLToPath(new URL('../control-centre/',import.meta.url)),{index:'index.html',fallthrough:true,etag:false,maxAge:0}))
 app.use(express.static(fileURLToPath(new URL('../public/', import.meta.url)), {
   index: 'index.html',
   fallthrough: true,
@@ -1175,13 +1187,9 @@ server.on('upgrade', (req, transport, head) => {
     return
   }
 
-  const authorization = String(req.headers.authorization || '')
-  const match = authorization.match(/^Bearer\s+(.+)$/i)
-  if (!match || !tokenMatches(match[1])) {
-    transport.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
-    transport.destroy()
-    return
-  }
+  const authorization=String(req.headers.authorization||''),match=authorization.match(/^Bearer\s+(.+)$/i),bearer=match?.[1]||'',cookie=requestCookie(req,ADMIN_SESSION_COOKIE)
+  const ok=tokenMatches(bearer)||adminSessionMatches(bearer)||(sameOriginRequest(req)&&adminSessionMatches(cookie))
+  if(!ok){transport.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');transport.destroy();return}
 
   studioWss.handleUpgrade(req, transport, head, client => {
     studioWss.emit('connection', client, req)

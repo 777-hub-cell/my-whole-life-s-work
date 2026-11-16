@@ -73,3 +73,16 @@ test('manual source editor is separate, scoped and protected by backup/apply/rol
     assert.ok(!proxy.includes(forbidden), `Unexpected NIGHT/MSCC reference: ${forbidden}`)
   }
 })
+
+
+test('manual file changes are staged in a separate release until explicitly applied', async () => {
+  const runtime = await read('../src/index.js')
+  assert.match(runtime, /async function sourceWorkspaceDirectory\(\)/)
+  assert.match(runtime, /workspaceRelease/)
+  assert.match(runtime, /manual-edit-workspace-/)
+  assert.match(runtime, /previousRelease: current/)
+  assert.match(runtime, /candidateRelease: actualWorkspace/)
+  assert.match(runtime, /await rename\(nextLink, CURRENT_RELEASE\)/)
+  assert.match(runtime, /The running Aharane release was never changed/)
+  assert.ok(!runtime.includes("source: 'manual-discard'"), 'Discarding a draft must not trigger a server restart')
+})

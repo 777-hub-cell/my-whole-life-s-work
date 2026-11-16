@@ -25,6 +25,9 @@ let studioObjectUrls = []
 const STUDIO_MAX_FILE_BYTES = 2 * 1024 * 1024
 const STUDIO_MAX_PROJECT_BYTES = 20 * 1024 * 1024
 const STUDIO_MAX_FILES = 250
+const APP_SOURCE_FILES = ['index.html', 'styles.css', 'app.js', 'manifest.webmanifest']
+let studioAppSourcePath = 'index.html'
+let studioAppSourceOriginal = ''
 
 function showMessage(target, message, kind = '') {
   const element = typeof target === 'string' ? $(target) : target
@@ -34,7 +37,7 @@ function showMessage(target, message, kind = '') {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch('/api/aharane/' + path.replace(/^\//, ''), {
+  const response = await fetch('/api/' + path.replace(/^\//, ''), {
     credentials: 'same-origin',
     cache: 'no-store',
     ...options,
@@ -66,7 +69,12 @@ function formatDate(value) {
 
 function setView(name) {
   const titles = { overview: 'Overview', pairing: 'WhatsApp pairing', deploy: 'Deploy update', files: 'Files Manager', studio: 'Local Studio' }
-  if (localOnly && name !== 'studio') name = 'studio'
+  if (localOnly && ['pairing', 'deploy', 'files'].includes(name)) {
+    $('#application').hidden = true
+    $('#login-screen').hidden = false
+    showMessage('#login-message', 'Sign in to unlock Aharane bot controls.')
+    return
+  }
   $('.view-section').forEach(section => { section.hidden = section.id !== 'view-' + name })
   $('.nav-item[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === name))
   $('#page-name').textContent = titles[name] || 'Overview'
@@ -165,7 +173,7 @@ function connectStudioSocket() {
   studioSocketRetryTimer = null
   setLiveLinkState('Connecting…')
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const socket = new WebSocket(protocol + '//' + location.host + '/api/studio/socket')
+  const socket = new WebSocket(protocol + '//' + location.host + '/ws')
   studioSocket = socket
   socket.addEventListener('open', () => {
     studioSocketRetryDelay = 1000
@@ -782,10 +790,9 @@ async function logout() {
   document.body.classList.remove('local-only')
   try { await api('logout', { method: 'POST', body: '{}' }) } catch {}
   if (pollingTimer) clearInterval(pollingTimer)
-  $('#application').hidden = true
-  $('#login-screen').hidden = false
   $('#admin-token').value = ''
   clearPackage()
+  localStudioMode('overview')
 }
 
 $('#login-form').addEventListener('submit', event => {
@@ -914,10 +921,11 @@ function openStudioDatabase() {
   if (studioDbPromise) return studioDbPromise
   studioDbPromise = new Promise((resolve, reject) => {
     if (!('indexedDB' in window)) return reject(new Error('This browser does not support local project storage.'))
-    const request = indexedDB.open('aharane-local-studio', 1)
+    const request = indexedDB.open('aharane-local-studio', 2)
     request.onupgradeneeded = () => {
       const db = request.result
       if (!db.objectStoreNames.contains('files')) db.createObjectStore('files', { keyPath: 'path' })
+      if (!db.objectStoreNames.contains('appOverrides')) db.createObjectStore('appOverrides', { keyPath: 'path' })
     }
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error || new Error('Could not open local project storage.'))
@@ -965,16 +973,23 @@ function studioCanEdit(path, type = '') {
     String(type).startsWith('text/')
 }
 
-function localStudioMode() {
+function localStudioMode(initialView = 'overview') {
   const savedTitle = localStorage.getItem('aharane-local-studio-title')
   if (savedTitle) $('#studio-project-title').value = savedTitle
   $('#studio-connect-button').textContent = remoteSession ? 'Back to bot controls' : 'Connect to Aharane'
-  localOnly = true
-  document.body.classList.add('local-only')
+  localOnly = !remoteSession
+  document.body.classList.toggle('local-only', localOnly)
   $('#login-screen').hidden = true
   $('#application').hidden = false
-  setView('studio')
-  showMessage('#studio-message', 'Local workspace opened. Files and edits are stored on this device.', 'success')
+  if (localOnly) {
+    $('#whatsapp-state').textContent = 'Not connected'
+    $('#connection-detail').textContent = 'Connect to Aharane to retrieve live bot status and controls.'
+    $('#bot-version').textContent = '—'
+    $('#allowed-senders').textContent = '—'
+  }
+  setView(initialView)
+  showMessage(initialView === 'studio' ? '#studio-message' : '#overview-message',
+    localOnly ? 'Aharane Local Studio is open on this device. Connect to unlock remote bot management.' : 'Aharane Local Studio is ready.', 'success')
 }
 
 function downloadStudioBlob(blob, filename) {
@@ -1311,7 +1326,7 @@ async function renderStudioPreview() {
   }
 }
 
-$('#open-local-studio').addEventListener('click', () => localStudioMode())
+$('#open-local-studio').addEventListener('click', () => localStudioMode('overview'))
 $('#studio-connect-button').addEventListener('click', () => {
   if (remoteSession) {
     localOnly = false
@@ -1370,7 +1385,7 @@ $('#install-app-button').addEventListener('click', async () => {
 })
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {})
+    navigator.serviceWorker.register('/studio/sw.js', { scope: '/studio/' }).catch(() => {})
   })
 }
 
@@ -1382,4 +1397,26 @@ api('status').then(async () => {
   await refreshStatus()
   await refreshUpdateStatus()
   connectStudioSocket()
-}).catch(() => {})
+}).catch(() => {
+  remoteSession = false
+  localStudioMode('overview')
+})
+
+async function appSourceGet(path){const db=await openStudioDatabase();return new Promise((ok,no)=>{const r=db.transaction('appOverrides','readonly').objectStore('appOverrides').get(path);r.onsuccess=()=>ok(r.result||null);r.onerror=()=>no(r.error)})}
+async function appSourceGetAll(){const db=await openStudioDatabase();return new Promise((ok,no)=>{const r=db.transaction('appOverrides','readonly').objectStore('appOverrides').getAll();r.onsuccess=()=>ok(r.result||[]);r.onerror=()=>no(r.error)})}
+async function appSourcePut(path,content){if(!APP_SOURCE_FILES.includes(path))throw Error('Unsupported app source file.');if(typeof content!=='string'||content.length>1024*1024)throw Error('App source must be text and no larger than 1 MB.');const db=await openStudioDatabase();return new Promise((ok,no)=>{const tx=db.transaction('appOverrides','readwrite');tx.objectStore('appOverrides').put({path,content,updatedAt:Date.now()});tx.oncomplete=ok;tx.onerror=()=>no(tx.error)})}
+async function loadAppSourceFile(path){if(!APP_SOURCE_FILES.includes(path))throw Error('Unsupported app source file.');const saved=await appSourceGet(path);let content=saved?.content;if(typeof content!=='string'){const r=await fetch('/studio/'+path,{cache:'no-store'});if(!r.ok)throw Error('Could not load '+path+'.');content=await r.text()}studioAppSourcePath=path;studioAppSourceOriginal=content;$('#studio-app-source-file').value=path;$('#studio-app-source-editor').value=content;$('#studio-app-source-save').disabled=true;$('#studio-app-source-apply').disabled=(await appSourceGetAll()).length===0;$('#studio-app-source-status').textContent=saved?'Saved local override.':'Editing original '+path+'.'}
+async function openAppSourceEditor(){$('#studio-app-source-panel').hidden=false;try{await loadAppSourceFile($('#studio-app-source-file').value||'index.html')}catch(e){$('#studio-app-source-status').textContent=e.message}}
+async function saveAppSourceDraft(){const content=$('#studio-app-source-editor').value;await appSourcePut(studioAppSourcePath,content);studioAppSourceOriginal=content;$('#studio-app-source-save').disabled=true;$('#studio-app-source-apply').disabled=false;$('#studio-app-source-status').textContent=studioAppSourcePath+' saved on this phone.'}
+async function applyAppSourceChanges(){if($('#studio-app-source-editor').value!==studioAppSourceOriginal)await saveAppSourceDraft();if(!(await appSourceGetAll()).length)return;if(!confirm('Apply saved source changes to this phone and reload Aharane Local Studio?'))return;location.reload()}
+async function exportAppSourceBackup(){const files=[];for(const path of APP_SOURCE_FILES){const saved=await appSourceGet(path);let content=typeof saved?.content==='string'?saved.content:null;if(content===null){const r=await fetch('/studio/'+path,{cache:'no-store'});if(!r.ok)throw Error('Could not export '+path+'.');content=await r.text()}files.push({path,content})}const data={format:'aharane-local-studio-source-backup',version:1,createdAt:new Date().toISOString(),files};downloadStudioBlob(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),'aharane-local-studio-source-backup.json')}
+async function restoreAppSource(){if(!confirm('Restore the original app source on this phone? Project files will remain untouched.'))return;const db=await openStudioDatabase();await new Promise((ok,no)=>{const tx=db.transaction('appOverrides','readwrite');tx.objectStore('appOverrides').clear();tx.oncomplete=ok;tx.onerror=()=>no(tx.error)});location.reload()}
+$('#studio-edit-app-source').addEventListener('click',()=>{void openAppSourceEditor()})
+$('#studio-app-source-file').addEventListener('change',e=>{void loadAppSourceFile(e.target.value).catch(err=>$('#studio-app-source-status').textContent=err.message)})
+$('#studio-app-source-reload').addEventListener('click',()=>{void loadAppSourceFile(studioAppSourcePath).catch(err=>$('#studio-app-source-status').textContent=err.message)})
+$('#studio-app-source-editor').addEventListener('input',()=>{const dirty=$('#studio-app-source-editor').value!==studioAppSourceOriginal;$('#studio-app-source-save').disabled=!dirty;$('#studio-app-source-status').textContent=dirty?'Unsaved source changes.':'No unsaved changes.'})
+$('#studio-app-source-save').addEventListener('click',()=>{void saveAppSourceDraft().catch(err=>$('#studio-app-source-status').textContent=err.message)})
+$('#studio-app-source-apply').addEventListener('click',()=>{void applyAppSourceChanges().catch(err=>$('#studio-app-source-status').textContent=err.message)})
+$('#studio-app-source-restore').addEventListener('click',()=>{void restoreAppSource().catch(err=>$('#studio-app-source-status').textContent=err.message)})
+$('#studio-app-source-export').addEventListener('click',()=>{void exportAppSourceBackup().catch(err=>$('#studio-app-source-status').textContent=err.message)})
+$('#studio-app-source-close').addEventListener('click',()=>{if($('#studio-app-source-editor').value!==studioAppSourceOriginal&&!confirm('Close and discard unsaved typing?'))return;$('#studio-app-source-panel').hidden=true})

@@ -1,47 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-
-const read = path => readFile(new URL(path, import.meta.url), 'utf8')
-
-test('Aharane exposes an authenticated WebSocket endpoint only on its private listener', async () => {
-  const runtime = await read('../src/index.js')
-  assert.match(runtime, /import \{ WebSocket, WebSocketServer \} from 'ws'/)
-  assert.match(runtime, /server\.on\('upgrade'/)
-  assert.match(runtime, /pathname !== '\/ws'/)
-  assert.match(runtime, /tokenMatches\(match\[1\]\)/)
-  assert.match(runtime, /maxPayload: 64 \* 1024/)
-  assert.match(runtime, /message\?\.type === 'ping'/)
-  assert.match(runtime, /message\?\.type === 'status\.get'/)
-  assert.match(runtime, /Unsupported message type/)
-  assert.match(runtime, /publishStudioEvent\('whatsapp\.status'/)
-  assert.doesNotMatch(runtime, /AHARANE_HOST.*0\.0\.0\.0/)
-})
-
-test('the Vercel WebSocket bridge keeps the admin token server-side and validates origin/session', async () => {
-  const bridge = await read('../control-centre/api/studio/socket.js')
-  assert.match(bridge, /aharane_cc_session/)
-  assert.match(bridge, /sameOrigin\(req\)/)
-  assert.match(bridge, /getCookie\(req, SESSION_COOKIE\)/)
-  assert.match(bridge, /Authorization: 'Bearer ' \+ token/)
-  assert.match(bridge, /\/aharane\/api\/status/)
-  assert.match(bridge, /\/aharane\/ws/)
-  assert.match(bridge, /CF-Access-Client-Secret/)
-})
-
-test('the Control Centre API proxy exposes the authenticated studio snapshot', async () => {
-  const proxy = await read('../control-centre/api/aharane/[...path].js')
-  assert.match(proxy, /\['studio\/snapshot', '\/api\/studio\/snapshot'\]/)
-})
-
-test('the shared router forwards only Aharane API and WebSocket paths to port 8790', async () => {
-  const router = await read('../infra/aharane-ngrok-router.mjs')
-  assert.match(router, /NIGHT_PORT.*8787/)
-  assert.match(router, /AHARANE_PORT.*8790/)
-  assert.match(router, /ROUTER_PORT.*8786/)
-  assert.match(router, /pathname\.startsWith\(AHARANE_PREFIX \+ '\/api\/'\)/)
-  assert.match(router, /incoming\.pathname !== AHARANE_PREFIX \+ '\/ws'/)
-  assert.match(router, /path: '\/ws' \+ incoming\.search/)
-  assert.match(router, /socket\.pipe\(client\)/)
-  assert.match(router, /client\.pipe\(socket\)/)
-})
+import {readFile} from 'node:fs/promises'
+const read=p=>readFile(new URL(p,import.meta.url),'utf8')
+test('Aharane serves Local Studio PWA from its private listener',async()=>{const s=await read('../src/index.js');for(const x of ["app.use('/studio',","new URL('../control-centre/',import.meta.url)","app.use('/studio/api'","app.get('/api/status', requireAdmin","app.post('/api/login'","app.post('/api/logout'","HOST !== '127.0.0.1'"])assert.ok(s.includes(x),x)})
+test('sessions are signed, short-lived and HttpOnly',async()=>{const s=await read('../src/index.js');for(const x of ["createHmac('sha256',ADMIN_TOKEN)","ADMIN_SESSION_COOKIE='aharane_admin_session'","HttpOnly; Secure; SameSite=Strict","adminSessionMatches(cookie)","sameOriginRequest(req)","allowAdminLogin(ip)","Max-Age=0"])assert.ok(s.includes(x),x)})
+test('browser uses same-origin API and WebSocket, not Vercel relay',async()=>{const s=await read('../control-centre/app.js');for(const x of ["fetch('/api/' + path.replace","location.host + '/ws'","navigator.serviceWorker.register('/studio/sw.js'"])assert.ok(s.includes(x),x);assert.ok(!s.includes('/api/aharane/'));assert.ok(!s.includes('/api/studio/socket'))})
+test('whole app opens offline; remote views require login',async()=>{const s=await read('../control-centre/app.js');assert.ok(s.includes("localStudioMode('overview')"));assert.ok(s.includes("['pairing', 'deploy', 'files'].includes(name)"))})
+test('user can edit, apply, back up and recover app source',async()=>{const a=await read('../control-centre/app.js'),w=await read('../control-centre/sw.js'),h=await read('../control-centre/index.html'),r=await read('../control-centre/recover.html');for(const f of ['index.html','styles.css','app.js','manifest.webmanifest'])assert.ok(a.includes("'"+f+"'"));assert.ok(h.includes('studio-edit-app-source'));assert.ok(a.includes('appOverrides'));assert.ok(a.includes('Apply to this phone'));assert.ok(w.includes('SOURCE_PATHS'));assert.ok(w.includes('readOverride'));assert.ok(r.includes("objectStore('appOverrides').clear()"));assert.ok(w.includes("u.pathname.startsWith('/api/')"))})
+test('WebSocket stays protected and exposes only status and ping actions',async()=>{const s=await read('../src/index.js');for(const x of ["server.on('upgrade'","pathname !== '/ws'","adminSessionMatches(cookie)","message?.type === 'ping'","message?.type === 'status.get'","Unsupported message type"])assert.ok(s.includes(x),x)})

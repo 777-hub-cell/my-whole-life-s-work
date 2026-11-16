@@ -97,30 +97,18 @@ The Aharane Control Centre has a separate **Deploy update** workflow. It does no
 ZIP updates install to a fresh directory under `/opt/aharane/releases`, atomically switch only `/opt/aharane/current`, and preserve `/var/lib/aharane` and `/etc/aharane.env`. The service checks the new release on startup and restores the previous release when the local health check fails. The updater never changes the NIGHT/MSCC service or files.
 
 
-## Aharane Control Centre
+## Aharane Local Studio PWA
 
-The separate Vercel project lives under `aharane/control-centre`. It provides private sign-in, runtime status, WhatsApp pairing, direct ZIP deployment and a ZIP package library in the Files Manager. Each stored package has a three-dot menu with **Update Aharane** and **Remove ZIP** actions. The Files Manager also includes a separately saved source-file browser/editor for approved Aharane code and text files under `src`, `public`, `scripts`, `test` and `examples`. It creates a clean release backup before the first edit, runs project checks before applying changes, restarts Aharane and uses the startup health check to roll back failures. Pending edits can be discarded to restore the clean backup. The editor does not expose environment variables, WhatsApp auth or persistent data.
+The complete Aharane Control Centre is an installable PWA served by Aharane at `/studio/`. It uses same-origin `/api/*` and `/ws`, not Vercel or ngrok. Aharane stays on `127.0.0.1:8790`; use a normal HTTPS reverse proxy such as Caddy without exposing port 8790. See [infra/DIRECT-HTTPS.md](infra/DIRECT-HTTPS.md).
 
-The Control Centre requires an authenticated HTTPS tunnel to Aharane's loopback API at `127.0.0.1:8790`. Never bind that listener to a public interface. See [control-centre/README.md](control-centre/README.md).
-
+The plain HTML/CSS/JS app includes its own on-device source editor for `index.html`, `styles.css`, `app.js` and the manifest. Overrides are stored in IndexedDB and applied locally by the service worker. `/studio/recover.html` restores the original PWA if custom code breaks it. Local project files remain usable offline; remote bot functions need internet and sign-in.
 ## ZIP update packages
 
 See [UPDATE-PACKAGE.md](UPDATE-PACKAGE.md) for the required root-level `aharane-update.json` marker, ZIP layout, protected paths, file limits and rollback behavior. A valid package can be generated independently by an AI coding assistant or another build environment; it does not need to come from GitHub.
 
 
-## Local Studio live connection
+## Direct same-origin authentication
 
-The Aharane runtime provides an authenticated WebSocket endpoint at `/ws` on its existing loopback-only HTTP server. It is not a second listener and does not change the private bind address.
+The PWA submits the admin token only to Aharane over HTTPS. Aharane issues a short-lived HMAC-signed HttpOnly, Secure, SameSite=Strict cookie; browser JavaScript cannot read it. API requests and WebSocket upgrades use that same-origin cookie. The permanent admin token stays in `/etc/aharane.env`.
 
-- `GET /api/studio/snapshot` returns a safe runtime snapshot for the local workspace.
-- `/ws` requires the existing `AHARANE_ADMIN_TOKEN` as a bearer credential during the WebSocket handshake.
-- Client messages currently allow only `ping` and `status.get`. Unknown actions are rejected; this endpoint is not a remote shell or arbitrary command runner.
-- Server events include WhatsApp connection changes and command names handled by Aharane. Message bodies, pairing codes, auth data and environment values are never broadcast.
-- The server accepts small text frames only and rate-limits client messages.
-
-The separate Control Centre exposes `/api/studio/socket`. Its server-side Vercel function validates the same-origin HttpOnly session cookie, verifies the session against Aharane, then opens the upstream WebSocket and relays frames. The admin bearer token and any Cloudflare Access service token remain on the server side and are never sent to browser JavaScript.
-
-The reverse tunnel must forward both `/aharane/api/*` HTTP requests and the `/aharane/ws` WebSocket upgrade to Aharane's private port 8790. The shared tunnel router must support HTTP Upgrade and the ngrok endpoint must target that router; the router must continue forwarding ordinary root traffic to NIGHT/MSCC. Do not expose port 8790 publicly or repoint the shared tunnel directly at Aharane.
-
-
-The shared host's ngrok router source is kept separately at [infra/aharane-ngrok-router.mjs](infra/aharane-ngrok-router.mjs). It preserves NIGHT's existing root forwarding to port 8787 and routes only Aharane API and WebSocket paths to port 8790. To activate the live connection, copy this router source to /usr/local/libexec/aharane-ngrok-router.mjs, restart aharane-ngrok-router.service, and point the ngrok endpoint to 127.0.0.1:8786. This is a separate host-level network change; it is intentionally not performed by the ordinary Aharane bot update.
+The old Vercel proxy and ngrok-router path are not used by the PWA. Do not change NIGHT/MSCC's existing public routing when enabling the Aharane HTTPS hostname.

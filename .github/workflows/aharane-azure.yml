@@ -42,6 +42,9 @@ jobs:
       - name: Install Aharane dependencies
         working-directory: aharane
         run: npm install --no-audit --no-fund
+      - name: Audit production dependency tree
+        working-directory: aharane
+        run: npm audit --omit=dev --audit-level=high
       - name: Run Aharane policy, isolation and syntax checks
         working-directory: aharane
         run: npm run check

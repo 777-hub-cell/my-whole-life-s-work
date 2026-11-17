@@ -1435,6 +1435,7 @@ $('#change-password-button').addEventListener('click', () => {
   $('#current-password').focus()
 })
 $('#password-modal-close').addEventListener('click', () => { $('#password-modal').hidden = true })
+$('#password-modal-logout').addEventListener('click', () => { $('#password-modal').hidden = true; void logout() })
 $('#change-password-form').addEventListener('submit', async event => {
   event.preventDefault()
   const currentPassword = $('#current-password').value

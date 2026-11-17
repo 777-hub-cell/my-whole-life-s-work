@@ -579,3 +579,5 @@ body.compact-files .source-file-row { min-height:43px; }
 .source-item-menu button:hover:not(:disabled) { background:var(--app-soft); }
 .source-item-menu button:disabled { opacity:.38; cursor:not-allowed; }
 .menu-separator { height:1px; background:var(--app-line); margin:4px 2px; }
+
+.home-connection>p:empty { display:none; }

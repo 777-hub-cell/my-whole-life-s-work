@@ -73,7 +73,7 @@ function setView(name) {
     void verifyRemoteAccess(name)
     return
   }
-  $$$('.view-section').forEach(section => { section.hidden = section.id !== 'view-' + name })
+  $$('.view-section').forEach(section => { section.hidden = section.id !== 'view-' + name })
   $$('.nav-item[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === name))
   $$('.bottom-nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === name))
   $('#page-name').textContent = titles[name] || 'Overview'
@@ -155,7 +155,7 @@ function applyLiveRuntime(snapshot) {
   if ($('#account-status-dot')) $('#account-status-dot').classList.toggle('connected', Boolean(snapshot.connected))
   if ($('#connection-detail')) {
     $('#connection-detail').textContent = snapshot.connected
-      ? 'Aharane is connected to WhatsApp.'
+      ? ''
       : snapshot.registered ? 'The saved WhatsApp session is not currently connected.' : 'This Aharane instance has not completed WhatsApp pairing.'
   }
 }
@@ -238,7 +238,7 @@ async function refreshStatus() {
   $('#whatsapp-dot').classList.toggle('connected', status.connected)
   $('#whatsapp-dot').classList.toggle('offline', !status.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(status.state))
   $('#connection-detail').textContent = status.connected
-    ? 'Aharane is connected to WhatsApp.'
+    ? ''
     : status.registered ? 'The saved WhatsApp session is not currently connected.' : 'This Aharane instance has not completed WhatsApp pairing.'
   $('#allowed-senders').textContent = String(status.allowlistedSenderCount ?? '—')
   if ($('#account-status-text')) $('#account-status-text').textContent = status.connected ? 'Connected' : (status.state || 'Not connected')

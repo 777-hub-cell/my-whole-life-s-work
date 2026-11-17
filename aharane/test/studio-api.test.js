@@ -38,8 +38,12 @@ test('user can edit, apply, back up and recover app source',async()=>{
  const a=await read('../control-centre/app.js'),w=await read('../control-centre/sw.js'),h=await read('../control-centre/index.html'),r=await read('../control-centre/recover.html')
  for(const f of ['index.html','styles.css','app.js','manifest.webmanifest'])assert.ok(a.includes("'"+f+"'"))
  assert.ok(h.includes('studio-edit-app-source'));assert.ok(a.includes('appOverrides'));assert.ok(h.includes('Apply to this phone'))
- assert.ok(w.includes('SOURCE_PATHS'));assert.ok(w.includes('aharane-local-studio-shell-v4'));assert.ok(w.includes('readOverride'));assert.ok(r.includes("objectStore('appOverrides').clear()"))
+ assert.ok(w.includes('SOURCE_PATHS'));assert.ok(w.includes('aharane-local-studio-shell-v5'));assert.ok(w.includes('readOverride'));assert.ok(r.includes("objectStore('appOverrides').clear()"))
  assert.ok(w.includes("u.pathname.startsWith('/aharane/api/')"))
+ assert.ok(a.includes("$('#open-local-studio').addEventListener('click', () => localStudioMode('studio'))"))
+ const startup=a.slice(a.indexOf('// A valid session cookie'))
+ assert.ok(startup.includes('void openAuthScreen()'))
+ assert.ok(a.includes("$('#setup-panel').hidden = !auth.setupRequired"))
 })
 test('WebSocket stays protected and exposes only status and ping actions',async()=>{
  const s=await read('../src/index.js')

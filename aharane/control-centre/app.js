@@ -1362,7 +1362,7 @@ async function renderStudioPreview() {
   }
 }
 
-$('#open-local-studio').addEventListener('click', () => localStudioMode('overview'))
+$('#open-local-studio').addEventListener('click', () => localStudioMode('studio'))
 $('#studio-connect-button').addEventListener('click', () => {
   if (remoteSession) {
     localOnly = false
@@ -1470,7 +1470,7 @@ api('status').then(async () => {
   connectStudioSocket()
 }).catch(() => {
   remoteSession = false
-  localStudioMode('overview')
+  void openAuthScreen()
 })
 
 async function appSourceGet(path){const db=await openStudioDatabase();return new Promise((ok,no)=>{const r=db.transaction('appOverrides','readonly').objectStore('appOverrides').get(path);r.onsuccess=()=>ok(r.result||null);r.onerror=()=>no(r.error)})}

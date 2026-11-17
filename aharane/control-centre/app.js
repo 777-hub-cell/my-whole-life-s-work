@@ -73,8 +73,8 @@ function setView(name) {
     void verifyRemoteAccess(name)
     return
   }
-  $('.view-section').forEach(section => { section.hidden = section.id !== 'view-' + name })
-  $('.nav-item[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === name))
+  $$('.view-section').forEach(section => { section.hidden = section.id !== 'view-' + name })
+  $$('.nav-item[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === name))
   $('#page-name').textContent = titles[name] || 'Overview'
   if (name === 'studio') loadStudioFiles().catch(error => showMessage('#studio-message', error.message, 'error'))
   if (!localOnly && name === 'overview') refreshStatus().catch(error => showMessage('#overview-message', error.message, 'error'))
@@ -147,8 +147,7 @@ function applyLiveRuntime(snapshot) {
     $('#whatsapp-dot').classList.toggle('offline', !snapshot.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(snapshot.state))
   }
   if ($('#allowed-senders')) $('#allowed-senders').textContent = String(snapshot.allowlistedSenderCount ?? '—')
-  if ($('#connection-detail')) {
-    $('#connection-detail').textContent = snapshot.connected
+  if ($('#connection-detail')) {    $('#connection-detail').textContent = snapshot.connected
       ? 'Aharane is connected to WhatsApp.'
       : snapshot.registered ? 'The saved WhatsApp session is not currently connected.' : 'This Aharane instance has not completed WhatsApp pairing.'
   }
@@ -297,8 +296,7 @@ async function refreshPackages() {
     })
     const removeButton = document.createElement('button')
     removeButton.type = 'button'
-    removeButton.textContent = 'Remove ZIP'
-    removeButton.addEventListener('click', () => {
+    removeButton.textContent = 'Remove ZIP'    removeButton.addEventListener('click', () => {
       menu.hidden = true
       void removeStoredPackage(item.updateId, item.filename)
     })
@@ -447,8 +445,7 @@ async function saveSourceFile() {
     const savedPath = sourceFile
     setSourceMessage('Saved ' + savedPath + '. It is not running until you apply the changes.', 'success')
     await loadSourceFolder(sourceFolder)
-    await openSourceFile(savedPath)
-  } catch (error) {
+    await openSourceFile(savedPath)  } catch (error) {
     setSourceMessage(error.message, 'error')
   } finally {
     $('#source-save').disabled = false
@@ -597,8 +594,7 @@ function setPackage(file) {
   }
   if (file.size < 22) {
     showMessage('#validation-message', 'The selected file is too small to be a valid ZIP archive.', 'error')
-    return
-  }
+    return  }
   selectedFile = file
   $('#selected-file').hidden = false
   $('#selected-name').textContent = file.name
@@ -747,8 +743,7 @@ async function deploySelectedZip() {
   } catch (error) {
     $('#deploy-button').disabled = false
     showMessage('#deploy-message', error.message, 'error')
-  }
-}
+  }}
 
 function startDeploymentPolling() {
   if (pollingTimer) clearInterval(pollingTimer)
@@ -897,8 +892,7 @@ $('#drop-zone').addEventListener('keydown', event => {
     event.preventDefault()
     $('#zip-input').click()
   }
-})
-$('#drop-zone').addEventListener('dragover', event => {
+})$('#drop-zone').addEventListener('dragover', event => {
   event.preventDefault()
   $('#drop-zone').classList.add('dragover')
 })
@@ -1047,8 +1041,7 @@ function localStudioMode(initialView = 'overview') {
     $('#whatsapp-state').textContent = 'Not connected'
     $('#connection-detail').textContent = 'Connect to Aharane to retrieve live bot status and controls.'
     $('#bot-version').textContent = '—'
-    $('#allowed-senders').textContent = '—'
-  }
+    $('#allowed-senders').textContent = '—'  }
   setView(initialView)
   showMessage(initialView === 'studio' ? '#studio-message' : '#overview-message',
     localOnly ? 'Aharane Local Studio is open on this device. Connect to unlock remote bot management.' : 'Aharane Local Studio is ready.', 'success')
@@ -1197,8 +1190,7 @@ async function createStudioFile() {
   if (!path || blockedStudioPath(path)) {
     showMessage('#studio-message', 'That file path is not allowed in the local workspace.', 'error')
     return
-  }
-  if (studioFiles.some(item => item.path === path)) {
+  }  if (studioFiles.some(item => item.path === path)) {
     showMessage('#studio-message', 'A file with that path already exists.', 'error')
     return
   }
@@ -1347,8 +1339,7 @@ async function renderStudioPreview() {
       }
     }
     for (const style of [...documentPreview.querySelectorAll('style')]) {
-      const styleText = await rewriteStudioCss(style.textContent || '', pagePath, lookup)
-      const cssUrl = URL.createObjectURL(new Blob([styleText], { type: 'text/css' }))
+      const styleText = await rewriteStudioCss(style.textContent || '', pagePath, lookup)      const cssUrl = URL.createObjectURL(new Blob([styleText], { type: 'text/css' }))
       studioObjectUrls.push(cssUrl)
       const link = documentPreview.createElement('link')
       link.rel = 'stylesheet'
@@ -1497,8 +1488,7 @@ api('status').then(async () => {
   await refreshUpdateStatus()
   connectStudioSocket()
 }).catch(() => {
-  remoteSession = false
-  void openAuthScreen()
+  remoteSession = false  void openAuthScreen()
 })
 
 async function appSourceGet(path){const db=await openStudioDatabase();return new Promise((ok,no)=>{const r=db.transaction('appOverrides','readonly').objectStore('appOverrides').get(path);r.onsuccess=()=>ok(r.result||null);r.onerror=()=>no(r.error)})}

@@ -69,10 +69,8 @@ function formatDate(value) {
 
 function setView(name) {
   const titles = { overview: 'Overview', pairing: 'WhatsApp pairing', deploy: 'Deploy update', files: 'Files Manager', studio: 'Local Studio' }
-  if (localOnly && ['pairing', 'deploy', 'files'].includes(name)) {
-    $('#application').hidden = true
-    $('#login-screen').hidden = false
-    showMessage('#login-message', 'Sign in to unlock Aharane bot controls.')
+  if (['pairing', 'deploy', 'files'].includes(name) && (!remoteSession || localOnly)) {
+    void verifyRemoteAccess(name)
     return
   }
   $('.view-section').forEach(section => { section.hidden = section.id !== 'view-' + name })
@@ -85,6 +83,29 @@ function setView(name) {
     refreshPackages().catch(error => showMessage('#files-upload-message', error.message, 'error'))
     refreshDraftStatus().catch(error => showMessage('#source-message', error.message, 'error'))
     loadSourceFolder('').catch(error => showMessage('#source-message', error.message, 'error'))
+  }
+}
+
+let remoteAccessCheck = null
+
+async function verifyRemoteAccess(viewName) {
+  if (remoteAccessCheck) return remoteAccessCheck
+  remoteAccessCheck = (async () => {
+    try {
+      await api('status')
+      remoteSession = true
+      localOnly = false
+      document.body.classList.remove('local-only')
+      setView(viewName)
+    } catch {
+      remoteSession = false
+      await openAuthScreen()
+    }
+  })()
+  try {
+    await remoteAccessCheck
+  } finally {
+    remoteAccessCheck = null
   }
 }
 
@@ -841,7 +862,12 @@ $('#refresh-button').addEventListener('click', () => {
     .then(() => showMessage('#overview-message', 'Status refreshed.', 'success'))
     .catch(error => showMessage('#overview-message', error.message, 'error'))
 })
-$$('[data-view]').forEach(button => button.addEventListener('click', () => setView(button.dataset.view)))
+document.addEventListener('click', event => {
+  const target = event.target instanceof Element ? event.target.closest('[data-view]') : null
+  if (!target) return
+  if (target instanceof HTMLAnchorElement) event.preventDefault()
+  setView(target.dataset.view)
+})
 $('#pair-button').addEventListener('click', async () => {
   $('#pair-button').disabled = true
   $('#pair-code').textContent = ''
@@ -1463,6 +1489,8 @@ $('#change-password-form').addEventListener('submit', async event => {
 // A valid session cookie is HttpOnly; status is the session check.
 api('status').then(async () => {
   remoteSession = true
+  localOnly = false
+  document.body.classList.remove('local-only')
   $('#login-screen').hidden = true
   $('#application').hidden = false
   await refreshStatus()

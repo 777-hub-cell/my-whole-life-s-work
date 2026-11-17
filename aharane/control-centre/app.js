@@ -760,26 +760,58 @@ function startDeploymentPolling() {
   }, 2000)
 }
 
-async function connect() {
+async function connect(mode = 'login') {
   localOnly = false
   document.body.classList.remove('local-only')
-  $('#login-button').disabled = true
-  showMessage('#login-message', 'Connecting…')
+  const button = mode === 'setup' ? $('#setup-button') : $('#login-button')
+  button.disabled = true
+  showMessage('#login-message', mode === 'setup' ? 'Creating your password…' : 'Signing in…')
   try {
-    await api('login', { method: 'POST', body: JSON.stringify({ token: $('#admin-token').value }) })
+    let result
+    if (mode === 'setup') {
+      const password = $('#setup-password').value
+      if (password !== $('#setup-password-confirm').value) throw new Error('The two passwords do not match.')
+      result = await api('auth/setup', {
+        method: 'POST',
+        body: JSON.stringify({ setupCode: $('#setup-code').value.trim(), password }),
+      })
+      $('#setup-code').value = ''
+      $('#setup-password').value = ''
+      $('#setup-password-confirm').value = ''
+    } else {
+      const password = $('#studio-password').value
+      result = await api('auth/login', { method: 'POST', body: JSON.stringify({ password }) })
+      $('#studio-password').value = ''
+    }
     remoteSession = true
-    $('#admin-token').value = ''
     $('#login-screen').hidden = true
     $('#application').hidden = false
     await refreshStatus()
     await refreshUpdateStatus()
     setView('overview')
     connectStudioSocket()
-    showMessage('#overview-message', 'Connected to Aharane.', 'success')
+    showMessage('#overview-message', 'Connected to Aharane. This device will stay signed in for 30 days.', 'success')
   } catch (error) {
     showMessage('#login-message', error.message, 'error')
   } finally {
-    $('#login-button').disabled = false
+    button.disabled = false
+  }
+}
+
+async function openAuthScreen() {
+  $('#application').hidden = true
+  $('#login-screen').hidden = false
+  showMessage('#login-message', 'Checking sign-in setup…')
+  try {
+    const auth = await api('auth/status')
+    $('#setup-panel').hidden = !auth.setupRequired
+    $('#login-form').hidden = auth.setupRequired
+    $('#auth-hint').textContent = auth.setupRequired
+      ? 'Enter the one-time setup code from the Azure terminal, then choose a password of at least 12 characters.'
+      : 'Your password is protected on the server. This browser will stay signed in for 30 days.'
+    showMessage('#login-message', '')
+  } catch (error) {
+    showMessage('#login-message', error.message, 'error')
   }
 }
 
@@ -788,16 +820,20 @@ async function logout() {
   stopStudioSocket()
   localOnly = false
   document.body.classList.remove('local-only')
-  try { await api('logout', { method: 'POST', body: '{}' }) } catch {}
+  try { await api('auth/logout', { method: 'POST', body: '{}' }) } catch {}
   if (pollingTimer) clearInterval(pollingTimer)
-  $('#admin-token').value = ''
+  $('#studio-password').value = ''
   clearPackage()
   localStudioMode('overview')
 }
 
 $('#login-form').addEventListener('submit', event => {
   event.preventDefault()
-  void connect()
+  void connect('login')
+})
+$('#setup-form').addEventListener('submit', event => {
+  event.preventDefault()
+  void connect('setup')
 })
 $('#logout-button').addEventListener('click', () => { void logout() })
 $('#refresh-button').addEventListener('click', () => {
@@ -1338,7 +1374,7 @@ $('#studio-connect-button').addEventListener('click', () => {
   document.body.classList.remove('local-only')
   $('#application').hidden = true
   $('#login-screen').hidden = false
-  showMessage('#login-message', 'Sign in to manage the remote Aharane bot.')
+  void openAuthScreen()
 })
 $('#studio-import-files').addEventListener('click', () => $('#studio-files-input').click())
 $('#studio-import-folder').addEventListener('click', () => $('#studio-folder-input').click())
@@ -1388,6 +1424,41 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/aharane/studio/sw.js', { scope: '/aharane/studio/' }).catch(() => {})
   })
 }
+
+
+$('#change-password-button').addEventListener('click', () => {
+  $('#current-password').value = ''
+  $('#new-password').value = ''
+  $('#new-password-confirm').value = ''
+  showMessage('#password-message', '')
+  $('#password-modal').hidden = false
+  $('#current-password').focus()
+})
+$('#password-modal-close').addEventListener('click', () => { $('#password-modal').hidden = true })
+$('#password-modal-logout').addEventListener('click', () => { $('#password-modal').hidden = true; void logout() })
+$('#change-password-form').addEventListener('submit', async event => {
+  event.preventDefault()
+  const currentPassword = $('#current-password').value
+  const newPassword = $('#new-password').value
+  if (newPassword !== $('#new-password-confirm').value) {
+    showMessage('#password-message', 'The two new passwords do not match.', 'error')
+    return
+  }
+  const button = $('#change-password-submit')
+  button.disabled = true
+  try {
+    await api('auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    })
+    $('#password-modal').hidden = true
+    showMessage('#overview-message', 'Your password was changed. Other signed-in sessions have been revoked.', 'success')
+  } catch (error) {
+    showMessage('#password-message', error.message, 'error')
+  } finally {
+    button.disabled = false
+  }
+})
 
 // A valid session cookie is HttpOnly; status is the session check.
 api('status').then(async () => {

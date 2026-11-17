@@ -29,6 +29,18 @@ test('browser uses same-origin API and WebSocket, not Vercel relay',async()=>{
  for(const x of ["fetch('/aharane/api/' + path.replace","location.host + '/aharane/ws'","navigator.serviceWorker.register('/aharane/studio/sw.js'","api('auth/login'","api('auth/setup'","api('auth/change-password'"])assert.ok(s.includes(x),x)
  assert.ok(!s.includes('/api/aharane/'));assert.ok(!s.includes('/api/studio/socket'))
 })
+test('remote navigation iterates over every view and nav item',async()=>{
+ const s=await read('../control-centre/app.js')
+ const start=s.indexOf('function setView(name) {')
+ const end=s.indexOf('\nlet remoteAccessCheck',start)
+ assert.ok(start>=0&&end>start,'setView function boundaries')
+ const view=s.slice(start,end)
+ const dollar=String.fromCharCode(36)
+ assert.ok(view.includes(dollar.repeat(2)+"('.view-section').forEach"),'all view sections are selected')
+ assert.ok(view.includes(dollar.repeat(2)+"('.nav-item[data-view]').forEach"),'all navigation items are selected')
+ assert.doesNotMatch(view,/(^|[^$])\$\('\.view-section'\)\.forEach/,'single-element querySelector is not used for all views')
+ assert.doesNotMatch(view,/(^|[^$])\$\('\.nav-item\[data-view\]'\)\.forEach/,'single-element querySelector is not used for all nav items')
+})
 test('whole app opens offline; remote views require login',async()=>{
  const s=await read('../control-centre/app.js')
  assert.ok(s.includes("localStudioMode('overview')"))

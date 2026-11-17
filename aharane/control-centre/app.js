@@ -73,8 +73,8 @@ function setView(name) {
     void verifyRemoteAccess(name)
     return
   }
-  $('.view-section').forEach(section => { section.hidden = section.id !== 'view-' + name })
-  $('.nav-item[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === name))
+  $$('.view-section').forEach(section => { section.hidden = section.id !== 'view-' + name })
+  $$('.nav-item[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === name))
   $('#page-name').textContent = titles[name] || 'Overview'
   if (name === 'studio') loadStudioFiles().catch(error => showMessage('#studio-message', error.message, 'error'))
   if (!localOnly && name === 'overview') refreshStatus().catch(error => showMessage('#overview-message', error.message, 'error'))

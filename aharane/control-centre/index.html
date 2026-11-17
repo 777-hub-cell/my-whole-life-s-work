@@ -23,12 +23,23 @@
       <p class="eyebrow">PERSONAL BOT CONTROL + DEVELOPMENT</p>
       <h1>Connect to Aharane</h1>
       <p class="muted">Sign in to unlock remote bot controls. Your local workspace stays on this phone and works offline.</p>
+      <div id="setup-panel" hidden>
+        <form id="setup-form">
+          <label for="setup-code">One-time setup code</label>
+          <input id="setup-code" type="password" autocomplete="one-time-code" spellcheck="false" placeholder="Paste the code from Azure" required>
+          <label for="setup-password">Create your password</label>
+          <input id="setup-password" type="password" autocomplete="new-password" minlength="12" maxlength="128" placeholder="At least 12 characters" required>
+          <label for="setup-password-confirm">Confirm your password</label>
+          <input id="setup-password-confirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" placeholder="Enter it again" required>
+          <button class="button button-dark button-wide" type="submit" id="setup-button">Create password and connect</button>
+        </form>
+      </div>
       <form id="login-form">
-        <label for="admin-token">Admin token</label>
-        <input id="admin-token" type="password" autocomplete="current-password" spellcheck="false" placeholder="Enter the server-generated token" required>
-        <button class="button button-dark button-wide" type="submit" id="login-button">Connect</button>
+        <label for="studio-password">Studio password</label>
+        <input id="studio-password" type="password" autocomplete="current-password" spellcheck="false" placeholder="Enter your password" required>
+        <button class="button button-dark button-wide" type="submit" id="login-button">Sign in</button>
       </form>
-      <p class="tiny muted">The token is exchanged server-side for a protected, short-lived session. It is not saved in browser storage.</p>
+      <p id="auth-hint" class="tiny muted">Your private Studio password keeps remote bot controls protected.</p>
       <p id="login-message" class="message" role="status"></p>
       <div class="login-local-divider"><span>OR</span></div>
       <button class="button button-outline button-wide" id="open-local-studio" type="button">Open offline workspace</button>
@@ -60,7 +71,7 @@
     <div class="main-column">
       <header class="topbar">
         <div class="breadcrumb"><span>Aharane</span><span class="slash">/</span><strong id="page-name">Overview</strong></div>
-        <div class="top-actions"><button id="install-app-button" class="button button-outline install-app-button" type="button" hidden>Install app</button><span id="live-link-pill" data-remote-only class="status-pill live-link-pill"><i></i><span id="live-link-label">Live link off</span></span><span id="service-pill" data-remote-only class="status-pill"><i></i><span id="service-pill-label">Checking</span></span><button id="refresh-button" data-remote-only class="icon-button" type="button" aria-label="Refresh status" title="Refresh status">↻</button></div>
+        <div class="top-actions"><button id="install-app-button" class="button button-outline install-app-button" type="button" hidden>Install app</button><span id="live-link-pill" data-remote-only class="status-pill live-link-pill"><i></i><span id="live-link-label">Live link off</span></span><span id="service-pill" data-remote-only class="status-pill"><i></i><span id="service-pill-label">Checking</span></span><button id="change-password-button" data-remote-only class="button button-outline" type="button">Password</button><button id="refresh-button" data-remote-only class="icon-button" type="button" aria-label="Refresh status" title="Refresh status">↻</button></div>
       </header>
 
       <main class="page-content">
@@ -278,6 +289,26 @@
         </section>
       </main>
     </div>
+  </div>
+
+  <div id="password-modal" class="password-modal" hidden>
+    <section class="password-dialog" role="dialog" aria-modal="true" aria-labelledby="password-dialog-title">
+      <div class="password-dialog-heading">
+        <div><p class="eyebrow">ACCOUNT SECURITY</p><h2 id="password-dialog-title">Change Studio password</h2></div>
+        <button id="password-modal-close" class="icon-button" type="button" aria-label="Close">×</button>
+      </div>
+      <form id="change-password-form">
+        <label for="current-password">Current password</label>
+        <input id="current-password" type="password" autocomplete="current-password" required>
+        <label for="new-password">New password</label>
+        <input id="new-password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+        <label for="new-password-confirm">Confirm new password</label>
+        <input id="new-password-confirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+        <p class="tiny muted">Use at least 12 characters. Changing your password signs out other devices.</p>
+        <p id="password-message" class="message" role="status"></p>
+        <button id="change-password-submit" class="button button-dark button-wide" type="submit">Save new password</button>
+      </form>
+    </section>
   </div>
 </body>
 </html>

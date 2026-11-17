@@ -68,17 +68,20 @@ function formatDate(value) {
 }
 
 function setView(name) {
-  const titles = { overview: 'Overview', pairing: 'WhatsApp pairing', deploy: 'Deploy update', files: 'Files Manager', studio: 'Local Studio' }
+  const titles = { overview: 'Home', pairing: 'Pairing', deploy: 'Update bot', files: 'Files', studio: 'Local workspace', env: 'ENV', chats: 'Chats', configuration: 'Configuration', more: 'More', appearance: 'Appearance', 'app-preferences': 'App preferences', storage: 'Storage', activity: 'Activity and logs', help: 'Help and feedback', about: 'About Aharane Studio' }
   if (['pairing', 'deploy', 'files'].includes(name) && (!remoteSession || localOnly)) {
     void verifyRemoteAccess(name)
     return
   }
-  $$('.view-section').forEach(section => { section.hidden = section.id !== 'view-' + name })
+  $$$('.view-section').forEach(section => { section.hidden = section.id !== 'view-' + name })
   $$('.nav-item[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === name))
+  $$('.bottom-nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === name))
   $('#page-name').textContent = titles[name] || 'Overview'
   if (name === 'studio') loadStudioFiles().catch(error => showMessage('#studio-message', error.message, 'error'))
-  if (!localOnly && name === 'overview') refreshStatus().catch(error => showMessage('#overview-message', error.message, 'error'))
+  if (!localOnly && name === 'overview') { refreshStatus().catch(error => showMessage('#overview-message', error.message, 'error')); refreshUpdateStatus().catch(() => {}); }
   if (!localOnly && name === 'deploy') refreshUpdateStatus().catch(error => showMessage('#deploy-message', error.message, 'error'))
+  if (name === 'storage') void refreshStorageUsage()
+  if (name === 'activity') renderActivityLog()
   if (!localOnly && name === 'files') {
     refreshPackages().catch(error => showMessage('#files-upload-message', error.message, 'error'))
     refreshDraftStatus().catch(error => showMessage('#source-message', error.message, 'error'))
@@ -147,6 +150,9 @@ function applyLiveRuntime(snapshot) {
     $('#whatsapp-dot').classList.toggle('offline', !snapshot.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(snapshot.state))
   }
   if ($('#allowed-senders')) $('#allowed-senders').textContent = String(snapshot.allowlistedSenderCount ?? '—')
+  if ($('#account-status-text')) $('#account-status-text').textContent = snapshot.connected ? 'Connected' : (snapshot.state || 'Not connected')
+  if ($('#home-account-dot')) $('#home-account-dot').classList.toggle('connected', Boolean(snapshot.connected))
+  if ($('#account-status-dot')) $('#account-status-dot').classList.toggle('connected', Boolean(snapshot.connected))
   if ($('#connection-detail')) {
     $('#connection-detail').textContent = snapshot.connected
       ? 'Aharane is connected to WhatsApp.'
@@ -235,6 +241,9 @@ async function refreshStatus() {
     ? 'Aharane is connected to WhatsApp.'
     : status.registered ? 'The saved WhatsApp session is not currently connected.' : 'This Aharane instance has not completed WhatsApp pairing.'
   $('#allowed-senders').textContent = String(status.allowlistedSenderCount ?? '—')
+  if ($('#account-status-text')) $('#account-status-text').textContent = status.connected ? 'Connected' : (status.state || 'Not connected')
+  if ($('#home-account-dot')) $('#home-account-dot').classList.toggle('connected', Boolean(status.connected))
+  if ($('#account-status-dot')) $('#account-status-dot').classList.toggle('connected', Boolean(status.connected))
   return status
 }
 
@@ -347,8 +356,8 @@ function updateSourceBreadcrumb() {
     breadcrumb.append(button)
   }
   $('#source-up').disabled = !sourceFolder
-  $('#source-new-file').disabled = !sourceFolder
-  $('#source-new-folder').disabled = !sourceFolder
+  $('#source-new-file').disabled = false
+  $('#source-new-folder').disabled = false
 }
 
 async function loadSourceFolder(folder) {
@@ -375,9 +384,12 @@ async function loadSourceFolder(folder) {
     empty.textContent = 'This folder is empty.'
     list.append(empty)
   }
-  for (const item of result.children || []) {
+  const orderedChildren = [...(result.children || [])].sort((a, b) => (a.type === b.type ? 0 : a.type === 'folder' ? -1 : 1) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  for (const item of orderedChildren) {
     const row = document.createElement('div')
     row.className = 'source-file-row'
+    row.dataset.name = item.name.toLowerCase()
+    row.dataset.type = item.type
     const name = document.createElement('button')
     name.className = 'source-file-open'
     name.type = 'button'
@@ -397,14 +409,74 @@ async function loadSourceFolder(folder) {
       else void openSourceFile(item.path)
     })
     row.append(name)
-    if (item.type === 'file' && !['README.md', 'UPDATE-PACKAGE.md', 'LICENSE', 'AGENTS.md'].includes(item.name)) {
-      const deleteButton = document.createElement('button')
-      deleteButton.className = 'source-file-delete'
-      deleteButton.type = 'button'
-      deleteButton.textContent = 'Delete'
-      deleteButton.addEventListener('click', () => { void deleteSourceFile(item.path) })
-      row.append(deleteButton)
+    const actionWrap = document.createElement('div')
+    actionWrap.className = 'source-item-actions'
+    const menuButton = document.createElement('button')
+    menuButton.className = 'source-menu-button'
+    menuButton.type = 'button'
+    menuButton.textContent = '⋮'
+    menuButton.setAttribute('aria-label', 'Actions for ' + item.name)
+    menuButton.setAttribute('aria-expanded', 'false')
+    const menu = document.createElement('div')
+    menu.className = 'source-item-menu'
+    menu.hidden = true
+    const addMenuAction = (label, handler, disabled = false) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.textContent = label
+      button.disabled = disabled
+      if (disabled) button.title = 'This action is not available in the current server API.'
+      button.addEventListener('click', () => {
+        menu.hidden = true
+        menuButton.setAttribute('aria-expanded', 'false')
+        if (handler) void handler()
+      })
+      menu.append(button)
     }
+    if (item.type === 'file') {
+      addMenuAction('Preview', () => openSourceFile(item.path))
+      addMenuAction('Download', async () => {
+        try {
+          const result = await api('files/preview?item=' + encodeURIComponent(item.path))
+          const blob = new Blob([result.content], { type: 'text/plain;charset=utf-8' })
+          const url = URL.createObjectURL(blob)
+          const link = document.createElement('a')
+          link.href = url
+          link.download = item.name
+          document.body.append(link)
+          link.click()
+          link.remove()
+          URL.revokeObjectURL(url)
+        } catch (error) { setSourceMessage(error.message, 'error') }
+      })
+      addMenuAction('Rename', null, true)
+      addMenuAction('Duplicate', null, true)
+      addMenuAction('Move', null, true)
+      const separator = document.createElement('div')
+      separator.className = 'menu-separator'
+      menu.append(separator)
+      addMenuAction('Delete', () => deleteSourceFile(item.path), ['README.md', 'UPDATE-PACKAGE.md', 'LICENSE', 'AGENTS.md'].includes(item.name))
+    } else {
+      addMenuAction('Open folder', () => loadSourceFolder(item.path))
+      addMenuAction('Rename', null, true)
+      addMenuAction('Duplicate', null, true)
+      addMenuAction('Move', null, true)
+      addMenuAction('Download as ZIP', null, true)
+      const separator = document.createElement('div')
+      separator.className = 'menu-separator'
+      menu.append(separator)
+      addMenuAction('Delete', null, true)
+    }
+    menuButton.addEventListener('click', event => {
+      event.stopPropagation()
+      const opening = menu.hidden
+      $('.source-item-menu').forEach(other => { other.hidden = true })
+      $('.source-menu-button').forEach(other => other.setAttribute('aria-expanded', 'false'))
+      menu.hidden = !opening
+      menuButton.setAttribute('aria-expanded', String(opening))
+    })
+    actionWrap.append(menuButton, menu)
+    row.append(actionWrap)
     list.append(row)
   }
   await refreshDraftStatus()
@@ -451,7 +523,7 @@ async function saveSourceFile() {
   } catch (error) {
     setSourceMessage(error.message, 'error')
   } finally {
-    $('#source-save').disabled = false
+    $('#source-save').disabled = !sourceDirty
   }
 }
 
@@ -973,9 +1045,21 @@ $('#source-close-editor').addEventListener('click', () => {
 })
 $('#source-discard').addEventListener('click', () => { void applySourceChanges(true) })
 $('#source-apply').addEventListener('click', () => { void applySourceChanges(false) })
+$('#file-search')?.addEventListener('input', () => {
+  const query = $('#file-search').value.trim().toLowerCase()
+  $('.source-file-row').forEach(row => { row.hidden = query && !row.dataset.name.includes(query) })
+})
+$('#source-save-bottom')?.addEventListener('click', () => { void saveSourceFile() })
+$('#open-password-settings')?.addEventListener('click', () => $('#change-password-button').click())
+let sourceAutosaveTimer = null
 $('#source-editor').addEventListener('input', () => {
   sourceDirty = $('#source-editor').value !== sourceOriginal
   $('#source-save').disabled = !sourceDirty
+  if (sourceAutosaveTimer) clearTimeout(sourceAutosaveTimer)
+  if (sourceDirty) sourceAutosaveTimer = setTimeout(() => {
+    sourceAutosaveTimer = null
+    void saveSourceFile()
+  }, 900)
 })
 
 
@@ -1519,3 +1603,82 @@ $('#studio-app-source-apply').addEventListener('click',()=>{void applyAppSourceC
 $('#studio-app-source-restore').addEventListener('click',()=>{void restoreAppSource().catch(err=>$('#studio-app-source-status').textContent=err.message)})
 $('#studio-app-source-export').addEventListener('click',()=>{void exportAppSourceBackup().catch(err=>$('#studio-app-source-status').textContent=err.message)})
 $('#studio-app-source-close').addEventListener('click',()=>{if($('#studio-app-source-editor').value!==studioAppSourceOriginal&&!confirm('Close and discard unsaved typing?'))return;$('#studio-app-source-panel').hidden=true})
+
+
+const THEME_KEY = 'aharane-studio-theme'
+const ACCENT_KEY = 'aharane-studio-accent'
+const PREFS_KEY = 'aharane-studio-preferences'
+function applyThemePreference() {
+  const saved = localStorage.getItem(THEME_KEY) || 'light'
+  const systemDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
+  const theme = saved === 'system' ? (systemDark ? 'dark' : 'light') : saved
+  document.body.dataset.theme = theme
+  document.documentElement.style.colorScheme = theme
+  $$('[data-theme-choice]').forEach(button => button.classList.toggle('active', button.dataset.themeChoice === saved))
+}
+function applyAccentColour(value) {
+  const safe = /^#[0-9a-f]{6}$/i.test(value) ? value : '#526c91'
+  document.documentElement.style.setProperty('--accent', safe)
+  $('#accent-picker').value = safe
+  $('#accent-current-value').textContent = safe.toUpperCase()
+  $('#accent-current-swatch').style.background = safe
+  const names = {'#526c91':'Slate blue','#3f7e79':'Teal','#76619a':'Violet','#b36b50':'Terracotta','#6b7484':'Graphite','#3f7394':'Ocean blue'}
+  $('#accent-current-name').textContent = names[safe.toLowerCase()] || 'Custom colour'
+  $$('[data-accent]').forEach(button => button.classList.toggle('active', button.dataset.accent.toLowerCase() === safe.toLowerCase()))
+  localStorage.setItem(ACCENT_KEY, safe)
+}
+function renderActivityLog() {
+  const source = $('#live-activity-list')
+  const target = $('#activity-log-list')
+  if (!source || !target) return
+  target.replaceChildren(...[...source.children].map(node => node.cloneNode(true)))
+  if (!target.children.length) target.textContent = 'Activity will appear here when the Studio is connected to the live event stream.'
+}
+async function refreshStorageUsage() {
+  const used = $('#storage-used'), quota = $('#storage-quota')
+  if (!used || !quota) return
+  try {
+    const estimate = await navigator.storage?.estimate?.()
+    if (!estimate) { used.textContent = 'Unavailable'; quota.textContent = 'Unavailable'; return }
+    used.textContent = formatBytes(estimate.usage || 0)
+    quota.textContent = formatBytes(estimate.quota || 0)
+  } catch { used.textContent = 'Unavailable'; quota.textContent = 'Unavailable' }
+}
+function applyLocalPreferences() {
+  let prefs = {}
+  try { prefs = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') } catch {}
+  const compact = prefs.compactFiles !== false
+  const reduceMotion = prefs.reduceMotion === true
+  document.body.classList.toggle('compact-files', compact)
+  document.body.classList.toggle('reduce-motion', reduceMotion)
+  if ($('#compact-files-toggle')) $('#compact-files-toggle').checked = compact
+  if ($('#reduce-motion-toggle')) $('#reduce-motion-toggle').checked = reduceMotion
+}
+function saveLocalPreferences() {
+  localStorage.setItem(PREFS_KEY, JSON.stringify({
+    compactFiles: $('#compact-files-toggle')?.checked !== false,
+    reduceMotion: $('#reduce-motion-toggle')?.checked === true
+  }))
+  applyLocalPreferences()
+}
+$$('[data-theme-choice]').forEach(button => button.addEventListener('click', () => {
+  localStorage.setItem(THEME_KEY, button.dataset.themeChoice)
+  applyThemePreference()
+}))
+$$('[data-accent]').forEach(button => button.addEventListener('click', () => applyAccentColour(button.dataset.accent)))
+$('#accent-picker')?.addEventListener('input', event => applyAccentColour(event.target.value))
+$('#compact-files-toggle')?.addEventListener('change', saveLocalPreferences)
+$('#reduce-motion-toggle')?.addEventListener('change', saveLocalPreferences)
+$('#refresh-storage')?.addEventListener('click', () => { void refreshStorageUsage() })
+applyThemePreference()
+applyAccentColour(localStorage.getItem(ACCENT_KEY) || '#526c91')
+applyLocalPreferences()
+
+document.addEventListener('click', event => {
+  if (event.target instanceof Element && event.target.closest('.source-item-actions, .package-actions')) return
+  $$('.source-item-menu, .package-menu').forEach(menu => { menu.hidden = true })
+  $$('.source-menu-button').forEach(button => button.setAttribute('aria-expanded', 'false'))
+})
+window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
+  if (localStorage.getItem(THEME_KEY) === 'system') applyThemePreference()
+})

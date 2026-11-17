@@ -1,19 +1,12 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="robots" content="noindex,nofollow">
-  <meta name="referrer" content="no-referrer">
-  <meta name="color-scheme" content="light">
-  <meta name="theme-color" content="#f5f5f2">
-  <link rel="manifest" href="/aharane/studio/manifest.webmanifest">
-  <link rel="icon" href="/aharane/studio/icon.svg" type="image/svg+xml">
-  <title>Aharane Local Studio</title>
-  <link rel="stylesheet" href="/aharane/studio/styles.css">
-  <script type="module" src="/aharane/studio/app.js"></script>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><meta name="color-scheme" content="light dark"><meta name="theme-color" content="#ffffff">
+  <link rel="manifest" href="/aharane/studio/manifest.webmanifest"><link rel="icon" href="/aharane/studio/icon.svg" type="image/svg+xml">
+  <title>Aharane Local Studio</title><link rel="stylesheet" href="/aharane/studio/styles.css"><script type="module" src="/aharane/studio/app.js"></script>
 </head>
-<body>
+<body data-theme="light">
   <div id="login-screen" class="login-screen">
     <div class="login-panel">
       <a class="brand" href="/aharane/studio/" aria-label="Aharane Control Centre">
@@ -46,37 +39,13 @@
       <p class="tiny muted">This is the same Aharane app in offline mode. Connect when you need remote bot management.</p>
     </div>
   </div>
-
   <div id="application" class="application" hidden>
-    <aside class="sidebar">
-      <a class="brand" href="#" data-view="overview">
-        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 3v42M3 24h42M9 9l30 30M39 9 9 39M15 4l9 12 9-12M15 44l9-12 9 12M4 15l12 9-12 9M44 15l-12 9 12 9" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round"/><circle cx="24" cy="24" r="7" fill="none" stroke="currentColor" stroke-width="1.65"/></svg>
-        <span><strong>AHARANE</strong><small>LOCAL STUDIO</small></span>
-      </a>
-      <nav class="main-nav" aria-label="Main navigation">
-        <div class="nav-label">BUILD</div>
-        <button class="nav-item" data-view="studio"><span class="nav-symbol">⌘</span> Local Studio</button>
-        <div class="nav-label">MANAGE</div>
-        <button class="nav-item active" data-view="overview"><span class="nav-symbol">⌂</span> Overview</button>
-        <button class="nav-item" data-remote-only data-view="pairing"><span class="nav-symbol">↔</span> WhatsApp pairing</button>
-        <button class="nav-item" data-remote-only data-view="deploy"><span class="nav-symbol">↑</span> Deploy update</button>
-        <button class="nav-item" data-remote-only data-view="files"><span class="nav-symbol">▤</span> Files Manager</button>
-      </nav>
-      <div class="sidebar-bottom">
-        <div class="isolation-note"><span class="dot"></span><span><strong>Standalone service</strong><small>Independent of NIGHT/MSCC</small></span></div>
-        <button class="nav-item logout" id="logout-button" data-remote-only><span class="nav-symbol">↪</span> Sign out</button>
-      </div>
-    </aside>
-
-    <div class="main-column">
-      <header class="topbar">
-        <div class="breadcrumb"><span>Aharane</span><span class="slash">/</span><strong id="page-name">Overview</strong></div>
-        <div class="top-actions"><button id="install-app-button" class="button button-outline install-app-button" type="button" hidden>Install app</button><span id="live-link-pill" data-remote-only class="status-pill live-link-pill"><i></i><span id="live-link-label">Live link off</span></span><span id="service-pill" data-remote-only class="status-pill"><i></i><span id="service-pill-label">Checking</span></span><button id="change-password-button" data-remote-only class="icon-button" type="button" aria-label="Change password" title="Change password">🔒</button><button id="refresh-button" data-remote-only class="icon-button" type="button" aria-label="Refresh status" title="Refresh status">↻</button></div>
-      </header>
-
-      <main class="page-content">
-
-        <section class="view-section" id="view-studio" hidden>
+    <header class="app-topbar">
+      <a class="app-brand" href="#" data-view="overview" aria-label="Aharane Home"><span class="brand-mark">A</span><span class="brand-name">Aharane</span></a>
+      <div class="topbar-right"><span id="live-link-pill" data-remote-only class="status-pill live-link-pill"><i></i><span id="live-link-label">Live link off</span></span><span id="service-pill" data-remote-only class="status-pill"><i></i><span id="service-pill-label">Checking</span></span><button id="install-app-button" class="icon-button install-app-button" type="button" aria-label="Install app" title="Install app" hidden>↓</button><button id="refresh-button" data-remote-only class="icon-button" type="button" aria-label="Refresh status" title="Refresh status">↻</button></div>
+    </header>
+    <main class="page-content"><div class="page-route"><span id="page-name">Home</span></div>
+<section class="view-section" id="view-studio" hidden>
           <div class="page-heading studio-heading">
             <div><p class="eyebrow">ON THIS DEVICE</p><h1>Local Studio</h1><p class="muted">Edit project files and preview websites. Your work stays on this phone.</p></div>
             <button class="button button-outline" id="studio-connect-button" type="button">Connect to Aharane</button>
@@ -124,47 +93,163 @@
           <p id="studio-message" class="message" role="status"></p>
         </section>
 
-        <section class="view-section" id="view-overview">
-          <div class="page-heading">
-            <div><p class="eyebrow">YOUR BOT</p><h1>Aharane</h1><p class="muted">A separate WhatsApp identity and runtime, managed here.</p></div>
-          </div>
-
-          <div class="status-overview">
-            <div class="status-overview-main">
-              <span class="field-label">WHATSAPP CONNECTION</span>
-              <div class="large-status"><span id="whatsapp-dot" class="connection-dot"></span><strong id="whatsapp-state">Checking…</strong></div>
-              <p id="connection-detail" class="muted">Retrieving Aharane status.</p>
-            </div>
-            <div class="status-overview-side">
-              <div><span class="field-label">BOT VERSION</span><strong id="bot-version">—</strong></div>
-              <div><span class="field-label">ALLOWED SENDERS</span><strong id="allowed-senders">—</strong></div>
-            </div>
-          </div>
-
-          <div class="section-heading"><h2>Latest deployment</h2></div>
-          <div class="deployment-summary">
-            <div><span class="field-label">STATUS</span><strong id="last-update-status">No update recorded</strong></div>
-            <div><span class="field-label">VERSION</span><strong id="last-update-version">—</strong></div>
-            <div><span class="field-label">UPDATED</span><strong id="last-update-date">—</strong></div>
-          </div>
-          <div class="section-heading"><h2>Live activity</h2><span class="muted">Events from Aharane</span></div>
-          <div id="live-activity-list" class="live-activity-list" aria-live="polite"><p class="muted">Sign in to receive live bot events.</p></div>
-          <p id="overview-message" class="message" role="status"></p>
-        </section>
-
-        <section class="view-section" id="view-pairing" hidden>
-          <div class="page-heading"><div><p class="eyebrow">WHATSAPP</p><h1>Pairing</h1><p class="muted">Link the phone number that will become Aharane.</p></div></div>
-          <div class="form-panel">
-            <label for="phone-number">WhatsApp phone number</label>
-            <input id="phone-number" type="tel" inputmode="numeric" autocomplete="tel" placeholder="International digits, e.g. 2348012345678">
-            <p class="help-text">Include the country code. Do not include spaces or punctuation.</p>
-            <button class="button button-dark" id="pair-button" type="button">Generate pairing code</button>
-            <div id="pair-code" class="pair-code" aria-live="polite"></div>
-            <p id="pair-message" class="message" role="status">On that phone, open WhatsApp → Linked devices → Link with phone number.</p>
+      <section class="view-section" id="view-overview">
+        <div class="page-heading home-heading">
+          <div><p class="eyebrow">YOUR WHATSAPP BOT</p><h1>Aharane</h1><p class="muted">Your bot, account and tools in one place.</p></div>
+          <button class="button button-outline compact-button" data-view="configuration" type="button">⚙ Configuration</button>
+        </div>
+        <section class="home-connection" aria-label="WhatsApp connection">
+          <div class="connection-topline"><span class="field-label">WHATSAPP CONNECTION</span><span class="connection-status-word"><i id="whatsapp-dot" class="connection-dot"></i><strong id="whatsapp-state">Checking…</strong></span></div>
+          <p id="connection-detail" class="muted">Retrieving Aharane status.</p>
+          <div class="home-connection-footer">
+            <div class="home-stat"><span>BOT VERSION</span><strong id="bot-version">—</strong></div>
+            <div class="home-stat"><span>ALLOWED SENDERS</span><strong id="allowed-senders">—</strong></div>
+            <button class="button button-dark" data-view="pairing" type="button">Manage pairing</button>
           </div>
         </section>
+        <div class="section-heading"><h2>WhatsApp account</h2><button class="text-button" data-view="pairing" type="button">Pair / reconnect</button></div>
+        <button class="account-summary-row" type="button" data-view="pairing">
+          <span class="account-avatar">A</span>
+          <span class="account-summary-info"><strong>Aharane</strong><small>Single WhatsApp account</small></span>
+          <span class="account-state-dot" id="home-account-dot" aria-label="Connection status"></span>
+          <span class="row-action-label">Manage</span>
+        </button>
+        <div class="section-heading"><h2>Latest deployment</h2><span class="muted">Bot release</span></div>
+        <div class="deployment-summary compact-deployment">
+          <div><span class="field-label">STATUS</span><strong id="last-update-status">No update recorded</strong></div>
+          <div><span class="field-label">VERSION</span><strong id="last-update-version">—</strong></div>
+          <div><span class="field-label">UPDATED</span><strong id="last-update-date">—</strong></div>
+        </div>
+        <div class="home-links">
+          <button class="home-link-row" type="button" data-view="files"><span class="home-link-icon">▤</span><span><strong>Files</strong><small>Browse bot source and update ZIPs</small></span><span class="link-arrow">›</span></button>
+          <button class="home-link-row" type="button" data-view="env"><span class="home-link-icon">⌘</span><span><strong>Environment</strong><small>View runtime variables</small></span><span class="link-arrow">›</span></button>
+        </div>
+        <div class="section-heading"><h2>Recent activity</h2><button class="text-button" data-view="activity" type="button">See all</button></div>
+        <div id="live-activity-list" class="live-activity-list" aria-live="polite"><p class="muted">Sign in to receive live bot events.</p></div>
+        <p id="overview-message" class="message" role="status"></p>
+      </section>
 
-        <section class="view-section" id="view-deploy" hidden>
+      <section class="view-section" id="view-files" hidden>
+        <div class="page-heading"><div><p class="eyebrow">BOT SOURCE</p><h1>Files</h1><p class="muted">Browse and manage Aharane's source files.</p></div></div>
+        <div class="files-toolbar">
+          <div class="files-breadcrumb-row">
+            <div id="source-breadcrumb" class="source-breadcrumb" aria-label="Folder path"></div>
+            <button class="text-button export-source-button" id="export-bot-source" type="button" disabled title="Source-only export requires a dedicated server export endpoint">Export Bot Source</button>
+          </div>
+          <div class="files-search-row">
+            <label class="search-field" for="file-search"><span aria-hidden="true">⌕</span><input id="file-search" type="search" placeholder="Search files and folders" autocomplete="off"></label>
+            <button class="button button-outline" id="source-new-folder" type="button">New folder</button>
+            <button class="button button-dark" id="source-new-file" type="button">New file</button>
+          </div>
+          <div class="files-quiet-actions"><button class="text-button" id="source-up" type="button" disabled>Up one folder</button><button class="text-button" id="source-refresh" type="button">Refresh</button></div>
+        </div>
+        <div id="source-message" class="message" role="status"></div>
+        <div id="source-file-list" class="source-file-list"><p class="muted">Loading Aharane source files…</p></div>
+        <div class="source-utility-row"><span id="source-draft-status" class="draft-status">No saved file changes</span><span class="source-status-actions"><button class="text-button" id="source-discard" type="button" hidden>Discard edits</button><button class="button button-outline" id="source-apply" type="button" disabled>Apply changes &amp; restart</button></span></div>
+        <section class="zip-library">
+          <div class="section-heading"><div><h2>Update ZIPs</h2><p class="muted">Store a valid Aharane update package, then use its three-dot menu to update the bot.</p></div><button class="text-button" id="refresh-packages" type="button">Refresh</button></div>
+          <div class="zip-dropzone" id="files-dropzone" tabindex="0" role="button" aria-label="Choose or drop an Aharane update ZIP"><strong>Drop an update ZIP here</strong><span>or choose one from your phone</span><input id="files-zip-input" type="file" accept=".zip,application/zip" hidden><button class="button button-outline" id="files-choose-zip" type="button">Choose ZIP</button><small>Only packages with aharane-update.json are accepted.</small></div>
+          <p id="files-upload-message" class="message" role="status"></p>
+          <div id="package-list" class="package-list"><p class="muted">Loading update packages…</p></div>
+        </section>
+        <div id="source-editor-panel" class="source-editor-panel" hidden>
+          <div class="source-editor-head"><button class="editor-back-button" id="source-close-editor" type="button" aria-label="Back to Files">←</button><div class="source-editor-title"><strong id="source-editor-name">—</strong><small id="source-editor-meta">Plain text editor</small></div><button class="text-button" id="source-save" type="button" disabled>Save file</button></div>
+          <div class="editor-tab-strip"><span class="editor-tab active">Editor</span><span class="editor-save-hint">Changes are staged, not deployed</span></div>
+          <textarea id="source-editor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Source code editor"></textarea>
+          <div class="source-editor-footer"><span class="muted">Apply changes from Files when ready.</span><button class="button button-dark" id="source-save-bottom" type="button">Save file</button></div>
+        </div>
+      </section>
+
+      <section class="view-section" id="view-env" hidden>
+        <div class="page-heading"><div><p class="eyebrow">RUNTIME SETTINGS</p><h1>Environment</h1><p class="muted">Edit values used by Aharane.</p></div></div>
+        <label class="search-field env-search" for="env-search"><span aria-hidden="true">⌕</span><input id="env-search" type="search" placeholder="Search variables"></label>
+        <div class="env-empty-state"><span class="empty-symbol">⌘</span><strong>Environment editor isn't connected yet</strong><p>The current server does not expose a secure environment-variable read/write endpoint. This screen is ready for the editor, but it won't invent variables or display a save indicator. When connected, declared keys will appear automatically and edits will save silently in the background without restarting the bot.</p></div>
+      </section>
+
+      <section class="view-section" id="view-chats" hidden>
+        <div class="page-heading"><div><p class="eyebrow">WHATSAPP MESSAGES</p><h1>Chats</h1><p class="muted">Conversations for the Aharane account.</p></div></div>
+        <label class="search-field" for="chat-search"><span aria-hidden="true">⌕</span><input id="chat-search" type="search" placeholder="Search conversations"></label>
+        <div class="chat-filters"><button class="filter-chip active" type="button" data-chat-filter="all">All</button><button class="filter-chip" type="button" data-chat-filter="unread">Unread</button></div>
+        <div class="chat-empty-state"><span class="chat-empty-icon">☏</span><strong>Chat history isn't connected yet</strong><p>The current WhatsApp service doesn't expose message history or send-message endpoints. I haven't filled the inbox with sample conversations or made a read-only fake chat. The full messaging and media viewer experience needs those APIs.</p></div>
+      </section>
+
+      <section class="view-section" id="view-configuration" hidden>
+        <div class="page-heading"><div><p class="eyebrow">BOT BEHAVIOUR</p><h1>Configuration</h1><p class="muted">General preferences for Aharane.</p></div></div>
+        <div class="configuration-note">The current bot server does not yet expose a configuration read/write API. The controls below show the agreed layout, but remain disabled until they can safely update the actual bot configuration.</div>
+        <div class="settings-group"><h2>Groups</h2>
+          <div class="setting-row"><div><strong>Respond in groups</strong><small>Allow replies in group chats</small></div><input type="checkbox" disabled aria-label="Respond in groups"></div>
+          <div class="setting-row"><div><strong>Require a mention</strong><small>Only reply when mentioned</small></div><input type="checkbox" disabled aria-label="Require a mention"></div>
+          <div class="setting-row"><div><strong>Admin-only commands</strong><small>Restrict selected commands to group admins</small></div><input type="checkbox" disabled checked aria-label="Admin-only commands"></div>
+          <div class="setting-row setting-row-select"><div><strong>Default group command access</strong><small>Who can use commands by default</small></div><select disabled aria-label="Default group command access"><option>Everyone</option></select></div>
+          <div class="setting-row"><div><strong>Anti-spam</strong><small>Control repeated messages</small></div><input type="checkbox" disabled checked aria-label="Anti-spam"></div>
+        </div>
+      </section>
+
+      <section class="view-section" id="view-pairing" hidden>
+        <div class="page-heading"><div><p class="eyebrow">WHATSAPP ACCOUNT</p><h1>Pairing</h1><p class="muted">Connect or reconnect your single Aharane WhatsApp account.</p></div></div>
+        <div class="account-detail-card"><div class="account-avatar large">A</div><div class="account-detail-copy"><strong>Aharane</strong><span>Primary WhatsApp account</span><div class="account-live-status"><i id="account-status-dot" class="connection-dot"></i><span id="account-status-text">Checking connection…</span></div></div><span class="account-role">PRIMARY</span></div>
+        <div class="section-heading"><h2>Pair or reconnect</h2></div>
+        <div class="pairing-panel"><p class="muted">Link this WhatsApp account to Aharane with a phone-number pairing code.</p><label for="phone-number">WhatsApp phone number</label><input id="phone-number" type="tel" inputmode="numeric" autocomplete="tel" placeholder="2348012345678"><p class="help-text">Include the country code. Enter digits only, without spaces or punctuation.</p><button class="button button-dark button-wide" id="pair-button" type="button">Generate pairing code</button><div id="pair-code" class="pair-code" aria-live="polite"></div><p id="pair-message" class="message" role="status">On the phone you want to connect, open WhatsApp → Linked devices → Link with phone number.</p></div>
+        <p class="feature-note">This server currently supports phone-number pairing for one session. QR pairing is not available in its API yet.</p>
+      </section>
+
+      <section class="view-section" id="view-more" hidden>
+        <div class="page-heading"><div><p class="eyebrow">AHARANE LOCAL STUDIO</p><h1>More</h1><p class="muted">App settings, tools and information.</p></div></div>
+        <div class="settings-group"><h2>App settings</h2>
+          <button class="settings-link" type="button" data-view="appearance"><span class="settings-icon">◐</span><span><strong>Appearance</strong><small>Theme, accent colour and interface style</small></span><span class="link-arrow">›</span></button>
+          <button class="settings-link" type="button" data-view="app-preferences"><span class="settings-icon">☷</span><span><strong>App preferences</strong><small>Language and display preferences</small></span><span class="link-arrow">›</span></button>
+          <button class="settings-link" type="button" id="open-password-settings"><span class="settings-icon">♙</span><span><strong>Security and privacy</strong><small>Password and sign-in protection</small></span><span class="link-arrow">›</span></button>
+          <button class="settings-link" type="button" data-view="storage"><span class="settings-icon">▤</span><span><strong>Storage</strong><small>Application data on this device</small></span><span class="link-arrow">›</span></button>
+        </div>
+        <div class="settings-group"><h2>More</h2>
+          <button class="settings-link" type="button" data-view="activity"><span class="settings-icon">◷</span><span><strong>Activity and logs</strong><small>Bot events and diagnostics</small></span><span class="link-arrow">›</span></button>
+          <button class="settings-link" type="button" data-view="studio"><span class="settings-icon">⌘</span><span><strong>Local workspace</strong><small>Edit and preview files on this phone</small></span><span class="link-arrow">›</span></button>
+          <button class="settings-link" type="button" data-view="help"><span class="settings-icon">?</span><span><strong>Help and feedback</strong><small>Using Aharane Local Studio</small></span><span class="link-arrow">›</span></button>
+          <button class="settings-link" type="button" data-view="about"><span class="settings-icon">ⓘ</span><span><strong>About Aharane Studio</strong><small>Version and application information</small></span><span class="link-arrow">›</span></button>
+        </div>
+        <button class="button button-outline button-wide signout-button" id="logout-button" data-remote-only type="button">Sign out</button>
+        <button id="change-password-button" class="visually-hidden" data-remote-only type="button" aria-label="Change password">Change password</button>
+      </section>
+
+      <section class="view-section" id="view-appearance" hidden>
+        <div class="page-heading"><div><p class="eyebrow">PERSONALISE</p><h1>Appearance</h1><p class="muted">Choose how Aharane Local Studio looks.</p></div></div>
+        <div class="settings-group"><h2>Theme</h2><div class="theme-choice-grid">
+          <button type="button" class="theme-choice active" data-theme-choice="light"><span class="theme-preview light-preview"><i></i><i></i><i></i></span><strong>Light</strong></button>
+          <button type="button" class="theme-choice" data-theme-choice="dark"><span class="theme-preview dark-preview"><i></i><i></i><i></i></span><strong>Dark</strong></button>
+          <button type="button" class="theme-choice" data-theme-choice="system"><span class="theme-preview system-preview"><i></i><i></i><i></i></span><strong>System</strong></button>
+        </div></div>
+        <div class="settings-group accent-settings"><h2>Accent colour</h2><p class="muted">Choose the colour used for selected tabs, switches and highlights.</p>
+          <div class="accent-picker-row"><label class="colour-wheel-control" for="accent-picker"><input id="accent-picker" type="color" value="#526c91"><span>Colour wheel</span></label><div class="accent-current"><span id="accent-current-swatch"></span><span><strong id="accent-current-name">Slate blue</strong><small id="accent-current-value">#526C91</small></span></div></div>
+          <div class="accent-presets" aria-label="Preset accent colours">
+            <button type="button" class="accent-swatch active" data-accent="#526c91" style="--swatch:#526c91" aria-label="Slate blue"></button>
+            <button type="button" class="accent-swatch" data-accent="#3f7e79" style="--swatch:#3f7e79" aria-label="Teal"></button>
+            <button type="button" class="accent-swatch" data-accent="#76619a" style="--swatch:#76619a" aria-label="Violet"></button>
+            <button type="button" class="accent-swatch" data-accent="#b36b50" style="--swatch:#b36b50" aria-label="Terracotta"></button>
+            <button type="button" class="accent-swatch" data-accent="#6b7484" style="--swatch:#6b7484" aria-label="Graphite"></button>
+            <button type="button" class="accent-swatch" data-accent="#3f7394" style="--swatch:#3f7394" aria-label="Ocean blue"></button>
+          </div>
+          <div class="appearance-preview"><strong>Aharane Studio</strong><div><span class="preview-selected">Selected item</span><span class="preview-accent">Accent text</span></div></div>
+        </div>
+      </section>
+
+      <section class="view-section" id="view-app-preferences" hidden>
+        <div class="page-heading"><div><p class="eyebrow">APP SETTINGS</p><h1>App preferences</h1><p class="muted">Adjust the Studio's local preferences.</p></div></div>
+        <div class="settings-group"><h2>Display</h2><div class="setting-row"><div><strong>Compact file rows</strong><small>Use tighter spacing in Files</small></div><input id="compact-files-toggle" type="checkbox" checked></div><div class="setting-row"><div><strong>Reduce motion</strong><small>Limit interface animations</small></div><input id="reduce-motion-toggle" type="checkbox"></div></div>
+        <div class="settings-group"><h2>Language</h2><div class="setting-row setting-row-select"><div><strong>App language</strong><small>Interface language</small></div><select id="app-language"><option value="en">English</option></select></div></div>
+      </section>
+
+      <section class="view-section" id="view-storage" hidden>
+        <div class="page-heading"><div><p class="eyebrow">DEVICE STORAGE</p><h1>Storage</h1><p class="muted">Local workspace storage on this device.</p></div></div>
+        <div class="settings-group"><h2>Storage usage</h2><div class="storage-stat"><span>Used by this app</span><strong id="storage-used">Checking…</strong></div><div class="storage-stat"><span>Available quota</span><strong id="storage-quota">—</strong></div><button class="button button-outline" id="refresh-storage" type="button">Refresh storage</button><p class="muted storage-help">This is browser storage for local project files and app preferences. It does not show server disk usage.</p></div>
+      </section>
+
+      <section class="view-section" id="view-activity" hidden>
+        <div class="page-heading"><div><p class="eyebrow">BOT EVENTS</p><h1>Activity and logs</h1><p class="muted">Recent events received from the running service.</p></div></div>
+        <div id="activity-log-list" class="live-activity-list"><p class="muted">Activity will appear here when the Studio is connected to the live event stream.</p></div>
+      </section>
+      <section class="view-section" id="view-help" hidden><div class="page-heading"><div><p class="eyebrow">SUPPORT</p><h1>Help and feedback</h1><p class="muted">Aharane Local Studio guidance.</p></div></div><div class="settings-group"><h2>Using the Studio</h2><p class="muted">Use Home to check the bot, Files to manage source and valid update ZIPs, ENV for runtime variables, Chats for WhatsApp messages, and More for app preferences.</p><p class="muted">Some areas need additional server APIs before they can read or change live bot data.</p></div></section>
+      <section class="view-section" id="view-about" hidden><div class="page-heading"><div><p class="eyebrow">APPLICATION</p><h1>About Aharane Studio</h1><p class="muted">Your private mobile workspace for Aharane.</p></div></div><div class="settings-group"><div class="about-row"><span>Application</span><strong>Aharane Local Studio</strong></div><div class="about-row"><span>Version</span><strong>1.0.0</strong></div><div class="about-row"><span>Runtime</span><strong>Independent Aharane service</strong></div></div></section>
+<section class="view-section" id="view-deploy" hidden>
           <div class="page-heading"><div><p class="eyebrow">RELEASE MANAGEMENT</p><h1>Deploy update</h1><p class="muted">Replace Aharane's application code with a complete ZIP package.</p></div></div>
           <div class="deploy-note"><strong>This is separate from the Files Manager.</strong><p>You can deploy a ZIP directly here, or store it in the Files Manager first and choose **Update Aharane** from its three-dot menu. Both routes use the same validation and rollback process.</p></div>
 
@@ -223,68 +308,17 @@
             <div><span class="field-label">FINISHED</span><strong id="deployment-finished">—</strong></div>
           </div>
         </section>
+    </main>
 
-        <section class="view-section" id="view-files" hidden>
-          <div class="page-heading"><div><p class="eyebrow">SOURCE WORKSPACE</p><h1>Files Manager</h1><p class="muted">Edit individual source files without using the ZIP deployment workflow.</p></div></div>
-
-          <div class="source-workspace">
-            <div class="source-toolbar">
-              <div class="source-location"><span class="field-label">CURRENT FOLDER</span><strong id="source-breadcrumb">/</strong></div>
-              <div class="source-toolbar-actions">
-                <button class="button button-outline" id="source-up" type="button" disabled>Up</button>
-                <button class="button button-outline" id="source-new-folder" type="button">New folder</button>
-                <button class="button button-dark" id="source-new-file" type="button">New file</button>
-                <button class="icon-button" id="source-refresh" type="button" aria-label="Refresh source files">↻</button>
-              </div>
-            </div>
-            <div class="source-status-row">
-              <span id="source-draft-status" class="draft-status">No unsaved file changes</span>
-              <span class="source-status-actions">
-                <button class="text-button" id="source-discard" type="button" hidden>Discard edits</button>
-                <button class="button button-dark" id="source-apply" type="button" disabled>Apply changes &amp; restart</button>
-              </span>
-            </div>
-            <div id="source-message" class="message" role="status"></div>
-            <div class="source-body">
-              <div id="source-file-list" class="source-file-list"><p class="muted">Loading Aharane source files…</p></div>
-              <div id="source-editor-panel" class="source-editor-panel" hidden>
-                <div class="source-editor-head">
-                  <div><span class="field-label">SOURCE FILE</span><strong id="source-editor-name">—</strong></div>
-                  <button class="text-button" id="source-close-editor" type="button">Close editor</button>
-                </div>
-                <textarea id="source-editor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Source code editor"></textarea>
-                <div class="source-editor-footer">
-                  <span id="source-editor-meta" class="muted">Plain text editor · 512 KB limit</span>
-                  <button class="button button-dark" id="source-save" type="button" disabled>Save file</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="manual-editor-note">
-            <strong>Manual edits are not deployed automatically</strong>
-            <p>Save individual files first. Then choose Apply changes &amp; restart to run syntax and project checks, back up the previous release and restart Aharane. You can discard pending changes to restore the clean backup.</p>
-          </div>
-
-          <div class="section-heading"><h2>ZIP package library</h2><button class="text-button" id="refresh-packages" type="button">Refresh</button></div>
-          <div class="files-manager-intro files-package-intro">
-            <p>ZIPs stored here do not change the running bot. Open a package's three-dot menu and choose <strong>Update Aharane</strong> when you want to replace the complete application release.</p>
-            <div class="files-upload" id="files-dropzone" tabindex="0" role="button" aria-label="Choose or drop a ZIP package">
-              <strong>Drop a ZIP package here</strong>
-              <span>or select one from your phone</span>
-              <input id="files-zip-input" type="file" accept=".zip,application/zip" hidden>
-              <button class="button button-outline" id="files-choose-zip" type="button">Upload ZIP to Files Manager</button>
-              <small>Only ZIPs with a valid Aharane update manifest can be stored as deployable packages.</small>
-            </div>
-            <p id="files-upload-message" class="message" role="status"></p>
-          </div>
-          <div id="package-list" class="package-list"><p class="muted">Loading packages…</p></div>
-        </section>
-      </main>
-    </div>
+    <nav class="bottom-nav" aria-label="Main navigation">
+      <button type="button" data-view="overview" class="bottom-nav-item active"><span aria-hidden="true">⌂</span><small>Home</small></button>
+      <button type="button" data-view="files" class="bottom-nav-item"><span aria-hidden="true">▤</span><small>Files</small></button>
+      <button type="button" data-view="env" class="bottom-nav-item"><span aria-hidden="true">⌘</span><small>ENV</small></button>
+      <button type="button" data-view="chats" class="bottom-nav-item"><span aria-hidden="true">☏</span><small>Chats</small></button>
+      <button type="button" data-view="more" class="bottom-nav-item"><span aria-hidden="true">⋯</span><small>More</small></button>
+    </nav>
   </div>
-
-  <div id="password-modal" class="password-modal" hidden>
+<div id="password-modal" class="password-modal" hidden>
     <section class="password-dialog" role="dialog" aria-modal="true" aria-labelledby="password-dialog-title">
       <div class="password-dialog-heading">
         <div><p class="eyebrow">ACCOUNT SECURITY</p><h2 id="password-dialog-title">Change Studio password</h2></div>
@@ -304,5 +338,4 @@
       </form>
     </section>
   </div>
-</body>
-</html>
+</body></html>

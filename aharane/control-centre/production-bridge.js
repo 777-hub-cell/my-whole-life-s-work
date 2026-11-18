@@ -328,7 +328,7 @@ async function requestQrP(){
 async function repairPairP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private';
  if(!confirm('Back up the existing '+id+' WhatsApp authentication before preparing a new pairing?'))return;
- try{await apiP('accounts/'+id+'/repair',{method:'POST',body:pack({})});S.pin=null;S.qrRequested=false;await refreshRuntimeP();render();notifyP('Session backed up. Request a pairing code or QR when you are ready.')}
+ try{await apiP('accounts/'+id+'/repair',{method:'POST',body:pack({})});S.pin=null;S.qrRequested=false;await refreshRuntimeP();render();notifyP('Session backed up. Nothing was paired yet. Request a pairing code or QR when you are ready.')}
  catch(error){notifyP(error.message)}
 }
 async function reconnectPairP(){

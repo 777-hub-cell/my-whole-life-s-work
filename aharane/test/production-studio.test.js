@@ -143,6 +143,18 @@ test('Chats search updates in place and preserves message reading position', asy
  assert.ok(!bridge.includes("setInterval(()=>refreshChatsP().then(()=>{if(S.chat!==null)loadMessagesP()}).catch(()=>{}),6000)"))
 })
 
+test('folder downloads create a ZIP and ZIP uploads display in-place progress', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const menu=bridge.slice(bridge.indexOf('function fileMenuP(name,button){'),bridge.indexOf('function packageMenuP'))
+ assert.ok(menu.includes("['Rename','Move','Download as ZIP']"))
+ assert.ok(menu.includes("exportSelectionZipP([path],name+'.zip')"))
+ const upload=bridge.slice(bridge.indexOf('function updateUploadProgressP(){'),bridge.indexOf('async function pollUpdateP(){'))
+ assert.ok(upload.includes("id='prod-upload-progress'"))
+ assert.ok(upload.includes("stage='preparing'"))
+ assert.ok(upload.includes("stage='validating'"))
+ assert.ok(upload.includes("holder?.remove()"))
+})
+
 test('account and source downloads do not depend on the Claude preview host', async () => {
  const app=await read('../control-centre/app.js')
  const bridge=await read('../control-centre/production-bridge.js')

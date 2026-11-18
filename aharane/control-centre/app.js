@@ -828,6 +828,7 @@ function renderSourceEditorTabs() {
       if (sourceDirty && path === sourceFile && !window.confirm('Discard unsaved editor typing and close this file?')) return
       sourceOpenTabs = sourceOpenTabs.filter(item => item !== path)
       if (path === sourceFile) {
+        sourceDirty = false
         const nextPath = sourceOpenTabs.at(-1)
         if (nextPath) void openSourceFile(nextPath)
         else { sourceFile = null; sourceDirty = false; $('#source-editor-panel').hidden = true }
@@ -909,8 +910,9 @@ async function openSourceFile(path) {
 
 async function saveSourceFile() {
   if (!sourceFile) return
-  const content = $$('#source-editor').value
-  $$('#source-save').disabled = true
+  const content = $('#source-editor').value
+  updateEditorSaveStatus('saving', 'Saving')
+  $('#source-save').disabled = true
   try {
     const result = await api('files/content', {
       method: 'PUT',
@@ -927,9 +929,10 @@ async function saveSourceFile() {
     await loadSourceFolder(sourceFolder)
     await openSourceFile(savedPath)
   } catch (error) {
+    updateEditorSaveStatus('dirty', 'Not saved')
     setSourceMessage(error.message, 'error')
   } finally {
-    $$('#source-save').disabled = !sourceDirty
+    $('#source-save').disabled = !sourceDirty
   }
 }
 

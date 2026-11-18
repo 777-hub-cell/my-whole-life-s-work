@@ -386,10 +386,12 @@ export function createAccountRuntime({
     await mkdir(session.authDir, { recursive: true, mode: 0o700 })
     await chmod(session.authDir, 0o700)
     session.registered = false
-    session.state = 'pairing'
+    // Back up and prepare the fresh auth directory, but do not create a
+    // WhatsApp socket or generate a QR until the user explicitly asks.
+    session.state = 'not-paired'
+    session.qr = ''
     session.reconnectAttempts = 0
     emit()
-    await start(id)
     return { ...sessionSnapshot(session), backupCreated: Boolean(backupId) }
   }
 

@@ -980,7 +980,7 @@ app.get('/api/accounts/:accountId/qr', requireAdmin, async (req, res) => {
     const accountId = String(req.params.accountId || '').toLowerCase()
     if (!['private', 'public'].includes(accountId)) return res.status(404).json({ ok: false, error: 'Unknown WhatsApp account.' })
     const session = accountRuntime.get(accountId)
-    if (!session.socket && session.state !== 'needs-pairing' && session.state !== 'stopped') await accountRuntime.start(accountId)
+    if (!session.socket && session.state !== 'needs-pairing') await accountRuntime.start(accountId)
     res.json({ ok: true, accountId, qr: accountRuntime.pairingQr(accountId) })
   } catch (error) {
     res.status(503).json({ ok: false, error: String(error?.message || 'Could not read the WhatsApp pairing QR.') })
@@ -1267,7 +1267,7 @@ app.get('/api/chats/:accountId/media/:messageId', requireAdmin, async (req, res)
     if (!media) return res.status(404).json({ ok: false, error: 'Attachment not found.' })
     res.set('Content-Type', media.mimeType)
     res.set('Content-Length', String(media.size))
-    res.set('Content-Disposition', /^(image|video|audio)\//.test(media.mimeType) ? 'inline' : 'attachment; filename*=UTF-8\\'\\'' + encodeURIComponent(media.fileName))
+    res.set('Content-Disposition', /^(image|video|audio)\\//.test(media.mimeType) ? 'inline' : `attachment; filename*=UTF-8''${encodeURIComponent(media.fileName)}`)
     res.set('X-Content-Type-Options', 'nosniff')
     res.sendFile(media.path)
   } catch (error) {

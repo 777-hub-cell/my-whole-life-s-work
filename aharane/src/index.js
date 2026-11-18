@@ -657,136 +657,105 @@ function markMessageSeen(id) {
   if (!id) return false
   if (seenMessageIds.has(id)) return true
   seenMessageIds.set(id, Date.now())
-  if (seenMessageIds.size > 1500) {
+  if (seenMessageIds.size > 3000) {
     const first = seenMessageIds.keys().next().value
     seenMessageIds.delete(first)
   }
   return false
 }
 
-async function handleMessages(currentSocket, event) {
+async function handleMessages(sessionId, currentSocket, event) {
   if (!isSafeMessageUpsert(event)) return
   for (const message of event.messages) {
-    if (!message?.message || message.key?.fromMe) continue
-    if (markMessageSeen(message.key?.id)) continue
+    if (!message?.message || !message.key?.id) continue
+    if (markMessageSeen(sessionId + ':' + message.key.id)) continue
 
     const remoteJid = String(message.key?.remoteJid || '')
-    if (!isAllowedInbound({ remoteJid, fromMe: false, allowedSenders: ALLOWED_SENDERS })) continue
-
     const text = textFromMessage(message)
-    const reply = commandResponse(text)
-    if (!reply) continue
+    let registry
+    let isPublicOwner = false
+    let privateControl = false
 
-    const sender = remoteJid.slice(0, remoteJid.indexOf('@'))
-    if (!allowCommand(sender)) continue
+    if (sessionId === 'private') {
+      // Private Account A is an owner console, never a public responder.
+      // Only registered commands in its exact self-chat may run.
+      privateControl = isPrivateSelfCommand({
+        sessionId,
+        message,
+        remoteJid,
+        ownJid: currentSocket.user?.id || '',
+        privateOwnerNumber: ownerConfig.privateOwnerNumber,
+        text,
+        privateRegistry: privateCommandRegistry,
+        prefix: '!',
+      })
+      if (!privateControl) continue
+      registry = privateCommandRegistry
+    } else {
+      // Every fromMe event on the public account is inert. Public commands
+      // come only from an allowlisted direct WhatsApp phone-number identity.
+      if (message.key.fromMe === true) continue
+      if (!isAllowedInbound({
+        remoteJid,
+        fromMe: false,
+        allowedSenders: publicAllowedSenders(),
+      })) continue
+      registry = publicCommandRegistry
+      isPublicOwner = isPublicOwnerSender({
+        sessionId,
+        remoteJid,
+        publicOwnerNumber: ownerConfig.publicOwnerNumber,
+      })
+    }
 
-    publishStudioEvent('whatsapp.command.received', { command: text.split(/\s+/, 1)[0].slice(0, 40) })
+    if (!text || !allowCommand(sessionId + ':' + (sessionId === 'private'
+      ? ownerConfig.privateOwnerNumber
+      : senderNumberFromJid(remoteJid)))) continue
+
+    const command = text.split(/\s+/, 1)[0].slice(0, 40)
     try {
-      await currentSocket.sendMessage(remoteJid, { text: reply }, { quoted: message })
-      publishStudioEvent('whatsapp.command.replied', { command: text.split(/\s+/, 1)[0].slice(0, 40) })
+      const handled = await dispatchCommand({
+        registry,
+        rawText: text,
+        prefix: '!',
+        context: {
+          sessionId,
+          privateControl,
+          isPrivateOwner: privateControl,
+          isPublicOwner,
+          reply: value => currentSocket.sendMessage(remoteJid, { text: String(value) }, { quoted: message }),
+        },
+      })
+      if (!handled) continue
+      publishStudioEvent('whatsapp.command.received', { sessionId, scope: sessionId, command })
+      publishStudioEvent('whatsapp.command.replied', { sessionId, scope: sessionId, command })
     } catch {
-      logger.warn({ event: 'message.reply-failed' })
+      logger.warn({ event: 'message.command-failed', sessionId, command })
     }
   }
 }
 
-function scheduleReconnect() {
-  if (shuttingDown || reconnectTimer || state === 'needs-pairing') return
-  reconnectAttempts += 1
-  if (reconnectAttempts > 12) {
-    state = 'degraded'
-    logger.error({ event: 'whatsapp.reconnect-limit-reached' })
-    return
-  }
-  const delayMs = Math.min(60_000, 2_000 * (2 ** Math.min(5, reconnectAttempts - 1)))
-  state = 'reconnecting'
-  publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
-  logger.warn({ event: 'whatsapp.reconnect-scheduled', attempt: reconnectAttempts, delayMs })
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null
-    void startSocket().catch(() => {
-      state = 'degraded'
-      scheduleReconnect()
-    })
-  }, delayMs)
-  reconnectTimer.unref?.()
-}
+publicCommandRegistry = await loadCommandRegistry(new URL('../commands/', import.meta.url), { scope: 'public' })
+privateCommandRegistry = await loadCommandRegistry(new URL('../private-commands/', import.meta.url), { scope: 'private' })
 
-async function startSocket() {
-  if (shuttingDown) return null
-  if (socket) return socket
-  if (startPromise) return startPromise
-
-  startPromise = (async () => {
-    const auth = await useMultiFileAuthState(AUTH_DIR)
-    registered = auth.state.creds.registered === true
-    let signalReady
-    socketReady = new Promise(resolveReady => { signalReady = resolveReady })
-
-    const currentSocket = makeWASocket({
-      auth: auth.state,
-      logger,
-      browser: Browsers.macOS(APP_NAME),
-      markOnlineOnConnect: false,
-      syncFullHistory: false,
-      shouldSyncHistoryMessage: () => false,
-      generateHighQualityLinkPreview: false,
-    })
-    socket = currentSocket
-    state = registered ? 'connecting' : 'pairing'
-    publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
-
-    currentSocket.ev.on('creds.update', () => {
-      registered = auth.state.creds.registered === true
-      void auth.saveCreds().catch(() => logger.warn({ event: 'auth.save-failed' }))
-    })
-
-    currentSocket.ev.on('connection.update', update => {
-      if (update?.qr || update?.connection === 'connecting' || update?.connection === 'open') {
-        signalReady?.()
-        signalReady = null
-      }
-      if (update?.connection === 'open') {
-        registered = true
-        state = 'connected'
-        publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
-        reconnectAttempts = 0
-        lastConnectedAt = Date.now()
-        logger.info({ event: 'whatsapp.connected' })
-      }
-      if (update?.connection === 'close') {
-        const code = update.lastDisconnect?.error?.output?.statusCode
-        socket = null
-        if (code === DisconnectReason.loggedOut || code === 401) {
-          registered = false
-          state = 'needs-pairing'
-          publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
-          logger.error({ event: 'whatsapp.auth-rejected' })
-          return
-        }
-        state = 'disconnected'
-        publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
-        logger.warn({ event: 'whatsapp.connection-closed', code: Number.isFinite(code) ? code : null })
-        scheduleReconnect()
-      }
-    })
-
-    currentSocket.ev.on('messages.upsert', event => {
-      void handleMessages(currentSocket, event).catch(() => {
-        logger.warn({ event: 'message.handler-failed' })
-      })
-    })
-
-    logger.info({ event: 'whatsapp.socket-started', registered })
-    return currentSocket
-  })()
-
-  try {
-    return await startPromise
-  } finally {
-    startPromise = null
-  }
-}
+accountRuntime = createAccountRuntime({
+  authDirs: { public: AUTH_DIR, private: PRIVATE_AUTH_DIR },
+  loadAuthState: useMultiFileAuthState,
+  makeSocket: ({ auth }) => makeWASocket({
+    auth,
+    logger,
+    browser: Browsers.macOS(APP_NAME),
+    markOnlineOnConnect: false,
+    syncFullHistory: false,
+    shouldSyncHistoryMessage: () => false,
+    generateHighQualityLinkPreview: false,
+  }),
+  loggedOutCode: DisconnectReason.loggedOut,
+  onMessages: ({ sessionId, socket: currentSocket, event }) =>
+    handleMessages(sessionId, currentSocket, event),
+  publish: () => publishStudioEvent('whatsapp.status', studioRuntimeSnapshot()),
+  logger,
+})
 
 const app = express()
 app.disable('x-powered-by')

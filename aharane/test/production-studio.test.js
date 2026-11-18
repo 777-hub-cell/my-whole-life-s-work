@@ -36,7 +36,7 @@ test('Export Bot Source uses a real browser download instead of the preview-only
 
 test('the offline service worker caches the bridge and invalidates the previous shell', async () => {
   const sw = await read('../control-centre/sw.js')
-  assert.ok(sw.includes('aharane-local-studio-shell-v10'))
+  assert.ok(sw.includes('aharane-local-studio-shell-v11'))
   assert.ok(sw.includes('/aharane/studio/production-bridge.js'))
   assert.ok(sw.includes("['/aharane/studio/production-bridge.js','production-bridge.js']"))
 })
@@ -164,3 +164,20 @@ test('account and source downloads do not depend on the Claude preview host', as
  assert.ok(bridge.includes("files/download?item="))
 })
 
+
+
+test('pairing refreshes the selected account state before navigation and after failed requests', async () => {
+ const bridge = await read('../control-centre/production-bridge.js')
+ const openPair = bridge.slice(bridge.indexOf('openPairBaseP=openPair;'), bridge.indexOf('const chatsBaseP=chatsV;'))
+ assert.ok(openPair.includes('await refreshRuntimeP()'), 'Opening Pair must refresh the selected account status first.')
+ const pair = bridge.slice(bridge.indexOf('function pairViewP(){'), bridge.indexOf('async function getPairCodeP(){'))
+ assert.ok(pair.includes("a.state==='needs-pairing'"))
+ assert.ok(pair.includes('pairStatusLabelP(a)'), 'Pair status must use readable labels.')
+ const refresh = bridge.slice(bridge.indexOf('async function refreshPairViewAfterFailureP(){'), bridge.indexOf('async function getPairCodeP(){'))
+ assert.ok(refresh.includes('before.state!==after.state'))
+ const code = bridge.slice(bridge.indexOf('async function getPairCodeP(){'), bridge.indexOf('let qrSeenP='))
+ assert.ok(code.includes('refreshPairViewAfterFailureP()'))
+ const qr = bridge.slice(bridge.indexOf('async function requestQrP(){'), bridge.indexOf('async function repairPairP(){'))
+ assert.ok(qr.includes('refreshPairViewAfterFailureP()'))
+ assert.ok(bridge.includes('WhatsApp closed the pairing connection.'))
+})

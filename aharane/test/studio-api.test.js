@@ -62,7 +62,7 @@ test('source ZIP export is protected and only includes allowlisted source files'
  assert.ok(route.includes('listSourceFiles(directory)'))
  assert.ok(route.includes('safeSourceTarget(path)'))
  assert.ok(route.includes("Content-Type', 'application/zip'"))
- assert.ok(route.includes("Content-Disposition', 'attachment; filename=\\"aharane-source.zip\\"'"))
+ assert.ok(route.includes(String.raw`Content-Disposition', 'attachment; filename="aharane-source.zip"'`))
  assert.ok(route.includes('createSourceZip(files)'))
  assert.ok(module.includes('0x04034b50'))
  assert.ok(module.includes('0x02014b50'))

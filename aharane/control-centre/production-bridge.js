@@ -7,7 +7,7 @@ const pack=JSON.stringify;
 // Shared preview callbacks replaced by the live production bridge. Keep these
 // bindings declared inside this strict-mode closure before installBridgeP assigns them.
 let filesBase, openFileBase, actBase, moreBase, homeBase, bubBase, openChatBase, bindBase, openPairBaseP, drawMsgsBaseP;
-const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],packageError:'',filesError:'',fileMeta:new Map(),fileData:new Map(),pending:false,uploadProgress:null,chatTimer:null,chatRefreshBusy:false,chatSearchTimer:null,chatSearchQuery:'',chatSearchResults:[],chatSearchLoading:false,chatSearchError:'',messageFingerprints:new Map(),qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false,visibility:null,visibilityChats:[]};
+const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],packageError:'',filesError:'',fileMeta:new Map(),fileData:new Map(),pending:false,changedCount:0,uploadProgress:null,chatTimer:null,chatRefreshBusy:false,chatSearchTimer:null,chatSearchQuery:'',chatSearchResults:[],chatSearchLoading:false,chatSearchError:'',messageFingerprints:new Map(),qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false,visibility:null,visibilityChats:[]};
 function notifyP(s){if(typeof toast==='function')toast(s);else console.info(s)}
 async function apiP(path,options={}){
  const response=await fetch(API+'/'+String(path).replace(/^\/+/,''),{credentials:'same-origin',cache:'no-store',...options,headers:{...(options.body&&!(options.body instanceof ArrayBuffer)&&!(options.body instanceof Blob)?{'Content-Type':'application/json'}:{}),...(options.headers||{})}});
@@ -138,7 +138,7 @@ function updateFileTreeP(path,children){
  }
 }
 window.AharaneFileMeta=path=>P.fileMeta.get(String(path||''))||null;
-async function loadTreeP(path=''){const r=await apiP('files/tree?item='+encodeURIComponent(path));updateFileTreeP(path,r.children||[]);P.pending=Boolean(r.pending);return r}
+async function loadTreeP(path=''){const r=await apiP('files/tree?item='+encodeURIComponent(path));updateFileTreeP(path,r.children||[]);P.pending=Boolean(r.pending);P.changedCount=Number(r.changedCount)||0;return r}
 async function loadSourceFileP(path){
  const r=await apiP('files/preview?item='+encodeURIComponent(path));P.fileData.set(path,r);
  const parts=path.split('/'),name=parts.pop();let dir=fs;for(const part of parts)dir=dir[part];dir[name]=r.content;return r;
@@ -235,6 +235,14 @@ async function applyFilesP(){
  try{await apiP('files/apply',{method:'POST',body:pack({confirm:true})});notifyP('Applying staged changes…');await pollUpdateP();await refreshRuntimeP();render()}
  catch(error){notifyP(error.message)}
 }
+async function discardFilesP(){
+ if(!confirm('Discard all staged source changes? This cannot be undone. The running Aharane version will not be changed.'))return;
+ try{
+  await apiP('files/discard',{method:'POST',body:pack({confirm:true})});
+  P.pending=false;P.changedCount=0;
+  await loadTreeP(currentPathP());render();notifyP('Staged source changes discarded');
+ }catch(error){notifyP(error.message)}
+}
 function filesScreenP(){
  if(S.path[0]==='updates')return packagePageP();
  if(S.ed){
@@ -245,7 +253,8 @@ function filesScreenP(){
   const packages=P.packageError
    ?'<p class="sub" id="package-load-error">Saved ZIP packages unavailable: '+escP(P.packageError)+'</p><div class="btns"><button class="btn sm" id="prod-retry-packages">Retry package list</button></div>'
    :'<p class="sub">'+P.packages.length+' saved ZIP package(s)</p>';
-  html+='<h2>Update packages <button class="btn sm" onclick="openPackagePageP()">View all</button></h2>'+packages+(P.pending?'<div class="btns"><button class="btn p" id="prod-apply-files">Apply staged changes</button></div>':'');
+  const staged=P.pending?'<div class="btns"><button class="btn p" id="prod-apply-files">Apply staged changes</button><button class="btn" id="prod-discard-files">Discard staged changes</button><span class="d">'+P.changedCount+' changed item(s)</span></div>':'';
+  html+='<h2>Update packages <button class="btn sm" onclick="openPackagePageP()">View all</button></h2>'+packages+staged;
   if(P.filesError)html+='<div class="note">Could not load this folder: '+escP(P.filesError)+' <button class="btn sm" id="prod-retry-files">Retry</button></div>';
   if(P.uploadProgress)html+='<div class="card" style="padding:12px;margin-top:14px"><div class="d" id="prod-upload-label"></div><div class="pbar" style="margin-top:8px"><i id="prod-upload-bar" style="width:0"></i></div></div>';
  }
@@ -267,7 +276,7 @@ async function saveLiveFileP(){
   const parts=S.cur.split('/'),name=parts.pop();let dir=fs;for(const p of parts)dir=dir[p];dir[name]=verified.content;
   const status=Q('#es');if(status)status.textContent='Saved and verified (staged)';
   const count=Q('#ec');if(count)count.textContent=content.split('\n').length+' lines';
-  P.pending=true;notifyP('File saved and verified on the server');
+  P.pending=true;P.changedCount=Number(r.changedCount)||P.changedCount||1;notifyP('File saved and verified on the server');
  }catch(error){notifyP(error.message)}finally{if(button)button.disabled=false}
 }
 function createLiveFileP(type){
@@ -660,6 +669,7 @@ function bindProductionP(){
   const count=Q('#ec');if(count)count.textContent=fileEditor.value.split('\\n').length+' lines';
  };
  const save=Q('#prod-file-save');if(save)save.onclick=saveLiveFileP;
+ const discard=Q('#prod-discard-files');if(discard)discard.onclick=discardFilesP;
  const down=Q('#prod-file-download');if(down)down.onclick=()=>downloadSourceFileP(S.cur,S.cur.split('/').pop()).catch(e=>notifyP(e.message));
  const upload=Q('#upl');if(upload)upload.onchange=async e=>{
   const files=[...e.target.files];e.target.value='';

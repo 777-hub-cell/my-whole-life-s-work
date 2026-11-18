@@ -333,9 +333,27 @@ async function currentReleaseDirectory() {
   return realpath(CURRENT_RELEASE)
 }
 
+async function clearEmptyStaleManualEdits(currentRelease, manual) {
+  if (manual?.status !== 'pending' || manual.currentRelease === currentRelease ||
+      !Array.isArray(manual.modifiedPaths) || manual.modifiedPaths.length !== 0) return false
+  const workspace = String(manual.workspaceRelease || '')
+  if (!workspace.startsWith(RELEASES_DIR + sep)) {
+    sourcePathError(409, 'MANUAL_WORKSPACE_INVALID', 'The stale source workspace is outside Aharane releases.')
+  }
+  const actual = await realpath(workspace).catch(() => null)
+  if (!actual || !actual.startsWith(RELEASES_DIR + sep) || actual === currentRelease) {
+    sourcePathError(409, 'MANUAL_WORKSPACE_MISSING', 'The stale source workspace cannot be safely discarded.')
+  }
+  await rm(actual, { recursive: true, force: true })
+  await rm(MANUAL_EDIT_STATE_FILE, { force: true })
+  return true
+}
+
 async function sourceWorkspaceDirectory() {
+  const current = await currentReleaseDirectory()
   const manual = await readJsonFile(MANUAL_EDIT_STATE_FILE)
-  if (manual?.status !== 'pending') return currentReleaseDirectory()
+  if (manual?.status !== 'pending') return current
+  if (await clearEmptyStaleManualEdits(current, manual)) return current
   const workspace = String(manual.workspaceRelease || '')
   if (!workspace.startsWith(RELEASES_DIR + sep)) {
     sourcePathError(409, 'MANUAL_WORKSPACE_INVALID', 'The saved source workspace is outside Aharane releases.')
@@ -374,9 +392,6 @@ async function safeSourceTarget(value, { allowMissing = false } = {}) {
   if (parts.length > 1 && SOURCE_ROOT_FILES.has(parts[0])) {
     sourcePathError(403, 'PATH_NOT_ALLOWED', 'A root documentation file cannot contain child paths.')
   }
-  if (parts.length > 1 && !SOURCE_EXTENSIONS.has(extname(parts.at(-1)).toLowerCase())) {
-    sourcePathError(403, 'FILE_TYPE_NOT_ALLOWED', 'Only approved text and source files are available in the editor.')
-  }
   const base = await sourceWorkspaceDirectory()
   let full = base
   let info = null
@@ -393,6 +408,9 @@ async function safeSourceTarget(value, { allowMissing = false } = {}) {
     if (info && index < parts.length - 1 && !info.isDirectory()) {
       sourcePathError(400, 'NOT_A_FOLDER', 'A parent path is not a folder.')
     }
+  }
+  if (info?.isFile() && parts.length > 1 && !SOURCE_EXTENSIONS.has(extname(parts.at(-1)).toLowerCase())) {
+    sourcePathError(403, 'FILE_TYPE_NOT_ALLOWED', 'Only approved text and source files are available in the editor.')
   }
   const relativePathFromRoot = relative(base, full)
   if (!relativePathFromRoot || relativePathFromRoot === '..' || relativePathFromRoot.startsWith('..' + sep) || isAbsolute(relativePathFromRoot)) {
@@ -467,13 +485,17 @@ async function ensureManualEditBackup() {
   const existing = await readJsonFile(MANUAL_EDIT_STATE_FILE)
   if (existing?.status === 'pending') {
     if (existing.currentRelease !== currentRelease) {
-      sourcePathError(409, 'MANUAL_CHANGES_STALE', 'The active release changed. Discard the old draft before editing this version.')
+      const cleared = await clearEmptyStaleManualEdits(currentRelease, existing)
+      if (!cleared) {
+        sourcePathError(409, 'MANUAL_CHANGES_STALE', 'The active release changed while source edits were staged. Review or discard the old draft before editing this version.')
+      }
+    } else {
+      const workspace = String(existing.workspaceRelease || '')
+      if (!workspace.startsWith(RELEASES_DIR + sep) || !await stat(workspace).catch(() => null)) {
+        sourcePathError(409, 'MANUAL_WORKSPACE_MISSING', 'The saved source workspace is missing. Discard the pending edits before continuing.')
+      }
+      return existing
     }
-    const workspace = String(existing.workspaceRelease || '')
-    if (!workspace.startsWith(RELEASES_DIR + sep) || !await stat(workspace).catch(() => null)) {
-      sourcePathError(409, 'MANUAL_WORKSPACE_MISSING', 'The saved source workspace is missing. Discard the pending edits before continuing.')
-    }
-    return existing
   }
   if (!currentRelease.startsWith(RELEASES_DIR + sep)) {
     sourcePathError(409, 'RELEASE_PATH_INVALID', 'The current Aharane release cannot be copied safely.')
@@ -520,7 +542,7 @@ async function validateSourceContent(sourcePath, content) {
     sourcePathError(413, 'FILE_TOO_LARGE', 'Source files must be 512 KB or smaller in the editor.')
   }
   const extension = extname(sourcePath).toLowerCase()
-  if (extension === '.json') {
+  if (['.json', '.webmanifest'].includes(extension)) {
     try { JSON.parse(content) }
     catch { sourcePathError(400, 'INVALID_JSON', 'The JSON file is not valid JSON.') }
   }
@@ -1663,7 +1685,7 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
     if (!target.info?.isFile()) return res.status(409).json({ ok: false, error: 'The source file changed. Reload the Files Manager.' })
     const temporary = target.full + '.aharane-edit-' + randomUUID()
     try {
-      await writeFile(temporary, content, { encoding: 'utf8', mode: 'wx', flag: 'wx' })
+      await writeFile(temporary, content, { encoding: 'utf8', mode: 0o640, flag: 'wx' })
       await rename(temporary, target.full)
       const savedContent = await readFile(target.full, 'utf8')
       if (savedContent !== content) throw new Error('The file did not pass its on-disk save check. Your previous file was preserved in the manual-edit backup.')
@@ -1671,13 +1693,14 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
       await rm(temporary, { force: true }).catch(() => {})
       throw error
     }
-    await recordManualEdit(target.path, 'modified-file')
+    const manual = await recordManualEdit(target.path, 'modified-file')
     res.json({
       ok: true,
       path: target.path,
       size: Buffer.byteLength(content),
       sha256: createHash('sha256').update(content).digest('hex'),
       pending: true,
+      changedCount: manual.modifiedPaths.length,
     })
   } catch (error) {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not save the source file.') })
@@ -1844,8 +1867,8 @@ app.post('/api/files/discard', requireAdmin, async (req, res) => {
   try {
     const current = await currentReleaseDirectory()
     const workspace = String(manual.workspaceRelease || '')
-    if (current !== manual.currentRelease || !workspace.startsWith(RELEASES_DIR + sep)) {
-      return res.status(409).json({ ok: false, error: 'The saved edits no longer match the active release.' })
+    if (!workspace.startsWith(RELEASES_DIR + sep)) {
+      return res.status(409).json({ ok: false, error: 'The saved edit workspace is outside Aharane releases.' })
     }
     const actualWorkspace = await realpath(workspace)
     if (!actualWorkspace.startsWith(RELEASES_DIR + sep) || actualWorkspace === current) {

@@ -208,3 +208,34 @@ test('the production Files screen renders the real editor before exposing server
  assert.ok(bind.includes("const fileEditor=Q('#ed')"))
  assert.ok(bind.includes("status.textContent='Unsaved changes'"), 'Editing must never be labelled as saved before server verification.')
 });
+
+
+test('server file saves use valid exclusive-write options and nested folders remain browsable', async () => {
+ const runtime=await read('../src/index.js')
+ const start=runtime.indexOf("app.put('/api/files/content'")
+ const end=runtime.indexOf("app.post('/api/files/rename'",start)
+ const save=runtime.slice(start,end)
+ assert.ok(save.includes("mode: 0o640, flag: 'wx'"), 'The save handler must use numeric file permissions and keep wx as the open flag.')
+ assert.ok(!save.includes("mode: 'wx'"), 'wx is a file-open flag, not a permission mode.')
+ assert.ok(save.includes("await readFile(target.full, 'utf8')"), 'The server must verify the on-disk content after saving.')
+ const pathStart=runtime.indexOf('async function safeSourceTarget')
+ const pathEnd=runtime.indexOf('async function listSourceFiles',pathStart)
+ const pathGuard=runtime.slice(pathStart,pathEnd)
+ assert.ok(pathGuard.includes('if (info?.isFile() && parts.length > 1'), 'Approved-extension checks must not reject nested folders.')
+ assert.ok(runtime.includes("['.json', '.webmanifest'].includes(extension)"), 'Web app manifests must be validated as JSON before saving.')
+})
+
+
+test('stale empty Files drafts are safely cleared and stale non-empty drafts can be discarded', async () => {
+ const runtime=await read('../src/index.js')
+ const bridge=await read('../control-centre/production-bridge.js')
+ assert.ok(runtime.includes('async function clearEmptyStaleManualEdits(currentRelease, manual)'))
+ assert.ok(runtime.includes('if (await clearEmptyStaleManualEdits(current, manual)) return current'))
+ const discard=runtime.slice(runtime.indexOf("app.post('/api/files/discard'"),runtime.indexOf("app.get('/api/files/packages'"))
+ assert.ok(discard.includes('actualWorkspace === current'), 'Discard must never remove the active release.')
+ assert.ok(!discard.includes('current !== manual.currentRelease'), 'A safely contained stale draft must still be discardable.')
+ assert.ok(bridge.includes("apiP('files/discard'"), 'The Files screen must expose a discard action for stale drafts.')
+ assert.ok(bridge.includes('id="prod-discard-files"'))
+})
+
+// Keep the regression suite synchronized with the final save-count UI change.

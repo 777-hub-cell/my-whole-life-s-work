@@ -1935,7 +1935,11 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
     const currentHash = createHash('sha256').update(original).digest('hex')
     await handle.close()
     handle = null
-    if (req.body?.expectedSha256 && req.body.expectedSha256 !== currentHash) {
+    const expectedSha256 = String(req.body?.expectedSha256 || '')
+    if (!/^[a-f0-9]{64}$/.test(expectedSha256)) {
+      return res.status(400).json({ ok: false, error: 'The editor is missing its file-version check. Reload the file before saving.' })
+    }
+    if (expectedSha256 !== currentHash) {
       return res.status(409).json({ ok: false, error: 'This file changed after you opened it. Reload it before saving to avoid overwriting newer content.' })
     }
 
@@ -1943,13 +1947,29 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
     target = await safeSourceTarget(target.path)
     if (!target.info?.isFile()) return res.status(409).json({ ok: false, error: 'The source file changed. Reload the Files Manager.' })
     const temporary = target.full + '.aharane-edit-' + randomUUID()
+    const originalBytes = Buffer.from(original)
+    let replaced = false
     try {
       await writeFile(temporary, content, { encoding: 'utf8', mode: 0o640, flag: 'wx' })
+      const stagedContent = await readFile(temporary, 'utf8')
+      if (stagedContent !== content) throw new Error('The temporary file failed verification. The existing file was not changed.')
       await rename(temporary, target.full)
+      replaced = true
       const savedContent = await readFile(target.full, 'utf8')
-      if (savedContent !== content) throw new Error('The file did not pass its on-disk save check. Your previous file was preserved in the manual-edit backup.')
+      if (savedContent !== content) {
+        const restore = target.full + '.aharane-restore-' + randomUUID()
+        await writeFile(restore, originalBytes, { mode: 0o640, flag: 'wx' })
+        await rename(restore, target.full)
+        replaced = false
+        throw new Error('The saved file failed verification. The previous content was restored.')
+      }
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => {})
+      if (replaced) {
+        const restore = target.full + '.aharane-restore-' + randomUUID()
+        await writeFile(restore, originalBytes, { mode: 0o640, flag: 'wx' }).then(() => rename(restore, target.full)).catch(() => {})
+        await rm(restore, { force: true }).catch(() => {})
+      }
       throw error
     }
     const manual = await recordManualEdit(target.path, 'modified-file')
@@ -2129,10 +2149,12 @@ app.post('/api/files/apply', requireAdmin, async (req, res) => {
     const current = await currentReleaseDirectory()
     const workspace = String(manual.workspaceRelease || '')
     if (current !== manual.currentRelease || !workspace.startsWith(RELEASES_DIR + sep)) {
-      return res.status(409).json({ ok: false, error: 'The active release or edit workspace changed. Reload the Files Manager before applying these edits.' })
+      updateInProgress = false
+      return res.status(409).json({ ok: false, error: 'The active release or edit workspace changed. Recover the Files Manager draft before applying these edits.' })
     }
     const actualWorkspace = await realpath(workspace)
     if (!actualWorkspace.startsWith(RELEASES_DIR + sep) || actualWorkspace === current) {
+      updateInProgress = false
       return res.status(409).json({ ok: false, error: 'The saved edit workspace is not a separate Aharane release.' })
     }
     await validateManualEditWorkspaceFiles(actualWorkspace, manual.modifiedPaths)

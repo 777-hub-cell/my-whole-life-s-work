@@ -239,3 +239,33 @@ test('stale empty Files drafts are safely cleared and stale non-empty drafts can
 })
 
 // Keep the regression suite synchronized with the final save-count UI change.
+
+
+test('Files editor automatically saves after typing pauses and verifies the server read-back', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const screen=bridge.slice(bridge.indexOf('function filesScreenP(){'),bridge.indexOf('function filePathP',bridge.indexOf('function filesScreenP(){')))
+ const save=bridge.slice(bridge.indexOf('function setFileEditorStatusP'),bridge.indexOf('function createLiveFileP'))
+ const bind=bridge.slice(bridge.indexOf('function bindProductionP(){'),bridge.indexOf('function homeViewP(){'))
+ assert.ok(screen.includes('Autosave on'))
+ assert.ok(screen.includes('Save now'))
+ assert.ok(save.includes('function scheduleFileAutosaveP(path, content, delay=1000)'))
+ assert.ok(save.includes('setTimeout(()=>{fileAutosaveTimerP=null;void flushFileAutosaveP()},delay)'))
+ assert.ok(save.includes("apiP('files/content'"))
+ assert.ok(save.includes("apiP('files/preview?item='"))
+ assert.ok(save.includes('verified.content!==job.content||verified.sha256!==r.sha256'))
+ assert.ok(bind.includes('scheduleFileAutosaveP(path,fileEditor.value)'))
+ assert.ok(bind.includes('fileEditor.onblur'))
+})
+
+test('autosave can store incomplete code drafts and Apply validates edited JS and JSON before activation', async () => {
+ const runtime=await read('../src/index.js')
+ const saveStart=runtime.indexOf("app.put('/api/files/content'")
+ const saveEnd=runtime.indexOf("app.post('/api/files/rename'",saveStart)
+ const save=runtime.slice(saveStart,saveEnd)
+ const applyStart=runtime.indexOf("app.post('/api/files/apply'")
+ const applyEnd=runtime.indexOf("app.post('/api/files/discard'",applyStart)
+ const apply=runtime.slice(applyStart,applyEnd)
+ assert.ok(save.includes('validateSourceContent(target.path, content, { syntax: false })'))
+ assert.ok(runtime.includes('async function validateManualEditWorkspaceFiles(workspace, modifiedPaths)'))
+ assert.ok(apply.includes('await validateManualEditWorkspaceFiles(actualWorkspace, manual.modifiedPaths)'))
+})

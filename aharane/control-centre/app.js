@@ -748,7 +748,11 @@ function updateSourceEditorLines() {
 }
 
 async function openSourceFile(path) {
-  if (sourceDirty && !window.confirm('Discard unsaved editor typing and open another file?')) return
+  if (sourceDirty && !window.confirm('Discard unsaved editor typing and open another file?')) {
+    const switcher = $('#source-editor-file-switcher')
+    if (switcher && sourceFile) switcher.value = sourceFile
+    return
+  }
   try {
     const result = await api('files/preview?item=' + encodeURIComponent(path))
     sourceFile = result.path
@@ -1373,6 +1377,9 @@ $('#chat-composer')?.addEventListener('submit', event => {
 })
 $('#chat-attach-button')?.addEventListener('click', () => {
   showMessage('#chat-thread-message', 'Attachments are not available until the WhatsApp messaging service is connected.', 'error')
+})
+$('#chat-image')?.addEventListener('click', () => {
+  $('#chat-image-viewer').classList.toggle('controls-hidden')
 })
 $('#chat-image-close')?.addEventListener('click', closeChatImageViewer)
 $('#chat-image-details')?.addEventListener('click', () => {

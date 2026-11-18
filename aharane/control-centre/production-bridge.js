@@ -82,7 +82,19 @@ async function refreshActivityP(){
  LOGS.splice(0,LOGS.length,...P.activity.map(x=>({id:x.id,ts:new Date(x.at).getTime(),lv:x.level,src:x.source,msg:x.message,det:''})));
  lid=LOGS.length;logs=P.activity.slice(0,8).map(x=>[x.message,new Date(x.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})]);
 }
-function applyEnvP(){envs=P.env.map(x=>({k:x.key,v:x.value,s:0,readOnly:Boolean(x.readOnly),scope:x.scope,type:x.type||'text'}));envDirty=false;show={}}
+function applyEnvP(){
+ envs=P.env.map(x=>({k:x.key,v:x.value,s:0,readOnly:Boolean(x.readOnly),scope:x.scope,type:x.type||'text'}));
+ // Compatibility aliases feed the original Configuration form without
+ // exposing or duplicating them in the separate ENV screen.
+ const value=key=>String(P.env.find(x=>x.key===key)?.value??'');
+ envs.push(
+  {k:'PRIVATE_PREFIX',v:value('PRIVATE_COMMAND_PREFIX')||'.',readOnly:true},
+  {k:'OWNER_NUMBER',v:P.owners.privateOwnerNumber||''},
+  {k:'PUBLIC_PREFIX',v:value('PUBLIC_COMMAND_PREFIX')||'!',readOnly:true},
+  {k:'PUBLIC_NUMBER',v:P.owners.publicOwnerNumber||''}
+ );
+ envDirty=false;show={}
+}
 function currentPathP(){return S.path.join('/')}
 function updateFileTreeP(path,children){
  let obj=fs;for(const part of path.split('/').filter(Boolean)){if(!obj[part]||typeof obj[part]!=='object')obj[part]={};obj=obj[part]}
@@ -205,9 +217,36 @@ async function saveOwnersP(){
  catch(error){notifyP(error.message)}
 }
 function envViewP(){
- return '<h1>ENV</h1><p class="sub">Managed account settings. Command prefixes are fixed: private . and public !.</p><div class="card list">'+envs.map((x,i)=>'<div class="env"><label for="e'+i+'">'+escP(x.k)+(x.readOnly?' · Fixed':'')+'</label><input class="field" id="e'+i+'" data-e="'+i+'" value="'+escP(x.v)+'" '+(x.readOnly?'disabled':'')+' autocomplete="off"></div>').join('')+'</div><div class="btns"><button class="btn p" id="prod-save-env">Save changes</button></div>';
+ return '<h1>ENV</h1><p class="sub">Managed environment values for the Private and Public accounts. Command prefixes are fixed by Aharane.</p><div class="card list">'+P.env.map((x,i)=>'<div class="env"><label for="e'+i+'">'+escP(x.key)+(x.readOnly?' · Fixed':'')+'</label><input class="field" id="e'+i+'" data-e="'+i+'" value="'+escP(x.value)+'" '+(x.readOnly?'disabled':'')+' autocomplete="off"></div>').join('')+'</div><div class="btns"><button class="btn p" id="prod-save-env">Save changes</button></div>';
 }
-async function saveEnvP(){try{const r=await apiP('env',{method:'PUT',body:pack({env:envs.map(x=>({key:x.k,value:x.v}))})});P.env=r.env||[];applyEnvP();render();notifyP('Settings saved')}catch(error){notifyP(error.message)}}
+async function saveEnvP(){try{const r=await apiP('env',{method:'PUT',body:pack({env:P.env.map((x,i)=>({key:x.key,value:envs[i]?.v??x.value}))})});P.env=r.env||[];applyEnvP();render();notifyP('ENV values saved')}catch(error){notifyP(error.message)}}
+async function saveConfigP(){
+ const button=Q('#csv');if(button)button.disabled=true;
+ try{
+  const profile=S.cprof==='public'?'public':'private';
+  const ownerValue=String(C.owner||'').replace(/\\D/g,'');
+  if(ownerValue&&!/^\\d{7,15}$/.test(ownerValue))throw new Error('Owner number must contain 7–15 digits, including the country code.');
+  const owners={
+   privateOwnerNumber:profile==='private'?ownerValue:(P.owners.privateOwnerNumber||''),
+   publicOwnerNumber:profile==='public'?ownerValue:(P.owners.publicOwnerNumber||''),
+   allowedPublicSenders:P.owners.allowedPublicSenders||[]
+  };
+  const ownerResult=await apiP('owners',{method:'PUT',body:pack(owners)});
+  P.owners=ownerResult.owners||owners;
+  cfgSave();
+  const result=await apiP('env',{method:'PUT',body:pack({env:envs.map(x=>({key:x.k,value:x.v}))})});
+  P.env=result.env||[];
+  applyEnvP();
+  loadP(profile);
+  C=CS[profile];
+  C.owner=profile==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicOwnerNumber||'');
+  C.prefix=profile==='private'?'.':'!';
+  C0=JSON.stringify(C);C0S[profile]=C0;
+  cfgDirty(false);
+  notifyP((profile==='private'?'Private':'Public')+' configuration saved');
+  render();
+ }catch(error){notifyP(error.message);if(button)button.disabled=false}
+}
 function storageViewP(){return '<button class="btn sm" onclick="S.sub=null;render()">Back to More</button><h1 style="margin-top:14px">Storage</h1><p class="sub">Server disk and persistent WhatsApp media.</p><div class="card" style="padding:18px"><div class="big" id="disk-used">Loading…</div><div class="d" id="disk-total">Reading server disk usage</div><div class="sbar" style="margin-top:16px"><i id="disk-bar" style="width:0;background:var(--acc)"></i></div><div class="row"><span class="grow t">Free space</span><span class="d" id="disk-free">—</span></div><div class="row"><span class="grow t">Media files</span><span class="d" id="media-count">—</span></div><div class="row"><span class="grow t">Media size</span><span class="d" id="media-size">—</span></div></div>'}
 async function loadStorageP(){try{const r=await apiP('storage'),d=r.disk||{},m=r.media||{},total=Number(d.totalBytes||0),used=Number(d.usedBytes||0);if(Q('#disk-used'))Q('#disk-used').textContent=fsz(used);if(Q('#disk-total'))Q('#disk-total').textContent='of '+fsz(total)+' total disk';if(Q('#disk-free'))Q('#disk-free').textContent=fsz(d.freeBytes||0);if(Q('#media-count'))Q('#media-count').textContent=String(m.files||0);if(Q('#media-size'))Q('#media-size').textContent=fsz(m.bytes||0);if(Q('#disk-bar'))Q('#disk-bar').style.width=(total?Math.min(100,used/total*100):0)+'%'}catch(error){if(Q('#disk-used'))Q('#disk-used').textContent='Unavailable';notifyP(error.message)}}
 async function activityPageP(){await refreshActivityP();S.sub='act';S.lq='';S.lf='all';S.ln=60;S.lp=false;render()}
@@ -378,6 +417,7 @@ function bindProductionP(){
  document.querySelectorAll('[data-account]').forEach(b=>b.onclick=()=>accountActionP(b.dataset.account,b.dataset.action));
  const owner=Q('#save-owners');if(owner)owner.onclick=saveOwnersP;
  const env=Q('#prod-save-env');if(env)env.onclick=saveEnvP;
+ const saveConfig=Q('#csv');if(saveConfig)saveConfig.onclick=saveConfigP;
  document.querySelectorAll('[data-e]').forEach(input=>input.oninput=()=>{const row=envs[Number(input.dataset.e)];if(row&&!row.readOnly){row.v=input.value;envDirty=true}});
  const save=Q('#prod-file-save');if(save)save.onclick=saveLiveFileP;
  const down=Q('#prod-file-download');if(down)down.onclick=()=>{const data=P.fileData.get(S.cur);if(data)downloadP(S.cur.split('/').pop(),new Blob([data.content],{type:'text/plain'}))};
@@ -409,12 +449,25 @@ function bindProductionP(){
  if(S.tab!=='chats'&&P.chatTimer){clearInterval(P.chatTimer);P.chatTimer=null}
 }
 function installBridgeP(){
+ const configViewBaseP=cfgV;
+ cfgV=function(){
+  // Preserve the original Configuration page. Prefixes are fixed in the
+  // runtime (. for Private, ! for Public), so display them read-only.
+  return configViewBaseP().replace('data-cf="prefix"','data-cf="prefix" readonly aria-readonly="true"');
+ };
+ openCfg=function(){
+  if(!cfgD)cfgLoad();
+  C=CS[S.cprof];
+  C.owner=S.cprof==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicOwnerNumber||'');
+  C.prefix=S.cprof==='private'?'.':'!';
+  C0=JSON.stringify(C);C0S[S.cprof]=C0;
+  S.sub='cfg';render();scrollTo(0,0);
+ };
  filesBase=filesV;openFileBase=openF;actBase=actV;moreBase=moreV;homeBase=home;bubBase=bub;
  const chatsBaseP=chatsV;chatsV=function(){return chatsBaseP().replace('</button></div><p class="sub">','</button><button class="modeb" id="chat-visibility" aria-label="Configure chat visibility">'+ico('cfg')+'</button></div><p class="sub">')};
  filesV=filesScreenP;envV=envViewP;accV=accountViewP;pairV=pairViewP;moreV=moreViewP;storV=storageViewP;
  home=function(){return homeBase().replace(/(<span>Messages handled, last 24 hours<\/span><b>)[\s\S]*?(<\/b>)/,'$1'+Number(P.metrics?.messagesLast24h||0).toLocaleString()+'$2')};
  openAct=activityPageP;openStor=function(){S.sub='stor';render();loadStorageP()};
- openCfg=function(){go('env')};cfgFor=function(){go('env')};
  newAcc=function(){notifyP('Aharane uses two separate accounts: Private and Public.')};
  finishPair=function(){refreshRuntimeP().then(render)};
  unlink=function(i){accountActionP(accts[i]?.slot,'stop')};

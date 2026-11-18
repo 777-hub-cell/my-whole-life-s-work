@@ -4,6 +4,9 @@ const API='/aharane/api', Q=s=>document.querySelector(s);
 const APP_SOURCE_PATHS=['index.html','styles.css','app.js','production-bridge.js','manifest.webmanifest'];
 const escP=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pack=JSON.stringify;
+// Shared preview callbacks replaced by the live production bridge. Keep these
+// bindings declared inside this strict-mode closure before installBridgeP assigns them.
+let filesBase, openFileBase, actBase, moreBase, homeBase, bubBase, openChatBase, bindBase;
 const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],fileData:new Map(),pending:false,chatTimer:null,qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false,visibility:null,visibilityChats:[]};
 function notifyP(s){if(typeof toast==='function')toast(s);else console.info(s)}
 async function apiP(path,options={}){
@@ -434,9 +437,26 @@ function injectStyleP(){
 }
 async function bootP(){
  if(navigator.serviceWorker)navigator.serviceWorker.register('/aharane/studio/sw.js',{scope:'/aharane/studio/'}).catch(()=>{});
- injectStyleP();installBridgeP();
- try{const auth=await apiP('auth/status');try{await apiP('status');document.body.classList.add('aharane-authenticated');await connectLiveP()}catch{loginPanelP();setLoginModeP(Boolean(auth.setupRequired))}}
- catch(error){loginPanelP();setLoginModeP(false);Q('#prod-auth-message').textContent=error.message}
+ try{
+  injectStyleP();
+  installBridgeP();
+  const auth=await apiP('auth/status');
+  try{
+   await apiP('status');
+   document.body.classList.add('aharane-authenticated');
+   await connectLiveP();
+  }catch{
+   loginPanelP();
+   setLoginModeP(Boolean(auth.setupRequired));
+  }
+ }catch(error){
+  // Never leave the user with only the boot background if startup breaks.
+  try{
+   loginPanelP();
+   setLoginModeP(false);
+   Q('#prod-auth-message').textContent='Studio startup failed: '+String(error?.message||error);
+  }catch{}
+ }
 }
 window.AharaneStudio={signOut:signOutP,refresh:refreshRuntimeP,openSource:openAppSourceP};
 window.openAppSourceP=openAppSourceP;

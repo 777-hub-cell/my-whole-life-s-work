@@ -370,3 +370,26 @@ test('Files help explains autosave, Save now and separate staged activation', as
  assert.ok(app.includes('Use Save now for an immediate save'))
  assert.ok(app.includes('Apply staged changes validates and activates the edits.'))
 })
+
+test('local device drafts block bulk operations and are reconciled before Apply', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const paths=bridge.slice(bridge.indexOf('async function flushFilePathsP'),bridge.indexOf('async function flushAllFileAutosavesP'))
+ const all=bridge.slice(bridge.indexOf('async function flushAllFileAutosavesP'),bridge.indexOf('async function restoreDeviceDraftP'))
+ assert.ok(paths.includes('fileLocalDraftsP.keys()'))
+ assert.ok(paths.includes('queueDeviceDraftForSaveP(path)'))
+ assert.ok(paths.includes('fileAutosaveConflictsP'))
+ assert.ok(all.includes('fileLocalDraftsP.size===0&&fileAutosaveConflictsP.size===0'))
+ assert.ok(bridge.includes('readonly aria-readonly="true"'), 'An unresolved conflict must lock the editor until an explicit choice is made.')
+ assert.ok(bridge.includes('id="prod-restore-device-draft"'))
+ assert.ok(bridge.includes('id="prod-keep-server-version"'))
+})
+
+test('keeping the server version cancels the failed autosave so it cannot overwrite the chosen copy later', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const start=bridge.indexOf('function keepServerFileP()')
+ const end=bridge.indexOf('async function saveLiveFileP()',start)
+ const keep=bridge.slice(start,end)
+ assert.ok(keep.includes('clearFileAutosaveTimerP(path)'))
+ assert.ok(keep.includes('fileAutosaveQueuedP.delete(path)'))
+ assert.ok(keep.includes('removeFileLocalDraftP(path)'))
+})

@@ -8,7 +8,39 @@ const pack=JSON.stringify;
 // bindings declared inside this strict-mode closure before installBridgeP assigns them.
 let filesBase, openFileBase, actBase, moreBase, homeBase, bubBase, openChatBase, bindBase, openPairBaseP, drawMsgsBaseP;
 const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],packageError:'',filesError:'',fileMeta:new Map(),fileData:new Map(),pending:false,stale:false,changedCount:0,uploadProgress:null,chatTimer:null,chatRefreshBusy:false,chatSearchTimer:null,chatSearchQuery:'',chatSearchResults:[],chatSearchLoading:false,chatSearchError:'',messageFingerprints:new Map(),qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false,visibility:null,visibilityChats:[]};
-let fileAutosaveTimerP=null,fileAutosaveBusyP=false,fileAutosaveQueuedP=null;
+const fileAutosaveTimersP=new Map(),fileAutosaveBusyP=new Set(),fileAutosaveQueuedP=new Map();
+const fileLocalDraftsP=new Map(),fileAutosaveConflictsP=new Set();
+const FILE_LOCAL_DRAFTS_KEY='aharane-files-local-drafts-v1';
+const FILE_LOCAL_DRAFTS_MAX_BYTES=2*1024*1024;
+try{
+ const saved=JSON.parse(localStorage.getItem(FILE_LOCAL_DRAFTS_KEY)||'[]');
+ if(Array.isArray(saved))for(const item of saved){
+  if(item&&typeof item.path==='string'&&typeof item.content==='string'&&item.content.length<=524288){
+   fileLocalDraftsP.set(item.path,{content:item.content,baseSha256:String(item.baseSha256||''),updatedAt:Number(item.updatedAt)||Date.now()});
+  }
+ }
+}catch{}
+function persistFileLocalDraftsP(){
+ try{
+  const rows=[...fileLocalDraftsP].map(([path,draft])=>({path,...draft}));
+  const raw=JSON.stringify(rows);
+  if(new Blob([raw]).size>FILE_LOCAL_DRAFTS_MAX_BYTES)return false;
+  localStorage.setItem(FILE_LOCAL_DRAFTS_KEY,raw);
+  return true;
+ }catch{return false}
+}
+function saveFileLocalDraftP(path,content,baseSha256){
+ const previous=fileLocalDraftsP.get(path);
+ fileLocalDraftsP.set(path,{content,baseSha256:previous?.baseSha256||baseSha256||'',updatedAt:Date.now()});
+ if(persistFileLocalDraftsP())return true;
+ fileLocalDraftsP.delete(path);
+ if(previous)fileLocalDraftsP.set(path,previous);
+ return false;
+}
+function removeFileLocalDraftP(path){
+ if(!fileLocalDraftsP.delete(path))return;
+ persistFileLocalDraftsP();
+}
 function notifyP(s){if(typeof toast==='function')toast(s);else console.info(s)}
 async function apiP(path,options={}){
  const response=await fetch(API+'/'+String(path).replace(/^\/+/,''),{credentials:'same-origin',cache:'no-store',...options,headers:{...(options.body&&!(options.body instanceof ArrayBuffer)&&!(options.body instanceof Blob)?{'Content-Type':'application/json'}:{}),...(options.headers||{})}});
@@ -233,30 +265,33 @@ function packagePageP(){
 }
 window.openPackagePageP=()=>{S.path=['updates'];S.ed=false;render()};
 async function applyFilesP(){
+ const editor=Q('#ed');
+ if(editor)scheduleFileAutosaveP(S.cur,editor.value,0);
  if(!confirm('Apply staged source changes and restart Aharane?'))return;
- try{await apiP('files/apply',{method:'POST',body:pack({confirm:true})});notifyP('Applying staged changes…');await pollUpdateP();await refreshRuntimeP();render()}
- catch(error){notifyP(error.message)}
+ try{
+  const flushed=await flushAllFileAutosavesP();
+  if(!flushed||fileLocalDraftsP.size||fileAutosaveConflictsP.size){
+   throw new Error('Some edits are still saved only on this phone or need conflict review. Resolve them before applying.');
+  }
+  await apiP('files/apply',{method:'POST',body:pack({confirm:true})});
+  notifyP('Applying staged changes…');await pollUpdateP();await refreshRuntimeP();render();
+ }catch(error){notifyP(error.message)}
 }
 async function recoverFilesP(){
- const editor=Q('#ed');
- const editorPath=editor?S.cur:'';
- const editorContent=editor?editor.value:null;
- const queuedPath=fileAutosaveQueuedP?.path||'';
- const queuedContent=fileAutosaveQueuedP?.content;
- const savePath=editorPath||queuedPath;
- const saveContent=editor?editorContent:queuedContent;
+ const editor=Q('#ed'),editorPath=editor?S.cur:'',editorContent=editor?editor.value:null;
  if(!confirm('Recover the saved draft onto the current Aharane source? Your staged changes will be kept. The running bot will not be restarted.'))return;
  try{
-  if(fileAutosaveTimerP){clearTimeout(fileAutosaveTimerP);fileAutosaveTimerP=null}
-  for(let i=0;i<80&&fileAutosaveBusyP;i++)await new Promise(resolve=>setTimeout(resolve,50));
-  fileAutosaveQueuedP=null;
+  if(editorPath&&editorContent!==null)scheduleFileAutosaveP(editorPath,editorContent,0);
+  const flushed=await flushAllFileAutosavesP();
+  if(!flushed)throw new Error('Some edits are still waiting to save. Keep the editor open and retry recovery after the save succeeds.');
   const result=await apiP('files/recover',{method:'POST',body:pack({confirm:true})});
   P.stale=false;P.pending=true;P.changedCount=Number(result.changedCount)||P.changedCount;
   P.fileData.clear();
-  if(savePath&&saveContent!==null&&saveContent!==undefined){
-   await loadSourceFileP(savePath);
-   scheduleFileAutosaveP(savePath,saveContent,0);
-   await flushFileAutosaveP();
+  if(editorPath&&editorContent!==null){
+   await loadSourceFileP(editorPath);
+   scheduleFileAutosaveP(editorPath,editorContent,0);
+   const ok=await flushFileAutosaveP(editorPath);
+   if(!ok)throw new Error('The staged draft was recovered, but the editor text still needs saving. Your device copy remains available.');
   }
   try{await loadTreeP(currentPathP())}
   catch{S.path=[];await loadTreeP('')}
@@ -265,12 +300,28 @@ async function recoverFilesP(){
  }catch(error){notifyP(error.message)}
 }
 async function discardFilesP(){
- if(!confirm('Discard all staged source changes? This cannot be undone. The running Aharane version will not be changed.'))return;
+ if(!confirm('Discard all staged server changes and unsent device drafts? This cannot be undone. The running Aharane version will not be changed.'))return;
+ for(const timer of fileAutosaveTimersP.values())clearTimeout(timer);
+ fileAutosaveTimersP.clear();
+ while(fileAutosaveBusyP.size)await new Promise(resolve=>setTimeout(resolve,25));
+ for(const timer of fileAutosaveTimersP.values())clearTimeout(timer);
+ fileAutosaveTimersP.clear();
+ fileAutosaveQueuedP.clear();
  try{
   await apiP('files/discard',{method:'POST',body:pack({confirm:true})});
+  fileAutosaveConflictsP.clear();fileLocalDraftsP.clear();persistFileLocalDraftsP();P.fileData.clear();
   P.pending=false;P.stale=false;P.changedCount=0;
-  await loadTreeP(currentPathP());render();notifyP('Staged source changes discarded');
- }catch(error){notifyP(error.message)}
+  await loadTreeP(currentPathP());render();notifyP('Staged server and device drafts discarded');
+ }catch(error){
+  // The server may be unreachable. Restore the retry queue from the still-kept
+  // device copies so a failed discard never strands the user's edits.
+  for(const [path,draft] of fileLocalDraftsP)scheduleFileAutosaveP(path,draft.content,1000);
+  notifyP(error.message);
+ }
+}
+function localDraftBannerP(){
+ if(!fileAutosaveConflictsP.has(S.cur))return '';
+ return '<div class="note" style="margin:12px 0;padding:12px"><strong>A newer server version exists.</strong><p class="sub">Your unsent copy is preserved on this phone. You can restore it over the staged server version or keep the server version.</p><div class="btns"><button class="btn p" id="prod-restore-device-draft">Restore device draft</button><button class="btn" id="prod-keep-server-version">Keep server version</button></div></div>';
 }
 function staleDraftBannerP(){
  if(!P.stale)return '';
@@ -280,7 +331,11 @@ function filesScreenP(){
  const staleBanner=staleDraftBannerP();
  if(S.path[0]==='updates')return staleBanner+packagePageP();
  if(S.ed){
-  return editorOld().replace('id="es">Saved</span>','id="es">Autosave on</span>')+staleBanner+'<div class="btns"><button class="btn" id="prod-file-save">Save now</button><button class="btn" id="prod-file-download">Download</button></div>';
+  const editorMarkup=editorOld().replace('id="es">Saved</span>','id="es">Autosave on</span>');
+  const conflictLocked=fileAutosaveConflictsP.has(S.cur)
+   ?editorMarkup.replace('<textarea class="editor" id="ed"','<textarea class="editor" id="ed" readonly aria-readonly="true"')
+   :editorMarkup;
+  return conflictLocked+localDraftBannerP()+staleBanner+'<div class="btns"><button class="btn" id="prod-file-save">Save now</button><button class="btn" id="prod-file-download">Download</button></div>';
  }
  let html=filesBase();
  if(!S.path.length){
@@ -297,7 +352,23 @@ function filesScreenP(){
  return staleBanner+html;
 }
 function filePathP(name){return [currentPathP(),name].filter(Boolean).join('/')}
-async function openLiveFileP(name){const path=filePathP(name);await loadSourceFileP(path);openFileBase(name)}
+async function openLiveFileP(name){
+ const path=filePathP(name),remote=await loadSourceFileP(path);
+ openFileBase(name);
+ const editor=Q('#ed'),draft=fileLocalDraftsP.get(path);
+ if(!editor||!draft)return;
+ if(draft.content===remote.content){removeFileLocalDraftP(path);fileAutosaveConflictsP.delete(path);return}
+ if(draft.baseSha256===remote.sha256){
+  editor.value=draft.content;
+  updateSourceMemoryP(path,draft.content);
+  scheduleFileAutosaveP(path,draft.content);
+  setFileEditorStatusP(path,'Recovered unsent device draft · autosaving…');
+ }else{
+  fileAutosaveConflictsP.add(path);
+  setFileEditorStatusP(path,'Device draft kept · server version changed');
+  render();
+ }
+}
 function setFileEditorStatusP(path, message) {
  if (S.cur !== path) return;
  const status=Q('#es');if(status)status.textContent=message;
@@ -306,61 +377,229 @@ function updateSourceMemoryP(path, content) {
  const parts=path.split('/'),name=parts.pop();let dir=fs;
  for(const part of parts){if(!dir[part]||typeof dir[part]!=='object')return;dir=dir[part]}
  dir[name]=content;
+ const previous=P.fileMeta.get(path)||{};
+ P.fileMeta.set(path,{...previous,path,name,type:'file',size:new Blob([content]).size,modified:new Date().toISOString(),readOnly:false});
 }
-function scheduleFileAutosaveP(path, content, delay=1000) {
- fileAutosaveQueuedP={path,content};
- if(fileAutosaveTimerP)clearTimeout(fileAutosaveTimerP);
- setFileEditorStatusP(path,'Unsaved changes · autosaving…');
- fileAutosaveTimerP=setTimeout(()=>{fileAutosaveTimerP=null;void flushFileAutosaveP()},delay);
+async function queueDeviceDraftForSaveP(path){
+ const draft=fileLocalDraftsP.get(path);
+ if(!draft)return true;
+ if(fileAutosaveQueuedP.has(path)||fileAutosaveBusyP.has(path))return true;
+ let data=P.fileData.get(path);
+ try{if(!data)data=await loadSourceFileP(path)}
+ catch{
+  fileAutosaveConflictsP.add(path);
+  if(S.ed&&S.cur===path)render();
+  return false;
+ }
+ if(!draft.baseSha256||draft.baseSha256!==data.sha256){
+  fileAutosaveConflictsP.add(path);
+  if(S.ed&&S.cur===path)render();
+  return false;
+ }
+ if(draft.content===data.content){removeFileLocalDraftP(path);return true}
+ scheduleFileAutosaveP(path,draft.content,0);
+ return true;
 }
-async function flushFileAutosaveP() {
- if(fileAutosaveTimerP){clearTimeout(fileAutosaveTimerP);fileAutosaveTimerP=null}
- if(fileAutosaveBusyP)return;
- const job=fileAutosaveQueuedP;
- if(!job)return;
- fileAutosaveQueuedP=null;
- const data=P.fileData.get(job.path);
- if(!data){setFileEditorStatusP(job.path,'Autosave unavailable · reopen this file');return}
- if(job.content===data.content){setFileEditorStatusP(job.path,'Autosaved to server (staged)');return}
- fileAutosaveBusyP=true;
- const button=S.cur===job.path?Q('#prod-file-save'):null;if(button)button.disabled=true;
+function clearFileAutosaveTimerP(path){
+ const timer=fileAutosaveTimersP.get(path);
+ if(timer){clearTimeout(timer);fileAutosaveTimersP.delete(path)}
+}
+function scheduleFileAutosaveP(path, content, delay=1000, options={}) {
+ const data=P.fileData.get(path),previous=fileAutosaveQueuedP.get(path);
+ const job={path,content,baseSha256:previous?.baseSha256||data?.sha256||'',allowEmpty:Boolean(options.allowEmpty)};
+ fileAutosaveQueuedP.set(path,job);
+ const localOk=saveFileLocalDraftP(path,content,job.baseSha256);
+ clearFileAutosaveTimerP(path);
+ setFileEditorStatusP(path,localOk?'Unsaved changes · autosaving…':'Unsaved changes · device backup unavailable');
+ if(delay>=0){
+  const timer=setTimeout(()=>{fileAutosaveTimersP.delete(path);void flushFileAutosaveP(path)},delay);
+  fileAutosaveTimersP.set(path,timer);
+ }
+}
+async function flushFileAutosavePathP(path){
+ clearFileAutosaveTimerP(path);
+ if(fileAutosaveBusyP.has(path)){
+  while(fileAutosaveBusyP.has(path))await new Promise(resolve=>setTimeout(resolve,25));
+ }
+ const job=fileAutosaveQueuedP.get(path);
+ if(!job)return true;
+ const data=P.fileData.get(path);
+ if(!data){
+  setFileEditorStatusP(path,'Autosave paused · reopen this file to retry');
+  return false;
+ }
+ if(job.content===data.content){
+  fileAutosaveQueuedP.delete(path);
+  removeFileLocalDraftP(path);
+  setFileEditorStatusP(path,'Autosaved to server (staged)');
+  return true;
+ }
+ if(job.content===''&&data.content!==''&&!job.allowEmpty){
+  setFileEditorStatusP(path,'Empty file · press Save now to confirm');
+  return false;
+ }
+ fileAutosaveQueuedP.delete(path);
+ fileAutosaveBusyP.add(path);
+ const button=S.cur===path?Q('#prod-file-save'):null;if(button)button.disabled=true;
  try{
-  const r=await apiP('files/content',{method:'PUT',body:pack({path:job.path,content:job.content,expectedSha256:data.sha256})});
-  const verified=await apiP('files/preview?item='+encodeURIComponent(job.path));
-  if(verified.content!==job.content||verified.sha256!==r.sha256)throw new Error('The server response did not match the saved file. Your edit is still marked unsaved.');
-  P.fileData.set(job.path,verified);
-  updateSourceMemoryP(job.path,verified.content);
-  P.pending=true;P.changedCount=Number(r.changedCount)||P.changedCount||1;
-  const editor=S.cur===job.path?Q('#ed'):null;
-  if(editor&&editor.value===job.content&&!fileAutosaveQueuedP){
-   setFileEditorStatusP(job.path,'Autosaved to server (staged)');
-   const count=Q('#ec');if(count)count.textContent=job.content.split('\n').length+' lines';
-  }else if(editor){
-   setFileEditorStatusP(job.path,'Newer edits · autosaving…');
+  let verified=null,saveResult=null,lastError=null;
+  try{
+   saveResult=await apiP('files/content',{method:'PUT',body:pack({path,content:job.content,expectedSha256:data.sha256})});
+   verified=await apiP('files/preview?item='+encodeURIComponent(path));
+   if(verified.content!==job.content||verified.sha256!==saveResult.sha256)throw new Error('The server read-back did not match the saved content.');
+  }catch(error){
+   lastError=error;
+   // The write may have completed even when the HTTP response was lost or
+   // the journal write failed. Verify before retrying or showing failure.
+   try{
+    const observed=await apiP('files/preview?item='+encodeURIComponent(path));
+    if(observed.content===job.content)verified=observed;
+    else{
+     P.fileData.set(path,observed);
+     updateSourceMemoryP(path,observed.content);
+     fileAutosaveConflictsP.add(path);
+     throw lastError;
+    }
+   }catch{throw lastError}
   }
+  P.fileData.set(path,verified);
+  updateSourceMemoryP(path,verified.content);
+  P.pending=true;
+  P.changedCount=Math.max(P.changedCount,Number(saveResult?.changedCount)||1);
+  const currentDraft=fileLocalDraftsP.get(path);
+  if(currentDraft?.content===job.content)removeFileLocalDraftP(path);
+  else if(currentDraft){
+   fileLocalDraftsP.set(path,{...currentDraft,baseSha256:verified.sha256,updatedAt:Date.now()});
+   persistFileLocalDraftsP();
+   const newer=fileAutosaveQueuedP.get(path);
+   if(newer)fileAutosaveQueuedP.set(path,{...newer,baseSha256:verified.sha256});
+  }
+  if(fileAutosaveQueuedP.has(path)){
+   setFileEditorStatusP(path,'Newer edits · autosaving…');
+  }else{
+   const editor=S.cur===path?Q('#ed'):null;
+   setFileEditorStatusP(path,editor&&editor.value!==job.content?'Newer edits · autosaving…':'Autosaved to server (staged)');
+   const count=Q('#ec');if(count&&S.cur===path)count.textContent=job.content.split('\n').length+' lines';
+  }
+  return true;
  }catch(error){
-  setFileEditorStatusP(job.path,'Autosave failed: '+String(error?.message||error).slice(0,110));
+  const newer=fileAutosaveQueuedP.get(path);
+  if(!newer||newer.content===job.content)fileAutosaveQueuedP.set(path,job);
+  const message=String(error?.message||error).slice(0,110);
+  setFileEditorStatusP(path,fileAutosaveConflictsP.has(path)||/changed after you opened|version check/i.test(message)
+   ?'Save conflict · device draft preserved for review'
+   :'Autosave failed · draft kept on this device: '+message);
+  if(fileAutosaveConflictsP.has(path)&&S.cur===path)render();
+  return false;
  }finally{
-  fileAutosaveBusyP=false;
+  fileAutosaveBusyP.delete(path);
   if(button)button.disabled=false;
-  if(fileAutosaveQueuedP&&!fileAutosaveTimerP){
-   fileAutosaveTimerP=setTimeout(()=>{fileAutosaveTimerP=null;void flushFileAutosaveP()},150);
+  if(fileAutosaveQueuedP.has(path)&&fileAutosaveQueuedP.get(path).content!==job.content&&!fileAutosaveConflictsP.has(path)){
+   const timer=setTimeout(()=>{fileAutosaveTimersP.delete(path);void flushFileAutosaveP(path)},150);
+   fileAutosaveTimersP.set(path,timer);
   }
  }
 }
+async function flushFileAutosaveP(path){
+ const targets=Array.isArray(path)?path:(path?[path]:[...new Set([...fileAutosaveQueuedP.keys(),...fileAutosaveBusyP])]);
+ const results=await Promise.all([...new Set(targets)].map(flushFileAutosavePathP));
+ return results.every(Boolean);
+}
+async function flushFilePathsP(paths){
+ const roots=[...new Set(paths||[])].filter(Boolean);
+ const devicePaths=[...fileLocalDraftsP.keys()].filter(path=>roots.some(root=>path===root||path.startsWith(root+'/')));
+ for(const path of devicePaths){
+  if(fileAutosaveConflictsP.has(path)||!await queueDeviceDraftForSaveP(path))return false;
+ }
+ const affected=[...new Set([...fileAutosaveQueuedP.keys(),...fileAutosaveBusyP])].filter(path=>roots.some(root=>path===root||path.startsWith(root+'/')));
+ const ok=await flushFileAutosaveP(affected);
+ return ok&&affected.every(path=>!fileAutosaveQueuedP.has(path)&&!fileAutosaveBusyP.has(path))&&
+  ![...fileLocalDraftsP.keys()].some(path=>roots.some(root=>path===root||path.startsWith(root+'/'))) &&
+  ![...fileAutosaveConflictsP].some(path=>roots.some(root=>path===root||path.startsWith(root+'/')));
+}
+function clearFileDraftSubtreeP(path){
+ for(const key of [...fileLocalDraftsP.keys()])if(key===path||key.startsWith(path+'/'))removeFileLocalDraftP(key);
+ for(const key of [...P.fileData.keys()])if(key===path||key.startsWith(path+'/'))P.fileData.delete(key);
+ for(const key of [...fileAutosaveQueuedP.keys()])if(key===path||key.startsWith(path+'/'))fileAutosaveQueuedP.delete(key);
+ for(const key of [...fileAutosaveConflictsP])if(key===path||key.startsWith(path+'/'))fileAutosaveConflictsP.delete(key);
+}
+async function flushAllFileAutosavesP(){
+ for(const path of [...fileLocalDraftsP.keys()]){
+  if(fileAutosaveConflictsP.has(path)||!await queueDeviceDraftForSaveP(path))return false;
+ }
+ const ok=await flushFileAutosaveP();
+ return ok&&fileAutosaveQueuedP.size===0&&fileLocalDraftsP.size===0&&fileAutosaveConflictsP.size===0;
+}
+async function restoreDeviceDraftP(){
+ const path=S.cur,draft=fileLocalDraftsP.get(path),editor=Q('#ed'),data=P.fileData.get(path);
+ if(!draft||!editor||!data)return;
+ if(!confirm('Restore the copy saved on this phone over the current staged server file? The draft on this phone will be kept until the new save is verified.'))return;
+ if(draft.content===''&&data.content!==''&&!confirm('This will replace the server file with an empty file. Continue?'))return;
+ editor.value=draft.content;updateSourceMemoryP(path,draft.content);
+ scheduleFileAutosaveP(path,draft.content,0,{allowEmpty:true});
+ const ok=await flushFileAutosaveP(path);
+ if(ok){fileAutosaveConflictsP.delete(path);render()}else render();
+}
+function keepServerFileP(){
+ const path=S.cur;
+ clearFileAutosaveTimerP(path);
+ fileAutosaveQueuedP.delete(path);
+ const server=P.fileData.get(path);
+ if(server)updateSourceMemoryP(path,server.content);
+ fileAutosaveConflictsP.delete(path);
+ removeFileLocalDraftP(path);
+ notifyP('Kept the server version; the device draft was removed.');
+ render();
+}
 async function saveLiveFileP(){
- const editor=Q('#ed'),path=S.cur;
- if(!editor||!P.fileData.get(path)){notifyP('Could not find the open file editor. Reopen the file and try again.');return}
- const content=editor.value,data=P.fileData.get(path);
+ const editor=Q('#ed'),path=S.cur,data=P.fileData.get(path);
+ if(!editor||!data){notifyP('Could not find the open file editor. Reopen the file and try again.');return}
+ const content=editor.value;
  if(!content&&data.content&&!confirm('This will replace the existing file with an empty file. Continue?'))return;
- scheduleFileAutosaveP(path,content,0);
- await flushFileAutosaveP();
+ scheduleFileAutosaveP(path,content,0,{allowEmpty:true});
+ const ok=await flushFileAutosaveP(path);
+ if(ok)notifyP('File saved and verified on the server');
 }
 function createLiveFileP(type){
  ask(type==='folder'?'New folder':'New file','','Create',async name=>{
   try{await apiP('files',{method:'POST',body:pack({parentPath:currentPathP(),name,type,content:type==='file'?'':''})});await loadTreeP(currentPathP());render()}
   catch(error){notifyP(error.message)}
  });
+}
+function bindLiveSelectionP(){
+ const d=node(S.path),ca=Q('#ca');
+ if(ca)ca.onchange=()=>{
+  S.ks.forEach(key=>S.sel[key]=ca.checked);
+  document.querySelectorAll('[data-ck]').forEach(input=>input.checked=ca.checked);
+  selUI();
+ };
+ document.querySelectorAll('[data-ck]').forEach(input=>input.onchange=()=>{
+  S.sel[input.dataset.ck]=input.checked;
+  selUI();
+ });
+ const selected=()=>selK(node(S.path)).map(name=>[...S.path,name].filter(Boolean).join('/'));
+ const bd=Q('#bd');if(bd)bd.onclick=()=>{
+  const paths=selected();if(!paths.length)return;
+  if(!confirm('Delete '+paths.length+' selected item(s)? The change will be staged.'))return;
+  void (async()=>{
+   try{
+    if(!await flushFilePathsP(paths))throw new Error('Save pending edits before deleting the selected items.');
+    await apiP('files/delete',{method:'POST',body:pack({paths})});
+    for(const path of paths)clearFileDraftSubtreeP(path)
+    S.sel={};await loadTreeP(currentPathP());render();notifyP('Selected items deleted and staged');
+   }catch(error){notifyP(error.message)}
+  })();
+ };
+ const bm=Q('#bm');if(bm)bm.onclick=()=>ask('Move selected items to folder (for example commands, or root)','','Move',async value=>{
+  const paths=selected();if(!paths.length)return;
+  try{
+   if(!await flushFilePathsP(paths))throw new Error('Save pending edits before moving the selected items.');
+   await apiP('files/move',{method:'POST',body:pack({paths,destination:value==='root'||value==='/'?'':value})});
+   for(const path of paths)clearFileDraftSubtreeP(path)
+   S.sel={};await loadTreeP(currentPathP());render();notifyP('Selected items moved and staged');
+  }catch(error){notifyP(error.message)}
+ });
+ const bz=Q('#bz');if(bz)bz.onclick=()=>exportSelectionZipP(selected(),'aharane-selection.zip').catch(error=>notifyP(error.message));
 }
 function fileMenuP(name,button){
  closePop();const path=filePathP(name),folder=typeof node(S.path)[name]==='object',actions=folder?['Rename','Move','Download as ZIP']:['Rename','Move','Download','Delete'];
@@ -371,11 +610,11 @@ function fileMenuP(name,button){
  popup.onclick=async e=>{
   const a=e.target.dataset.fileAction;if(!a)return;closePop();
   try{
-   if(a==='Rename')ask('Rename',name,'Save',async value=>{try{await apiP('files/rename',{method:'POST',body:pack({path,name:value})});await loadTreeP(currentPathP());render()}catch(error){notifyP(error.message)}});
-   else if(a==='Move')ask('Move to folder (for example commands or private-commands)','commands','Move',async value=>{try{await apiP('files/move',{method:'POST',body:pack({path,destination:value==='root'?'':value})});await loadTreeP(currentPathP());render()}catch(error){notifyP(error.message)}});
+   if(a==='Rename')ask('Rename',name,'Save',async value=>{try{if(!await flushFilePathsP([path]))throw new Error('Save the pending edits before renaming this item.');await apiP('files/rename',{method:'POST',body:pack({path,name:value})});await loadTreeP(currentPathP());render()}catch(error){notifyP(error.message)}});
+   else if(a==='Move')ask('Move to folder (for example commands or private-commands)','commands','Move',async value=>{try{if(!await flushFilePathsP([path]))throw new Error('Save the pending edits before moving this item.');await apiP('files/move',{method:'POST',body:pack({path,destination:value==='root'?'':value})});await loadTreeP(currentPathP());render()}catch(error){notifyP(error.message)}});
    else if(a==='Download as ZIP'){await exportSelectionZipP([path],name+'.zip')}
    else if(a==='Download'){await downloadSourceFileP(path,name);notifyP('Download started')}
-   else if(a==='Delete'){if(!confirm('Delete '+name+'? The change will be staged.'))return;await apiP('files/delete',{method:'POST',body:pack({paths:[path]})});await loadTreeP(currentPathP());render()}
+   else if(a==='Delete'){if(!confirm('Delete '+name+'? The change will be staged.'))return;if(!await flushFilePathsP([path]))throw new Error('Save the pending edits before deleting this item.');await apiP('files/delete',{method:'POST',body:pack({paths:[path]})});clearFileDraftSubtreeP(path);await loadTreeP(currentPathP());render()}
   }catch(error){notifyP(error.message)}
  };
 }
@@ -741,18 +980,20 @@ function bindProductionP(){
  const saveConfig=Q('#csv');if(saveConfig)saveConfig.onclick=saveConfigP;
  document.querySelectorAll('[data-e]').forEach(input=>input.oninput=()=>{const row=envs[Number(input.dataset.e)];if(row&&!row.readOnly){row.v=input.value;envDirty=true}});
  const fileEditor=Q('#ed');if(fileEditor){
+  const editorPath=S.cur;
   fileEditor.oninput=()=>{
-   const path=S.cur;
-   const [directory,name]=getFile(path);directory[name]=fileEditor.value;
-   const count=Q('#ec');if(count)count.textContent=fileEditor.value.split('\\n').length+' lines';
-   scheduleFileAutosaveP(path,fileEditor.value);
+   const [directory,name]=getFile(editorPath);directory[name]=fileEditor.value;
+   const count=Q('#ec');if(count)count.textContent=fileEditor.value.split('\n').length+' lines';
+   scheduleFileAutosaveP(editorPath,fileEditor.value);
   };
-  fileEditor.onblur=()=>{if(fileAutosaveQueuedP?.path===S.cur)void flushFileAutosaveP()};
+  fileEditor.onblur=()=>{void flushFileAutosaveP(editorPath)};
  }
  const save=Q('#prod-file-save');if(save)save.onclick=saveLiveFileP;
  const discard=Q('#prod-discard-files');if(discard)discard.onclick=discardFilesP;
  const discardStale=Q('#prod-discard-stale-files');if(discardStale)discardStale.onclick=discardFilesP;
  const recover=Q('#prod-recover-files');if(recover)recover.onclick=recoverFilesP;
+ const restoreDevice=Q('#prod-restore-device-draft');if(restoreDevice)restoreDevice.onclick=restoreDeviceDraftP;
+ const keepServer=Q('#prod-keep-server-version');if(keepServer)keepServer.onclick=keepServerFileP;
  const down=Q('#prod-file-download');if(down)down.onclick=()=>downloadSourceFileP(S.cur,S.cur.split('/').pop()).catch(e=>notifyP(e.message));
  const upload=Q('#upl');if(upload)upload.onchange=async e=>{
   const files=[...e.target.files];e.target.value='';
@@ -841,7 +1082,18 @@ function homeViewP(){
  const publicBot=P.owners.publicBotNumber?'Configured':'Needs configuration';
  return '<h1>Welcome back</h1><p class="sub">Your Aharane workspace.</p><div class="card" style="padding:16px"><div class="row" style="padding:4px 0"><span class="grow"><div class="t">Aharane service</div><div class="d">'+service+'</div></span><span class="pill"><span class="dot"></span>Online</span></div><div class="d" style="white-space:normal;margin-top:8px">Each WhatsApp account has its own connection and controls. An offline account does not stop the other one.</div></div><h2>WhatsApp accounts</h2><div class="card list">'+accounts+'</div><h2>Setup</h2><div class="card list"><button class="row" onclick="openCfg()"><span class="ic">'+ico('cfg')+'</span><span class="grow"><div class="t">Configuration</div><div class="d">Private Owner · '+ownerPrivate+' · Public Owner · '+ownerPublic+' · Public bot number · '+publicBot+'</div></span><span class="d">›</span></button></div><h2>Recent activity</h2><div class="card log" id="log">'+logs.map(l=>'<div><b>'+escP(l[1]||'now')+'</b>  '+escP(l[0])+'</div>').join('')+'</div>';
 }
+function installFileSaveLifecycleP(){
+ if(window.__aharaneFileSaveLifecycle)return;
+ window.__aharaneFileSaveLifecycle=true;
+ window.addEventListener('online',()=>{void flushAllFileAutosavesP()});
+ window.addEventListener('pagehide',()=>{void flushAllFileAutosavesP()});
+ document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')void flushAllFileAutosavesP()});
+ window.addEventListener('offline',()=>{
+  for(const path of fileAutosaveQueuedP.keys())setFileEditorStatusP(path,'Offline · draft saved on this device');
+ });
+}
 function installBridgeP(){
+ installFileSaveLifecycleP();
  const configViewBaseP=cfgV;
  switchProf=function(){
   DS[S.cprof]=cfgD;C0S[S.cprof]=C0;
@@ -871,7 +1123,7 @@ function installBridgeP(){
   }
   S.sub='cfg';render();scrollTo(0,0);
  };
- filesBase=filesV;openFileBase=openF;actBase=actV;moreBase=moreV;homeBase=home;bubBase=bub;
+ filesBase=filesV;openFileBase=openF;actBase=actV;moreBase=moreV;homeBase=home;bubBase=bub;bindSel=bindLiveSelectionP;
  exportZip=function(source,filename){
   const paths=Object.keys(source||{}).map(name=>[...S.path,name].filter(Boolean).join('/'));
   exportSelectionZipP(paths,filename).catch(error=>notifyP(error.message));

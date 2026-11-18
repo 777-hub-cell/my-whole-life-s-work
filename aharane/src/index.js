@@ -96,6 +96,7 @@ let publicCommandRegistry = null
 let privateCommandRegistry = null
 let updateInProgress = false
 let shuttingDown = false
+let sourceMutationTail = Promise.resolve()
 
 const seenMessageIds = new Map()
 const commandTimes = new Map()
@@ -557,7 +558,7 @@ async function recoverStaleManualEditWorkspace() {
 
   const newWorkspace = join(RELEASES_DIR, `manual-edit-workspace-recovered-${Date.now()}-${randomUUID().slice(0, 8)}`)
   const allowedActions = new Set([
-    'modified-file', 'created-file', 'deleted-file', 'created-folder',
+    'modified-file', 'created-file', 'deleted-file', 'deleted-folder', 'created-folder',
     'renamed-from', 'renamed-to', 'moved-from', 'moved-to',
   ])
   const entries = []
@@ -616,9 +617,65 @@ async function recoverStaleManualEditWorkspace() {
       await symlink(await realpath(modulesPath), join(newWorkspace, 'node_modules'), 'dir')
     }
 
-    const removals = entries.filter(item => ['deleted-file', 'renamed-from', 'moved-from'].includes(item.action))
-    const folders = entries.filter(item => item.action === 'created-folder')
-    const copies = entries.filter(item => ['modified-file', 'created-file', 'renamed-to', 'moved-to'].includes(item.action))
+    const ignored = new Set()
+    // A deleted directory supersedes every earlier edit below that path.
+    // Do not try to replay children that no longer exist in the saved workspace.
+    for (const folder of entries.filter(item => item.action === 'deleted-folder')) {
+      for (const entry of entries) if (entry.path.startsWith(folder.path + '/')) ignored.add(entry.path)
+    }
+    const movePairs = []
+    const fromEntries = entries.filter(item => ['renamed-from', 'moved-from'].includes(item.action))
+    const toEntries = entries.filter(item => ['renamed-to', 'moved-to'].includes(item.action))
+    for (const destination of toEntries) {
+      const isRename = destination.action === 'renamed-to'
+      const candidates = fromEntries.filter(source =>
+        !ignored.has(source.path) &&
+        source.action === (isRename ? 'renamed-from' : 'moved-from') &&
+        (isRename
+          ? dirname(source.path) === dirname(destination.path)
+          : source.path.split('/').at(-1) === destination.path.split('/').at(-1))
+      )
+      const stagedDestination = await inspectEntry(oldWorkspace, destination.path)
+      if (!stagedDestination.info) continue
+      const source = candidates.find(candidate => candidate.path !== destination.path)
+      if (!source) continue
+      const sourceInDraft = await inspectEntry(oldWorkspace, source.path)
+      // The source path has normally disappeared from the staged tree. Its
+      // destination contains the complete renamed/moved file or directory.
+      if (sourceInDraft.info) continue
+      ignored.add(source.path)
+      ignored.add(destination.path)
+      const isDirectory = stagedDestination.info.isDirectory()
+      const covers = path => path === source.path || path === destination.path ||
+        (isDirectory && (path.startsWith(source.path + '/') || path.startsWith(destination.path + '/')))
+      for (const entry of entries) if (covers(entry.path)) ignored.add(entry.path)
+      movePairs.push({ sourcePath: source.path, destinationPath: destination.path, isDirectory })
+    }
+
+    const removals = entries.filter(item =>
+      !ignored.has(item.path) && ['deleted-file', 'deleted-folder', 'renamed-from', 'moved-from'].includes(item.action)
+    )
+    const folders = entries.filter(item => !ignored.has(item.path) && item.action === 'created-folder')
+    const copies = entries.filter(item =>
+      !ignored.has(item.path) && ['modified-file', 'created-file', 'renamed-to', 'moved-to'].includes(item.action)
+    )
+
+    async function copyDraftEntry(sourcePath, destinationPath, expectedType = null) {
+      const source = await inspectEntry(oldWorkspace, sourcePath)
+      if (!source.info || (expectedType === 'file' && !source.info.isFile()) ||
+          (expectedType === 'folder' && !source.info.isDirectory())) {
+        sourcePathError(409, 'MANUAL_DRAFT_REVIEW_REQUIRED', 'A saved draft item is missing or has the wrong type: ' + sourcePath)
+      }
+      const target = await inspectEntry(newWorkspace, destinationPath)
+      if (target.info) await rm(target.full, { recursive: target.info.isDirectory(), force: true })
+      await mkdir(dirname(target.full), { recursive: true, mode: 0o750 })
+      const parent = await realpath(dirname(target.full))
+      const parentRelative = relative(newWorkspace, parent)
+      if (parentRelative === '..' || parentRelative.startsWith('..' + sep) || isAbsolute(parentRelative)) {
+        sourcePathError(403, 'PATH_ESCAPE', 'A recovered draft parent resolves outside the current release.')
+      }
+      await cp(source.full, target.full, { recursive: source.info.isDirectory(), force: true })
+    }
 
     for (const item of removals) {
       const target = await inspectEntry(newWorkspace, item.path)
@@ -629,20 +686,13 @@ async function recoverStaleManualEditWorkspace() {
       if (target.info && !target.info.isDirectory()) await rm(target.full, { force: true })
       await mkdir(target.full, { recursive: true, mode: 0o750 })
     }
-    for (const item of copies) {
-      const source = await inspectEntry(oldWorkspace, item.path)
-      if (!source.info || (['modified-file', 'created-file'].includes(item.action) && !source.info.isFile())) {
-        sourcePathError(409, 'MANUAL_DRAFT_REVIEW_REQUIRED', 'A saved draft item is missing or has the wrong type: ' + item.path)
-      }
-      const target = await inspectEntry(newWorkspace, item.path)
+    for (const pair of movePairs) {
+      const target = await inspectEntry(newWorkspace, pair.sourcePath)
       if (target.info) await rm(target.full, { recursive: target.info.isDirectory(), force: true })
-      await mkdir(dirname(target.full), { recursive: true, mode: 0o750 })
-      const parent = await realpath(dirname(target.full))
-      const parentRelative = relative(newWorkspace, parent)
-      if (parentRelative === '..' || parentRelative.startsWith('..' + sep) || isAbsolute(parentRelative)) {
-        sourcePathError(403, 'PATH_ESCAPE', 'A recovered draft parent resolves outside the current release.')
-      }
-      await cp(source.full, target.full, { recursive: source.info.isDirectory(), force: true })
+      await copyDraftEntry(pair.destinationPath, pair.destinationPath, pair.isDirectory ? 'folder' : 'file')
+    }
+    for (const item of copies) {
+      await copyDraftEntry(item.path, item.path, ['modified-file', 'created-file'].includes(item.action) ? 'file' : null)
     }
 
     const recovered = {
@@ -662,13 +712,20 @@ async function recoverStaleManualEditWorkspace() {
   }
 }
 
-async function recordManualEdit(sourcePath, action) {
+async function recordManualEdits(changes) {
   const state = await ensureManualEditBackup()
   const byPath = new Map((state.modifiedPaths || []).map(item => [item.path, item]))
-  byPath.set(sourcePath, { path: sourcePath, action, modifiedAt: new Date().toISOString() })
+  const modifiedAt = new Date().toISOString()
+  for (const change of changes || []) {
+    if (!change?.path || !change?.action) continue
+    byPath.set(change.path, { path: change.path, action: change.action, modifiedAt })
+  }
   state.modifiedPaths = [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path))
   await writeJsonAtomic(MANUAL_EDIT_STATE_FILE, state)
   return state
+}
+async function recordManualEdit(sourcePath, action) {
+  return recordManualEdits([{ path: sourcePath, action }])
 }
 
 async function validateSourceContent(sourcePath, content, { syntax = true } = {}) {
@@ -1608,6 +1665,34 @@ app.get('/api/storage', requireAdmin, async (_req, res) => {
   }
 })
 
+function serializeSourceMutations(req, res, next) {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next()
+  const previous = sourceMutationTail
+  let release
+  sourceMutationTail = new Promise(resolve => { release = resolve })
+  previous.then(() => {
+    let finished = false
+    const unlock = () => {
+      if (finished) return
+      finished = true
+      release()
+    }
+    res.once('finish', unlock)
+    res.once('close', unlock)
+    if (updateInProgress) {
+      res.status(409).json({ ok: false, error: 'Aharane is applying or deploying source changes. Try again when it is healthy.' })
+      unlock()
+      return
+    }
+    next()
+  }).catch(error => {
+    release()
+    next(error)
+  })
+}
+
+app.use('/api/files', serializeSourceMutations)
+
 app.get('/api/files/export', requireAdmin, async (_req, res) => {
   try {
     const files = []
@@ -1824,16 +1909,22 @@ app.post('/api/files', requireAdmin, async (req, res) => {
 
     if (type === 'folder') {
       await mkdir(target.full, { mode: 0o750 })
-      await recordManualEdit(target.path, 'created-folder')
+      try { await recordManualEdit(target.path, 'created-folder') }
+      catch (error) { await rm(target.full, { recursive: true, force: true }).catch(() => {}); throw error }
       return res.status(201).json({ ok: true, path: target.path, type: 'folder' })
     }
 
     const content = String(req.body?.content ?? '')
     await validateSourceContent(target.path, content)
     await writeFile(target.full, content, { encoding: 'utf8', mode: 0o640, flag: 'wx' })
-    const savedContent = await readFile(target.full, 'utf8')
-    if (savedContent !== content) throw new Error('The new file did not pass its on-disk save check. Refresh Files and try again.')
-    await recordManualEdit(target.path, 'created-file')
+    try {
+      const savedContent = await readFile(target.full, 'utf8')
+      if (savedContent !== content) throw new Error('The new file did not pass its on-disk save check. Refresh Files and try again.')
+      await recordManualEdit(target.path, 'created-file')
+    } catch (error) {
+      await rm(target.full, { force: true }).catch(() => {})
+      throw error
+    }
     res.status(201).json({ ok: true, path: target.path, type: 'file', size: Buffer.byteLength(content) })
   } catch (error) {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not create the source file or folder.') })
@@ -1841,7 +1932,7 @@ app.post('/api/files', requireAdmin, async (req, res) => {
 })
 
 app.put('/api/files/content', requireAdmin, async (req, res) => {
-  let handle
+  let handle, manual
   try {
     if (updateInProgress) return res.status(409).json({ ok: false, error: 'Aharane is currently deploying. File changes are disabled.' })
     let target = await safeSourceTarget(req.body?.path)
@@ -1855,7 +1946,11 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
     const currentHash = createHash('sha256').update(original).digest('hex')
     await handle.close()
     handle = null
-    if (req.body?.expectedSha256 && req.body.expectedSha256 !== currentHash) {
+    const expectedSha256 = String(req.body?.expectedSha256 || '')
+    if (!/^[a-f0-9]{64}$/.test(expectedSha256)) {
+      return res.status(400).json({ ok: false, error: 'The editor is missing its file-version check. Reload the file before saving.' })
+    }
+    if (expectedSha256 !== currentHash) {
       return res.status(409).json({ ok: false, error: 'This file changed after you opened it. Reload it before saving to avoid overwriting newer content.' })
     }
 
@@ -1863,16 +1958,32 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
     target = await safeSourceTarget(target.path)
     if (!target.info?.isFile()) return res.status(409).json({ ok: false, error: 'The source file changed. Reload the Files Manager.' })
     const temporary = target.full + '.aharane-edit-' + randomUUID()
+    const originalBytes = Buffer.from(original)
+    let replaced = false
     try {
       await writeFile(temporary, content, { encoding: 'utf8', mode: 0o640, flag: 'wx' })
+      const stagedContent = await readFile(temporary, 'utf8')
+      if (stagedContent !== content) throw new Error('The temporary file failed verification. The existing file was not changed.')
       await rename(temporary, target.full)
+      replaced = true
       const savedContent = await readFile(target.full, 'utf8')
-      if (savedContent !== content) throw new Error('The file did not pass its on-disk save check. Your previous file was preserved in the manual-edit backup.')
+      if (savedContent !== content) {
+        const restore = target.full + '.aharane-restore-' + randomUUID()
+        await writeFile(restore, originalBytes, { mode: 0o640, flag: 'wx' })
+        await rename(restore, target.full)
+        replaced = false
+        throw new Error('The saved file failed verification. The previous content was restored.')
+      }
+      manual = await recordManualEdit(target.path, 'modified-file')
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => {})
+      if (replaced) {
+        const restore = target.full + '.aharane-restore-' + randomUUID()
+        await writeFile(restore, originalBytes, { mode: 0o640, flag: 'wx' }).then(() => rename(restore, target.full)).catch(() => {})
+        await rm(restore, { force: true }).catch(() => {})
+      }
       throw error
     }
-    const manual = await recordManualEdit(target.path, 'modified-file')
     res.json({
       ok: true,
       path: target.path,
@@ -1890,6 +2001,7 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
 
 
 app.post('/api/files/rename', requireAdmin, async (req, res) => {
+  let renamed = null
   try {
     if (updateInProgress) return res.status(409).json({ ok: false, error: 'Aharane is currently deploying. File changes are disabled.' })
     const sourcePath = String(req.body?.path || '')
@@ -1907,76 +2019,144 @@ app.post('/api/files/rename', requireAdmin, async (req, res) => {
     const currentSource = await safeSourceTarget(source.path)
     const currentDestination = await safeSourceTarget(destinationPath, { allowMissing: true })
     await rename(currentSource.full, currentDestination.full)
-    await recordManualEdit(currentSource.path, 'renamed-from')
-    await recordManualEdit(destinationPath, 'renamed-to')
+    renamed = { source: currentSource.full, destination: currentDestination.full }
+    await recordManualEdits([
+      { path: currentSource.path, action: 'renamed-from' },
+      { path: destinationPath, action: 'renamed-to' },
+    ])
     res.json({ ok: true, path: destinationPath, pending: true })
   } catch (error) {
+    if (renamed) await rename(renamed.destination, renamed.source).catch(() => {})
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not rename the selected source item.') })
   }
 })
 app.post('/api/files/move', requireAdmin, async (req, res) => {
+  const moved = []
   try {
     if (updateInProgress) return res.status(409).json({ ok: false, error: 'Aharane is currently deploying. File changes are disabled.' })
-    const source = await safeSourceTarget(String(req.body?.path || ''))
-    if (source.parts.length < 2) return res.status(403).json({ ok: false, error: 'Root project folders and protected root files cannot be moved.' })
-    const destinationValue = String(req.body?.destination || '').trim()
-    const rootDirectory = destinationValue ? null : await sourceWorkspaceDirectory()
-    const rootInfo = rootDirectory ? await stat(rootDirectory) : null
-    const parent = destinationValue
-      ? await safeSourceTarget(destinationValue)
-      : { path: '', full: rootDirectory, info: rootInfo }
-    if (!parent.info?.isDirectory()) return res.status(400).json({ ok: false, error: 'Choose an existing destination folder.' })
-    if (parent.full === source.full || parent.full.startsWith(source.full + sep)) return res.status(400).json({ ok: false, error: 'A folder cannot be moved inside itself.' })
-    const itemName = source.parts.at(-1)
-    const destinationPath = parent.path ? parent.path + '/' + itemName : itemName
-    const existing = await safeSourceTarget(destinationPath, { allowMissing: true })
-    if (existing.info) return res.status(409).json({ ok: false, error: 'The destination already contains an item with that name.' })
-    await ensureManualEditBackup()
-    const currentSource = await safeSourceTarget(source.path)
-    const currentRoot = destinationValue ? null : await sourceWorkspaceDirectory()
-    const currentParent = destinationValue
-      ? await safeSourceTarget(destinationValue)
-      : { path: '', full: currentRoot, info: await stat(currentRoot) }
-    const currentDestination = await safeSourceTarget(destinationPath, { allowMissing: true })
-    if (!currentParent.info?.isDirectory() || currentParent.full === currentSource.full ||
-        currentParent.full.startsWith(currentSource.full + sep)) {
-      return res.status(400).json({ ok: false, error: 'The destination folder changed or is inside the selected item.' })
+    const rawPaths = Array.isArray(req.body?.paths) ? req.body.paths : [req.body?.path]
+    const paths = [...new Set(rawPaths.map(value => String(value || '')).filter(Boolean))]
+    if (!paths.length || paths.length > 50) return res.status(400).json({ ok: false, error: 'Choose between 1 and 50 source items to move.' })
+    const initialSources = []
+    for (const sourcePath of paths) {
+      const source = await safeSourceTarget(sourcePath)
+      if (source.parts.length < 2) return res.status(403).json({ ok: false, error: 'Root project folders and protected root files cannot be moved.' })
+      initialSources.push(source)
     }
-    await rename(currentSource.full, currentDestination.full)
-    await recordManualEdit(currentSource.path, 'moved-from')
-    await recordManualEdit(destinationPath, 'moved-to')
-    res.json({ ok: true, path: destinationPath, pending: true })
+    for (let i = 0; i < initialSources.length; i += 1) {
+      for (let j = i + 1; j < initialSources.length; j += 1) {
+        const a = initialSources[i].path, b = initialSources[j].path
+        if (a.startsWith(b + '/') || b.startsWith(a + '/')) {
+          return res.status(400).json({ ok: false, error: 'Do not select both a folder and one of its contents.' })
+        }
+      }
+    }
+    const destinationValue = String(req.body?.destination || '').trim()
+    const initialRoot = destinationValue ? null : await sourceWorkspaceDirectory()
+    const initialParent = destinationValue
+      ? await safeSourceTarget(destinationValue)
+      : { path: '', full: initialRoot, info: await stat(initialRoot) }
+    if (!initialParent.info?.isDirectory()) return res.status(400).json({ ok: false, error: 'Choose an existing destination folder.' })
+    const plans = [], plannedDestinations = new Set()
+    for (const source of initialSources) {
+      if (initialParent.full === source.full || initialParent.full.startsWith(source.full + sep)) {
+        return res.status(400).json({ ok: false, error: 'A folder cannot be moved inside itself.' })
+      }
+      const destinationPath = initialParent.path ? initialParent.path + '/' + source.parts.at(-1) : source.parts.at(-1)
+      if (destinationPath === source.path) return res.status(400).json({ ok: false, error: 'The item is already in that folder.' })
+      if (plannedDestinations.has(destinationPath)) {
+        return res.status(409).json({ ok: false, error: 'Two selected items have the same name. Move them separately or rename one first.' })
+      }
+      plannedDestinations.add(destinationPath)
+      const target = await safeSourceTarget(destinationPath, { allowMissing: true })
+      if (target.info) return res.status(409).json({ ok: false, error: 'The destination already contains an item named ' + source.parts.at(-1) + '.' })
+      plans.push({ sourcePath: source.path, destinationPath })
+    }
+    await ensureManualEditBackup()
+    const finalRoot = destinationValue ? null : await sourceWorkspaceDirectory()
+    const finalParent = destinationValue
+      ? await safeSourceTarget(destinationValue)
+      : { path: '', full: finalRoot, info: await stat(finalRoot) }
+    if (!finalParent.info?.isDirectory()) return res.status(409).json({ ok: false, error: 'The destination folder changed. Refresh the Files Manager.' })
+    const finalPlans = []
+    for (const plan of plans) {
+      const source = await safeSourceTarget(plan.sourcePath)
+      const destination = await safeSourceTarget(plan.destinationPath, { allowMissing: true })
+      if (!source.info || destination.info || finalParent.full === source.full || finalParent.full.startsWith(source.full + sep)) {
+        return res.status(409).json({ ok: false, error: 'A selected item or its destination changed. Refresh the Files Manager.' })
+      }
+      finalPlans.push({ source, destination })
+    }
+    for (const plan of finalPlans) {
+      await rename(plan.source.full, plan.destination.full)
+      moved.push(plan)
+    }
+    const journal = []
+    for (const { source, destination } of moved) {
+      journal.push(
+        { path: source.path, action: 'moved-from' },
+        { path: destination.path, action: 'moved-to' },
+      )
+    }
+    await recordManualEdits(journal)
+    res.json({ ok: true, moved: moved.map(item => ({ from: item.source.path, to: item.destination.path })), pending: true })
   } catch (error) {
-    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not move the selected source item.') })
+    for (const item of [...moved].reverse()) {
+      await rename(item.destination.full, item.source.full).catch(() => {})
+    }
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not move the selected source items.') })
   }
 })
 
 app.post('/api/files/delete', requireAdmin, async (req, res) => {
+  const deleted = []
   try {
     if (updateInProgress) return res.status(409).json({ ok: false, error: 'Aharane is currently deploying. File changes are disabled.' })
     const paths = Array.isArray(req.body?.paths) ? [...new Set(req.body.paths.map(String))] : []
-    if (!paths.length || paths.length > 50) return res.status(400).json({ ok: false, error: 'Choose between 1 and 50 source files.' })
+    if (!paths.length || paths.length > 50) return res.status(400).json({ ok: false, error: 'Choose between 1 and 50 source items.' })
     const initialTargets = []
     for (const sourcePath of paths) {
       const target = await safeSourceTarget(sourcePath)
-      if (!target.info?.isFile()) return res.status(400).json({ ok: false, error: 'Only individual source files can be deleted.' })
-      if (SOURCE_ROOT_FILES.has(target.parts[0])) return res.status(403).json({ ok: false, error: 'Root package and documentation files are protected from deletion.' })
-      initialTargets.push(target.path)
+      if (!target.info?.isFile() && !target.info?.isDirectory()) {
+        return res.status(400).json({ ok: false, error: 'Choose an existing source file or folder.' })
+      }
+      if (target.parts.length === 1 && (target.info.isDirectory() || SOURCE_ROOT_FILES.has(target.parts[0]))) {
+        return res.status(403).json({ ok: false, error: 'Root project folders and protected root files cannot be deleted.' })
+      }
+      initialTargets.push({ path: target.path, isDirectory: target.info.isDirectory() })
+    }
+    const selectedPaths = initialTargets.map(item => item.path)
+    for (let i = 0; i < selectedPaths.length; i += 1) {
+      for (let j = i + 1; j < selectedPaths.length; j += 1) {
+        if (selectedPaths[i].startsWith(selectedPaths[j] + '/') || selectedPaths[j].startsWith(selectedPaths[i] + '/')) {
+          return res.status(400).json({ ok: false, error: 'Do not select both a folder and one of its contents.' })
+        }
+      }
     }
     await ensureManualEditBackup()
     const targets = []
-    for (const sourcePath of initialTargets) {
-      const target = await safeSourceTarget(sourcePath)
-      if (!target.info?.isFile()) return res.status(409).json({ ok: false, error: 'A selected source file changed. Refresh the Files Manager.' })
+    for (const item of initialTargets) {
+      const target = await safeSourceTarget(item.path)
+      if ((!target.info?.isFile() && !target.info?.isDirectory()) || target.info.isDirectory() !== item.isDirectory) {
+        return res.status(409).json({ ok: false, error: 'A selected source item changed. Refresh the Files Manager.' })
+      }
       targets.push(target)
     }
     for (const target of targets) {
-      await rm(target.full, { force: false })
-      await recordManualEdit(target.path, 'deleted-file')
+      const tombstone = join(dirname(target.full), '.aharane-delete-' + randomUUID())
+      await rename(target.full, tombstone)
+      try {
+        await recordManualEdit(target.path, target.info.isDirectory() ? 'deleted-folder' : 'deleted-file')
+      } catch (error) {
+        await rename(tombstone, target.full).catch(() => {})
+        throw error
+      }
+      await rm(tombstone, { recursive: target.info.isDirectory(), force: true })
+      deleted.push(target)
     }
-    res.json({ ok: true, deleted: targets.map(target => target.path), pending: true })
+    res.json({ ok: true, deleted: deleted.map(target => target.path), pending: true })
   } catch (error) {
-    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not delete the selected source files.') })
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not delete the selected source items.') })
   }
 })
 
@@ -1987,14 +2167,19 @@ app.post('/api/files/apply', requireAdmin, async (req, res) => {
   if (!manual || manual.status !== 'pending' || !Array.isArray(manual.modifiedPaths) || !manual.modifiedPaths.length) {
     return res.status(409).json({ ok: false, error: 'There are no saved manual file edits to apply.' })
   }
+  // The Files mutation middleware holds the queue lock for this request.
+  // Block any other operation before validation starts, not after it finishes.
+  updateInProgress = true
   try {
     const current = await currentReleaseDirectory()
     const workspace = String(manual.workspaceRelease || '')
     if (current !== manual.currentRelease || !workspace.startsWith(RELEASES_DIR + sep)) {
-      return res.status(409).json({ ok: false, error: 'The active release or edit workspace changed. Reload the Files Manager before applying these edits.' })
+      updateInProgress = false
+      return res.status(409).json({ ok: false, error: 'The active release or edit workspace changed. Recover the Files Manager draft before applying these edits.' })
     }
     const actualWorkspace = await realpath(workspace)
     if (!actualWorkspace.startsWith(RELEASES_DIR + sep) || actualWorkspace === current) {
+      updateInProgress = false
       return res.status(409).json({ ok: false, error: 'The saved edit workspace is not a separate Aharane release.' })
     }
     await validateManualEditWorkspaceFiles(actualWorkspace, manual.modifiedPaths)
@@ -2005,7 +2190,6 @@ app.post('/api/files/apply', requireAdmin, async (req, res) => {
       maxBuffer: 8 * 1024 * 1024,
       env: { PATH: process.env.PATH || '/usr/bin:/bin', HOME: DATA_DIR, NODE_ENV: 'test', NPM_CONFIG_CACHE: join(UPDATE_DIR, 'npm-cache'), NPM_CONFIG_IGNORE_SCRIPTS: 'true', NPM_CONFIG_FUND: 'false', NPM_CONFIG_AUDIT: 'false' },
     })
-    updateInProgress = true
     const updateId = randomUUID()
     await writeJsonAtomic(UPDATE_STATE_FILE, {
       status: 'awaiting-healthcheck',
@@ -2035,6 +2219,7 @@ app.post('/api/files/apply', requireAdmin, async (req, res) => {
     res.status(202).json({ ok: true, status: 'awaiting-healthcheck', updateId, message: 'Saved file changes passed validation. Aharane is switching to the prepared release and restarting.' })
     setTimeout(() => process.exit(1), 350)
   } catch (error) {
+    updateInProgress = false
     res.status(error?.status || 400).json({ ok: false, error: String(error?.stderr || error?.message || 'Source validation failed.').slice(0, 1200) })
   }
 })
@@ -2150,6 +2335,7 @@ app.post('/api/update/validate', requireAdmin, async (req, res) => {
   }
 })
 
+app.use('/api/update/deploy', serializeSourceMutations)
 app.post('/api/update/deploy', requireAdmin, async (req, res) => {
   const updateId = String(req.body?.updateId || '')
   if (!validUpdateId(updateId) || req.body?.confirm !== true) {

@@ -10,7 +10,7 @@ Aharane is deployed beside NIGHT/MSCC on the same Azure host, but it is a separa
 | Application | `/opt/mscc/current` | `/opt/aharane/current` |
 | Persistent state | `/var/lib/mscc` | `/var/lib/aharane` |
 | Environment | `/etc/mscc.env` | `/etc/aharane.env` |
-| WhatsApp auth | MSCC account auth root | `/var/lib/aharane/whatsapp-auth` |
+| WhatsApp auth | MSCC account auth root | `/var/lib/aharane/whatsapp-auth` (public) and `/var/lib/aharane/whatsapp-auth-private` (private) |
 | HTTP listener | MSCC's existing port | `127.0.0.1:8790` |
 | Node dependencies | MSCC package install | Aharane's own package install |
 

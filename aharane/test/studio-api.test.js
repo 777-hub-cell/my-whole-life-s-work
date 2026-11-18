@@ -100,3 +100,10 @@ test('WebSocket stays protected and exposes only status and ping actions', async
  const s=await read('../src/index.js')
  for(const marker of ["server.on('upgrade'","pathname !== '/ws'","adminSessionMatches(cookie, auth)","message?.type === 'ping'","message?.type === 'status.get'","Unsupported message type"])assert.ok(s.includes(marker),marker)
 })
+
+test('the source editor view and account identity settings are reachable', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ assert.ok(bridge.includes("if(S.sub==='source')return appSourceViewP()"))
+ assert.ok(bridge.includes("onclick=\"openAcc()\""))
+ assert.ok(bridge.includes("const localSource=Q('#offline-open-source')"))
+})

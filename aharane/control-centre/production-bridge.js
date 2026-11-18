@@ -264,8 +264,13 @@ async function resetAppSourceP(){
  }catch(error){notifyP(error.message)}finally{db?.close()}
 }
 function moreViewP(){
+ if(S.sub==='source')return appSourceViewP();
  if(P.offline)return '<h1>More</h1><p class="sub">On-device Studio source tools.</p><div class="card list"><button class="row" id="offline-open-source"><span class="grow"><div class="t">Studio source</div><div class="d">Edit HTML, CSS and JavaScript saved on this phone</div></span><span class="d">›</span></button></div>';
- return moreBase()+'<h2>Development</h2><div class="card list"><button class="row" id="open-app-source"><span class="grow"><div class="t">Studio source</div><div class="d">Edit the app HTML, CSS and JavaScript on this phone</div></span><span class="d">›</span></button></div><div class="btns" style="margin-top:18px"><button class="btn" id="change-password">Change password</button><button class="btn d" id="sign-out">Sign out</button></div>';
+ const source=moreBase().replace(
+  '<p class="sub">Additional tools and information</p>',
+  '<p class="sub">Additional tools and information</p><div class="card list"><button class="row" onclick="openAcc()"><span class="grow"><div class="t">Accounts &amp; owners</div><div class="d">Pair the two WhatsApp sessions and set their separate Owner identities</div></span><span class="d">›</span></button></div>'
+ );
+ return source+'<h2>Development</h2><div class="card list"><button class="row" id="open-app-source"><span class="grow"><div class="t">Studio source</div><div class="d">Edit the app HTML, CSS and JavaScript on this phone</div></span><span class="d">›</span></button></div><div class="btns" style="margin-top:18px"><button class="btn" id="change-password">Change password</button><button class="btn d" id="sign-out">Sign out</button></div>';
 }
 function changePasswordP(){
  sheet('<h3>Change Studio password</h3><form id="prod-password-form"><label class="d" for="old-password">Current password</label><input class="field" id="old-password" type="password" required><label class="d" for="new-password" style="display:block;margin-top:12px">New password (12–128 characters)</label><input class="field" id="new-password" type="password" minlength="12" maxlength="128" required><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Cancel</button><button class="btn p">Save password</button></div></form>');

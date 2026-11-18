@@ -208,7 +208,7 @@ test('the production Files screen renders the real editor before exposing server
  assert.ok(screen.includes('id="prod-file-download"'))
  assert.ok(bind.includes("const fileEditor=Q('#ed')"))
  assert.ok(bind.includes('scheduleFileAutosaveP(editorPath,fileEditor.value)'), 'Editing must queue the current file for automatic saving.')
- assert.ok(bridge.includes("setFileEditorStatusP(path,'Unsaved changes · autosaving…')"), 'Editing must be marked unsaved until autosave is verified.')
+ assert.ok(bridge.includes("localOk?'Unsaved changes · autosaving…'"), 'Editing must be marked unsaved until autosave is verified.')
 });
 
 

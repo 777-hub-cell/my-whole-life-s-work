@@ -34,6 +34,7 @@ test('chat history persists by account, marks read and stores incoming media pri
     const media = await store.getMedia('public', 'message-2')
     assert.equal(media.mimeType, 'image/png')
     assert.equal(media.size, 5)
+    assert.equal(media.jid, jid)
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
 

@@ -1298,7 +1298,7 @@ app.get('/api/chats/:accountId/media/:messageId', requireAdmin, async (req, res)
   try {
     const accountId = chatAccount(req.params.accountId)
     const media = await chatStore.getMedia(accountId, req.params.messageId)
-    if (!media) return res.status(404).json({ ok: false, error: 'Attachment not found.' })
+    if (!media || !authorizedChat(accountId, media.jid) || !isChatVisible(studioSettings[accountId], media.jid)) return res.status(404).json({ ok: false, error: 'Attachment not found.' })
     res.set('Content-Type', media.mimeType)
     res.set('Content-Length', String(media.size))
     const inlineMedia = ['image/', 'video/', 'audio/'].some(prefix => String(media.mimeType || '').startsWith(prefix))

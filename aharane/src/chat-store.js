@@ -275,7 +275,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     const full = join(mediaRoot, account, row.mediaFile)
     const info = await stat(full).catch(() => null)
     if (!info?.isFile() || info.size > MAX_MEDIA_BYTES) return null
-    return { path: full, mimeType: row.mimeType || 'application/octet-stream', fileName: row.fileName || 'attachment', size: info.size }
+    return { path: full, jid: row.jid, mimeType: row.mimeType || 'application/octet-stream', fileName: row.fileName || 'attachment', size: info.size }
   }
 
   async function markRead(id, jidValue) {

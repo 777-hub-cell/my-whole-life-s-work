@@ -178,6 +178,46 @@
         </div>
       </section>
 
+      <section id="chat-thread-screen" class="chat-thread-screen" hidden aria-label="WhatsApp conversation">
+        <header class="chat-thread-header">
+          <button id="chat-thread-back" class="chat-back-button" type="button" aria-label="Back to chats">‹</button>
+          <span id="chat-thread-avatar" class="chat-thread-avatar">A</span>
+          <div class="chat-thread-contact"><strong id="chat-thread-name">Conversation</strong><small id="chat-thread-presence">WhatsApp chat</small></div>
+          <button id="chat-thread-menu" class="chat-thread-menu" type="button" aria-label="Conversation options">⋮</button>
+        </header>
+        <div id="chat-thread-messages" class="chat-thread-messages" role="log" aria-live="polite"></div>
+        <p id="chat-thread-message" class="chat-thread-status" role="status"></p>
+        <form id="chat-composer" class="chat-composer">
+          <button id="chat-attach-button" class="chat-attach-button" type="button" aria-label="Attach a file">＋</button>
+          <textarea id="chat-message-input" rows="1" placeholder="Message" aria-label="Message" maxlength="4000"></textarea>
+          <button id="chat-send-button" class="chat-send-button" type="submit" aria-label="Send message">↑</button>
+        </form>
+      </section>
+
+      <section id="chat-image-viewer" class="chat-media-viewer image-viewer" hidden aria-label="Image viewer">
+        <header class="media-viewer-header">
+          <button id="chat-image-close" type="button" aria-label="Close image">‹</button>
+          <strong id="chat-image-title">Photo</strong>
+          <button id="chat-image-more" type="button" aria-label="Image details">⋮</button>
+        </header>
+        <div class="image-viewer-stage"><img id="chat-image" alt="Shared image"></div>
+        <div class="media-viewer-actions">
+          <button id="chat-image-download" type="button">Download</button>
+          <button id="chat-image-share" type="button">Share</button>
+          <button id="chat-image-forward" type="button">Forward</button>
+          <button id="chat-image-details" type="button">Details</button>
+        </div>
+      </section>
+
+      <section id="chat-video-viewer" class="chat-media-viewer video-viewer" hidden aria-label="Video viewer">
+        <header class="media-viewer-header">
+          <button id="chat-video-close" type="button" aria-label="Close video">‹</button>
+          <strong id="chat-video-title">Video</strong>
+          <button id="chat-video-more" type="button" aria-label="Video details">⋮</button>
+        </header>
+        <div class="video-viewer-stage"><video id="chat-video-player" controls playsinline preload="metadata"></video></div>
+      </section>
+
       <section class="view-section" id="view-configuration" hidden>
         <div class="page-heading"><div><p class="eyebrow">BOT BEHAVIOUR</p><h1>Configuration</h1><p class="muted">General preferences for Aharane.</p></div></div>
         <div class="configuration-note">The current bot server does not yet expose a configuration read/write API. The controls below show the agreed layout, but remain disabled until they can safely update the actual bot configuration.</div>

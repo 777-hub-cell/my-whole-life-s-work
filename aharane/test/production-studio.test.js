@@ -237,3 +237,5 @@ test('stale empty Files drafts are safely cleared and stale non-empty drafts can
  assert.ok(bridge.includes("apiP('files/discard'"), 'The Files screen must expose a discard action for stale drafts.')
  assert.ok(bridge.includes('id="prod-discard-files"'))
 })
+
+// Keep the regression suite synchronized with the final save-count UI change.

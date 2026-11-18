@@ -259,6 +259,8 @@ function applyAccountStatus(accountId, account = {}) {
   }
   const card = $('[data-account-card="'+accountId+'"]')
   if (card) card.dataset.state = String(account.state || 'unknown')
+  $('#home-'+accountId+'-account-dot')?.classList.toggle('connected', Boolean(account.connected))
+  $('#home-'+accountId+'-account-dot')?.classList.toggle('offline', !account.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(account.state))
   $$('[data-account-action][data-account-id="'+accountId+'"]').forEach(button => {
     const action = button.dataset.accountAction
     button.disabled = action === 'repair'

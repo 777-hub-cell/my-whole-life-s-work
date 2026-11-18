@@ -23,6 +23,8 @@ import { loadOwnerConfig, normalizeOwnerConfig, saveOwnerConfig } from './owner-
 import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_ARCHIVE_BYTES } from './update-manager.js'
 
 const APP_NAME = 'Aharane'
+const PRIVATE_COMMAND_PREFIX = '.'
+const PUBLIC_COMMAND_PREFIX = '!'
 const HOST = process.env.AHARANE_HOST || '127.0.0.1'
 const PORT = Number(process.env.AHARANE_PORT || 8790)
 const DATA_DIR = resolve(process.env.AHARANE_DATA_DIR || '/var/lib/aharane')
@@ -687,7 +689,7 @@ async function handleMessages(sessionId, currentSocket, event) {
         privateOwnerNumber: ownerConfig.privateOwnerNumber,
         text,
         privateRegistry: privateCommandRegistry,
-        prefix: '!',
+        prefix: PRIVATE_COMMAND_PREFIX,
       })
       if (!privateControl) continue
       registry = privateCommandRegistry
@@ -717,7 +719,7 @@ async function handleMessages(sessionId, currentSocket, event) {
       const handled = await dispatchCommand({
         registry,
         rawText: text,
-        prefix: '!',
+        prefix: sessionId === 'private' ? PRIVATE_COMMAND_PREFIX : PUBLIC_COMMAND_PREFIX,
         context: {
           sessionId,
           privateControl,

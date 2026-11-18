@@ -331,7 +331,7 @@ async function reconnectPairP(){
  catch(error){notifyP(error.message)}
 }
 async function saveOwnersP(){
- try{const r=await apiP('owners',{method:'PUT',body:pack({privateOwnerNumber:Q('#owner-private').value,publicOwnerNumber:Q('#owner-public').value,allowedPublicSenders:Q('#owner-allow').value.split(/[,\s]+/).filter(Boolean)})});P.owners=r.owners;notifyP('Owner identities saved');render()}
+ try{const r=await apiP('owners',{method:'PUT',body:pack({privateOwnerNumber:Q('#owner-private').value,publicOwnerNumber:Q('#owner-public').value,publicBotNumber:P.owners.publicBotNumber||'',allowedPublicSenders:Q('#owner-allow').value.split(/[,\s]+/).filter(Boolean)})});P.owners=r.owners;notifyP('Owner identities saved');render()}
  catch(error){notifyP(error.message)}
 }
 function envViewP(){
@@ -555,22 +555,27 @@ function chatSearchPanelP(){
  else body=P.chatSearchResults.map(hit=>'<button class="row" data-search-jid="'+escP(hit.jid)+'" data-search-before="'+escP(String(Number(hit.timestamp||0)+1))+'"><span class="av '+(String(hit.jid).endsWith('@g.us')?'grp':'')+'">'+(String(hit.jid).endsWith('@g.us')?ico('grp'):escP(String(hit.pushName||hit.jid).charAt(0).toUpperCase()))+'</span><span class="grow"><span class="t" style="display:block">'+escP(hit.pushName||hit.jid)+'</span><span class="d" style="display:block;white-space:normal">'+escP(hit.text||hit.fileName||('Attachment · '+hit.type))+'</span></span><span class="d">'+rel(hit.timestamp)+'</span></button>').join('');
  return '<div style="margin:0 0 14px"><div class="d" style="margin:0 2px 6px">Message matches</div><div class="card list">'+body+'</div></div>';
 }
+function updateChatSearchPanelP(){
+ const target=Q('#chat-search-results');if(!target)return;
+ target.innerHTML=chatSearchPanelP();
+ target.querySelectorAll('[data-search-jid]').forEach(button=>button.onclick=()=>openChatSearchHitP(button.dataset.searchJid,button.dataset.searchBefore).catch(error=>notifyP(error.message)));
+}
 function scheduleChatSearchP(value){
  const query=String(value||'').trim();P.chatSearchQuery=query;P.chatSearchResults=[];P.chatSearchError='';P.chatSearchLoading=query.length>=2;
  if(P.chatSearchTimer)clearTimeout(P.chatSearchTimer);
- renderKeepingChatSearchP();
+ updateChatSearchPanelP();
  if(query.length<2)return;
  P.chatSearchTimer=setTimeout(async()=>{
   const account=S.cacc==='private'?'private':'public';
   try{
    const result=await apiP('chats/'+account+'/search?q='+encodeURIComponent(query)+'&limit=60');
    if(P.chatSearchQuery!==query||S.cacc!==account)return;
-   P.chatSearchResults=result.results||[];P.chatSearchLoading=false;renderKeepingChatSearchP();
+   P.chatSearchResults=result.results||[];P.chatSearchLoading=false;updateChatSearchPanelP();
   }catch(error){
    if(P.chatSearchQuery!==query)return;
-   P.chatSearchError=error.message;P.chatSearchLoading=false;renderKeepingChatSearchP();
+   P.chatSearchError=error.message;P.chatSearchLoading=false;updateChatSearchPanelP();
   }
- },350);
+ },400);
 }
 async function openChatSearchHitP(jid,before){
  let index=CH.findIndex(c=>c.jid===jid);
@@ -595,13 +600,20 @@ function bindProductionP(){
  const save=Q('#prod-file-save');if(save)save.onclick=saveLiveFileP;
  const down=Q('#prod-file-download');if(down)down.onclick=()=>{const data=P.fileData.get(S.cur);if(data)downloadP(S.cur.split('/').pop(),new Blob([data.content],{type:'text/plain'}))};
  const upload=Q('#upl');if(upload)upload.onchange=async e=>{const files=[...e.target.files];e.target.value='';for(const file of files){try{if(/\.zip$/i.test(file.name)){const r=await uploadZipP(file);notifyP('Validated '+file.name+' ('+r.fileCount+' files)')}else{if(!/\.(js|mjs|cjs|json|md|html|css|txt|yml|yaml)$/i.test(file.name))throw new Error('Only approved source and text files can be uploaded.');await apiP('files',{method:'POST',body:pack({parentPath:currentPathP(),name:file.name,type:'file',content:await file.text()})});notifyP('Uploaded '+file.name)}}catch(error){notifyP(error.message)}}await loadTreeP(currentPathP());P.packages=await loadPackagesP();render()};
- const search=Q('#cq');if(search)search.oninput=()=>{S.cq=search.value;const p=search.selectionStart;refreshChatsP().then(()=>{render();const x=Q('#cq');if(x){x.focus();x.setSelectionRange(p,p)}}).catch(e=>notifyP(e.message))};
+ const search=Q('#cq');if(search)search.oninput=()=>{S.cq=search.value;scheduleChatSearchP(search.value)};
+ document.querySelectorAll('[data-search-jid]').forEach(button=>button.onclick=()=>openChatSearchHitP(button.dataset.searchJid,button.dataset.searchBefore).catch(error=>notifyP(error.message)));
  const swap=Q('#chsw');if(swap)swap.onclick=switchChatsP;
  const visibility=Q('#chat-visibility');if(visibility)visibility.onclick=()=>openChatVisibilityP();
  const pair=Q('#prod-pair-code');if(pair)pair.onclick=getPairCodeP;
- const qr=Q('#prod-qr-refresh');if(qr)qr.onclick=readQrP;
+ const qr=Q('#prod-qr-request');if(qr)qr.onclick=requestQrP;
+ const repair=Q('#prod-pair-repair');if(repair)repair.onclick=repairPairP;
+ const reconnect=Q('#prod-pair-reconnect');if(reconnect)reconnect.onclick=reconnectPairP;
+ const openConfig=Q('#pair-open-config');if(openConfig)openConfig.onclick=()=>{S.cprof=S.pi===1?'public':'private';C=CS[S.cprof];C.owner=S.cprof==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicOwnerNumber||'');C.pairingNumber=P.owners.publicBotNumber||'';C.prefix=S.cprof==='private'?'.':'!';C0=JSON.stringify(C);C0S[S.cprof]=C0;cfgD=false;DS[S.cprof]=false;openCfg()};
  const copy=Q('#prod-copy-code');if(copy)copy.onclick=()=>navigator.clipboard?.writeText(S.pin||'').then(()=>notifyP('Pairing code copied')).catch(()=>notifyP('Select and copy the code'));
- document.querySelectorAll('[data-pm]').forEach(b=>b.onclick=()=>{S.pm=b.dataset.pm;S.pin=null;render()});
+ document.querySelectorAll('[data-pm]').forEach(b=>b.onclick=()=>{
+  if(P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}
+  S.pm=b.dataset.pm;S.pin=null;S.qrRequested=false;render();
+ });
  const clear=Q('#lcl');if(clear)clear.onclick=clearActivityP;
  const source=Q('#open-app-source');if(source)source.onclick=()=>openAppSourceP('index.html');
  const localSource=Q('#offline-open-source');if(localSource)localSource.onclick=()=>openAppSourceP('index.html');
@@ -614,11 +626,25 @@ function bindProductionP(){
  const change=Q('#change-password');if(change)change.onclick=changePasswordP;
  const logout=Q('#sign-out');if(logout)logout.onclick=signOutP;
  const apply=Q('#prod-apply-files');if(apply)apply.onclick=applyFilesP;
- if(Q('#prod-qr-panel')&&S.sub==='pair'&&S.pm==='qr'&&!P.qrTimer)startQrP();
  if(!(Q('#prod-qr-panel')&&S.sub==='pair')&&P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}
- if(S.tab==='files'&&S.path[0]==='updates')loadPackagesP().then(x=>{P.packages=x;render()});
- if(S.tab==='chats'&&!P.chatLoaded){P.chatLoaded=true;refreshChatsP().then(render).catch(e=>notifyP(e.message))}
- if(S.tab==='chats'&&!P.chatTimer)P.chatTimer=setInterval(()=>refreshChatsP().then(()=>{if(S.chat!==null)loadMessagesP()}).catch(()=>{}),6000);
+ if(S.tab==='files'&&S.path[0]==='updates'&&!P.packagesLoading){P.packagesLoading=true;loadPackagesP().then(x=>{P.packages=x;P.packageError='';if(S.tab==='files'&&S.path[0]==='updates')render()}).catch(()=>{}).finally(()=>{P.packagesLoading=false})};
+ const retryPackages=Q('#prod-retry-packages');if(retryPackages)retryPackages.onclick=async()=>{retryPackages.disabled=true;try{P.packages=await loadPackagesP();P.packageError='';render()}catch(error){P.packageError=error.message;notifyP(error.message)}finally{retryPackages.disabled=false}};
+ const retryFiles=Q('#prod-retry-files');if(retryFiles)retryFiles.onclick=async()=>{try{await loadTreeP(currentPathP());P.filesError='';render()}catch(error){P.filesError=error.message;notifyP(error.message)}};
+ if(S.tab==='chats'&&!P.chatLoaded){
+  refreshChatsP().then(()=>{P.chatLoaded=true;if(S.tab==='chats')render()}).catch(e=>{P.chatLoaded=false;notifyP(e.message)});
+ }
+ if(S.tab==='chats'&&!P.chatTimer)P.chatTimer=setInterval(async()=>{
+  if(document.hidden||P.chatRefreshBusy)return;
+  P.chatRefreshBusy=true;
+  try{
+   if(S.chat!==null)await loadMessagesP(S.chat);
+   else if(!Q('#cq')||document.activeElement!==Q('#cq')){
+    await refreshChatsP();
+    if(S.tab==='chats'&&!P.chatSearchQuery)render();
+   }
+  }catch{}
+  finally{P.chatRefreshBusy=false}
+ },15000);
  if(S.tab!=='chats'&&P.chatTimer){clearInterval(P.chatTimer);P.chatTimer=null}
 }
 function homeViewP(){
@@ -641,6 +667,18 @@ function homeViewP(){
 }
 function installBridgeP(){
  const configViewBaseP=cfgV;
+ const switchProfileBaseP=switchProf;
+ switchProf=function(){
+  DS[S.cprof]=cfgD;C0S[S.cprof]=C0;
+  const next=S.cprof==='public'?'private':'public';
+  S.cprof=next;C=CS[next];
+  if(!DS[next])loadP(next);
+  C.owner=next==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicOwnerNumber||'');
+  C.pairingNumber=P.owners.publicBotNumber||'';
+  C.prefix=next==='private'?'.':'!';
+  C0=JSON.stringify(C);C0S[next]=C0;cfgD=Boolean(DS[next]);
+  render();toast((next==='public'?'Public':'Private')+' configuration');
+ };
  cfgV=function(){
   // Preserve the original Configuration page. Prefixes are fixed in the
   // runtime (. for Private, ! for Public), so display them read-only.

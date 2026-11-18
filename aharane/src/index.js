@@ -406,16 +406,25 @@ async function safeSourceTarget(value, { allowMissing = false } = {}) {
 
 async function listSourceFiles(relativePath = '') {
   if (!relativePath) {
+    // Enumerate the real release root first, then apply the explicit allowlist.
+    // The old per-name safeSourceTarget loop silently converted every path error
+    // into an empty result, making a healthy release look like an empty Files root.
+    const base = await sourceWorkspaceDirectory()
+    const rows = await readdir(base, { withFileTypes: true })
     const rootEntries = []
-    for (const name of [...SOURCE_DIRS, ...SOURCE_ROOT_FILES]) {
-      const target = await safeSourceTarget(name).catch(() => null)
-      if (!target?.info) continue
+    for (const row of rows) {
+      if (row.isSymbolicLink()) continue
+      const isFolder = row.isDirectory() && SOURCE_DIRS.has(row.name)
+      const isFile = row.isFile() && SOURCE_ROOT_FILES.has(row.name)
+      if (!isFolder && !isFile) continue
+      const info = await lstat(join(base, row.name)).catch(() => null)
+      if (!info || info.isSymbolicLink() || (isFolder && !info.isDirectory()) || (isFile && !info.isFile())) continue
       rootEntries.push({
-        name,
-        path: name,
-        type: target.info.isDirectory() ? 'folder' : 'file',
-        size: target.info.isFile() ? target.info.size : null,
-        modified: target.info.mtime.toISOString(),
+        name: row.name,
+        path: row.name,
+        type: isFolder ? 'folder' : 'file',
+        size: isFile ? info.size : null,
+        modified: info.mtime.toISOString(),
         readOnly: false,
       })
     }
@@ -965,15 +974,20 @@ app.post('/api/accounts/:accountId/pair-code', requireAdmin, async (req, res) =>
     if (!allowPairAttempt(ip)) return res.status(429).json({ ok: false, error: 'Pairing rate limit reached for this account; try again later.' })
     const phoneNumber = normalizePhone(req.body?.phoneNumber)
     if (!phoneNumber) return res.status(400).json({ ok: false, error: 'Enter a valid international phone number using 7 to 15 digits.' })
-    if (!ownerConfig.privateOwnerNumber || !ownerConfig.publicOwnerNumber) {
-      return res.status(409).json({ ok: false, error: 'Save two different owner numbers before pairing the WhatsApp accounts.' })
-    }
-    if (accountId === 'private' && ownerConfig.privateOwnerNumber !== phoneNumber) {
-      return res.status(400).json({ ok: false, error: 'The Private Owner number must match the number you are pairing to the private session.' })
-    }
-    if (accountId === 'public' &&
-        [ownerConfig.privateOwnerNumber, ownerConfig.publicOwnerNumber].includes(phoneNumber)) {
-      return res.status(400).json({ ok: false, error: 'The public bot must use its own WhatsApp number, separate from both owner identities.' })
+    if (accountId === 'private') {
+      if (!ownerConfig.privateOwnerNumber) {
+        return res.status(409).json({ ok: false, error: 'Save the Private Owner number in Configuration before pairing this account.' })
+      }
+      if (ownerConfig.privateOwnerNumber !== phoneNumber) {
+        return res.status(400).json({ ok: false, error: 'The Private Owner number must match the number you are pairing to the private session.' })
+      }
+    } else {
+      if (!ownerConfig.privateOwnerNumber || !ownerConfig.publicOwnerNumber) {
+        return res.status(409).json({ ok: false, error: 'Save two different owner numbers in Configuration before pairing the Public account.' })
+      }
+      if ([ownerConfig.privateOwnerNumber, ownerConfig.publicOwnerNumber].includes(phoneNumber)) {
+        return res.status(400).json({ ok: false, error: 'The public bot must use its own WhatsApp number, separate from both owner identities.' })
+      }
     }
     const pairingCode = await accountRuntime.requestPairingCode(accountId, phoneNumber)
     res.json({ ok: true, accountId, pairingCode })

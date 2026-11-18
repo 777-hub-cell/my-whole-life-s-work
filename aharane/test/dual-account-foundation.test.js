@@ -19,7 +19,6 @@ test('Aharane uses two scoped command registries and independent WhatsApp auth s
     'await accountRuntime.shutdown()',
   ]) assert.ok(runtime.includes(marker), 'Missing runtime integration: ' + marker)
   assert.ok(accounts.includes("SESSION_IDS = Object.freeze(['private', 'public'])"))
-  assert.ok(config.includes('publicBotNumber'))
   assert.ok(accounts.includes('verifyAuthDirectories()'))
   assert.ok(accounts.includes('session.socket !== currentSocket'))
   assert.ok(!runtime.includes('let socket = null'), 'The old single-socket runtime must be removed')
@@ -28,6 +27,7 @@ test('Aharane uses two scoped command registries and independent WhatsApp auth s
 test('Private Owner and Public Owner are separate, persisted identities', async () => {
   const runtime = await read('../src/index.js')
   const config = await read('../src/owner-config.js')
+  assert.ok(config.includes('publicBotNumber'))
   const auth = await read('../src/authorization.js')
   assert.ok(runtime.includes("OWNER_CONFIG_FILE = join(DATA_DIR, 'owner-config.json')"))
   assert.ok(runtime.includes("app.get('/api/owners'"))

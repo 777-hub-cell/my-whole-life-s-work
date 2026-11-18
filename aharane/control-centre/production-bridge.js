@@ -136,6 +136,12 @@ async function loadSourceFileP(path){
  const parts=path.split('/'),name=parts.pop();let dir=fs;for(const part of parts)dir=dir[part];dir[name]=r.content;return r;
 }
 function downloadP(name,blob){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000)}
+async function downloadSourceFileP(path,name){
+ const response=await fetch(API+'/files/download?item='+encodeURIComponent(path),{credentials:'same-origin',cache:'no-store'});
+ if(!response.ok){const error=await response.json().catch(()=>({}));throw new Error(error.error||'File download failed ('+response.status+').')}
+ const blob=await response.blob();if(!blob.size)throw new Error('The selected file is empty.');
+ downloadP(name||path.split('/').pop(),blob);
+}
 async function exportBotSourceP(button){
  if(button?.disabled)return;
  if(button)button.disabled=true;
@@ -157,17 +163,27 @@ async function loadPackagesP(){
  try{const r=await apiP('files/packages');P.packageError='';return r.packages||[]}
  catch(error){P.packageError=error.message||'Saved ZIP packages could not be loaded.';throw error}
 }
+function updateUploadProgressP(){
+ const label=Q('#prod-upload-label'),bar=Q('#prod-upload-bar');
+ if(label&&P.uploadProgress)label.textContent='Uploading '+P.uploadProgress.filename+' · '+P.uploadProgress.completed+' of '+P.uploadProgress.total+' parts';
+ if(bar&&P.uploadProgress)bar.style.width=Math.round(P.uploadProgress.completed/P.uploadProgress.total*100)+'%';
+}
 async function uploadZipP(file){
  if(file.size<22||file.size>50*1024*1024)throw new Error('ZIP files must be no larger than 50 MB.');
  const digest=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());
  const sum=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join(''),id=crypto.randomUUID(),count=Math.ceil(file.size/1048576);
- await apiP('update/upload/start',{method:'POST',body:pack({updateId:id,filename:file.name,size:file.size,totalChunks:count,sha256:sum})});
- for(let i=0;i<count;i++){
-  const bytes=new Uint8Array(await file.slice(i*1048576,(i+1)*1048576).arrayBuffer());let binary='';
-  for(let j=0;j<bytes.length;j+=0x8000)binary+=String.fromCharCode(...bytes.subarray(j,j+0x8000));
-  await apiP('update/upload/chunk',{method:'POST',body:pack({updateId:id,index:i,data:btoa(binary)})});
- }
- const result=await apiP('update/validate',{method:'POST',body:pack({updateId:id})});P.packages=await loadPackagesP();return result;
+ P.uploadProgress={filename:file.name,completed:0,total:count};updateUploadProgressP();
+ try{
+  await apiP('update/upload/start',{method:'POST',body:pack({updateId:id,filename:file.name,size:file.size,totalChunks:count,sha256:sum})});
+  for(let i=0;i<count;i++){
+   const bytes=new Uint8Array(await file.slice(i*1048576,(i+1)*1048576).arrayBuffer());let binary='';
+   for(let j=0;j<bytes.length;j+=0x8000)binary+=String.fromCharCode(...bytes.subarray(j,j+0x8000));
+   await apiP('update/upload/chunk',{method:'POST',body:pack({updateId:id,index:i,data:btoa(binary)})});
+   P.uploadProgress.completed=i+1;updateUploadProgressP();
+  }
+  const result=await apiP('update/validate',{method:'POST',body:pack({updateId:id})});
+  P.packages=await loadPackagesP();return result;
+ }finally{P.uploadProgress=null}
 }
 async function pollUpdateP(){
  for(let i=0;i<90;i++){await new Promise(r=>setTimeout(r,2000));const s=await apiP('update/status');if(['succeeded','failed','rolled_back','rollback_failed'].includes(s.update?.status))return s.update}
@@ -181,7 +197,8 @@ async function deployPackageP(id){
 }
 function packagePageP(){
  const rows=P.packages.map(p=>'<div class="row"><span class="ic">'+ico('file')+'</span><span class="grow"><div class="t">'+escP(p.filename)+'</div><div class="d">v'+escP(p.version)+' · '+Number(p.fileCount||0)+' files</div></span><button class="more" data-package="'+escP(p.updateId)+'">⋮</button></div>').join('');
- return '<button class="btn sm" onclick="S.path=[];render()">Back to files</button><h1 style="margin-top:14px">Update packages</h1><p class="sub">Validated Aharane ZIP packages. Use the three-dot menu to update the bot.</p><div class="card list">'+(rows||'<div class="empty">No ZIP update packages saved.</div>')+'</div>';
+ const body=P.packageError?'<div class="empty">Saved packages could not be loaded: '+escP(P.packageError)+'<div class="btns"><button class="btn sm" id="prod-retry-packages">Retry</button></div></div>':(rows||'<div class="empty">No ZIP update packages saved.</div>');
+ return '<button class="btn sm" onclick="S.path=[];render()">Back to files</button><h1 style="margin-top:14px">Update packages</h1><p class="sub">Validated Aharane ZIP packages. Use the three-dot menu to update the bot.</p><div class="card list">'+body+'</div>';
 }
 window.openPackagePageP=()=>{S.path=['updates'];S.ed=false;render()};
 async function applyFilesP(){
@@ -193,7 +210,14 @@ function filesScreenP(){
  if(S.path[0]==='updates')return packagePageP();
  let html=filesBase();
  if(S.ed){const end=html.lastIndexOf('</div>');html=html.slice(0,end+6)+'<div class="btns"><button class="btn p" id="prod-file-save">Save changes</button><button class="btn" id="prod-file-download">Download</button></div>'+html.slice(end+6)}
- else if(!S.path.length){html+='<h2>Update packages <button class="btn sm" onclick="openPackagePageP()">View all</button></h2><p class="sub">'+P.packages.length+' saved ZIP package(s)</p>'+(P.pending?'<div class="btns"><button class="btn p" id="prod-apply-files">Apply staged changes</button></div>':'')}
+ else if(!S.path.length){
+  const packages=P.packageError
+   ?'<p class="sub" id="package-load-error">Saved ZIP packages unavailable: '+escP(P.packageError)+'</p><div class="btns"><button class="btn sm" id="prod-retry-packages">Retry package list</button></div>'
+   :'<p class="sub">'+P.packages.length+' saved ZIP package(s)</p>';
+  html+='<h2>Update packages <button class="btn sm" onclick="openPackagePageP()">View all</button></h2>'+packages+(P.pending?'<div class="btns"><button class="btn p" id="prod-apply-files">Apply staged changes</button></div>':'');
+  if(P.filesError)html+='<div class="note">Could not load this folder: '+escP(P.filesError)+' <button class="btn sm" id="prod-retry-files">Retry</button></div>';
+  if(P.uploadProgress)html+='<div class="card" style="padding:12px;margin-top:14px"><div class="d" id="prod-upload-label"></div><div class="pbar" style="margin-top:8px"><i id="prod-upload-bar" style="width:0"></i></div></div>';
+ }
  return html;
 }
 function filePathP(name){return [currentPathP(),name].filter(Boolean).join('/')}
@@ -225,7 +249,7 @@ function fileMenuP(name,button){
   try{
    if(a==='Rename')ask('Rename',name,'Save',async value=>{try{await apiP('files/rename',{method:'POST',body:pack({path,name:value})});await loadTreeP(currentPathP());render()}catch(error){notifyP(error.message)}});
    else if(a==='Move')ask('Move to folder (for example commands or private-commands)','commands','Move',async value=>{try{await apiP('files/move',{method:'POST',body:pack({path,destination:value==='root'?'':value})});await loadTreeP(currentPathP());render()}catch(error){notifyP(error.message)}});
-   else if(a==='Download'){const d=await apiP('files/preview?item='+encodeURIComponent(path));downloadP(name,new Blob([d.content],{type:'text/plain'}))}
+   else if(a==='Download'){await downloadSourceFileP(path,name);notifyP('Download started')}
    else if(a==='Delete'){if(!confirm('Delete '+name+'? The change will be staged.'))return;await apiP('files/delete',{method:'POST',body:pack({paths:[path]})});await loadTreeP(currentPathP());render()}
   }catch(error){notifyP(error.message)}
  };

@@ -96,7 +96,7 @@
       <section class="view-section" id="view-overview">
         <div class="page-heading home-heading">
           <div><p class="eyebrow">YOUR WHATSAPP BOT</p><h1>Aharane</h1><p class="muted">Your bot, account and tools in one place.</p></div>
-          <button class="button button-outline compact-button" data-view="configuration" type="button">⚙ Configuration</button>
+          <button class="button button-outline compact-button" data-view="configuration" type="button">Configuration</button>
         </div>
         <section class="home-connection" aria-label="WhatsApp connection">
           <div class="connection-topline"><span class="field-label">WHATSAPP CONNECTION</span><span class="connection-status-word"><i id="whatsapp-dot" class="connection-dot" aria-label="WhatsApp connection status"></i><strong id="whatsapp-state" class="visually-hidden">Checking…</strong></span></div>
@@ -104,25 +104,20 @@
           <div class="home-connection-footer">
             <div class="home-stat"><span>BOT VERSION</span><strong id="bot-version">—</strong></div>
             <div class="home-stat"><span>ALLOWED SENDERS</span><strong id="allowed-senders">—</strong></div>
-            <button class="button button-dark" data-view="pairing" type="button">Manage pairing</button>
           </div>
         </section>
-        <div class="section-heading"><h2>WhatsApp account</h2><button class="text-button" data-view="pairing" type="button">Pair / reconnect</button></div>
-        <button class="account-summary-row" type="button" data-view="pairing">
+        <div class="section-heading"><h2>WhatsApp account</h2></div>
+        <button class="account-summary-row" type="button" data-view="pairing" aria-label="Manage Aharane WhatsApp pairing">
           <span class="account-avatar">A</span>
-          <span class="account-summary-info"><strong>Aharane</strong><small>Single WhatsApp account</small></span>
+          <span class="account-summary-info"><strong>Aharane</strong><small>Primary WhatsApp account</small></span>
           <span class="account-state-dot" id="home-account-dot" aria-label="Connection status"></span>
-          <span class="row-action-label">Manage</span>
+          <span class="row-action-label">Manage pairing</span>
         </button>
         <div class="section-heading"><h2>Latest deployment</h2><span class="muted">Bot release</span></div>
         <div class="deployment-summary compact-deployment">
           <div><span class="field-label">STATUS</span><strong id="last-update-status">No update recorded</strong></div>
           <div><span class="field-label">VERSION</span><strong id="last-update-version">—</strong></div>
           <div><span class="field-label">UPDATED</span><strong id="last-update-date">—</strong></div>
-        </div>
-        <div class="home-links">
-          <button class="home-link-row" type="button" data-view="files"><span class="home-link-icon">▤</span><span><strong>Files</strong><small>Browse bot source and update ZIPs</small></span><span class="link-arrow">›</span></button>
-          <button class="home-link-row" type="button" data-view="env"><span class="home-link-icon">⌘</span><span><strong>Environment</strong><small>View runtime variables</small></span><span class="link-arrow">›</span></button>
         </div>
         <div class="section-heading"><h2>Recent activity</h2><button class="text-button" data-view="activity" type="button">See all</button></div>
         <div id="live-activity-list" class="live-activity-list" aria-live="polite"><p class="muted">Sign in to receive live bot events.</p></div>
@@ -153,24 +148,74 @@
           <div id="package-list" class="package-list"><p class="muted">Loading update packages…</p></div>
         </section>
         <div id="source-editor-panel" class="source-editor-panel" hidden>
-          <div class="source-editor-head"><button class="editor-back-button" id="source-close-editor" type="button" aria-label="Back to Files">←</button><div class="source-editor-title"><strong id="source-editor-name">—</strong><small id="source-editor-meta">Plain text editor</small></div><button class="text-button" id="source-save" type="button" disabled>Save file</button></div>
-          <div class="editor-tab-strip"><span class="editor-tab active">Editor</span><span class="editor-save-hint">Changes are staged, not deployed</span></div>
-          <textarea id="source-editor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Source code editor"></textarea>
-          <div class="source-editor-footer"><span class="muted">Apply changes from Files when ready.</span><button class="button button-dark" id="source-save-bottom" type="button">Save file</button></div>
+          <div class="source-editor-head">
+            <button class="editor-back-button" id="source-close-editor" type="button" aria-label="Back to Files">Back</button>
+            <div class="source-editor-title"><strong id="source-editor-name">—</strong><small id="source-editor-meta">Plain text editor</small></div>
+            <select id="source-editor-file-switcher" class="source-editor-file-switcher" aria-label="Switch open source file"></select>
+            <button class="text-button" id="source-save" type="button" disabled>Save</button>
+          </div>
+          <div class="editor-tab-strip"><span class="editor-tab active">Editor</span><span class="editor-save-hint">Edits are staged until applied</span></div>
+          <div class="source-editor-workspace">
+            <pre id="source-editor-lines" class="source-editor-lines" aria-hidden="true">1</pre>
+            <textarea id="source-editor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Source code editor" wrap="off"></textarea>
+          </div>
+          <div class="source-editor-footer"><span class="muted">Changes are saved as drafts. Apply from Files when ready.</span><button class="button button-dark" id="source-save-bottom" type="button">Save</button></div>
         </div>
       </section>
 
       <section class="view-section" id="view-env" hidden>
-        <div class="page-heading"><div><p class="eyebrow">RUNTIME SETTINGS</p><h1>Environment</h1><p class="muted">Edit values used by Aharane.</p></div></div>
+        <div class="page-heading"><div><p class="eyebrow">RUNTIME SETTINGS</p><h1>ENV</h1><p class="muted">Environment variables used by Aharane.</p></div></div>
         <label class="search-field env-search" for="env-search"><span aria-hidden="true">⌕</span><input id="env-search" type="search" placeholder="Search variables"></label>
-        <div class="env-empty-state"><span class="empty-symbol">⌘</span><strong>Environment editor isn't connected yet</strong><p>The current server does not expose a secure environment-variable read/write endpoint. This screen is ready for the editor, but it won't invent variables or display a save indicator. When connected, declared keys will appear automatically and edits will save silently in the background without restarting the bot.</p></div>
+        <div class="env-empty-state"><strong>Environment variables are unavailable</strong><p>This server does not yet provide the secure ENV editor. Existing keys will appear here when it is connected.</p></div>
       </section>
 
       <section class="view-section" id="view-chats" hidden>
-        <div class="page-heading"><div><p class="eyebrow">WHATSAPP MESSAGES</p><h1>Chats</h1><p class="muted">Conversations for the Aharane account.</p></div></div>
-        <label class="search-field" for="chat-search"><span aria-hidden="true">⌕</span><input id="chat-search" type="search" placeholder="Search conversations"></label>
-        <div class="chat-filters"><button class="filter-chip active" type="button" data-chat-filter="all">All</button><button class="filter-chip" type="button" data-chat-filter="unread">Unread</button></div>
-        <div class="chat-empty-state"><span class="chat-empty-icon">☏</span><strong>Chat history isn't connected yet</strong><p>The current WhatsApp service doesn't expose message history or send-message endpoints. I haven't filled the inbox with sample conversations or made a read-only fake chat. The full messaging and media viewer experience needs those APIs.</p></div>
+        <div class="page-heading"><div><p class="eyebrow">WHATSAPP MESSAGES</p><h1>Chats</h1><p class="muted">Your WhatsApp conversations.</p></div></div>
+        <label class="search-field" for="chat-search"><span aria-hidden="true">⌕</span><input id="chat-search" type="search" placeholder="Search chats"></label>
+        <div class="chat-filters" role="group" aria-label="Filter chats"><button class="filter-chip active" type="button" data-chat-filter="all">All</button><button class="filter-chip" type="button" data-chat-filter="unread">Unread</button></div>
+        <div id="chat-list" class="chat-list">
+          <div class="chat-empty-state"><strong>No conversations to show</strong><p>Chats will appear here when the WhatsApp messaging service is connected.</p></div>
+        </div>
+      </section>
+
+      <section id="chat-thread-screen" class="chat-thread-screen" hidden aria-label="WhatsApp conversation">
+        <header class="chat-thread-header">
+          <button id="chat-thread-back" class="chat-back-button" type="button" aria-label="Back to chats">Back</button>
+          <span id="chat-thread-avatar" class="chat-thread-avatar">A</span>
+          <div class="chat-thread-contact"><strong id="chat-thread-name">Conversation</strong><small id="chat-thread-presence">WhatsApp chat</small></div>
+          <button id="chat-thread-menu" class="chat-thread-menu" type="button" aria-label="Conversation options">⋮</button>
+        </header>
+        <div id="chat-thread-messages" class="chat-thread-messages" role="log" aria-live="polite"></div>
+        <p id="chat-thread-message" class="chat-thread-status" role="status"></p>
+        <form id="chat-composer" class="chat-composer">
+          <button id="chat-attach-button" class="chat-attach-button" type="button" aria-label="Attach a file">＋</button>
+          <textarea id="chat-message-input" rows="1" placeholder="Message" aria-label="Message" maxlength="4000"></textarea>
+          <button id="chat-send-button" class="chat-send-button" type="submit" aria-label="Send message">↑</button>
+        </form>
+      </section>
+
+      <section id="chat-image-viewer" class="chat-media-viewer image-viewer" hidden aria-label="Image viewer">
+        <header class="media-viewer-header">
+          <button id="chat-image-close" type="button" aria-label="Close image">Back</button>
+          <strong id="chat-image-title">Photo</strong>
+          <button id="chat-image-more" type="button" aria-label="Image details">⋮</button>
+        </header>
+        <div class="image-viewer-stage"><img id="chat-image" alt="Shared image"></div>
+        <div class="media-viewer-actions">
+          <button id="chat-image-download" type="button">Download</button>
+          <button id="chat-image-share" type="button">Share</button>
+          <button id="chat-image-forward" type="button">Forward</button>
+          <button id="chat-image-details" type="button">Details</button>
+        </div>
+      </section>
+
+      <section id="chat-video-viewer" class="chat-media-viewer video-viewer" hidden aria-label="Video viewer">
+        <header class="media-viewer-header">
+          <button id="chat-video-close" type="button" aria-label="Close video">Back</button>
+          <strong id="chat-video-title">Video</strong>
+          <button id="chat-video-more" type="button" aria-label="Video details">⋮</button>
+        </header>
+        <div class="video-viewer-stage"><video id="chat-video-player" controls playsinline preload="metadata"></video></div>
       </section>
 
       <section class="view-section" id="view-configuration" hidden>
@@ -201,7 +246,7 @@
           <button class="settings-link" type="button" id="open-password-settings"><span class="settings-icon">♙</span><span><strong>Security and privacy</strong><small>Password and sign-in protection</small></span><span class="link-arrow">›</span></button>
           <button class="settings-link" type="button" data-view="storage"><span class="settings-icon">▤</span><span><strong>Storage</strong><small>Application data on this device</small></span><span class="link-arrow">›</span></button>
         </div>
-        <div class="settings-group"><h2>More</h2>
+        <div class="settings-group"><h2>Support and information</h2>
           <button class="settings-link" type="button" data-view="activity"><span class="settings-icon">◷</span><span><strong>Activity and logs</strong><small>Bot events and diagnostics</small></span><span class="link-arrow">›</span></button>
           <button class="settings-link" type="button" data-view="studio"><span class="settings-icon">⌘</span><span><strong>Local workspace</strong><small>Edit and preview files on this phone</small></span><span class="link-arrow">›</span></button>
           <button class="settings-link" type="button" data-view="help"><span class="settings-icon">?</span><span><strong>Help and feedback</strong><small>Using Aharane Local Studio</small></span><span class="link-arrow">›</span></button>
@@ -311,11 +356,11 @@
     </main>
 
     <nav class="bottom-nav" aria-label="Main navigation">
-      <button type="button" data-view="overview" class="bottom-nav-item active"><span aria-hidden="true">⌂</span><small>Home</small></button>
-      <button type="button" data-view="files" class="bottom-nav-item"><span aria-hidden="true">▤</span><small>Files</small></button>
-      <button type="button" data-view="env" class="bottom-nav-item"><span aria-hidden="true">⌘</span><small>ENV</small></button>
-      <button type="button" data-view="chats" class="bottom-nav-item"><span aria-hidden="true">☏</span><small>Chats</small></button>
-      <button type="button" data-view="more" class="bottom-nav-item"><span aria-hidden="true">⋯</span><small>More</small></button>
+      <button type="button" data-view="overview" class="bottom-nav-item active"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg><small>Home</small></button>
+      <button type="button" data-view="files" class="bottom-nav-item"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H10l2 2h7.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg><small>Files</small></button>
+      <button type="button" data-view="env" class="bottom-nav-item"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M8 4v4m8 2v4m-5 2v4"/></svg><small>ENV</small></button>
+      <button type="button" data-view="chats" class="bottom-nav-item"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6.5A7.5 7.5 0 1 1 20 11.5Z"/></svg><small>Chats</small></button>
+      <button type="button" data-view="more" class="bottom-nav-item"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg><small>More</small></button>
     </nav>
   </div>
 <div id="password-modal" class="password-modal" hidden>

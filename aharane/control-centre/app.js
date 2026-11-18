@@ -10,6 +10,7 @@ let sourceFile = null
 let sourceOriginal = ''
 let sourceHash = ''
 let sourceDirty = false
+let sourceFolderFiles = []
 
 let localOnly = false
 let remoteSession = false
@@ -319,6 +320,260 @@ async function refreshPackages() {
   }
 }
 
+
+
+let activeChat = null
+let activeChatMessages = []
+let imageViewerItems = []
+let imageViewerIndex = -1
+let imageViewerTouchStart = null
+
+function safeChatMediaUrl(value) {
+  try {
+    const url = new URL(String(value || ''), location.origin)
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : ''
+  } catch {
+    return ''
+  }
+}
+
+function chatTimeLabel(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function renderChatList(chats) {
+  const target = $('#chat-list')
+  if (!target) return
+  target.replaceChildren()
+  if (!Array.isArray(chats) || !chats.length) {
+    const empty = document.createElement('div')
+    empty.className = 'chat-empty-state'
+    const title = document.createElement('strong')
+    title.textContent = 'No conversations to show'
+    const note = document.createElement('p')
+    note.textContent = 'Chats will appear here when the WhatsApp messaging service is connected.'
+    empty.append(title, note)
+    target.append(empty)
+    return
+  }
+  for (const chat of chats) {
+    const row = document.createElement('button')
+    row.type = 'button'
+    row.className = 'chat-row'
+    row.addEventListener('click', () => openChatThread(chat))
+    const avatar = document.createElement('span')
+    avatar.className = 'chat-row-avatar'
+    const imageUrl = safeChatMediaUrl(chat.avatarUrl)
+    if (imageUrl) {
+      const image = document.createElement('img')
+      image.src = imageUrl
+      image.alt = ''
+      avatar.append(image)
+    } else avatar.textContent = String(chat.name || '?').trim().charAt(0).toUpperCase() || '?'
+    const copy = document.createElement('span')
+    copy.className = 'chat-row-copy'
+    const top = document.createElement('span')
+    top.className = 'chat-row-top'
+    const name = document.createElement('strong')
+    name.textContent = String(chat.name || chat.phone || 'Unknown contact')
+    const time = document.createElement('time')
+    time.textContent = chatTimeLabel(chat.timestamp || chat.updatedAt)
+    top.append(name, time)
+    const bottom = document.createElement('span')
+    bottom.className = 'chat-row-bottom'
+    const preview = document.createElement('small')
+    preview.textContent = String(chat.lastMessage || '')
+    bottom.append(preview)
+    if (Number(chat.unreadCount) > 0) {
+      const unread = document.createElement('span')
+      unread.className = 'chat-unread-count'
+      unread.textContent = String(chat.unreadCount)
+      bottom.append(unread)
+    }
+    copy.append(top, bottom)
+    row.append(avatar, copy)
+    target.append(row)
+  }
+}
+
+function renderChatMessages(messages) {
+  const target = $('#chat-thread-messages')
+  if (!target) return
+  target.replaceChildren()
+  if (!Array.isArray(messages) || !messages.length) {
+    const empty = document.createElement('div')
+    empty.className = 'chat-thread-empty'
+    empty.textContent = 'Messages from this conversation will appear here.'
+    target.append(empty)
+    return
+  }
+  for (const message of messages) {
+    const row = document.createElement('div')
+    row.className = 'chat-message-row ' + (message.fromMe === true || message.direction === 'outgoing' ? 'outgoing' : 'incoming')
+    const bubble = document.createElement('div')
+    const type = String(message.type || 'text').toLowerCase()
+    bubble.className = 'chat-bubble chat-bubble-' + type
+    const url = safeChatMediaUrl(message.url)
+    const caption = String(message.caption || message.text || '')
+    if (type === 'text') {
+      bubble.textContent = caption
+    } else if (['image', 'gif', 'sticker'].includes(type) && url) {
+      const media = document.createElement('button')
+      media.type = 'button'
+      media.className = 'chat-media-open'
+      const image = document.createElement('img')
+      image.src = url
+      image.alt = caption || (type === 'sticker' ? 'Sticker' : 'Shared image')
+      media.append(image)
+      media.addEventListener('click', () => openChatImageViewer(message))
+      bubble.append(media)
+      if (caption) {
+        const text = document.createElement('div')
+        text.textContent = caption
+        bubble.append(text)
+      }
+    } else if (type === 'video' && url) {
+      const media = document.createElement('button')
+      media.type = 'button'
+      media.className = 'chat-media-open'
+      const preview = document.createElement('span')
+      preview.className = 'chat-video-preview'
+      preview.textContent = 'Play video'
+      media.append(preview)
+      media.addEventListener('click', () => openChatVideoViewer(message))
+      bubble.append(media)
+      if (caption) {
+        const text = document.createElement('div')
+        text.textContent = caption
+        bubble.append(text)
+      }
+    } else if (type === 'audio' && url) {
+      const audio = document.createElement('audio')
+      audio.className = 'chat-audio'
+      audio.controls = true
+      audio.preload = 'none'
+      audio.src = url
+      bubble.append(audio)
+    } else if (type === 'document' && url) {
+      const link = document.createElement('a')
+      link.className = 'chat-document-link'
+      link.href = url
+      link.download = String(message.fileName || 'WhatsApp document')
+      const mark = document.createElement('span')
+      mark.className = 'chat-document-mark'
+      mark.textContent = 'FILE'
+      const name = document.createElement('span')
+      name.textContent = String(message.fileName || 'Download document')
+      link.append(mark, name)
+      bubble.append(link)
+    } else {
+      bubble.textContent = caption || 'Attachment'
+    }
+    if (message.timestamp) {
+      const time = document.createElement('time')
+      time.className = 'chat-message-time'
+      time.textContent = chatTimeLabel(message.timestamp)
+      bubble.append(time)
+    }
+    row.append(bubble)
+    target.append(row)
+  }
+  target.scrollTop = target.scrollHeight
+}
+
+function openChatThread(chat) {
+  if (!chat || typeof chat !== 'object') return
+  activeChat = chat
+  activeChatMessages = Array.isArray(chat.messages) ? chat.messages : []
+  const name = String(chat.name || chat.phone || 'WhatsApp chat')
+  $('#chat-thread-name').textContent = name
+  $('#chat-thread-presence').textContent = chat.statusText || 'WhatsApp conversation'
+  const avatar = $('#chat-thread-avatar')
+  avatar.replaceChildren()
+  const imageUrl = safeChatMediaUrl(chat.avatarUrl)
+  if (imageUrl) {
+    const image = document.createElement('img')
+    image.src = imageUrl
+    image.alt = ''
+    avatar.append(image)
+  } else avatar.textContent = name.trim().charAt(0).toUpperCase() || '?'
+  $('#chat-thread-message').textContent = ''
+  $('#chat-message-input').value = ''
+  renderChatMessages(activeChatMessages)
+  $('#chat-thread-screen').hidden = false
+  document.body.classList.add('chat-thread-open')
+}
+
+function closeChatThread() {
+  $('#chat-thread-screen').hidden = true
+  document.body.classList.remove('chat-thread-open')
+  activeChat = null
+  activeChatMessages = []
+  setView('chats')
+}
+
+function showChatImageAt(index) {
+  if (!imageViewerItems.length) return
+  imageViewerIndex = (index + imageViewerItems.length) % imageViewerItems.length
+  const message = imageViewerItems[imageViewerIndex]
+  const url = safeChatMediaUrl(message.url)
+  if (!url) return
+  $('#chat-image').src = url
+  $('#chat-image-title').textContent = String(message.fileName || (message.type === 'sticker' ? 'Sticker' : 'Photo'))
+}
+
+function openChatImageViewer(message) {
+  imageViewerItems = activeChatMessages.filter(item => ['image', 'gif', 'sticker'].includes(String(item.type || '').toLowerCase()) && safeChatMediaUrl(item.url))
+  imageViewerIndex = imageViewerItems.indexOf(message)
+  if (imageViewerIndex < 0) return
+  showChatImageAt(imageViewerIndex)
+  $('#chat-image-viewer').hidden = false
+  document.body.classList.add('chat-media-open')
+}
+
+function closeChatImageViewer() {
+  $('#chat-image-viewer').hidden = true
+  $('#chat-image').removeAttribute('src')
+  imageViewerItems = []
+  imageViewerIndex = -1
+  document.body.classList.remove('chat-media-open')
+}
+
+function openChatVideoViewer(message) {
+  const url = safeChatMediaUrl(message.url)
+  if (!url) return
+  const player = $('#chat-video-player')
+  $('#chat-video-title').textContent = String(message.fileName || 'Video')
+  player.src = url
+  $('#chat-video-viewer').hidden = false
+  document.body.classList.add('chat-media-open')
+  void player.play().catch(() => {})
+}
+
+function closeChatVideoViewer() {
+  const player = $('#chat-video-player')
+  player.pause()
+  player.removeAttribute('src')
+  player.load()
+  $('#chat-video-viewer').hidden = true
+  document.body.classList.remove('chat-media-open')
+}
+
+function downloadChatMedia(url, filename) {
+  const safeUrl = safeChatMediaUrl(url)
+  if (!safeUrl) return
+  const link = document.createElement('a')
+  link.href = safeUrl
+  link.download = filename || 'whatsapp-media'
+  link.rel = 'noopener'
+  document.body.append(link)
+  link.click()
+  link.remove()
+}
+
 function setSourceMessage(message, kind = '') {
   showMessage('#source-message', message, kind)
 }
@@ -385,6 +640,7 @@ async function loadSourceFolder(folder) {
     list.append(empty)
   }
   const orderedChildren = [...(result.children || [])].sort((a, b) => (a.type === b.type ? 0 : a.type === 'folder' ? -1 : 1) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  sourceFolderFiles = orderedChildren.filter(item => item.type === 'file')
   for (const item of orderedChildren) {
     const row = document.createElement('div')
     row.className = 'source-file-row'
@@ -482,8 +738,21 @@ async function loadSourceFolder(folder) {
   await refreshDraftStatus()
 }
 
+function updateSourceEditorLines() {
+  const editor = $('#source-editor')
+  const gutter = $('#source-editor-lines')
+  if (!editor || !gutter) return
+  const lineCount = Math.max(1, editor.value.split('\n').length)
+  gutter.textContent = Array.from({ length: lineCount }, (_, index) => String(index + 1)).join('\n')
+  gutter.scrollTop = editor.scrollTop
+}
+
 async function openSourceFile(path) {
-  if (sourceDirty && !window.confirm('Discard unsaved editor typing and open another file?')) return
+  if (sourceDirty && !window.confirm('Discard unsaved editor typing and open another file?')) {
+    const switcher = $('#source-editor-file-switcher')
+    if (switcher && sourceFile) switcher.value = sourceFile
+    return
+  }
   try {
     const result = await api('files/preview?item=' + encodeURIComponent(path))
     sourceFile = result.path
@@ -492,6 +761,18 @@ async function openSourceFile(path) {
     sourceDirty = false
     $('#source-editor-name').textContent = result.path
     $('#source-editor').value = result.content
+    const switcher = $('#source-editor-file-switcher')
+    if (switcher) {
+      switcher.replaceChildren()
+      for (const item of sourceFolderFiles) {
+        const option = document.createElement('option')
+        option.value = item.path
+        option.textContent = item.name
+        switcher.append(option)
+      }
+      switcher.value = result.path
+    }
+    updateSourceEditorLines()
     $('#source-save').disabled = true
     $('#source-editor-meta').textContent = `${result.language.toUpperCase() || 'TEXT'} · ${formatBytes(result.size)} · 512 KB limit`
     $('#source-editor-panel').hidden = false
@@ -1050,9 +1331,18 @@ $('#file-search')?.addEventListener('input', () => {
   $('.source-file-row').forEach(row => { row.hidden = query && !row.dataset.name.includes(query) })
 })
 $('#source-save-bottom')?.addEventListener('click', () => { void saveSourceFile() })
+$('#source-editor-file-switcher')?.addEventListener('change', event => {
+  const path = event.target.value
+  if (path) void openSourceFile(path)
+})
+$('#source-editor')?.addEventListener('scroll', () => {
+  const gutter = $('#source-editor-lines')
+  if (gutter) gutter.scrollTop = $('#source-editor').scrollTop
+})
 $('#open-password-settings')?.addEventListener('click', () => $('#change-password-button').click())
 let sourceAutosaveTimer = null
 $('#source-editor').addEventListener('input', () => {
+  updateSourceEditorLines()
   sourceDirty = $('#source-editor').value !== sourceOriginal
   $('#source-save').disabled = !sourceDirty
   if (sourceAutosaveTimer) clearTimeout(sourceAutosaveTimer)
@@ -1062,6 +1352,76 @@ $('#source-editor').addEventListener('input', () => {
   }, 900)
 })
 
+
+
+// Close anchored menus when the user taps outside them.
+document.addEventListener('click', event => {
+  if (!event.target.closest('.source-item-actions')) {
+    $$('.source-item-menu').forEach(menu => { menu.hidden = true })
+    $$('.source-menu-button').forEach(button => button.setAttribute('aria-expanded', 'false'))
+  }
+  if (!event.target.closest('.package-actions')) {
+    $$('.package-menu').forEach(menu => { menu.hidden = true })
+  }
+})
+
+
+// Conversation and media-viewer interactions.
+$('#chat-thread-back')?.addEventListener('click', closeChatThread)
+$('#chat-composer')?.addEventListener('submit', event => {
+  event.preventDefault()
+  if (!activeChat) return
+  const message = $('#chat-message-input').value.trim()
+  if (!message) return
+  showMessage('#chat-thread-message', 'Sending messages is not available on this server yet.', 'error')
+})
+$('#chat-attach-button')?.addEventListener('click', () => {
+  showMessage('#chat-thread-message', 'Attachments are not available until the WhatsApp messaging service is connected.', 'error')
+})
+$('#chat-image')?.addEventListener('click', () => {
+  $('#chat-image-viewer').classList.toggle('controls-hidden')
+})
+$('#chat-image-close')?.addEventListener('click', closeChatImageViewer)
+$('#chat-image-details')?.addEventListener('click', () => {
+  const image = $('#chat-image')
+  if (image.naturalWidth && image.naturalHeight) window.alert(`${$('#chat-image-title').textContent}\n${image.naturalWidth} × ${image.naturalHeight}`)
+})
+$('#chat-image-more')?.addEventListener('click', () => $('#chat-image-details').click())
+$('#chat-image-download')?.addEventListener('click', () => {
+  const message = imageViewerItems[imageViewerIndex]
+  if (message) downloadChatMedia(message.url, message.fileName)
+})
+$('#chat-image-share')?.addEventListener('click', () => {
+  const message = imageViewerItems[imageViewerIndex]
+  const url = safeChatMediaUrl(message?.url)
+  if (url && navigator.share) void navigator.share({ title: $('#chat-image-title').textContent, url }).catch(() => {})
+  else if (url) showMessage('#chat-thread-message', 'Sharing is not supported by this browser.', 'error')
+})
+$('#chat-image-forward')?.addEventListener('click', () => {
+  closeChatImageViewer()
+  showMessage('#chat-thread-message', 'Forwarding will be available when message actions are connected.', 'error')
+})
+$('#chat-video-close')?.addEventListener('click', closeChatVideoViewer)
+$('#chat-video-more')?.addEventListener('click', () => {
+  const video = $('#chat-video-player')
+  const duration = Number.isFinite(video.duration) ? Math.round(video.duration) + ' seconds' : 'Duration unavailable'
+  window.alert(`${$('#chat-video-title').textContent}\n${video.videoWidth} × ${video.videoHeight}\n${duration}`)
+})
+$('#chat-image-viewer .image-viewer-stage')?.addEventListener('touchstart', event => {
+  imageViewerTouchStart = event.changedTouches[0]?.clientX ?? null
+}, { passive: true })
+$('#chat-image-viewer .image-viewer-stage')?.addEventListener('touchend', event => {
+  if (imageViewerTouchStart === null) return
+  const delta = (event.changedTouches[0]?.clientX ?? imageViewerTouchStart) - imageViewerTouchStart
+  imageViewerTouchStart = null
+  if (Math.abs(delta) > 55 && imageViewerItems.length > 1) showChatImageAt(imageViewerIndex + (delta < 0 ? 1 : -1))
+}, { passive: true })
+$('#chat-video-player')?.addEventListener('dblclick', event => {
+  const video = $('#chat-video-player')
+  const rect = video.getBoundingClientRect()
+  const offset = event.clientX - rect.left
+  video.currentTime = Math.max(0, Math.min(video.duration || Infinity, video.currentTime + (offset < rect.width / 2 ? -10 : 10)))
+})
 
 function openStudioDatabase() {
   if (studioDbPromise) return studioDbPromise

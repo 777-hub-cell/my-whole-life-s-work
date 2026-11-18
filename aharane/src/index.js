@@ -374,9 +374,6 @@ async function safeSourceTarget(value, { allowMissing = false } = {}) {
   if (parts.length > 1 && SOURCE_ROOT_FILES.has(parts[0])) {
     sourcePathError(403, 'PATH_NOT_ALLOWED', 'A root documentation file cannot contain child paths.')
   }
-  if (parts.length > 1 && !SOURCE_EXTENSIONS.has(extname(parts.at(-1)).toLowerCase())) {
-    sourcePathError(403, 'FILE_TYPE_NOT_ALLOWED', 'Only approved text and source files are available in the editor.')
-  }
   const base = await sourceWorkspaceDirectory()
   let full = base
   let info = null
@@ -393,6 +390,9 @@ async function safeSourceTarget(value, { allowMissing = false } = {}) {
     if (info && index < parts.length - 1 && !info.isDirectory()) {
       sourcePathError(400, 'NOT_A_FOLDER', 'A parent path is not a folder.')
     }
+  }
+  if (info?.isFile() && parts.length > 1 && !SOURCE_EXTENSIONS.has(extname(parts.at(-1)).toLowerCase())) {
+    sourcePathError(403, 'FILE_TYPE_NOT_ALLOWED', 'Only approved text and source files are available in the editor.')
   }
   const relativePathFromRoot = relative(base, full)
   if (!relativePathFromRoot || relativePathFromRoot === '..' || relativePathFromRoot.startsWith('..' + sep) || isAbsolute(relativePathFromRoot)) {
@@ -520,7 +520,7 @@ async function validateSourceContent(sourcePath, content) {
     sourcePathError(413, 'FILE_TOO_LARGE', 'Source files must be 512 KB or smaller in the editor.')
   }
   const extension = extname(sourcePath).toLowerCase()
-  if (extension === '.json') {
+  if (['.json', '.webmanifest'].includes(extension)) {
     try { JSON.parse(content) }
     catch { sourcePathError(400, 'INVALID_JSON', 'The JSON file is not valid JSON.') }
   }
@@ -1663,7 +1663,7 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
     if (!target.info?.isFile()) return res.status(409).json({ ok: false, error: 'The source file changed. Reload the Files Manager.' })
     const temporary = target.full + '.aharane-edit-' + randomUUID()
     try {
-      await writeFile(temporary, content, { encoding: 'utf8', mode: 'wx', flag: 'wx' })
+      await writeFile(temporary, content, { encoding: 'utf8', mode: 0o640, flag: 'wx' })
       await rename(temporary, target.full)
       const savedContent = await readFile(target.full, 'utf8')
       if (savedContent !== content) throw new Error('The file did not pass its on-disk save check. Your previous file was preserved in the manual-edit backup.')

@@ -487,7 +487,15 @@ async function ensureManualEditBackup() {
     if (existing.currentRelease !== currentRelease) {
       const cleared = await clearEmptyStaleManualEdits(currentRelease, existing)
       if (!cleared) {
-        sourcePathError(409, 'MANUAL_CHANGES_STALE', 'The active release changed while source edits were staged. Review or discard the old draft before editing this version.')
+        const workspace = String(existing.workspaceRelease || '')
+        const actual = await realpath(workspace).catch(() => null)
+        if (!workspace.startsWith(RELEASES_DIR + sep) || !actual ||
+            !actual.startsWith(RELEASES_DIR + sep) || actual === currentRelease) {
+          sourcePathError(409, 'MANUAL_WORKSPACE_MISSING', 'The older source draft is missing or cannot be safely opened.')
+        }
+        // Keep the previous draft writable so autosave, rename, move and delete
+        // continue to work. Applying it still requires the explicit recovery step.
+        return existing
       }
     } else {
       const workspace = String(existing.workspaceRelease || '')
@@ -528,6 +536,132 @@ async function ensureManualEditBackup() {
   await writeJsonAtomic(MANUAL_EDIT_STATE_FILE, state)
   return state
 }
+async function recoverStaleManualEditWorkspace() {
+  const currentRelease = await currentReleaseDirectory()
+  const manual = await readJsonFile(MANUAL_EDIT_STATE_FILE)
+  if (manual?.status !== 'pending') {
+    sourcePathError(409, 'NO_MANUAL_DRAFT', 'There is no saved Files Manager draft to recover.')
+  }
+  if (manual.currentRelease === currentRelease) {
+    return { ...manual, recovered: false }
+  }
+
+  const workspacePath = String(manual.workspaceRelease || '')
+  if (!workspacePath.startsWith(RELEASES_DIR + sep)) {
+    sourcePathError(409, 'MANUAL_WORKSPACE_INVALID', 'The older source draft is outside Aharane releases.')
+  }
+  const oldWorkspace = await realpath(workspacePath).catch(() => null)
+  if (!oldWorkspace || !oldWorkspace.startsWith(RELEASES_DIR + sep) || oldWorkspace === currentRelease) {
+    sourcePathError(409, 'MANUAL_WORKSPACE_MISSING', 'The older source draft is missing or cannot be safely recovered.')
+  }
+
+  const newWorkspace = join(RELEASES_DIR, `manual-edit-workspace-recovered-${Date.now()}-${randomUUID().slice(0, 8)}`)
+  const allowedActions = new Set([
+    'modified-file', 'created-file', 'deleted-file', 'created-folder',
+    'renamed-from', 'renamed-to', 'moved-from', 'moved-to',
+  ])
+  const entries = []
+  for (const item of manual.modifiedPaths || []) {
+    const action = String(item?.action || '')
+    if (!allowedActions.has(action)) {
+      sourcePathError(409, 'MANUAL_DRAFT_REVIEW_REQUIRED', 'The older draft contains an operation that needs manual review.')
+    }
+    const normalized = normalizeUpdatePath(String(item?.path || '')).path
+    const parts = normalized.split('/')
+    if (parts.length > 8 || parts.some(part => part.startsWith('.') ||
+        (!SOURCE_DIRS.has(parts[0]) && !(parts.length === 1 && SOURCE_ROOT_FILES.has(parts[0]))))) {
+      sourcePathError(403, 'PATH_NOT_ALLOWED', 'The older draft contains a path outside the editable Aharane source workspace.')
+    }
+    entries.push({ path: normalized, action })
+  }
+
+  async function inspectEntry(root, relativePath) {
+    const parts = relativePath.split('/')
+    let full = root
+    let info = null
+    for (let index = 0; index < parts.length; index += 1) {
+      full = join(full, parts[index])
+      info = await lstat(full).catch(error => error?.code === 'ENOENT' ? null : Promise.reject(error))
+      if (!info) return { full, info: null }
+      if (info.isSymbolicLink()) {
+        sourcePathError(403, 'SYMLINK_BLOCKED', 'A draft recovery path cannot be a symbolic link.')
+      }
+      if (index < parts.length - 1 && !info.isDirectory()) {
+        sourcePathError(409, 'MANUAL_DRAFT_REVIEW_REQUIRED', 'A draft parent path is no longer a folder: ' + relativePath)
+      }
+    }
+    if (info) {
+      const actual = await realpath(full)
+      const actualRelative = relative(root, actual)
+      if (actualRelative === '..' || actualRelative.startsWith('..' + sep) || isAbsolute(actualRelative)) {
+        sourcePathError(403, 'PATH_ESCAPE', 'A draft recovery path resolves outside its release directory.')
+      }
+    }
+    return { full, info }
+  }
+
+  try {
+    await cp(currentRelease, newWorkspace, {
+      recursive: true,
+      errorOnExist: true,
+      force: false,
+      filter: source => {
+        const segments = source.split(sep)
+        return !segments.includes('node_modules') && !segments.includes('.git')
+      },
+    })
+    const modulesPath = join(currentRelease, 'node_modules')
+    const modulesInfo = await stat(modulesPath).catch(() => null)
+    if (modulesInfo?.isDirectory()) {
+      await symlink(await realpath(modulesPath), join(newWorkspace, 'node_modules'), 'dir')
+    }
+
+    const removals = entries.filter(item => ['deleted-file', 'renamed-from', 'moved-from'].includes(item.action))
+    const folders = entries.filter(item => item.action === 'created-folder')
+    const copies = entries.filter(item => ['modified-file', 'created-file', 'renamed-to', 'moved-to'].includes(item.action))
+
+    for (const item of removals) {
+      const target = await inspectEntry(newWorkspace, item.path)
+      if (target.info) await rm(target.full, { recursive: target.info.isDirectory(), force: true })
+    }
+    for (const item of folders) {
+      const target = await inspectEntry(newWorkspace, item.path)
+      if (target.info && !target.info.isDirectory()) await rm(target.full, { force: true })
+      await mkdir(target.full, { recursive: true, mode: 0o750 })
+    }
+    for (const item of copies) {
+      const source = await inspectEntry(oldWorkspace, item.path)
+      if (!source.info || (['modified-file', 'created-file'].includes(item.action) && !source.info.isFile())) {
+        sourcePathError(409, 'MANUAL_DRAFT_REVIEW_REQUIRED', 'A saved draft item is missing or has the wrong type: ' + item.path)
+      }
+      const target = await inspectEntry(newWorkspace, item.path)
+      if (target.info) await rm(target.full, { recursive: target.info.isDirectory(), force: true })
+      await mkdir(dirname(target.full), { recursive: true, mode: 0o750 })
+      const parent = await realpath(dirname(target.full))
+      const parentRelative = relative(newWorkspace, parent)
+      if (parentRelative === '..' || parentRelative.startsWith('..' + sep) || isAbsolute(parentRelative)) {
+        sourcePathError(403, 'PATH_ESCAPE', 'A recovered draft parent resolves outside the current release.')
+      }
+      await cp(source.full, target.full, { recursive: source.info.isDirectory(), force: true })
+    }
+
+    const recovered = {
+      ...manual,
+      currentRelease,
+      previousRelease: currentRelease,
+      workspaceRelease: newWorkspace,
+      rebasedFrom: manual.currentRelease,
+      rebasedAt: new Date().toISOString(),
+    }
+    await writeJsonAtomic(MANUAL_EDIT_STATE_FILE, recovered)
+    await rm(oldWorkspace, { recursive: true, force: true }).catch(() => {})
+    return { ...recovered, recovered: true }
+  } catch (error) {
+    await rm(newWorkspace, { recursive: true, force: true }).catch(() => {})
+    throw error
+  }
+}
+
 async function recordManualEdit(sourcePath, action) {
   const state = await ensureManualEditBackup()
   const byPath = new Map((state.modifiedPaths || []).map(item => [item.path, item]))
@@ -1150,7 +1284,11 @@ app.get('/api/update/status', requireAdmin, async (_req, res) => {
     ok: true,
     currentVersion: await currentBotVersion(),
     update: await currentUpdateState(),
-    manualEdits: { pending: manual?.status === 'pending', changedCount: manual?.modifiedPaths?.length || 0 },
+    manualEdits: {
+      pending: manual?.status === 'pending',
+      changedCount: manual?.modifiedPaths?.length || 0,
+      stale: manual?.status === 'pending' && manual.currentRelease !== await currentReleaseDirectory(),
+    },
     maxArchiveBytes: MAX_ARCHIVE_BYTES,
   })
 })
@@ -1577,7 +1715,13 @@ app.get('/api/files/tree', requireAdmin, async (req, res) => {
   try {
     const result = await listSourceFiles(String(req.query.item || ''))
     const manual = await readJsonFile(MANUAL_EDIT_STATE_FILE)
-    res.json({ ok: true, ...result, pending: manual?.status === 'pending', changedCount: manual?.modifiedPaths?.length || 0 })
+    res.json({
+      ok: true,
+      ...result,
+      pending: manual?.status === 'pending',
+      changedCount: manual?.modifiedPaths?.length || 0,
+      stale: manual?.status === 'pending' && manual.currentRelease !== await currentReleaseDirectory(),
+    })
   } catch (error) {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not list Aharane source files.') })
   }
@@ -1915,6 +2059,26 @@ app.post('/api/files/discard', requireAdmin, async (req, res) => {
     res.json({ ok: true, pending: false, message: 'The staged edits were discarded. The running Aharane release was never changed.' })
   } catch (error) {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not discard saved file edits.') })
+  }
+})
+
+app.post('/api/files/recover', requireAdmin, async (req, res) => {
+  if (req.body?.confirm !== true) return res.status(400).json({ ok: false, error: 'Explicit confirmation is required to recover the saved draft.' })
+  if (updateInProgress) return res.status(409).json({ ok: false, error: 'Another Aharane deployment is already running.' })
+  try {
+    const recovered = await recoverStaleManualEditWorkspace()
+    res.json({
+      ok: true,
+      pending: true,
+      stale: false,
+      recovered: Boolean(recovered.recovered),
+      changedCount: recovered.modifiedPaths?.length || 0,
+      message: recovered.recovered
+        ? 'The staged draft was recovered onto the current Aharane release. The running bot was not changed.'
+        : 'The staged draft already belongs to the current Aharane release.',
+    })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not recover the saved Files Manager draft.') })
   }
 })
 

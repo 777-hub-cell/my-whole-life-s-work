@@ -96,3 +96,59 @@ test('individual and group chat visibility is configurable per account', async (
   assert.ok(settings.includes('export function normalizeChatVisibility'))
   assert.ok(settings.includes('export function isChatVisible'))
 })
+
+test('pairing uses saved Private and Public numbers and is always user-requested', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const pair=bridge.slice(bridge.indexOf('function pairViewP(){'),bridge.indexOf('async function getPairCodeP(){'))
+ const bind=bridge.slice(bridge.indexOf('function bindProductionP(){'),bridge.indexOf('function homeViewP(){'))
+ assert.ok(pair.includes('P.owners.privateOwnerNumber'))
+ assert.ok(pair.includes('P.owners.publicBotNumber'))
+ assert.ok(!pair.includes('id="pair-phone"'))
+ assert.ok(pair.includes('id="prod-pair-code"'))
+ assert.ok(pair.includes('id="prod-qr-request"'))
+ assert.ok(pair.includes('id="prod-pair-repair"'))
+ assert.ok(bind.includes('requestQrP'))
+ assert.ok(bind.includes('repairPairP'))
+ assert.ok(bind.includes('reconnectPairP'))
+ assert.ok(!bind.includes('startQrP()'), 'Entering or rendering the Pair screen must not start QR polling.')
+ assert.ok(bridge.includes("C.pairingNumber=P.owners.publicBotNumber||''"))
+})
+
+test('Configuration drafts are not redrawn by background status polling', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const refresh=bridge.slice(bridge.indexOf('async function refreshRuntimeP(){'),bridge.indexOf('async function refreshActivityP(){'))
+ assert.ok(refresh.includes("if(S.tab==='home'&&!S.sub){render()}"))
+ assert.ok(!refresh.includes("if(S.tab==='home'){render()}"))
+ assert.ok(bridge.includes("P.statusTimer=setInterval(()=>{if(!document.hidden)refreshRuntimeP().catch(()=>{})},20000)"))
+})
+
+test('Home exposes service health and separate Private/Public WhatsApp status', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const home=bridge.slice(bridge.indexOf('function homeViewP(){'),bridge.indexOf('function installBridgeP(){'))
+ assert.ok(home.includes('Aharane service'))
+ assert.ok(home.includes('Private WhatsApp'))
+ assert.ok(home.includes('Public WhatsApp'))
+ assert.ok(home.includes('data-account="'+id+'" data-action="stop"'))
+ assert.ok(!home.includes("svc('stop')"))
+})
+
+test('Chats search updates in place and preserves message reading position', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ assert.ok(bridge.includes("apiP('chats/'+account+'/search?q='"))
+ assert.ok(bridge.includes("id=\"chat-search-results\"") || bridge.includes("'<div id=\"chat-search-results\">'"))
+ assert.ok(bridge.includes('function updateChatSearchPanelP()'))
+ assert.ok(bridge.includes('drawMsgsBaseP();'))
+ assert.ok(bridge.includes('el.scrollTop=top'))
+ assert.ok(bridge.includes('},15000);'))
+ assert.ok(!bridge.includes("setInterval(()=>refreshChatsP().then(()=>{if(S.chat!==null)loadMessagesP()}).catch(()=>{}),6000)"))
+})
+
+test('account and source downloads do not depend on the Claude preview host', async () => {
+ const app=await read('../control-centre/app.js')
+ const bridge=await read('../control-centre/production-bridge.js')
+ assert.ok(!app.includes("claude.use('downloads')"))
+ assert.ok(!bridge.includes("claude.use('downloads')"))
+ assert.ok(bridge.includes("fetch(API+'/files/export-selection'"))
+ assert.ok(bridge.includes("files/download?item="))
+})
+

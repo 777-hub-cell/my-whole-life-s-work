@@ -544,6 +544,8 @@ function keepServerFileP(){
  const path=S.cur;
  clearFileAutosaveTimerP(path);
  fileAutosaveQueuedP.delete(path);
+ const server=P.fileData.get(path);
+ if(server)updateSourceMemoryP(path,server.content);
  fileAutosaveConflictsP.delete(path);
  removeFileLocalDraftP(path);
  notifyP('Kept the server version; the device draft was removed.');

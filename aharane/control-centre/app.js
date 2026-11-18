@@ -54,6 +54,18 @@ async function api(path, options = {}) {
   return data
 }
 
+// Register the entry-point controls before the rest of the UI initializes.
+// A later screen-specific error must not disable sign-in or the on-device workspace.
+$$('#login-form')?.addEventListener('submit', event => {
+  event.preventDefault()
+  void connect('login')
+})
+$$('#setup-form')?.addEventListener('submit', event => {
+  event.preventDefault()
+  void connect('setup')
+})
+$$('#open-local-studio')?.addEventListener('click', () => localStudioMode('studio'))
+
 function formatBytes(bytes) {
   if (!Number.isFinite(Number(bytes))) return '—'
   const value = Number(bytes)
@@ -1235,14 +1247,7 @@ async function logout() {
   localStudioMode('overview')
 }
 
-$$('#login-form').addEventListener('submit', event => {
-  event.preventDefault()
-  void connect('login')
-})
-$$('#setup-form').addEventListener('submit', event => {
-  event.preventDefault()
-  void connect('setup')
-})
+
 $$('#logout-button').addEventListener('click', () => { void logout() })
 $$('#refresh-button').addEventListener('click', () => {
   Promise.all([refreshStatus(), refreshUpdateStatus()])
@@ -1866,7 +1871,7 @@ async function renderStudioPreview() {
   }
 }
 
-$$('#open-local-studio').addEventListener('click', () => localStudioMode('studio'))
+
 $$('#studio-connect-button').addEventListener('click', () => {
   if (remoteSession) {
     localOnly = false

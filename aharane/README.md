@@ -25,7 +25,7 @@ Aharane uses the official `@whiskeysockets/baileys` package, pinned to `7.0.0-rc
 Aharane runs one bot engine with two independently authenticated WhatsApp sessions:
 
 - **Private session:** the Private Owner's own WhatsApp account. It accepts only registered private commands sent from that account's verified self-chat, using the narrow Account A pattern from MSCC.
-- **Public session:** the public-facing Aharane WhatsApp account. It accepts direct messages only from the Public Owner or explicitly allowlisted public senders.
+- **Public session:** the public-facing Aharane WhatsApp bot account. The Public Owner is the separate sender number you use to message this account; it must not be the bot account's own paired number. The session accepts direct messages only from that owner or explicitly allowlisted public senders.
 - **Owner identities:** Private Owner and Public Owner are separate phone-number identities and must be different. Public `ownerOnly` commands check only the Public Owner. A Private Owner does not inherit public owner privileges.
 - **Commands:** `commands/` and `private-commands/` are separate registries. Public and private commands cannot fall through into one another.
 - **Shared code:** `plugins/`, `lib/`, the bot engine and common configuration remain shared. A shared plugin must still enforce authorization if it registers its own message, event, HTTP or scheduled entry point.

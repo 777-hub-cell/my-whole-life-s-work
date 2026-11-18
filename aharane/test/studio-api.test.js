@@ -183,3 +183,22 @@ test('phone-number pairing uses a canonical browser identity for WhatsApp compan
  const s = await read('../src/index.js')
  assert.ok(s.includes("browser: Browsers.macOS('Chrome')"), 'Pairing code companion display must use a recognized Chrome/Mac OS identity, not the custom Aharane label.')
 })
+
+
+test('Files Manager exposes the real Control Centre website source as editable files', async () => {
+ const s=await read('../src/index.js')
+ assert.ok(s.includes("'control-centre'"), 'The deployed website source directory must be in the source workspace allowlist.')
+ assert.ok(s.includes("'.webmanifest'"), 'The PWA manifest must be editable.')
+ assert.ok(s.includes("'.svg'"), 'The website icon source must be editable.')
+ assert.ok(s.includes("new URL('../control-centre/',import.meta.url)"), 'The Files source and served Studio must resolve from the same project directory.')
+})
+
+test('new and existing file writes are checked against their on-disk contents before success', async () => {
+ const s=await read('../src/index.js')
+ const create=s.slice(s.indexOf("app.post('/api/files'"),s.indexOf("app.put('/api/files/content'"))
+ const update=s.slice(s.indexOf("app.put('/api/files/content'"),s.indexOf("app.post('/api/files/rename'"))
+ assert.ok(create.includes("const savedContent = await readFile(target.full, 'utf8')"))
+ assert.ok(create.includes('if (savedContent !== content)'))
+ assert.ok(update.includes("const savedContent = await readFile(target.full, 'utf8')"))
+ assert.ok(update.includes('if (savedContent !== content)'))
+})

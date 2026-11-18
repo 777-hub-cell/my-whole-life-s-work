@@ -280,7 +280,7 @@ function filesScreenP(){
  const staleBanner=staleDraftBannerP();
  if(S.path[0]==='updates')return staleBanner+packagePageP();
  if(S.ed){
-  return staleBanner+editorOld().replace('id="es">Saved</span>','id="es">Autosave on</span>')+'<div class="btns"><button class="btn" id="prod-file-save">Save now</button><button class="btn" id="prod-file-download">Download</button></div>';
+  return editorOld().replace('id="es">Saved</span>','id="es">Autosave on</span>').replace('<textarea id="ed"','<textarea id="ed"')+staleBanner+'<div class="btns"><button class="btn" id="prod-file-save">Save now</button><button class="btn" id="prod-file-download">Download</button></div>';
  }
  let html=filesBase();
  if(!S.path.length){

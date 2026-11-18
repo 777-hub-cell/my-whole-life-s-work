@@ -99,19 +99,25 @@
           <button class="button button-outline compact-button" data-view="configuration" type="button">Configuration</button>
         </div>
         <section class="home-connection" aria-label="WhatsApp connection">
-          <div class="connection-topline"><span class="field-label">WHATSAPP CONNECTION</span><span class="connection-status-word"><i id="whatsapp-dot" class="connection-dot" aria-label="WhatsApp connection status"></i><strong id="whatsapp-state" class="visually-hidden">Checking…</strong></span></div>
+          <div class="connection-topline"><span class="field-label">PUBLIC WHATSAPP CONNECTION</span><span class="connection-status-word"><i id="whatsapp-dot" class="connection-dot" aria-label="WhatsApp connection status"></i><strong id="whatsapp-state" class="visually-hidden">Checking…</strong></span></div>
           <p id="connection-detail" class="muted">Retrieving Aharane status.</p>
           <div class="home-connection-footer">
             <div class="home-stat"><span>BOT VERSION</span><strong id="bot-version">—</strong></div>
             <div class="home-stat"><span>ALLOWED SENDERS</span><strong id="allowed-senders">—</strong></div>
           </div>
         </section>
-        <div class="section-heading"><h2>WhatsApp account</h2></div>
-        <button class="account-summary-row" type="button" data-view="pairing" aria-label="Manage Aharane WhatsApp pairing">
+        <div class="section-heading"><h2>WhatsApp accounts</h2></div>
+        <button class="account-summary-row" type="button" data-view="pairing" aria-label="Manage private WhatsApp account">
+          <span class="account-avatar">P</span>
+          <span class="account-summary-info"><strong>Private account</strong><small>Private Owner control session</small></span>
+          <span class="account-state-dot" id="home-private-account-dot" aria-label="Private account connection status"></span>
+          <span class="row-action-label">Manage</span>
+        </button>
+        <button class="account-summary-row" type="button" data-view="pairing" aria-label="Manage public WhatsApp account">
           <span class="account-avatar">A</span>
-          <span class="account-summary-info"><strong>Aharane</strong><small>Primary WhatsApp account</small></span>
-          <span class="account-state-dot" id="home-account-dot" aria-label="Connection status"></span>
-          <span class="row-action-label">Manage pairing</span>
+          <span class="account-summary-info"><strong>Public account</strong><small>Public-facing Aharane session</small></span>
+          <span class="account-state-dot" id="home-public-account-dot" aria-label="Public account connection status"></span>
+          <span class="row-action-label">Manage</span>
         </button>
         <div class="section-heading"><h2>Latest deployment</h2><span class="muted">Bot release</span></div>
         <div class="deployment-summary compact-deployment">

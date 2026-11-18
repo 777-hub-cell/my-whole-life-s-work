@@ -394,3 +394,14 @@ test('keeping the server version cancels the failed autosave so it cannot overwr
  assert.ok(keep.includes('fileAutosaveQueuedP.delete(path)'))
  assert.ok(keep.includes('removeFileLocalDraftP(path)'))
 })
+
+test('keeping the server version redraws the editor from the verified server content', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const start=bridge.indexOf('function keepServerFileP()')
+ const end=bridge.indexOf('async function saveLiveFileP()',start)
+ const keep=bridge.slice(start,end)
+ assert.ok(keep.includes('const server=P.fileData.get(path)'))
+ assert.ok(keep.includes('updateSourceMemoryP(path,server.content)'))
+ assert.ok(keep.includes('fileAutosaveQueuedP.delete(path)'))
+ assert.ok(keep.includes('removeFileLocalDraftP(path)'))
+})

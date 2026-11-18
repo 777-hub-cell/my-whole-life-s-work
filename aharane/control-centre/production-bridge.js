@@ -4,7 +4,7 @@ const API='/aharane/api', Q=s=>document.querySelector(s);
 const APP_SOURCE_PATHS=['index.html','styles.css','app.js','production-bridge.js','manifest.webmanifest'];
 const escP=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pack=JSON.stringify;
-const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],fileData:new Map(),pending:false,chatTimer:null,qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false};
+const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],fileData:new Map(),pending:false,chatTimer:null,qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false,visibility:null,visibilityChats:[]};
 function notifyP(s){if(typeof toast==='function')toast(s);else console.info(s)}
 async function apiP(path,options={}){
  const response=await fetch(API+'/'+String(path).replace(/^\/+/,''),{credentials:'same-origin',cache:'no-store',...options,headers:{...(options.body&&!(options.body instanceof ArrayBuffer)&&!(options.body instanceof Blob)?{'Content-Type':'application/json'}:{}),...(options.headers||{})}});
@@ -280,9 +280,40 @@ function mapMessageP(row){
  else if(row.type==='document'){m.f=row.fileName||'Attachment';m.z=fsz(row.size||0);m.dl=row.mediaUrl||''}
  if(row.pushName)m.s=row.pushName;return m;
 }
-async function refreshChatsP(){
+async let visibilityDraftP=null, visibilityChatsDraftP=[];
+function visibilityModeP(filter){return filter?.mode==='selected'?'selected':'all'}
+function visibilityValueP(filter,jid){const override=(filter?.overrides||[]).find(x=>x.jid===jid);return override?override.visible===true:visibilityModeP(filter)==='all'}
+function setVisibilityValueP(filter,jid,visible){filter.overrides=Array.isArray(filter.overrides)?filter.overrides.filter(x=>x.jid!==jid):[];const base=visibilityModeP(filter)==='all';if(visible!==base)filter.overrides.push({jid,visible})}
+async function openChatVisibilityP(){
+ const account=S.cacc==='private'?'private':'public';
+ try{const result=await apiP('chats/'+account+'/visibility');P.visibility=JSON.parse(JSON.stringify(result.visibility||{}));P.visibilityChats=result.chats||[];visibilityDraftP=JSON.parse(JSON.stringify(P.visibility));visibilityChatsDraftP=P.visibilityChats.slice();drawChatVisibilityP(account,'')}
+ catch(error){notifyP(error.message)}
+}
+function drawChatVisibilityP(account,search){
+ const label=account==='private'?'Private':'Public';
+ const individual=visibilityDraftP.individuals||(visibilityDraftP.individuals={mode:'all',overrides:[]});
+ const groups=visibilityDraftP.groups||(visibilityDraftP.groups={mode:'all',overrides:[]});
+ const phrase=String(search||'').toLowerCase();
+ const matches=visibilityChatsDraftP.filter(chat=>(String(chat.name||'')+' '+String(chat.jid||'')).toLowerCase().includes(phrase));
+ const counts={individuals:{shown:0,total:0},groups:{shown:0,total:0}};
+ visibilityChatsDraftP.forEach(chat=>{const kind=chat.kind==='groups'?'groups':'individuals';counts[kind].total++;if(visibilityValueP(kind==='groups'?groups:individual,chat.jid))counts[kind].shown++});
+ const modeControl=(kind,title,filter)=>'<div class="env"><div class="t">'+title+'</div><div class="d" style="white-space:normal;margin:3px 0 9px">'+counts[kind].shown+' of '+counts[kind].total+' known chats shown</div><div class="seg"><button type="button" data-vis-mode="'+kind+':all" class="'+(visibilityModeP(filter)==='all'?'on':'')+'">Show all</button><button type="button" data-vis-mode="'+kind+':selected" class="'+(visibilityModeP(filter)==='selected'?'on':'')+'">Only selected</button></div></div>';
+ const list=matches.length?matches.map(chat=>{
+  const kind=chat.kind==='groups'?'groups':'individuals',filter=kind==='groups'?groups:individual,visible=visibilityValueP(filter,chat.jid);
+  const title=kind==='groups'?'Group · '+String(chat.jid).split('@')[0].slice(-8):(chat.name||chat.jid);
+  return '<label class="row" style="display:flex;align-items:center;gap:12px"><span class="av '+(kind==='groups'?'grp':'')+'">'+(kind==='groups'?ico('grp'):escP(String(chat.name||'?').trim().charAt(0).toUpperCase()))+'</span><span class="grow" style="min-width:0"><span class="t" style="display:block">'+escP(title)+'</span><span class="d" style="display:block">'+(kind==='groups'?'Group chat':escP(chat.jid))+'</span></span><input class="ck" type="checkbox" data-vis-jid="'+escP(chat.jid)+'" data-vis-kind="'+kind+'" '+(visible?'checked':'')+' aria-label="Show '+escP(title)+'"></label>';
+ }).join(''):'<div class="empty">No known conversations match. New chats appear here after Aharane receives a message.</div>';
+ sheet('<h3>Chat visibility · '+label+'</h3><p class="sub">Choose which conversations appear in this account’s Chats tab. These settings do not grant command access.</p><h2 style="margin-top:12px">Individual chats</h2>'+modeControl('individuals','Individual chats',individual)+'<h2 style="margin-top:16px">Group chats</h2>'+modeControl('groups','Group conversations',groups)+'<h2 style="margin-top:16px">Choose conversations</h2><input class="field" id="vis-search" placeholder="Find a chat by name or number" value="'+escP(search)+'"><div class="card list" style="margin-top:10px">'+list+'</div><p class="d" style="white-space:normal;margin:12px 2px">Checked chats are visible. Uncheck a chat to hide it. Hidden chats remain available here so you can show them again later.</p><div class="btns"><button type="button" class="btn" id="vis-cancel">Cancel</button><button type="button" class="btn p" id="vis-save">Save visibility</button></div>');
+ const searchInput=Q('#vis-search');if(searchInput)searchInput.oninput=()=>drawChatVisibilityP(account,searchInput.value);
+ document.querySelectorAll('[data-vis-mode]').forEach(button=>button.onclick=()=>{const parts=button.dataset.visMode.split(':');(parts[0]==='groups'?groups:individual).mode=parts[1];drawChatVisibilityP(account,Q('#vis-search')?.value||search)});
+ document.querySelectorAll('[data-vis-jid]').forEach(input=>input.onchange=()=>{setVisibilityValueP(input.dataset.visKind==='groups'?groups:individual,input.dataset.visJid,input.checked);drawChatVisibilityP(account,Q('#vis-search')?.value||search)});
+ const cancel=Q('#vis-cancel');if(cancel)cancel.onclick=closeSheet;
+ const save=Q('#vis-save');if(save)save.onclick=async()=>{save.disabled=true;save.textContent='Saving…';try{const response=await apiP('chats/'+account+'/visibility',{method:'PUT',body:pack({visibility:visibilityDraftP})});P.visibility=response.visibility||visibilityDraftP;visibilityDraftP=null;visibilityChatsDraftP=[];closeSheet();await refreshChatsP();render();notifyP('Chat visibility saved')}catch(error){save.disabled=false;save.textContent='Save visibility';notifyP(error.message)}};
+}
+
+function refreshChatsP(){
  const account=S.cacc==='private'?'private':'public',r=await apiP('chats/'+account+'?limit=500'),current=P.chatJid;
- CH.splice(0,CH.length,...(r.chats||[]).map(c=>({jid:c.jid,n:c.name||c.jid.split('@')[0],g:false,un:c.unreadCount||0,m:[{d:c.fromMe?'o':'i',t:c.lastMessage||'',ts:c.timestamp||Date.now()}]})));
+ CH.splice(0,CH.length,...(r.chats||[]).map(c=>({jid:c.jid,n:c.name||c.jid.split('@')[0],g:c.group===true||String(c.jid).endsWith('@g.us'),un:c.unreadCount||0,m:[{d:c.fromMe?'o':'i',t:c.lastMessage||'',ts:c.timestamp||Date.now()}]})));
  if(current&&S.chat!==null){const i=CH.findIndex(c=>c.jid===current);if(i>=0)S.chat=i;else S.chat=null}
 }
 async function loadMessagesP(index=S.chat){
@@ -316,6 +347,7 @@ function bindProductionP(){
  const upload=Q('#upl');if(upload)upload.onchange=async e=>{const files=[...e.target.files];e.target.value='';for(const file of files){try{if(/\.zip$/i.test(file.name)){const r=await uploadZipP(file);notifyP('Validated '+file.name+' ('+r.fileCount+' files)')}else{if(!/\.(js|mjs|cjs|json|md|html|css|txt|yml|yaml)$/i.test(file.name))throw new Error('Only approved source and text files can be uploaded.');await apiP('files',{method:'POST',body:pack({parentPath:currentPathP(),name:file.name,type:'file',content:await file.text()})});notifyP('Uploaded '+file.name)}}catch(error){notifyP(error.message)}}await loadTreeP(currentPathP());P.packages=await loadPackagesP();render()};
  const search=Q('#cq');if(search)search.oninput=()=>{S.cq=search.value;const p=search.selectionStart;refreshChatsP().then(()=>{render();const x=Q('#cq');if(x){x.focus();x.setSelectionRange(p,p)}}).catch(e=>notifyP(e.message))};
  const swap=Q('#chsw');if(swap)swap.onclick=switchChatsP;
+ const visibility=Q('#chat-visibility');if(visibility)visibility.onclick=()=>openChatVisibilityP();
  const pair=Q('#prod-pair-code');if(pair)pair.onclick=getPairCodeP;
  const qr=Q('#prod-qr-refresh');if(qr)qr.onclick=readQrP;
  const copy=Q('#prod-copy-code');if(copy)copy.onclick=()=>navigator.clipboard?.writeText(S.pin||'').then(()=>notifyP('Pairing code copied')).catch(()=>notifyP('Select and copy the code'));
@@ -340,6 +372,7 @@ function bindProductionP(){
 }
 function installBridgeP(){
  filesBase=filesV;openFileBase=openF;actBase=actV;moreBase=moreV;homeBase=home;bubBase=bub;
+ const chatsBaseP=chatsV;chatsV=function(){return chatsBaseP().replace('</button></div><p class="sub">','</button><button class="modeb" id="chat-visibility" aria-label="Configure chat visibility">'+ico('cfg')+'</button></div><p class="sub">')};
  filesV=filesScreenP;envV=envViewP;accV=accountViewP;pairV=pairViewP;moreV=moreViewP;storV=storageViewP;
  home=function(){return homeBase().replace(/(<span>Messages handled, last 24 hours<\/span><b>)[\s\S]*?(<\/b>)/,'$1'+Number(P.metrics?.messagesLast24h||0).toLocaleString()+'$2')};
  openAct=activityPageP;openStor=function(){S.sub='stor';render();loadStorageP()};

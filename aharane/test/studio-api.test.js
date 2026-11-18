@@ -54,6 +54,21 @@ test('Files root enumerates the deployed release and exposes only allowlisted so
  assert.ok(fn.includes('row.isSymbolicLink()'))
 })
 
+test('source ZIP export is protected and only includes allowlisted source files', async () => {
+ const s=await read('../src/index.js')
+ const module=await read('../src/source-export.js')
+ const route=s.slice(s.indexOf("app.get('/api/files/export'"),s.indexOf("app.get('/api/files/tree'"))
+ assert.ok(route.includes('requireAdmin'))
+ assert.ok(route.includes('listSourceFiles(directory)'))
+ assert.ok(route.includes('safeSourceTarget(path)'))
+ assert.ok(route.includes("Content-Type', 'application/zip'"))
+ assert.ok(route.includes("Content-Disposition', 'attachment; filename=\\"aharane-source.zip\\"'"))
+ assert.ok(route.includes('createSourceZip(files)'))
+ assert.ok(module.includes('0x04034b50'))
+ assert.ok(module.includes('0x02014b50'))
+ assert.ok(module.includes('0x06054b50'))
+})
+
 test('the supplied Studio preview uses protected same-origin APIs', async () => {
  const html=await read('../control-centre/index.html')
  const bridge=await read('../control-centre/production-bridge.js')

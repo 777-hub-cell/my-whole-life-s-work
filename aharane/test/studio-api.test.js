@@ -32,7 +32,7 @@ test('browser uses same-origin API and WebSocket, not Vercel relay',async()=>{
 test('single-element Studio controls use querySelector rather than querySelectorAll',async()=>{
  const a=await read('../control-centre/app.js')
  assert.ok(a.includes("const $ = selector => document.querySelector(selector)"))
- assert.ok(a.includes("const $ = selector => [...document.querySelectorAll(selector)]"))
+ assert.ok(a.includes('const ' + '$' + ' = selector => [...document.querySelectorAll(selector)]'))
  assert.doesNotMatch(a,/\$\$\(\s*['"]#/,'unique ID selectors must not use the multi-element helper')
  for(const id of ['login-form','setup-form','open-local-studio','login-button','setup-button']) {
    assert.ok(a.includes("$('" + '#' + id + "')"),'single-element selector for ' + id)

@@ -306,6 +306,24 @@ function accountViewP(){
  }).join('');
  return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Accounts</h1><p class="sub">Two independent WhatsApp sessions. Pairing numbers are saved in Configuration.</p><div class="card list">'+rows+'</div><h2>Owner identities</h2><p class="sub">Private Owner controls the Private self-chat. Public Owner controls owner-only commands on the Public bot. The Public bot number is configured separately.</p><div class="card list" style="padding:14px"><label class="d" for="owner-private">Private Owner number</label><input class="field" id="owner-private" value="'+escP(P.owners.privateOwnerNumber||'')+'" inputmode="numeric"><label class="d" for="owner-public" style="display:block;margin-top:12px">Public Owner number</label><input class="field" id="owner-public" value="'+escP(P.owners.publicOwnerNumber||'')+'" inputmode="numeric"><div class="env"><label class="d" for="owner-public-bot">Public bot WhatsApp number</label><input class="field" id="owner-public-bot" value="'+escP(P.owners.publicBotNumber||'')+'" disabled><p class="d" style="white-space:normal;margin-top:6px">Change this under Home → Configuration → Public account.</p></div><label class="d" for="owner-allow" style="display:block;margin-top:12px">Allowed public senders</label><input class="field" id="owner-allow" value="'+escP((P.owners.allowedPublicSenders||[]).join(', '))+'"><div class="btns"><button class="btn p" id="save-owners">Save owner settings</button></div></div>';
 }
+function pairStatusLabelP(a){
+ if(a.connected)return 'Connected';
+ if(a.state==='needs-pairing')return 'Needs re-pairing';
+ if(a.registered)return 'Paired · offline';
+ const labels={'not-paired':'Not paired',pairing:'Waiting for WhatsApp',connecting:'Connecting to WhatsApp',disconnected:'Connection closed',stopped:'Stopped',degraded:'Connection needs attention'};
+ return labels[a.state]||a.state||'Not paired';
+}
+function pairErrorTextP(error){
+ const message=String(error?.message||'Pairing could not be completed.');
+ if(/connection closed/i.test(message))return 'WhatsApp closed the pairing connection. Aharane refreshed the account status; retry when WhatsApp is reachable.';
+ return message;
+}
+async function refreshPairViewAfterFailureP(){
+ const id=accts[S.pi]?.slot==='public'?'public':'private',before=P.runtime?.accounts?.[id]||{};
+ try{await refreshRuntimeP()}catch{}
+ const after=P.runtime?.accounts?.[id]||{};
+ if(S.tab==='home'&&S.sub==='pair'&&(before.state!==after.state||before.registered!==after.registered||before.connected!==after.connected))render();
+}
 function pairViewP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private',a=P.runtime?.accounts?.[id]||{};
  const number=id==='private'?P.owners.privateOwnerNumber:P.owners.publicBotNumber;
@@ -324,13 +342,13 @@ function pairViewP(){
  }else{
   panel='<div class="d" style="text-align:center;margin-bottom:12px">'+label+' · +'+escP(number)+'</div>'+(S.pin?'<div class="pin" style="text-align:center;margin:18px 0"><b>'+escP(S.pin)+'</b></div><p class="d" style="text-align:center;white-space:normal">Enter this code in WhatsApp → Linked devices → Link with phone number.</p><div class="btns" style="justify-content:center"><button class="btn" id="prod-copy-code">Copy code</button><button class="btn" id="prod-pair-code">Request new code</button></div>':'<p class="d" style="text-align:center;white-space:normal">A pairing code will only be requested when you tap below.</p><button class="btn p" id="prod-pair-code" style="width:100%">Get pairing code</button>');
  }
- return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Link '+(id==='public'?'Public':'Private')+' account</h1><p class="sub">'+escP(a.connected?'Connected':a.registered?'Paired · '+(a.state||'Offline'):a.state||'Not paired')+'</p><div class="seg" style="margin-bottom:16px"><button type="button" class="'+(S.pm==='pin'?'on':'')+'" data-pm="pin">Pairing code</button><button type="button" class="'+(S.pm==='qr'?'on':'')+'" data-pm="qr">QR code</button></div><div class="card" style="padding:16px">'+panel+'</div>';
+ return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Link '+(id==='public'?'Public':'Private')+' account</h1><p class="sub">'+pairStatusLabelP(a)+'</p><div class="seg" style="margin-bottom:16px"><button type="button" class="'+(S.pm==='pin'?'on':'')+'" data-pm="pin">Pairing code</button><button type="button" class="'+(S.pm==='qr'?'on':'')+'" data-pm="qr">QR code</button></div><div class="card" style="padding:16px">'+panel+'</div>';
 }
 async function getPairCodeP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private';
  const button=Q('#prod-pair-code');if(button)button.disabled=true;
  try{const r=await apiP('accounts/'+id+'/pair-code',{method:'POST',body:pack({})});S.pin=r.pairingCode;S.qrRequested=false;render()}
- catch(error){notifyP(error.message);if(button)button.disabled=false}
+ catch(error){if(button)button.disabled=false;await refreshPairViewAfterFailureP();notifyP(pairErrorTextP(error))}
 }
 let qrSeenP='';
 async function readQrP(){
@@ -340,25 +358,25 @@ async function readQrP(){
   if(r.qr&&r.qr!==qrSeenP){qrSeenP=r.qr;el.innerHTML=qrSvg(r.qr)}
   else if(!r.qr&&!qrSeenP)el.textContent='Waiting for WhatsApp to generate the QR you requested…';
   if(P.runtime?.accounts?.[id]?.connected){el.textContent='Account connected.';clearInterval(P.qrTimer);P.qrTimer=null}
- }catch(error){if(Q('#prod-qr-panel'))Q('#prod-qr-panel').textContent=error.message;clearInterval(P.qrTimer);P.qrTimer=null}
+ }catch(error){if(Q('#prod-qr-panel'))Q('#prod-qr-panel').textContent=pairErrorTextP(error);clearInterval(P.qrTimer);P.qrTimer=null;await refreshPairViewAfterFailureP()}
 }
 function startQrP(){if(P.qrTimer)clearInterval(P.qrTimer);qrSeenP='';readQrP();P.qrTimer=setInterval(()=>{if(!document.hidden)readQrP()},1800)}
 async function requestQrP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private',button=Q('#prod-qr-request');
  if(button)button.disabled=true;
  try{await apiP('accounts/'+id+'/qr',{method:'POST',body:pack({})});S.pin=null;S.qrRequested=true;render();startQrP()}
- catch(error){notifyP(error.message);if(button)button.disabled=false}
+ catch(error){if(button)button.disabled=false;await refreshPairViewAfterFailureP();notifyP(pairErrorTextP(error))}
 }
 async function repairPairP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private';
  if(!confirm('Back up the existing '+id+' WhatsApp authentication before preparing a new pairing?'))return;
  try{await apiP('accounts/'+id+'/repair',{method:'POST',body:pack({})});S.pin=null;S.qrRequested=false;await refreshRuntimeP();render();notifyP('Session backed up. Nothing was paired yet. Request a pairing code or QR when you are ready.')}
- catch(error){notifyP(error.message)}
+ catch(error){await refreshPairViewAfterFailureP();notifyP(error.message)}
 }
 async function reconnectPairP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private';
  try{await apiP('accounts/'+id+'/reconnect',{method:'POST',body:pack({})});await refreshRuntimeP();render();notifyP('Reconnect requested')}
- catch(error){notifyP(error.message)}
+ catch(error){await refreshPairViewAfterFailureP();notifyP(error.message)}
 }
 async function saveOwnersP(){
  try{const r=await apiP('owners',{method:'PUT',body:pack({privateOwnerNumber:Q('#owner-private').value,publicOwnerNumber:Q('#owner-public').value,publicBotNumber:P.owners.publicBotNumber||'',allowedPublicSenders:Q('#owner-allow').value.split(/[,\s]+/).filter(Boolean)})});P.owners=r.owners;notifyP('Owner identities saved');render()}
@@ -751,7 +769,7 @@ function installBridgeP(){
   const paths=Object.keys(source||{}).map(name=>[...S.path,name].filter(Boolean).join('/'));
   exportSelectionZipP(paths,filename).catch(error=>notifyP(error.message));
  };
- openPairBaseP=openPair;openPair=function(i){if(P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}S.pin=null;S.qrRequested=false;openPairBaseP(i)};
+ openPairBaseP=openPair;openPair=async function(i){if(P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}S.pin=null;S.qrRequested=false;try{await refreshRuntimeP()}catch(error){notifyP('Could not refresh account status: '+error.message)}openPairBaseP(i)};
  const chatsBaseP=chatsV;chatsV=function(){
   const html=chatsBaseP().replace('</button></div><p class="sub">','</button><button class="modeb" id="chat-visibility" aria-label="Configure chat visibility">'+ico('cfg')+'</button></div><p class="sub">');
   return html.replace('<div class="card list">','<div id="chat-search-results">'+chatSearchPanelP()+'</div><div class="card list">');

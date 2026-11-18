@@ -6,7 +6,7 @@ const escP=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'
 const pack=JSON.stringify;
 // Shared preview callbacks replaced by the live production bridge. Keep these
 // bindings declared inside this strict-mode closure before installBridgeP assigns them.
-let filesBase, openFileBase, actBase, moreBase, homeBase, bubBase, openChatBase, bindBase;
+let filesBase, openFileBase, actBase, moreBase, homeBase, bubBase, openChatBase, bindBase, openPairBaseP, drawMsgsBaseP;
 const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],packageError:'',filesError:'',fileMeta:new Map(),fileData:new Map(),pending:false,uploadProgress:null,chatTimer:null,chatRefreshBusy:false,chatSearchTimer:null,chatSearchQuery:'',chatSearchResults:[],chatSearchLoading:false,chatSearchError:'',messageFingerprints:new Map(),qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false,visibility:null,visibilityChats:[]};
 function notifyP(s){if(typeof toast==='function')toast(s);else console.info(s)}
 async function apiP(path,options={}){
@@ -94,7 +94,7 @@ async function refreshRuntimeP(){
  if(S.tab==='home'&&!S.sub){render()}
  else if(S.tab==='home'&&S.sub==='pair'){
   const id=accts[S.pi]?.slot==='public'?'public':'private',current=P.runtime?.accounts?.[id]||{};
-  if(current.connected||current.registered&&previous[id]?.registered!==current.registered){
+  if((current.connected&&!previous[id]?.connected)||(current.registered&&!previous[id]?.registered)){
    S.pin=null;S.qrRequested=false;
    if(P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}
    render();
@@ -262,9 +262,19 @@ function packageMenuP(id,button){
 function accountViewP(){
  const rows=['private','public'].map(id=>{
   const a=P.runtime?.accounts?.[id]||{},state=a.connected?'Connected':a.state||'Offline';
-  return '<div class="row"><span class="av">'+(id==='private'?'P':'A')+'<i class="st av-dot '+(a.connected?'':'off')+'"></i></span><span class="grow"><div class="t">'+(id==='private'?'Private account':'Public account')+'</div><div class="d">'+escP(state)+' · '+(a.registered?'Paired':'Not paired')+'</div></span><button class="btn sm p" data-pair-account="'+id+'">'+(a.connected?'Manage':'Pair')+'</button></div><div class="row" style="padding-left:64px;flex-wrap:wrap"><button class="btn sm" data-account="'+id+'" data-action="reconnect">Reconnect</button><button class="btn sm" data-account="'+id+'" data-action="restart">Restart</button><button class="btn sm" data-account="'+id+'" data-action="stop">Stop</button>'+(a.state==='needs-pairing'?'<button class="btn sm d" data-account="'+id+'" data-action="repair">Re-pair</button>':'')+'</div>';
+  const pairButton=a.connected
+   ?'<button class="btn sm" data-pair-account="'+id+'">Details</button>'
+   :a.state==='needs-pairing'
+    ?'<button class="btn sm d" data-pair-account="'+id+'">Repair</button>'
+    :a.registered
+     ?'<button class="btn sm p" data-account="'+id+'" data-action="reconnect">Reconnect</button>'
+     :'<button class="btn sm p" data-pair-account="'+id+'">Link account</button>';
+  const actions=a.connected
+   ?'<button class="btn sm" data-account="'+id+'" data-action="restart">Restart session</button><button class="btn sm d" data-account="'+id+'" data-action="stop">Stop session</button>'
+   :a.state==='needs-pairing'?'':'';
+  return '<div class="row"><span class="av">'+(id==='private'?'P':'A')+'<i class="st av-dot '+(a.connected?'':'off')+'"></i></span><span class="grow"><div class="t">'+(id==='private'?'Private account':'Public account')+'</div><div class="d">'+escP(state)+' · '+(a.registered?'Paired':'Not paired')+'</div></span>'+pairButton+'</div>'+(actions?'<div class="row" style="padding-left:64px;flex-wrap:wrap">'+actions+'</div>':'');
  }).join('');
- return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Accounts</h1><p class="sub">Two independent WhatsApp sessions. Owner identities are separate.</p><div class="card list">'+rows+'</div><h2>Owner identities</h2><p class="sub">Private Owner controls the private self-chat. Public Owner is a separate sender identity for public owner-only commands.</p><div class="card list" style="padding:14px"><label class="d" for="owner-private">Private Owner number</label><input class="field" id="owner-private" value="'+escP(P.owners.privateOwnerNumber||'')+'" inputmode="numeric"><label class="d" for="owner-public" style="display:block;margin-top:12px">Public Owner number</label><input class="field" id="owner-public" value="'+escP(P.owners.publicOwnerNumber||'')+'" inputmode="numeric"><label class="d" for="owner-allow" style="display:block;margin-top:12px">Allowed public senders</label><input class="field" id="owner-allow" value="'+escP((P.owners.allowedPublicSenders||[]).join(', '))+'"><div class="btns"><button class="btn p" id="save-owners">Save owner settings</button></div></div>';
+ return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Accounts</h1><p class="sub">Two independent WhatsApp sessions. Pairing numbers are saved in Configuration.</p><div class="card list">'+rows+'</div><h2>Owner identities</h2><p class="sub">Private Owner controls the Private self-chat. Public Owner controls owner-only commands on the Public bot. The Public bot number is configured separately.</p><div class="card list" style="padding:14px"><label class="d" for="owner-private">Private Owner number</label><input class="field" id="owner-private" value="'+escP(P.owners.privateOwnerNumber||'')+'" inputmode="numeric"><label class="d" for="owner-public" style="display:block;margin-top:12px">Public Owner number</label><input class="field" id="owner-public" value="'+escP(P.owners.publicOwnerNumber||'')+'" inputmode="numeric"><div class="env"><label class="d" for="owner-public-bot">Public bot WhatsApp number</label><input class="field" id="owner-public-bot" value="'+escP(P.owners.publicBotNumber||'')+'" disabled><p class="d" style="white-space:normal;margin-top:6px">Change this under Home → Configuration → Public account.</p></div><label class="d" for="owner-allow" style="display:block;margin-top:12px">Allowed public senders</label><input class="field" id="owner-allow" value="'+escP((P.owners.allowedPublicSenders||[]).join(', '))+'"><div class="btns"><button class="btn p" id="save-owners">Save owner settings</button></div></div>';
 }
 function pairViewP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private',a=P.runtime?.accounts?.[id]||{};
@@ -611,6 +621,24 @@ function bindProductionP(){
  if(S.tab==='chats'&&!P.chatTimer)P.chatTimer=setInterval(()=>refreshChatsP().then(()=>{if(S.chat!==null)loadMessagesP()}).catch(()=>{}),6000);
  if(S.tab!=='chats'&&P.chatTimer){clearInterval(P.chatTimer);P.chatTimer=null}
 }
+function homeViewP(){
+ const accounts=['private','public'].map(id=>{
+  const a=P.runtime?.accounts?.[id]||{},name=id==='private'?'Private WhatsApp':'Public WhatsApp';
+  const state=a.connected?'Connected':a.state==='needs-pairing'?'Needs re-pairing':a.registered?'Paired · offline':a.state==='not-paired'?'Not paired':a.state||'Starting';
+  const tone=a.connected?'':(a.state==='needs-pairing'?'off':'warn');
+  let action='';
+  if(a.connected)action='<button class="btn sm" data-pair-account="'+id+'">Manage</button><button class="btn sm" data-account="'+id+'" data-action="stop">Stop</button>';
+  else if(a.state==='needs-pairing')action='<button class="btn sm d" data-pair-account="'+id+'">Re-pair</button>';
+  else if(a.registered)action='<button class="btn sm p" data-account="'+id+'" data-action="reconnect">Reconnect</button>';
+  else action='<button class="btn sm p" data-pair-account="'+id+'">Link account</button>';
+  return '<div class="row"><span class="av">'+(id==='private'?'P':'A')+'<i class="st av-dot '+(a.connected?'':'off')+'"></i></span><span class="grow"><div class="t">'+name+'</div><div class="d">'+escP(state)+'</div></span><span class="btns" style="margin:0;gap:6px;flex-wrap:wrap">'+action+'</span></div>';
+ }).join('');
+ const service=P.runtime?'Connected to Aharane service':'Service unavailable';
+ const ownerPrivate=P.owners.privateOwnerNumber?'Configured':'Needs configuration';
+ const ownerPublic=P.owners.publicOwnerNumber?'Configured':'Needs configuration';
+ const publicBot=P.owners.publicBotNumber?'Configured':'Needs configuration';
+ return '<h1>Welcome back</h1><p class="sub">Your Aharane workspace.</p><div class="card" style="padding:16px"><div class="row" style="padding:4px 0"><span class="grow"><div class="t">Aharane service</div><div class="d">'+service+'</div></span><badge class="pill"><span class="dot"></span>Online</badge></div><div class="d" style="white-space:normal;margin-top:8px">Each WhatsApp account has its own connection and controls. An offline account does not stop the other one.</div></div><h2>WhatsApp accounts</h2><div class="card list">'+accounts+'</div><h2>Setup</h2><div class="card list"><button class="row" onclick="openCfg()"><span class="ic">'+ico('cfg')+'</span><span class="grow"><div class="t">Configuration</div><div class="d">Private Owner · '+ownerPrivate+' · Public Owner · '+ownerPublic+' · Public bot number · '+publicBot+'</div></span><span class="d">›</span></button></div><h2>Recent activity</h2><div class="card log" id="log">'+logs.map(l=>'<div><b>'+escP(l[1]||'now')+'</b>  '+escP(l[0])+'</div>').join('')+'</div>';
+}
 function installBridgeP(){
  const configViewBaseP=cfgV;
  cfgV=function(){
@@ -622,14 +650,19 @@ function installBridgeP(){
   if(!cfgD)cfgLoad();
   C=CS[S.cprof];
   C.owner=S.cprof==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicOwnerNumber||'');
+  C.pairingNumber=P.owners.publicBotNumber||'';
   C.prefix=S.cprof==='private'?'.':'!';
   C0=JSON.stringify(C);C0S[S.cprof]=C0;
   S.sub='cfg';render();scrollTo(0,0);
  };
  filesBase=filesV;openFileBase=openF;actBase=actV;moreBase=moreV;homeBase=home;bubBase=bub;
- const chatsBaseP=chatsV;chatsV=function(){return chatsBaseP().replace('</button></div><p class="sub">','</button><button class="modeb" id="chat-visibility" aria-label="Configure chat visibility">'+ico('cfg')+'</button></div><p class="sub">')};
+ openPairBaseP=openPair;openPair=function(i){if(P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}S.pin=null;S.qrRequested=false;openPairBaseP(i)};
+ const chatsBaseP=chatsV;chatsV=function(){
+  const html=chatsBaseP().replace('</button></div><p class="sub">','</button><button class="modeb" id="chat-visibility" aria-label="Configure chat visibility">'+ico('cfg')+'</button></div><p class="sub">');
+  return html.replace('<div class="card list">','<div id="chat-search-results">'+chatSearchPanelP()+'</div><div class="card list">');
+ };
  filesV=filesScreenP;envV=envViewP;accV=accountViewP;pairV=pairViewP;moreV=moreViewP;storV=storageViewP;
- home=function(){return homeBase().replace(/(<span>Messages handled, last 24 hours<\/span><b>)[\s\S]*?(<\/b>)/,'$1'+Number(P.metrics?.messagesLast24h||0).toLocaleString()+'$2')};
+ home=homeViewP;
  openAct=activityPageP;openStor=function(){S.sub='stor';render();loadStorageP()};
  newAcc=function(){notifyP('Aharane uses two separate accounts: Private and Public.')};
  finishPair=function(){refreshRuntimeP().then(render)};
@@ -643,6 +676,7 @@ function installBridgeP(){
   return bubBase(msg,first,last,index);
  };
  openF=openLiveFileP;mk=t=>createLiveFileP(t==='dir'?'folder':'file');menu=fileMenuP;
+ drawMsgsBaseP=drawMsgs;drawMsgs=preserveChatScrollDrawP;
  bindBase=bind;bind=function(){bindBase();bindProductionP()};
  LOGS.splice(0,LOGS.length);logs=[];CH.splice(0,CH.length);chats=[];fs={};S.path=[];envs=[];envDirty=false;
 }
@@ -654,22 +688,14 @@ function injectStyleP(){
 async function bootP(){
  if(navigator.serviceWorker)navigator.serviceWorker.register('/aharane/studio/sw.js',{scope:'/aharane/studio/'}).catch(()=>{});
  try{
-  injectStyleP();
-  installBridgeP();
+  injectStyleP();installBridgeP();
   const auth=await apiP('auth/status');
-  try{
-   await apiP('status');
-   document.body.classList.add('aharane-authenticated');
-   await connectLiveP();
-  }catch{
-   loginPanelP();
-   setLoginModeP(Boolean(auth.setupRequired));
-  }
+  if(auth.setupRequired){loginPanelP();setLoginModeP(true);return}
+  document.body.classList.add('aharane-authenticated');
+  await connectLiveP();
  }catch(error){
-  // Never leave the user with only the boot background if startup breaks.
   try{
-   loginPanelP();
-   setLoginModeP(false);
+   loginPanelP();setLoginModeP(false);
    Q('#prod-auth-message').textContent='Studio startup failed: '+String(error?.message||error);
   }catch{}
  }

@@ -46,6 +46,7 @@ const ADMIN_SETUP_CODE_FILE = join(DATA_DIR, 'admin-setup-code')
 const ADMIN_TOKEN = String(process.env.AHARANE_ADMIN_TOKEN || '')
 const LEGACY_PRIVATE_OWNER_NUMBER = String(process.env.AHARANE_PRIVATE_OWNER_NUMBER || '')
 const LEGACY_PUBLIC_OWNER_NUMBER = String(process.env.AHARANE_PUBLIC_OWNER_NUMBER || process.env.AHARANE_OWNER_NUMBER || '')
+const LEGACY_PUBLIC_BOT_NUMBER = String(process.env.AHARANE_PUBLIC_BOT_NUMBER || '')
 const LEGACY_PUBLIC_ALLOWED_SENDERS = String(process.env.AHARANE_ALLOWED_PUBLIC_SENDERS || process.env.AHARANE_ALLOWED_SENDERS || '')
 const APP_BASE = resolve('/opt/aharane')
 const CURRENT_RELEASE = join(APP_BASE, 'current')
@@ -82,6 +83,7 @@ await mkdir(UPLOADS_DIR, { recursive: true, mode: 0o700 })
 let ownerConfig = await loadOwnerConfig(OWNER_CONFIG_FILE, {
   privateOwnerNumber: LEGACY_PRIVATE_OWNER_NUMBER,
   publicOwnerNumber: LEGACY_PUBLIC_OWNER_NUMBER,
+  publicBotNumber: LEGACY_PUBLIC_BOT_NUMBER,
   allowedPublicSenders: LEGACY_PUBLIC_ALLOWED_SENDERS,
 })
 const chatStore = createChatStore({ dataDir: DATA_DIR, logger })
@@ -296,8 +298,9 @@ function allowPairAttempt(ip) {
 function allowCommand(sender) {
   const now = Date.now()
   const previous = commandTimes.get(sender) || 0
-  const cooldownMs = Math.max(1000, Number(studioSettings?.[sender.split(':')[0]]?.commandCooldown || 1.2) * 1000)
-  if (now - previous < cooldownMs) return false
+  const configuredCooldown = Number(studioSettings?.[sender.split(':')[0]]?.commandCooldown ?? 1.2)
+  const cooldownMs = Number.isFinite(configuredCooldown) ? Math.max(0, configuredCooldown * 1000) : 1200
+  if (cooldownMs > 0 && now - previous < cooldownMs) return false
   commandTimes.set(sender, now)
   if (commandTimes.size > 500) {
     for (const [key, at] of commandTimes) if (now - at > 60_000) commandTimes.delete(key)
@@ -938,6 +941,7 @@ app.put('/api/owners', requireAdmin, async (req, res) => {
     const next = normalizeOwnerConfig({
       privateOwnerNumber: req.body?.privateOwnerNumber,
       publicOwnerNumber: req.body?.publicOwnerNumber,
+      publicBotNumber: req.body?.publicBotNumber,
       allowedPublicSenders: req.body?.allowedPublicSenders,
     })
     // A configured private owner must match the WhatsApp identity paired to
@@ -956,6 +960,9 @@ app.put('/api/owners', requireAdmin, async (req, res) => {
     if (next.publicOwnerNumber && publicBotNumber && next.publicOwnerNumber === publicBotNumber) {
       return res.status(409).json({ ok: false, error: 'Public Owner must be the sender number you use to message the public bot, not the public bot account itself.' })
     }
+    if (next.publicBotNumber && publicBotNumber && next.publicBotNumber !== publicBotNumber) {
+      return res.status(409).json({ ok: false, error: 'Public bot WhatsApp number must match the number already paired to the Public session.' })
+    }
     ownerConfig = await saveOwnerConfig(OWNER_CONFIG_FILE, next)
     publishStudioEvent('owners.updated', {
       privateOwnerConfigured: Boolean(ownerConfig.privateOwnerNumber),
@@ -971,27 +978,26 @@ app.post('/api/accounts/:accountId/pair-code', requireAdmin, async (req, res) =>
   try {
     const accountId = String(req.params.accountId || '').toLowerCase()
     if (!['private', 'public'].includes(accountId)) return res.status(404).json({ ok: false, error: 'Unknown WhatsApp account.' })
+    const session = accountRuntime.get(accountId)
+    if (session.registered || session.state === 'connected') {
+      return res.status(409).json({ ok: false, error: 'This WhatsApp account is already paired. Reconnect it instead of requesting another pairing code.' })
+    }
+    if (session.state === 'needs-pairing') {
+      return res.status(409).json({ ok: false, error: 'WhatsApp rejected the saved session. Choose Re-pair first; Aharane will back it up before creating a new link.' })
+    }
     const ip = String(req.ip || 'local') + ':' + accountId
     if (!allowPairAttempt(ip)) return res.status(429).json({ ok: false, error: 'Pairing rate limit reached for this account; try again later.' })
-    const phoneNumber = normalizePhone(req.body?.phoneNumber)
-    if (!phoneNumber) return res.status(400).json({ ok: false, error: 'Enter a valid international phone number using 7 to 15 digits.' })
-    if (accountId === 'private') {
-      if (!ownerConfig.privateOwnerNumber) {
-        return res.status(409).json({ ok: false, error: 'Save the Private Owner number in Configuration before pairing this account.' })
-      }
-      if (ownerConfig.privateOwnerNumber !== phoneNumber) {
-        return res.status(400).json({ ok: false, error: 'The Private Owner number must match the number you are pairing to the private session.' })
-      }
-    } else {
-      if (!ownerConfig.privateOwnerNumber || !ownerConfig.publicOwnerNumber) {
-        return res.status(409).json({ ok: false, error: 'Save two different owner numbers in Configuration before pairing the Public account.' })
-      }
-      if ([ownerConfig.privateOwnerNumber, ownerConfig.publicOwnerNumber].includes(phoneNumber)) {
-        return res.status(400).json({ ok: false, error: 'The public bot must use its own WhatsApp number, separate from both owner identities.' })
-      }
+    const phoneNumber = accountId === 'private' ? ownerConfig.privateOwnerNumber : ownerConfig.publicBotNumber
+    if (!phoneNumber) {
+      return res.status(409).json({
+        ok: false,
+        error: accountId === 'private'
+          ? 'Save the Private Owner number in Configuration before requesting a pairing code.'
+          : 'Save the Public bot WhatsApp number in Public Configuration before requesting a pairing code.',
+      })
     }
     const pairingCode = await accountRuntime.requestPairingCode(accountId, phoneNumber)
-    res.json({ ok: true, accountId, pairingCode })
+    res.json({ ok: true, accountId, pairingCode, phoneNumber })
   } catch (error) {
     res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Pairing code could not be generated. Check the server connection and retry shortly.') })
   }
@@ -1001,10 +1007,32 @@ app.get('/api/accounts/:accountId/qr', requireAdmin, async (req, res) => {
     const accountId = String(req.params.accountId || '').toLowerCase()
     if (!['private', 'public'].includes(accountId)) return res.status(404).json({ ok: false, error: 'Unknown WhatsApp account.' })
     const session = accountRuntime.get(accountId)
-    if (!session.socket && session.state !== 'needs-pairing') await accountRuntime.start(accountId)
-    res.json({ ok: true, accountId, qr: accountRuntime.pairingQr(accountId) })
+    if (session.registered || session.state === 'connected') {
+      return res.status(409).json({ ok: false, error: 'This WhatsApp account is already paired. Reconnect it instead of requesting a QR code.' })
+    }
+    if (session.state === 'needs-pairing') {
+      return res.status(409).json({ ok: false, error: 'Choose Re-pair before requesting a new QR code.' })
+    }
+    res.json({ ok: true, accountId, qr: accountRuntime.pairingQr(accountId), state: session.state })
   } catch (error) {
     res.status(503).json({ ok: false, error: String(error?.message || 'Could not read the WhatsApp pairing QR.') })
+  }
+})
+app.post('/api/accounts/:accountId/qr', requireAdmin, async (req, res) => {
+  try {
+    const accountId = String(req.params.accountId || '').toLowerCase()
+    if (!['private', 'public'].includes(accountId)) return res.status(404).json({ ok: false, error: 'Unknown WhatsApp account.' })
+    const session = accountRuntime.get(accountId)
+    if (session.registered || session.state === 'connected') {
+      return res.status(409).json({ ok: false, error: 'This WhatsApp account is already paired. Reconnect it instead of requesting a QR code.' })
+    }
+    if (session.state === 'needs-pairing') {
+      return res.status(409).json({ ok: false, error: 'Choose Re-pair before requesting a new QR code.' })
+    }
+    await accountRuntime.start(accountId)
+    res.json({ ok: true, accountId, qr: accountRuntime.pairingQr(accountId), state: accountRuntime.get(accountId).state })
+  } catch (error) {
+    res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not request the WhatsApp pairing QR.') })
   }
 })
 app.post('/api/accounts/:accountId/reconnect', requireAdmin, async (req, res) => {
@@ -1255,6 +1283,18 @@ app.get('/api/chats/:accountId', requireAdmin, async (req, res) => {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not read conversations.') })
   }
 })
+app.get('/api/chats/:accountId/search', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const query = String(req.query.q || '').trim()
+    if (query.length < 2) return res.json({ ok: true, results: [] })
+    if (query.length > 100) return res.status(400).json({ ok: false, error: 'Search text must be 100 characters or fewer.' })
+    const results = await chatStore.searchMessages(accountId, { query, limit: req.query.limit || 60 })
+    res.json({ ok: true, results: results.filter(row => authorizedChat(accountId, row.jid) && isChatVisible(studioSettings[accountId], row.jid)) })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not search stored messages.') })
+  }
+})
 app.get('/api/chats/:accountId/:jid/messages', requireAdmin, async (req, res) => {
   try {
     const accountId = chatAccount(req.params.accountId)
@@ -1430,6 +1470,31 @@ app.get('/api/files/tree', requireAdmin, async (req, res) => {
     res.json({ ok: true, ...result, pending: manual?.status === 'pending', changedCount: manual?.modifiedPaths?.length || 0 })
   } catch (error) {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not list Aharane source files.') })
+  }
+})
+
+app.get('/api/files/download', requireAdmin, async (req, res) => {
+  try {
+    const target = await safeSourceTarget(req.query.item)
+    if (!target.info?.isFile()) return res.status(400).json({ ok: false, error: 'Choose a source file to download.' })
+    if (!SOURCE_EXTENSIONS.has(extname(target.path).toLowerCase()) && !SOURCE_ROOT_FILES.has(target.parts[0])) {
+      return res.status(403).json({ ok: false, error: 'This file type is not available for download.' })
+    }
+    const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024
+    if (target.info.size > MAX_DOWNLOAD_BYTES) return res.status(413).json({ ok: false, error: 'This source file exceeds the 25 MB browser download limit.' })
+    const info = await stat(target.full)
+    if (!info.isFile() || info.size > MAX_DOWNLOAD_BYTES) return res.status(413).json({ ok: false, error: 'The source file changed or exceeds the download limit.' })
+    res.set('Content-Type', 'application/octet-stream')
+    res.set('Content-Length', String(info.size))
+    res.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(target.parts.at(-1))}`)
+    res.set('Cache-Control', 'private, no-store, no-cache, must-revalidate')
+    res.set('X-Content-Type-Options', 'nosniff')
+    createReadStream(target.full).on('error', () => {
+      if (!res.headersSent) res.status(500).json({ ok: false, error: 'Could not stream this source file.' })
+      else res.destroy()
+    }).pipe(res)
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not download this source file.') })
   }
 })
 

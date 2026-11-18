@@ -1693,13 +1693,14 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
       await rm(temporary, { force: true }).catch(() => {})
       throw error
     }
-    await recordManualEdit(target.path, 'modified-file')
+    const manual = await recordManualEdit(target.path, 'modified-file')
     res.json({
       ok: true,
       path: target.path,
       size: Buffer.byteLength(content),
       sha256: createHash('sha256').update(content).digest('hex'),
       pending: true,
+      changedCount: manual.modifiedPaths.length,
     })
   } catch (error) {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not save the source file.') })

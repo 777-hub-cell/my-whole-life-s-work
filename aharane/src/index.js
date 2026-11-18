@@ -10,25 +10,33 @@ import { WebSocket, WebSocketServer } from 'ws'
 import pino from 'pino'
 import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys'
 import {
-  commandResponse,
   isAllowedInbound,
   isSafeMessageUpsert,
   normalizePhone,
   parseAllowedSenders,
+  senderNumberFromJid,
 } from './policy.js'
+import { createAccountRuntime } from './account-runtime.js'
+import { loadCommandRegistry, dispatchCommand } from './command-registry.js'
+import { isPrivateSelfCommand, isPublicOwnerSender } from './authorization.js'
+import { loadOwnerConfig, normalizeOwnerConfig, saveOwnerConfig } from './owner-config.js'
 import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_ARCHIVE_BYTES } from './update-manager.js'
 
 const APP_NAME = 'Aharane'
 const HOST = process.env.AHARANE_HOST || '127.0.0.1'
 const PORT = Number(process.env.AHARANE_PORT || 8790)
 const DATA_DIR = resolve(process.env.AHARANE_DATA_DIR || '/var/lib/aharane')
+// The existing auth directory remains the public session so upgrades do not
+// require moving or re-pairing the current linked device.
 const AUTH_DIR = join(DATA_DIR, 'whatsapp-auth')
+const PRIVATE_AUTH_DIR = join(DATA_DIR, 'whatsapp-auth-private')
+const OWNER_CONFIG_FILE = join(DATA_DIR, 'owner-config.json')
 const ADMIN_AUTH_FILE = join(DATA_DIR, 'admin-auth.json')
 const ADMIN_SETUP_CODE_FILE = join(DATA_DIR, 'admin-setup-code')
 const ADMIN_TOKEN = String(process.env.AHARANE_ADMIN_TOKEN || '')
-const OWNER_NUMBER = String(process.env.AHARANE_OWNER_NUMBER || '')
-const EXTRA_ALLOWED_SENDERS = String(process.env.AHARANE_ALLOWED_SENDERS || '')
-const ALLOWED_SENDERS = parseAllowedSenders([OWNER_NUMBER, EXTRA_ALLOWED_SENDERS].filter(Boolean).join(','))
+const LEGACY_PRIVATE_OWNER_NUMBER = String(process.env.AHARANE_PRIVATE_OWNER_NUMBER || '')
+const LEGACY_PUBLIC_OWNER_NUMBER = String(process.env.AHARANE_PUBLIC_OWNER_NUMBER || process.env.AHARANE_OWNER_NUMBER || '')
+const LEGACY_PUBLIC_ALLOWED_SENDERS = String(process.env.AHARANE_ALLOWED_PUBLIC_SENDERS || process.env.AHARANE_ALLOWED_SENDERS || '')
 const APP_BASE = resolve('/opt/aharane')
 const CURRENT_RELEASE = join(APP_BASE, 'current')
 const RELEASES_DIR = join(APP_BASE, 'releases')
@@ -38,7 +46,7 @@ const UPDATE_STATE_FILE = join(UPDATE_DIR, 'state.json')
 const MANUAL_EDIT_STATE_FILE = join(UPDATE_DIR, 'manual-edit-state.json')
 const UPDATE_CHUNK_BYTES = 1024 * 1024
 const MAX_SOURCE_FILE_BYTES = 512 * 1024
-const SOURCE_DIRS = new Set(['src', 'public', 'scripts', 'test', 'examples'])
+const SOURCE_DIRS = new Set(['src', 'public', 'scripts', 'test', 'examples', 'commands', 'private-commands', 'plugins', 'lib'])
 const SOURCE_ROOT_FILES = new Set(['README.md', 'UPDATE-PACKAGE.md', 'LICENSE', 'AGENTS.md', 'package.json'])
 const SOURCE_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.json', '.md', '.html', '.css', '.txt', '.yml', '.yaml'])
 const execFileAsync = promisify(execFile)
@@ -57,18 +65,18 @@ if (ADMIN_TOKEN.length < 32) {
 
 await mkdir(DATA_DIR, { recursive: true, mode: 0o700 })
 await mkdir(AUTH_DIR, { recursive: true, mode: 0o700 })
+await mkdir(PRIVATE_AUTH_DIR, { recursive: true, mode: 0o700 })
 await mkdir(UPDATE_DIR, { recursive: true, mode: 0o700 })
 await mkdir(UPLOADS_DIR, { recursive: true, mode: 0o700 })
 
-let socket = null
-let socketReady = Promise.resolve()
-let state = 'starting'
-let registered = false
-let reconnectAttempts = 0
-let lastConnectedAt = 0
-let reconnectTimer = null
-let startPromise = null
-let pairRequestActive = false
+let ownerConfig = await loadOwnerConfig(OWNER_CONFIG_FILE, {
+  privateOwnerNumber: LEGACY_PRIVATE_OWNER_NUMBER,
+  publicOwnerNumber: LEGACY_PUBLIC_OWNER_NUMBER,
+  allowedPublicSenders: LEGACY_PUBLIC_ALLOWED_SENDERS,
+})
+let accountRuntime = null
+let publicCommandRegistry = null
+let privateCommandRegistry = null
 let updateInProgress = false
 let shuttingDown = false
 
@@ -78,15 +86,30 @@ const pairAttempts = new Map()
 const studioClients = new Set()
 let studioEventSequence = 0
 
+function publicAllowedSenders() {
+  return parseAllowedSenders([
+    ...(ownerConfig?.allowedPublicSenders || []),
+    ownerConfig?.publicOwnerNumber || '',
+  ].filter(Boolean).join(','))
+}
+
 function studioRuntimeSnapshot() {
+  const runtime = accountRuntime?.snapshot() || {
+    state: 'starting',
+    connected: false,
+    registered: false,
+    reconnectAttempts: 0,
+    lastConnectedAt: null,
+    accounts: {},
+  }
   return {
-    state,
-    connected: state === 'connected',
-    registered,
-    reconnectAttempts,
-    lastConnectedAt: lastConnectedAt || null,
-    allowlistedSenderCount: ALLOWED_SENDERS.size,
+    ...runtime,
+    allowlistedSenderCount: publicAllowedSenders().size,
     groupsEnabled: false,
+    ownerIdentities: {
+      privateOwnerConfigured: Boolean(ownerConfig?.privateOwnerNumber),
+      publicOwnerConfigured: Boolean(ownerConfig?.publicOwnerNumber),
+    },
   }
 }
 

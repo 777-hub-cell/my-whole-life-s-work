@@ -7,7 +7,7 @@ const pack=JSON.stringify;
 // Shared preview callbacks replaced by the live production bridge. Keep these
 // bindings declared inside this strict-mode closure before installBridgeP assigns them.
 let filesBase, openFileBase, actBase, moreBase, homeBase, bubBase, openChatBase, bindBase, openPairBaseP, drawMsgsBaseP;
-const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],packageError:'',filesError:'',fileMeta:new Map(),fileData:new Map(),pending:false,changedCount:0,uploadProgress:null,chatTimer:null,chatRefreshBusy:false,chatSearchTimer:null,chatSearchQuery:'',chatSearchResults:[],chatSearchLoading:false,chatSearchError:'',messageFingerprints:new Map(),qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false,visibility:null,visibilityChats:[]};
+const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],packageError:'',filesError:'',fileMeta:new Map(),fileData:new Map(),pending:false,stale:false,changedCount:0,uploadProgress:null,chatTimer:null,chatRefreshBusy:false,chatSearchTimer:null,chatSearchQuery:'',chatSearchResults:[],chatSearchLoading:false,chatSearchError:'',messageFingerprints:new Map(),qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false,visibility:null,visibilityChats:[]};
 let fileAutosaveTimerP=null,fileAutosaveBusyP=false,fileAutosaveQueuedP=null;
 function notifyP(s){if(typeof toast==='function')toast(s);else console.info(s)}
 async function apiP(path,options={}){
@@ -69,6 +69,7 @@ async function connectLiveP(){
   P.metrics=initial[4].status==='fulfilled'?initial[4].value:{};
   P.activity=initial[5].status==='fulfilled'?(initial[5].value.entries||[]):[];
   P.pending=initial[6].status==='fulfilled'?Boolean(initial[6].value.manualEdits?.pending):false;
+  P.stale=initial[6].status==='fulfilled'?Boolean(initial[6].value.manualEdits?.stale):false;
   if(initial[7].status==='fulfilled'){P.packages=initial[7].value;P.packageError=''}
   else{P.packages=[];P.packageError=initial[7].reason?.message||'Saved packages could not be loaded.'}
   if(initial[8].status==='fulfilled')P.filesError=''
@@ -139,7 +140,7 @@ function updateFileTreeP(path,children){
  }
 }
 window.AharaneFileMeta=path=>P.fileMeta.get(String(path||''))||null;
-async function loadTreeP(path=''){const r=await apiP('files/tree?item='+encodeURIComponent(path));updateFileTreeP(path,r.children||[]);P.pending=Boolean(r.pending);P.changedCount=Number(r.changedCount)||0;return r}
+async function loadTreeP(path=''){const r=await apiP('files/tree?item='+encodeURIComponent(path));updateFileTreeP(path,r.children||[]);P.pending=Boolean(r.pending);P.stale=Boolean(r.stale);P.changedCount=Number(r.changedCount)||0;return r}
 async function loadSourceFileP(path){
  const r=await apiP('files/preview?item='+encodeURIComponent(path));P.fileData.set(path,r);
  const parts=path.split('/'),name=parts.pop();let dir=fs;for(const part of parts)dir=dir[part];dir[name]=r.content;return r;
@@ -236,30 +237,64 @@ async function applyFilesP(){
  try{await apiP('files/apply',{method:'POST',body:pack({confirm:true})});notifyP('Applying staged changes…');await pollUpdateP();await refreshRuntimeP();render()}
  catch(error){notifyP(error.message)}
 }
+async function recoverFilesP(){
+ const editor=Q('#ed');
+ const editorPath=editor?S.cur:'';
+ const editorContent=editor?editor.value:null;
+ const queuedPath=fileAutosaveQueuedP?.path||'';
+ const queuedContent=fileAutosaveQueuedP?.content;
+ const savePath=editorPath||queuedPath;
+ const saveContent=editor?editorContent:queuedContent;
+ if(!confirm('Recover the saved draft onto the current Aharane source? Your staged changes will be kept. The running bot will not be restarted.'))return;
+ try{
+  if(fileAutosaveTimerP){clearTimeout(fileAutosaveTimerP);fileAutosaveTimerP=null}
+  for(let i=0;i<80&&fileAutosaveBusyP;i++)await new Promise(resolve=>setTimeout(resolve,50));
+  fileAutosaveQueuedP=null;
+  const result=await apiP('files/recover',{method:'POST',body:pack({confirm:true})});
+  P.stale=false;P.pending=true;P.changedCount=Number(result.changedCount)||P.changedCount;
+  P.fileData.clear();
+  if(savePath&&saveContent!==null&&saveContent!==undefined){
+   await loadSourceFileP(savePath);
+   scheduleFileAutosaveP(savePath,saveContent,0);
+   await flushFileAutosaveP();
+  }
+  try{await loadTreeP(currentPathP())}
+  catch{S.path=[];await loadTreeP('')}
+  render();
+  notifyP(result.message||'The saved draft was recovered.');
+ }catch(error){notifyP(error.message)}
+}
 async function discardFilesP(){
  if(!confirm('Discard all staged source changes? This cannot be undone. The running Aharane version will not be changed.'))return;
  try{
   await apiP('files/discard',{method:'POST',body:pack({confirm:true})});
-  P.pending=false;P.changedCount=0;
+  P.pending=false;P.stale=false;P.changedCount=0;
   await loadTreeP(currentPathP());render();notifyP('Staged source changes discarded');
  }catch(error){notifyP(error.message)}
 }
+function staleDraftBannerP(){
+ if(!P.stale)return '';
+ return '<div class="note" style="margin:12px 0;padding:12px"><strong>Saved draft is from an older Aharane release.</strong><p class="sub">Your draft is still on the server. Recover it onto the current source before applying it. Recovery keeps your staged file changes and does not restart the bot.</p><div class="btns"><button class="btn p" id="prod-recover-files">Recover draft</button><button class="btn" id="prod-discard-stale-files">Discard draft</button></div></div>';
+}
 function filesScreenP(){
- if(S.path[0]==='updates')return packagePageP();
+ const staleBanner=staleDraftBannerP();
+ if(S.path[0]==='updates')return staleBanner+packagePageP();
  if(S.ed){
-  return editorOld().replace('id="es">Saved</span>','id="es">Autosave on</span>')+'<div class="btns"><button class="btn" id="prod-file-save">Save now</button><button class="btn" id="prod-file-download">Download</button></div>';
+  return editorOld().replace('id="es">Saved</span>','id="es">Autosave on</span>')+staleBanner+'<div class="btns"><button class="btn" id="prod-file-save">Save now</button><button class="btn" id="prod-file-download">Download</button></div>';
  }
  let html=filesBase();
  if(!S.path.length){
   const packages=P.packageError
    ?'<p class="sub" id="package-load-error">Saved ZIP packages unavailable: '+escP(P.packageError)+'</p><div class="btns"><button class="btn sm" id="prod-retry-packages">Retry package list</button></div>'
    :'<p class="sub">'+P.packages.length+' saved ZIP package(s)</p>';
-  const staged=P.pending?'<div class="btns"><button class="btn p" id="prod-apply-files">Apply staged changes</button><button class="btn" id="prod-discard-files">Discard staged changes</button><span class="d">'+P.changedCount+' changed item(s)</span></div>':'';
+  const staged=P.pending?(P.stale
+   ?'<div class="d">'+P.changedCount+' staged item(s) awaiting recovery</div>'
+   :'<div class="btns"><button class="btn p" id="prod-apply-files">Apply staged changes</button><button class="btn" id="prod-discard-files">Discard staged changes</button><span class="d">'+P.changedCount+' changed item(s)</span></div>'):'';
   html+='<h2>Update packages <button class="btn sm" onclick="openPackagePageP()">View all</button></h2>'+packages+staged;
   if(P.filesError)html+='<div class="note">Could not load this folder: '+escP(P.filesError)+' <button class="btn sm" id="prod-retry-files">Retry</button></div>';
   if(P.uploadProgress)html+='<div class="card" style="padding:12px;margin-top:14px"><div class="d" id="prod-upload-label"></div><div class="pbar" style="margin-top:8px"><i id="prod-upload-bar" style="width:0"></i></div></div>';
  }
- return html;
+ return staleBanner+html;
 }
 function filePathP(name){return [currentPathP(),name].filter(Boolean).join('/')}
 async function openLiveFileP(name){const path=filePathP(name);await loadSourceFileP(path);openFileBase(name)}
@@ -716,6 +751,8 @@ function bindProductionP(){
  }
  const save=Q('#prod-file-save');if(save)save.onclick=saveLiveFileP;
  const discard=Q('#prod-discard-files');if(discard)discard.onclick=discardFilesP;
+ const discardStale=Q('#prod-discard-stale-files');if(discardStale)discardStale.onclick=discardFilesP;
+ const recover=Q('#prod-recover-files');if(recover)recover.onclick=recoverFilesP;
  const down=Q('#prod-file-download');if(down)down.onclick=()=>downloadSourceFileP(S.cur,S.cur.split('/').pop()).catch(e=>notifyP(e.message));
  const upload=Q('#upl');if(upload)upload.onchange=async e=>{
   const files=[...e.target.files];e.target.value='';

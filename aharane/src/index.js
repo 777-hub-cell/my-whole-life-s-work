@@ -1932,7 +1932,7 @@ app.post('/api/files', requireAdmin, async (req, res) => {
 })
 
 app.put('/api/files/content', requireAdmin, async (req, res) => {
-  let handle
+  let handle, manual
   try {
     if (updateInProgress) return res.status(409).json({ ok: false, error: 'Aharane is currently deploying. File changes are disabled.' })
     let target = await safeSourceTarget(req.body?.path)
@@ -1974,7 +1974,7 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
         replaced = false
         throw new Error('The saved file failed verification. The previous content was restored.')
       }
-      await recordManualEdit(target.path, 'modified-file')
+      manual = await recordManualEdit(target.path, 'modified-file')
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => {})
       if (replaced) {
@@ -1984,7 +1984,6 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
       }
       throw error
     }
-    const manual = await readJsonFile(MANUAL_EDIT_STATE_FILE)
     res.json({
       ok: true,
       path: target.path,

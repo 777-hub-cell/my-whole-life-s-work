@@ -237,9 +237,11 @@ async function applyFilesP(){
 }
 function filesScreenP(){
  if(S.path[0]==='updates')return packagePageP();
+ if(S.ed){
+  return editorOld()+'<div class="btns"><button class="btn p" id="prod-file-save">Save changes</button><button class="btn" id="prod-file-download">Download</button></div>';
+ }
  let html=filesBase();
- if(S.ed){const end=html.lastIndexOf('</div>');html=html.slice(0,end+6)+'<div class="btns"><button class="btn p" id="prod-file-save">Save changes</button><button class="btn" id="prod-file-download">Download</button></div>'+html.slice(end+6)}
- else if(!S.path.length){
+ if(!S.path.length){
   const packages=P.packageError
    ?'<p class="sub" id="package-load-error">Saved ZIP packages unavailable: '+escP(P.packageError)+'</p><div class="btns"><button class="btn sm" id="prod-retry-packages">Retry package list</button></div>'
    :'<p class="sub">'+P.packages.length+' saved ZIP package(s)</p>';
@@ -652,6 +654,11 @@ function bindProductionP(){
  const env=Q('#prod-save-env');if(env)env.onclick=saveEnvP;
  const saveConfig=Q('#csv');if(saveConfig)saveConfig.onclick=saveConfigP;
  document.querySelectorAll('[data-e]').forEach(input=>input.oninput=()=>{const row=envs[Number(input.dataset.e)];if(row&&!row.readOnly){row.v=input.value;envDirty=true}});
+ const editor=Q('#ed');if(editor)editor.oninput=()=>{
+  const [directory,name]=getFile(S.cur);directory[name]=editor.value;
+  const status=Q('#es');if(status)status.textContent='Unsaved changes';
+  const count=Q('#ec');if(count)count.textContent=editor.value.split('\\n').length+' lines';
+ };
  const save=Q('#prod-file-save');if(save)save.onclick=saveLiveFileP;
  const down=Q('#prod-file-download');if(down)down.onclick=()=>downloadSourceFileP(S.cur,S.cur.split('/').pop()).catch(e=>notifyP(e.message));
  const upload=Q('#upl');if(upload)upload.onchange=async e=>{

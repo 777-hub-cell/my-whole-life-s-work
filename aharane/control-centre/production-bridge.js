@@ -252,13 +252,20 @@ function filesScreenP(){
 function filePathP(name){return [currentPathP(),name].filter(Boolean).join('/')}
 async function openLiveFileP(name){const path=filePathP(name);await loadSourceFileP(path);openFileBase(name)}
 async function saveLiveFileP(){
- const data=P.fileData.get(S.cur),editor=Q('#ed');if(!data||!editor)return;
+ const data=P.fileData.get(S.cur),editor=Q('#ed');
+ if(!data||!editor){notifyP('Could not find the open file editor. Reopen the file and try again.');return}
+ const content=editor.value;
+ if(!content&&data.content&&!confirm('This will replace the existing file with an empty file. Continue?'))return;
  const button=Q('#prod-file-save');if(button)button.disabled=true;
  try{
-  const r=await apiP('files/content',{method:'PUT',body:pack({path:S.cur,content:editor.value,expectedSha256:data.sha256})});
-  data.content=editor.value;data.sha256=r.sha256;data.size=r.size;
-  const parts=S.cur.split('/'),name=parts.pop();let dir=fs;for(const p of parts)dir=dir[p];dir[name]=editor.value;
-  Q('#es').textContent='Saved (staged)';P.pending=true;notifyP('File saved to staged changes');
+  const r=await apiP('files/content',{method:'PUT',body:pack({path:S.cur,content,expectedSha256:data.sha256})});
+  const verified=await apiP('files/preview?item='+encodeURIComponent(S.cur));
+  if(verified.content!==content||verified.sha256!==r.sha256)throw new Error('The server accepted the save but the file did not match when read back. Do not leave this page yet; retry saving.');
+  P.fileData.set(S.cur,verified);
+  const parts=S.cur.split('/'),name=parts.pop();let dir=fs;for(const p of parts)dir=dir[p];dir[name]=verified.content;
+  const status=Q('#es');if(status)status.textContent='Saved and verified (staged)';
+  const count=Q('#ec');if(count)count.textContent=content.split('\\n').length+' lines';
+  P.pending=true;notifyP('File saved and verified on the server');
  }catch(error){notifyP(error.message)}finally{if(button)button.disabled=false}
 }
 function createLiveFileP(type){

@@ -52,6 +52,7 @@ function normalizeProfile(value = {}, scope) {
     prefix: scope === 'private' ? '.' : '!',
     commandCooldown: Math.round(cooldown * 10) / 10,
     welcomeMessage: String(value.welcomeMessage ?? '').slice(0, 1000),
+    chatVisibility: normalizeChatVisibility(value.chatVisibility || {}),
   }
   for (const key of booleanKeys) profile[key] = value[key] === true
   if (scope === 'private') {

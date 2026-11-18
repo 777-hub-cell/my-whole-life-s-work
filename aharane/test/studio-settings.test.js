@@ -19,6 +19,21 @@ test('studio settings persist isolated fixed command prefixes and redact no serv
     assert.equal(next.private.autoRead, true)
     assert.equal(next.private.showTyping, false)
     assert.equal(next.public.commandCooldown, 4)
+    const direct = '2348012345678@s.whatsapp.net'
+    const group = '120363000000000000-1234567890@g.us'
+    next.private.chatVisibility = normalizeChatVisibility({
+      individuals: { mode: 'selected', overrides: [{ jid: direct, visible: true }] },
+      groups: { mode: 'all', overrides: [{ jid: group, visible: false }] },
+    })
+    const withVisibility = await saveStudioSettings(file, next)
+    assert.equal(isChatVisible(withVisibility.private, direct), true)
+    assert.equal(isChatVisible(withVisibility.private, '2348099999999@s.whatsapp.net'), false)
+    assert.equal(isChatVisible(withVisibility.private, group), false)
+    const persisted = await loadStudioSettings(file)
+    assert.equal(isChatVisible(persisted.private, direct), true)
+    assert.equal(isChatVisible(persisted.private, '2348099999999@s.whatsapp.net'), false)
+    assert.equal(isChatVisible(persisted.private, group), false)
+
     assert.equal((await loadStudioSettings(file)).private.botName, 'Private Aharane')
     const rows = envView(next)
     assert.ok(rows.some(row => row.key === 'PRIVATE_COMMAND_PREFIX' && row.value === '.'))

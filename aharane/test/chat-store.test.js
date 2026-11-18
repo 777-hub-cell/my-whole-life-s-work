@@ -54,3 +54,22 @@ test('outgoing attachments are retained for conversation history', async () => {
     assert.equal((await store.getMedia('public', 'sent-1')).size, 5)
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
+
+test('chat store preserves LID-addressed inbox messages as distinct conversations', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-lid-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '123456789012345@lid'
+    await store.recordMessage({
+      sessionId: 'private',
+      message: { key: { id: 'lid-message-1', remoteJid: jid, fromMe: false }, pushName: 'Private contact', messageTimestamp: 1760000010, message: { conversation: 'LID inbox message' } },
+    })
+    const chats = await store.listChats('private')
+    assert.equal(chats.length, 1)
+    assert.equal(chats[0].jid, jid)
+    const messages = await store.getMessages('private', jid)
+    assert.equal(messages.length, 1)
+    assert.equal(messages[0].text, 'LID inbox message')
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})

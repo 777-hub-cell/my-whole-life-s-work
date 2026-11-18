@@ -24,6 +24,8 @@ export function createAccountRuntime({
   loadAuthState,
   makeSocket,
   onMessages = async () => {},
+  onCalls = async () => {},
+  onConnection = async () => {},
   publish = () => {},
   logger = console,
   loggedOutCode = 401,
@@ -190,6 +192,7 @@ export function createAccountRuntime({
       })
 
       currentSocket.ev.on('connection.update', update => {
+        Promise.resolve(onConnection({ sessionId: id, socket: currentSocket, update })).catch(error => logger.warn?.({ event: 'whatsapp.connection-hook-failed', accountId: id, error: String(error?.message || error) }))
         if (update?.qr) session.qr = String(update.qr)
         if (update?.connection === 'open' || update?.connection === 'close') session.qr = ''
         if (update?.qr || update?.connection === 'connecting' || update?.connection === 'open') {
@@ -226,6 +229,11 @@ export function createAccountRuntime({
           emit()
           scheduleReconnect(id)
         }
+      })
+
+      currentSocket.ev.on('call', calls => {
+        if (session.socket !== currentSocket || session.manuallyStopped || shuttingDown) return
+        Promise.resolve(onCalls({ sessionId: id, socket: currentSocket, calls })).catch(error => logger.warn?.({ event: 'whatsapp.call-hook-failed', accountId: id, error: String(error?.message || error) }))
       })
 
       currentSocket.ev.on('messages.upsert', event => {

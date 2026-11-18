@@ -316,6 +316,23 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return record
   }
 
+  async function metrics() {
+    const now = Date.now(), hourlyMessages = Array(24).fill(0)
+    let messagesLast24h = 0, totalMessages = 0
+    for (const id of ACCOUNTS) {
+      const rows = await readRows(id)
+      totalMessages += rows.length
+      for (const row of rows) {
+        const age = now - Number(row.timestamp || 0)
+        if (age < 0 || age >= 24 * 60 * 60 * 1000) continue
+        messagesLast24h += 1
+        const bucket = 23 - Math.min(23, Math.floor(age / (60 * 60 * 1000)))
+        hourlyMessages[bucket] += 1
+      }
+    }
+    return { messagesLast24h, totalMessages, hourlyMessages }
+  }
+
   async function mediaUsage() {
     await init()
     let total = 0, count = 0
@@ -336,5 +353,5 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return { bytes: total, files: count }
   }
 
-  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, hasConversation, getMedia, markRead, mediaUsage }
+  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, hasConversation, getMedia, markRead, mediaUsage, metrics }
 }

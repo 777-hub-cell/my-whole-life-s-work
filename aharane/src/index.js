@@ -27,6 +27,7 @@ import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, envVie
 import { createActivityStore } from './activity-store.js'
 
 const APP_NAME = 'Aharane'
+const PROCESS_STARTED_AT = Date.now()
 
 const PRIVATE_COMMAND_PREFIX = '.'
 const PUBLIC_COMMAND_PREFIX = '!'
@@ -697,6 +698,7 @@ async function handleMessages(sessionId, currentSocket, event) {
       const privateChatNumber = senderNumberFromJid(remoteJid)
       if (message.key.fromMe !== true || !ownerConfig.privateOwnerNumber || privateOwnNumber !== ownerConfig.privateOwnerNumber || privateChatNumber !== ownerConfig.privateOwnerNumber) continue
       await chatStore.recordMessage({ sessionId, message, socket: currentSocket, downloadMedia: (msg, socket) => downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: socket.updateMediaMessage }) })
+      if (studioSettings.private.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
       privateControl = isPrivateSelfCommand({
         sessionId,
         message,
@@ -718,7 +720,13 @@ async function handleMessages(sessionId, currentSocket, event) {
         fromMe: false,
         allowedSenders: publicAllowedSenders(),
       })) continue
+      const firstConversationMessage = !await chatStore.hasConversation(sessionId, remoteJid)
       await chatStore.recordMessage({ sessionId, message, socket: currentSocket, downloadMedia: (msg, socket) => downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: socket.updateMediaMessage }) })
+      if (studioSettings.public.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
+      if (firstConversationMessage && studioSettings.public.welcomeMessage) {
+        const welcome = await currentSocket.sendMessage(remoteJid, { text: studioSettings.public.welcomeMessage })
+        await chatStore.recordMessage({ sessionId, message: welcome, socket: currentSocket })
+      }
       registry = publicCommandRegistry
       isPublicOwner = isPublicOwnerSender({
         sessionId,
@@ -745,9 +753,14 @@ async function handleMessages(sessionId, currentSocket, event) {
           isPrivateOwner: privateControl,
           isPublicOwner,
           reply: async value => {
-            const sent = await currentSocket.sendMessage(remoteJid, { text: String(value) }, { quoted: message })
-            await chatStore.recordMessage({ sessionId, message: sent, socket: currentSocket })
-            return sent
+            if (studioSettings[sessionId].showTyping) await currentSocket.sendPresenceUpdate('composing', remoteJid).catch(() => {})
+            try {
+              const sent = await currentSocket.sendMessage(remoteJid, { text: String(value) }, { quoted: message })
+              await chatStore.recordMessage({ sessionId, message: sent, socket: currentSocket })
+              return sent
+            } finally {
+              if (studioSettings[sessionId].showTyping) await currentSocket.sendPresenceUpdate('paused', remoteJid).catch(() => {})
+            }
           },
         },
       })
@@ -779,6 +792,17 @@ accountRuntime = createAccountRuntime({
   onMessages: ({ sessionId, socket: currentSocket, event }) =>
     handleMessages(sessionId, currentSocket, event),
   publish: () => publishStudioEvent('whatsapp.status', studioRuntimeSnapshot()),
+  onCalls: async ({ sessionId, socket, calls }) => {
+    if (!studioSettings[sessionId].rejectCalls || !Array.isArray(calls)) return
+    for (const call of calls) {
+      if (call?.id && call?.from) await socket.rejectCall(call.id, call.from).catch(() => {})
+    }
+  },
+  onConnection: async ({ sessionId, socket, update }) => {
+    if (update?.connection === 'open' && socket?.sendPresenceUpdate) {
+      await socket.sendPresenceUpdate(studioSettings[sessionId].alwaysOnline ? 'available' : 'unavailable').catch(() => {})
+    }
+  },
   logger,
 })
 
@@ -883,6 +907,8 @@ app.get('/api/studio/snapshot', requireAdmin, async (_req, res) => {
     currentVersion: await currentBotVersion(),
     update: await currentUpdateState(),
     serverTime: new Date().toISOString(),
+    processStartedAt: new Date(PROCESS_STARTED_AT).toISOString(),
+    uptimeSeconds: Math.max(0, Math.floor((Date.now() - PROCESS_STARTED_AT) / 1000)),
   })
 })
 app.get('/api/accounts', requireAdmin, (_req, res) => {
@@ -1147,6 +1173,10 @@ app.put('/api/env', requireAdmin, async (req, res) => {
       next[scope][setting] = value
     }
     studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings(next))
+    for (const accountId of ['private', 'public']) {
+      const socket = accountRuntime.get(accountId).socket
+      if (socket?.sendPresenceUpdate) await socket.sendPresenceUpdate(studioSettings[accountId].alwaysOnline ? 'available' : 'unavailable').catch(() => {})
+    }
     publishStudioEvent('settings.updated', { private: true, public: true })
     res.json({ ok: true, env: envView(studioSettings), settings: studioSettings })
   } catch (error) {
@@ -1157,6 +1187,10 @@ app.get('/api/settings', requireAdmin, (_req, res) => res.json({ ok: true, setti
 app.put('/api/settings', requireAdmin, async (req, res) => {
   try {
     studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings(req.body?.settings || {}))
+    for (const accountId of ['private', 'public']) {
+      const socket = accountRuntime.get(accountId).socket
+      if (socket?.sendPresenceUpdate) await socket.sendPresenceUpdate(studioSettings[accountId].alwaysOnline ? 'available' : 'unavailable').catch(() => {})
+    }
     publishStudioEvent('settings.updated', { private: true, public: true })
     res.json({ ok: true, settings: studioSettings })
   } catch (error) {
@@ -1239,6 +1273,9 @@ app.get('/api/chats/:accountId/media/:messageId', requireAdmin, async (req, res)
   } catch (error) {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not open the attachment.') })
   }
+})
+app.get('/api/metrics', requireAdmin, async (_req, res) => {
+  res.json({ ok: true, ...(await chatStore.metrics()) })
 })
 app.get('/api/activity', requireAdmin, async (req, res) => {
   const entries = await activityStore.list({ limit: req.query.limit, level: req.query.level, query: req.query.q })
@@ -1396,6 +1433,57 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not save the source file.') })
   } finally {
     await handle?.close().catch(() => {})
+  }
+})
+
+
+app.post('/api/files/rename', requireAdmin, async (req, res) => {
+  try {
+    if (updateInProgress) return res.status(409).json({ ok: false, error: 'Aharane is currently deploying. File changes are disabled.' })
+    const sourcePath = String(req.body?.path || '')
+    const name = String(req.body?.name || '').trim()
+    const source = await safeSourceTarget(sourcePath)
+    if (source.parts.length < 2) return res.status(403).json({ ok: false, error: 'Root project folders and protected root files cannot be renamed.' })
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/.test(name) || name.startsWith('.')) return res.status(400).json({ ok: false, error: 'Use a simple file or folder name.' })
+    const parentPath = source.parts.slice(0, -1).join('/')
+    const parent = await safeSourceTarget(parentPath)
+    const destinationPath = parent.path + '/' + name
+    if (destinationPath === source.path) return res.json({ ok: true, path: source.path, pending: false })
+    const existing = await safeSourceTarget(destinationPath, { allowMissing: true })
+    if (existing.info) return res.status(409).json({ ok: false, error: 'A file or folder with that name already exists.' })
+    await ensureManualEditBackup()
+    const currentSource = await safeSourceTarget(source.path)
+    const currentDestination = await safeSourceTarget(destinationPath, { allowMissing: true })
+    await rename(currentSource.full, currentDestination.full)
+    await recordManualEdit(currentSource.path, 'renamed-from')
+    await recordManualEdit(destinationPath, 'renamed-to')
+    res.json({ ok: true, path: destinationPath, pending: true })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not rename the selected source item.') })
+  }
+})
+app.post('/api/files/move', requireAdmin, async (req, res) => {
+  try {
+    if (updateInProgress) return res.status(409).json({ ok: false, error: 'Aharane is currently deploying. File changes are disabled.' })
+    const source = await safeSourceTarget(String(req.body?.path || ''))
+    if (source.parts.length < 2) return res.status(403).json({ ok: false, error: 'Root project folders and protected root files cannot be moved.' })
+    const parent = await safeSourceTarget(String(req.body?.destination || ''))
+    if (!parent.info?.isDirectory()) return res.status(400).json({ ok: false, error: 'Choose an existing destination folder.' })
+    if (parent.full === source.full || parent.full.startsWith(source.full + sep)) return res.status(400).json({ ok: false, error: 'A folder cannot be moved inside itself.' })
+    const destinationPath = parent.path + '/' + source.parts.at(-1)
+    const existing = await safeSourceTarget(destinationPath, { allowMissing: true })
+    if (existing.info) return res.status(409).json({ ok: false, error: 'The destination already contains an item with that name.' })
+    await ensureManualEditBackup()
+    const currentSource = await safeSourceTarget(source.path)
+    const currentParent = await safeSourceTarget(parent.path)
+    const currentDestination = await safeSourceTarget(destinationPath, { allowMissing: true })
+    if (currentParent.full === currentSource.full || currentParent.full.startsWith(currentSource.full + sep)) return res.status(400).json({ ok: false, error: 'A folder cannot be moved inside itself.' })
+    await rename(currentSource.full, currentDestination.full)
+    await recordManualEdit(currentSource.path, 'moved-from')
+    await recordManualEdit(destinationPath, 'moved-to')
+    res.json({ ok: true, path: destinationPath, pending: true })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not move the selected source item.') })
   }
 })
 

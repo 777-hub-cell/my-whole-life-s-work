@@ -31,7 +31,7 @@ let studioAppSourcePath = 'index.html'
 let studioAppSourceOriginal = ''
 
 function showMessage(target, message, kind = '') {
-  const element = typeof target === 'string' ? $(target) : target
+  const element = typeof target === 'string' ? $$(target) : target
   if (!element) return
   element.textContent = message || ''
   element.className = 'message' + (kind ? ' ' + kind : '')
@@ -77,7 +77,7 @@ function setView(name) {
   $$('.view-section').forEach(section => { section.hidden = section.id !== 'view-' + name })
   $$('.nav-item[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === name))
   $$('.bottom-nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === name))
-  $('#page-name').textContent = titles[name] || 'Overview'
+  $$('#page-name').textContent = titles[name] || 'Overview'
   if (name === 'studio') loadStudioFiles().catch(error => showMessage('#studio-message', error.message, 'error'))
   if (!localOnly && name === 'overview') { refreshStatus().catch(error => showMessage('#overview-message', error.message, 'error')); refreshUpdateStatus().catch(() => {}); }
   if (!localOnly && name === 'deploy') refreshUpdateStatus().catch(error => showMessage('#deploy-message', error.message, 'error'))
@@ -114,15 +114,15 @@ async function verifyRemoteAccess(viewName) {
 }
 
 function setLiveLinkState(label, state = '') {
-  const pill = $('#live-link-pill')
+  const pill = $$('#live-link-pill')
   if (!pill) return
   pill.classList.toggle('ok', state === 'connected')
   pill.classList.toggle('bad', state === 'error')
-  $('#live-link-label').textContent = label
+  $$('#live-link-label').textContent = label
 }
 
 function addLiveActivity(label, kind = '') {
-  const list = $('#live-activity-list')
+  const list = $$('#live-activity-list')
   if (!list) return
   const empty = list.querySelector('.muted')
   if (empty) list.replaceChildren()
@@ -142,20 +142,20 @@ function addLiveActivity(label, kind = '') {
 function applyLiveRuntime(snapshot) {
   if (!snapshot || typeof snapshot !== 'object') return
   const online = snapshot.state === 'connected'
-  $('#service-pill')?.classList.toggle('ok', online)
-  $('#service-pill')?.classList.toggle('bad', ['degraded', 'needs-pairing', 'disconnected'].includes(snapshot.state))
-  if ($('#service-pill-label')) $('#service-pill-label').textContent = online ? 'Connected' : 'Aharane ' + String(snapshot.state || 'unknown')
-  if ($('#whatsapp-state')) $('#whatsapp-state').textContent = snapshot.connected ? 'Connected' : snapshot.state || 'Unknown'
-  if ($('#whatsapp-dot')) {
-    $('#whatsapp-dot').classList.toggle('connected', Boolean(snapshot.connected))
-    $('#whatsapp-dot').classList.toggle('offline', !snapshot.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(snapshot.state))
+  $$('#service-pill')?.classList.toggle('ok', online)
+  $$('#service-pill')?.classList.toggle('bad', ['degraded', 'needs-pairing', 'disconnected'].includes(snapshot.state))
+  if ($$('#service-pill-label')) $$('#service-pill-label').textContent = online ? 'Connected' : 'Aharane ' + String(snapshot.state || 'unknown')
+  if ($$('#whatsapp-state')) $$('#whatsapp-state').textContent = snapshot.connected ? 'Connected' : snapshot.state || 'Unknown'
+  if ($$('#whatsapp-dot')) {
+    $$('#whatsapp-dot').classList.toggle('connected', Boolean(snapshot.connected))
+    $$('#whatsapp-dot').classList.toggle('offline', !snapshot.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(snapshot.state))
   }
-  if ($('#allowed-senders')) $('#allowed-senders').textContent = String(snapshot.allowlistedSenderCount ?? '—')
-  if ($('#account-status-text')) $('#account-status-text').textContent = snapshot.connected ? 'Connected' : (snapshot.state || 'Not connected')
-  if ($('#home-account-dot')) $('#home-account-dot').classList.toggle('connected', Boolean(snapshot.connected))
-  if ($('#account-status-dot')) $('#account-status-dot').classList.toggle('connected', Boolean(snapshot.connected))
-  if ($('#connection-detail')) {
-    $('#connection-detail').textContent = snapshot.connected
+  if ($$('#allowed-senders')) $$('#allowed-senders').textContent = String(snapshot.allowlistedSenderCount ?? '—')
+  if ($$('#account-status-text')) $$('#account-status-text').textContent = snapshot.connected ? 'Connected' : (snapshot.state || 'Not connected')
+  if ($$('#home-account-dot')) $$('#home-account-dot').classList.toggle('connected', Boolean(snapshot.connected))
+  if ($$('#account-status-dot')) $$('#account-status-dot').classList.toggle('connected', Boolean(snapshot.connected))
+  if ($$('#connection-detail')) {
+    $$('#connection-detail').textContent = snapshot.connected
       ? ''
       : snapshot.registered ? 'The saved WhatsApp session is not currently connected.' : 'This Aharane instance has not completed WhatsApp pairing.'
   }
@@ -230,40 +230,40 @@ function connectStudioSocket() {
 
 async function refreshStatus() {
   const status = await api('status')
-  const pill = $('#service-pill')
+  const pill = $$('#service-pill')
   const online = status.state === 'connected'
   pill.classList.toggle('ok', online)
   pill.classList.toggle('bad', ['degraded', 'needs-pairing', 'disconnected'].includes(status.state))
-  $('#service-pill-label').textContent = online ? 'Connected' : 'Aharane ' + String(status.state || 'unknown')
-  $('#whatsapp-state').textContent = status.connected ? 'Connected' : status.state || 'Unknown'
-  $('#whatsapp-dot').classList.toggle('connected', status.connected)
-  $('#whatsapp-dot').classList.toggle('offline', !status.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(status.state))
-  $('#connection-detail').textContent = status.connected
+  $$('#service-pill-label').textContent = online ? 'Connected' : 'Aharane ' + String(status.state || 'unknown')
+  $$('#whatsapp-state').textContent = status.connected ? 'Connected' : status.state || 'Unknown'
+  $$('#whatsapp-dot').classList.toggle('connected', status.connected)
+  $$('#whatsapp-dot').classList.toggle('offline', !status.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(status.state))
+  $$('#connection-detail').textContent = status.connected
     ? ''
     : status.registered ? 'The saved WhatsApp session is not currently connected.' : 'This Aharane instance has not completed WhatsApp pairing.'
-  $('#allowed-senders').textContent = String(status.allowlistedSenderCount ?? '—')
-  if ($('#account-status-text')) $('#account-status-text').textContent = status.connected ? 'Connected' : (status.state || 'Not connected')
-  if ($('#home-account-dot')) $('#home-account-dot').classList.toggle('connected', Boolean(status.connected))
-  if ($('#account-status-dot')) $('#account-status-dot').classList.toggle('connected', Boolean(status.connected))
+  $$('#allowed-senders').textContent = String(status.allowlistedSenderCount ?? '—')
+  if ($$('#account-status-text')) $$('#account-status-text').textContent = status.connected ? 'Connected' : (status.state || 'Not connected')
+  if ($$('#home-account-dot')) $$('#home-account-dot').classList.toggle('connected', Boolean(status.connected))
+  if ($$('#account-status-dot')) $$('#account-status-dot').classList.toggle('connected', Boolean(status.connected))
   return status
 }
 
 async function refreshUpdateStatus() {
   const status = await api('update/status')
-  $('#bot-version').textContent = status.currentVersion || '—'
+  $$('#bot-version').textContent = status.currentVersion || '—'
   const update = status.update || { status: 'idle' }
-  $('#last-update-status').textContent = update.status || 'No update recorded'
-  $('#last-update-version').textContent = update.version || '—'
-  $('#last-update-date').textContent = formatDate(update.finishedAt || update.startedAt)
-  $('#deployment-state').textContent = update.status || 'idle'
-  $('#deployment-version').textContent = update.version || '—'
-  $('#deployment-finished').textContent = formatDate(update.finishedAt)
+  $$('#last-update-status').textContent = update.status || 'No update recorded'
+  $$('#last-update-version').textContent = update.version || '—'
+  $$('#last-update-date').textContent = formatDate(update.finishedAt || update.startedAt)
+  $$('#deployment-state').textContent = update.status || 'idle'
+  $$('#deployment-version').textContent = update.version || '—'
+  $$('#deployment-finished').textContent = formatDate(update.finishedAt)
   return update
 }
 
 async function refreshPackages() {
   const result = await api('files/packages')
-  const list = $('#package-list')
+  const list = $$('#package-list')
   list.replaceChildren()
   if (!result.packages?.length) {
     const empty = document.createElement('p')
@@ -345,7 +345,7 @@ function chatTimeLabel(value) {
 }
 
 function renderChatList(chats) {
-  const target = $('#chat-list')
+  const target = $$('#chat-list')
   if (!target) return
   target.replaceChildren()
   if (!Array.isArray(chats) || !chats.length) {
@@ -400,7 +400,7 @@ function renderChatList(chats) {
 }
 
 function renderChatMessages(messages) {
-  const target = $('#chat-thread-messages')
+  const target = $$('#chat-thread-messages')
   if (!target) return
   target.replaceChildren()
   if (!Array.isArray(messages) || !messages.length) {
@@ -489,9 +489,9 @@ function openChatThread(chat) {
   activeChat = chat
   activeChatMessages = Array.isArray(chat.messages) ? chat.messages : []
   const name = String(chat.name || chat.phone || 'WhatsApp chat')
-  $('#chat-thread-name').textContent = name
-  $('#chat-thread-presence').textContent = chat.statusText || 'WhatsApp conversation'
-  const avatar = $('#chat-thread-avatar')
+  $$('#chat-thread-name').textContent = name
+  $$('#chat-thread-presence').textContent = chat.statusText || 'WhatsApp conversation'
+  const avatar = $$('#chat-thread-avatar')
   avatar.replaceChildren()
   const imageUrl = safeChatMediaUrl(chat.avatarUrl)
   if (imageUrl) {
@@ -500,15 +500,15 @@ function openChatThread(chat) {
     image.alt = ''
     avatar.append(image)
   } else avatar.textContent = name.trim().charAt(0).toUpperCase() || '?'
-  $('#chat-thread-message').textContent = ''
-  $('#chat-message-input').value = ''
+  $$('#chat-thread-message').textContent = ''
+  $$('#chat-message-input').value = ''
   renderChatMessages(activeChatMessages)
-  $('#chat-thread-screen').hidden = false
+  $$('#chat-thread-screen').hidden = false
   document.body.classList.add('chat-thread-open')
 }
 
 function closeChatThread() {
-  $('#chat-thread-screen').hidden = true
+  $$('#chat-thread-screen').hidden = true
   document.body.classList.remove('chat-thread-open')
   activeChat = null
   activeChatMessages = []
@@ -521,8 +521,8 @@ function showChatImageAt(index) {
   const message = imageViewerItems[imageViewerIndex]
   const url = safeChatMediaUrl(message.url)
   if (!url) return
-  $('#chat-image').src = url
-  $('#chat-image-title').textContent = String(message.fileName || (message.type === 'sticker' ? 'Sticker' : 'Photo'))
+  $$('#chat-image').src = url
+  $$('#chat-image-title').textContent = String(message.fileName || (message.type === 'sticker' ? 'Sticker' : 'Photo'))
 }
 
 function openChatImageViewer(message) {
@@ -530,13 +530,13 @@ function openChatImageViewer(message) {
   imageViewerIndex = imageViewerItems.indexOf(message)
   if (imageViewerIndex < 0) return
   showChatImageAt(imageViewerIndex)
-  $('#chat-image-viewer').hidden = false
+  $$('#chat-image-viewer').hidden = false
   document.body.classList.add('chat-media-open')
 }
 
 function closeChatImageViewer() {
-  $('#chat-image-viewer').hidden = true
-  $('#chat-image').removeAttribute('src')
+  $$('#chat-image-viewer').hidden = true
+  $$('#chat-image').removeAttribute('src')
   imageViewerItems = []
   imageViewerIndex = -1
   document.body.classList.remove('chat-media-open')
@@ -545,20 +545,20 @@ function closeChatImageViewer() {
 function openChatVideoViewer(message) {
   const url = safeChatMediaUrl(message.url)
   if (!url) return
-  const player = $('#chat-video-player')
-  $('#chat-video-title').textContent = String(message.fileName || 'Video')
+  const player = $$('#chat-video-player')
+  $$('#chat-video-title').textContent = String(message.fileName || 'Video')
   player.src = url
-  $('#chat-video-viewer').hidden = false
+  $$('#chat-video-viewer').hidden = false
   document.body.classList.add('chat-media-open')
   void player.play().catch(() => {})
 }
 
 function closeChatVideoViewer() {
-  const player = $('#chat-video-player')
+  const player = $$('#chat-video-player')
   player.pause()
   player.removeAttribute('src')
   player.load()
-  $('#chat-video-viewer').hidden = true
+  $$('#chat-video-viewer').hidden = true
   document.body.classList.remove('chat-media-open')
 }
 
@@ -580,11 +580,11 @@ function setSourceMessage(message, kind = '') {
 
 async function refreshDraftStatus() {
   const status = await api('files/draft-status')
-  $('#source-draft-status').textContent = status.pending
+  $$('#source-draft-status').textContent = status.pending
     ? `${status.changedCount} saved file change${status.changedCount === 1 ? '' : 's'} waiting to be applied`
     : 'No saved file changes'
-  $('#source-apply').disabled = !status.pending
-  $('#source-discard').hidden = !status.pending
+  $$('#source-apply').disabled = !status.pending
+  $$('#source-discard').hidden = !status.pending
   return status
 }
 
@@ -592,10 +592,16 @@ function updateSourceBreadcrumb() {
   const parts = sourceFolder ? sourceFolder.split('/') : []
   const root = document.createElement('button')
   root.type = 'button'
-  root.className = 'crumb-button'
-  root.textContent = 'Aharane'
+  root.className = 'crumb-button root-crumb'
+  const homeIcon = document.createElement('span')
+  homeIcon.className = 'breadcrumb-home-icon'
+  homeIcon.setAttribute('aria-hidden', 'true')
+  homeIcon.innerHTML = '<svg viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1V10Z"></path></svg>'
+  const homeLabel = document.createElement('span')
+  homeLabel.textContent = 'Home'
+  root.append(homeIcon, homeLabel)
   root.addEventListener('click', () => { void loadSourceFolder('') })
-  const breadcrumb = $('#source-breadcrumb')
+  const breadcrumb = $$('#source-breadcrumb')
   breadcrumb.replaceChildren(root)
   for (let index = 0; index < parts.length; index += 1) {
     const separator = document.createElement('span')
@@ -610,9 +616,9 @@ function updateSourceBreadcrumb() {
     button.addEventListener('click', () => { void loadSourceFolder(path) })
     breadcrumb.append(button)
   }
-  $('#source-up').disabled = !sourceFolder
-  $('#source-new-file').disabled = false
-  $('#source-new-folder').disabled = false
+  $$('#source-up').disabled = !sourceFolder
+  $$('#source-new-file').disabled = false
+  $$('#source-new-folder').disabled = false
 }
 
 async function loadSourceFolder(folder) {
@@ -622,16 +628,16 @@ async function loadSourceFolder(folder) {
   sourceOriginal = ''
   sourceHash = ''
   sourceDirty = false
-  $('#source-editor-panel').hidden = true
+  $$('#source-editor-panel').hidden = true
   updateSourceBreadcrumb()
-  $('#source-file-list').replaceChildren()
+  $$('#source-file-list').replaceChildren()
   const loading = document.createElement('p')
   loading.className = 'muted'
   loading.textContent = 'Loading source files…'
-  $('#source-file-list').append(loading)
+  $$('#source-file-list').append(loading)
   const query = sourceFolder ? '?item=' + encodeURIComponent(sourceFolder) : ''
   const result = await api('files/tree' + query)
-  const list = $('#source-file-list')
+  const list = $$('#source-file-list')
   list.replaceChildren()
   if (!result.children?.length) {
     const empty = document.createElement('p')
@@ -646,12 +652,22 @@ async function loadSourceFolder(folder) {
     row.className = 'source-file-row'
     row.dataset.name = item.name.toLowerCase()
     row.dataset.type = item.type
+
+    const select = document.createElement('input')
+    select.type = 'checkbox'
+    select.className = 'source-file-select'
+    select.setAttribute('aria-label', 'Select ' + item.name)
+    select.addEventListener('change', () => row.classList.toggle('selected', select.checked))
+
     const name = document.createElement('button')
     name.className = 'source-file-open'
     name.type = 'button'
     const icon = document.createElement('span')
     icon.className = 'source-file-icon'
-    icon.textContent = item.type === 'folder' ? '▰' : '▤'
+    icon.setAttribute('aria-hidden', 'true')
+    icon.innerHTML = item.type === 'folder'
+      ? '<svg viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11Z"></path><path d="M3.5 9h17"></path></svg>'
+      : '<svg viewBox="0 0 24 24"><path d="m8 7-4 5 4 5M16 7l4 5-4 5M14 5l-4 14"></path></svg>'
     const text = document.createElement('span')
     text.className = 'source-file-label'
     const title = document.createElement('strong')
@@ -664,34 +680,54 @@ async function loadSourceFolder(folder) {
       if (item.type === 'folder') void loadSourceFolder(item.path)
       else void openSourceFile(item.path)
     })
-    row.append(name)
+    row.append(select, name)
+
     const actionWrap = document.createElement('div')
     actionWrap.className = 'source-item-actions'
     const menuButton = document.createElement('button')
     menuButton.className = 'source-menu-button'
     menuButton.type = 'button'
-    menuButton.textContent = '⋮'
     menuButton.setAttribute('aria-label', 'Actions for ' + item.name)
     menuButton.setAttribute('aria-expanded', 'false')
+    menuButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.5"></circle><circle cx="12" cy="12" r="1.5"></circle><circle cx="12" cy="19" r="1.5"></circle></svg>'
+
     const menu = document.createElement('div')
     menu.className = 'source-item-menu'
     menu.hidden = true
-    const addMenuAction = (label, handler, disabled = false) => {
+    const menuIcons = {
+      preview: '<svg viewBox="0 0 24 24"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.5"></circle></svg>',
+      download: '<svg viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 19h16"></path></svg>',
+      rename: '<svg viewBox="0 0 24 24"><path d="m14 5 5 5M4 20l4.2-.8L19 8.4a2.1 2.1 0 0 0-3-3L5.2 16.2 4 20Z"></path></svg>',
+      duplicate: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>',
+      move: '<svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"></path><path d="M7 14h10m-4-4 4 4-4 4"></path></svg>',
+      archive: '<svg viewBox="0 0 24 24"><path d="M4 7h16v13H4zM3 4h18v3H3zM9 11h6"></path></svg>',
+      delete: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"></path></svg>'
+    }
+    const addMenuAction = (label, iconName, handler, disabled = false, danger = false) => {
       const button = document.createElement('button')
       button.type = 'button'
-      button.textContent = label
+      button.className = danger ? 'source-menu-danger' : ''
       button.disabled = disabled
-      if (disabled) button.title = 'This action is not available in the current server API.'
+      if (disabled) button.title = 'This action is not available on the server yet.'
+      const iconNode = document.createElement('span')
+      iconNode.className = 'source-menu-icon'
+      iconNode.setAttribute('aria-hidden', 'true')
+      iconNode.innerHTML = menuIcons[iconName] || ''
+      const labelNode = document.createElement('span')
+      labelNode.textContent = label
+      button.append(iconNode, labelNode)
       button.addEventListener('click', () => {
         menu.hidden = true
         menuButton.setAttribute('aria-expanded', 'false')
+        row.classList.remove('menu-open')
         if (handler) void handler()
       })
       menu.append(button)
     }
+
     if (item.type === 'file') {
-      addMenuAction('Preview', () => openSourceFile(item.path))
-      addMenuAction('Download', async () => {
+      addMenuAction('Preview', 'preview', () => openSourceFile(item.path))
+      addMenuAction('Download', 'download', async () => {
         try {
           const result = await api('files/preview?item=' + encodeURIComponent(item.path))
           const blob = new Blob([result.content], { type: 'text/plain;charset=utf-8' })
@@ -705,31 +741,29 @@ async function loadSourceFolder(folder) {
           URL.revokeObjectURL(url)
         } catch (error) { setSourceMessage(error.message, 'error') }
       })
-      addMenuAction('Rename', null, true)
-      addMenuAction('Duplicate', null, true)
-      addMenuAction('Move', null, true)
-      const separator = document.createElement('div')
-      separator.className = 'menu-separator'
-      menu.append(separator)
-      addMenuAction('Delete', () => deleteSourceFile(item.path), ['README.md', 'UPDATE-PACKAGE.md', 'LICENSE', 'AGENTS.md'].includes(item.name))
+      addMenuAction('Rename', 'rename', null, true)
+      addMenuAction('Duplicate', 'duplicate', null, true)
+      addMenuAction('Move', 'move', null, true)
+      addMenuAction('Delete', 'delete', () => deleteSourceFile(item.path), ['README.md', 'UPDATE-PACKAGE.md', 'LICENSE', 'AGENTS.md'].includes(item.name), true)
     } else {
-      addMenuAction('Open folder', () => loadSourceFolder(item.path))
-      addMenuAction('Rename', null, true)
-      addMenuAction('Duplicate', null, true)
-      addMenuAction('Move', null, true)
-      addMenuAction('Download as ZIP', null, true)
-      const separator = document.createElement('div')
-      separator.className = 'menu-separator'
-      menu.append(separator)
-      addMenuAction('Delete', null, true)
+      addMenuAction('Rename', 'rename', null, true)
+      addMenuAction('Duplicate', 'duplicate', null, true)
+      addMenuAction('Move', 'move', null, true)
+      addMenuAction('Download as ZIP', 'archive', null, true)
+      addMenuAction('Delete', 'delete', null, true, true)
     }
+
     menuButton.addEventListener('click', event => {
       event.stopPropagation()
       const opening = menu.hidden
-      $('.source-item-menu').forEach(other => { other.hidden = true })
-      $('.source-menu-button').forEach(other => other.setAttribute('aria-expanded', 'false'))
+      $$('.source-item-menu').forEach(other => {
+        other.hidden = true
+        other.closest('.source-file-row')?.classList.remove('menu-open')
+      })
+      $$('.source-menu-button').forEach(other => other.setAttribute('aria-expanded', 'false'))
       menu.hidden = !opening
       menuButton.setAttribute('aria-expanded', String(opening))
+      row.classList.toggle('menu-open', opening)
     })
     actionWrap.append(menuButton, menu)
     row.append(actionWrap)
@@ -739,8 +773,8 @@ async function loadSourceFolder(folder) {
 }
 
 function updateSourceEditorLines() {
-  const editor = $('#source-editor')
-  const gutter = $('#source-editor-lines')
+  const editor = $$('#source-editor')
+  const gutter = $$('#source-editor-lines')
   if (!editor || !gutter) return
   const lineCount = Math.max(1, editor.value.split('\n').length)
   gutter.textContent = Array.from({ length: lineCount }, (_, index) => String(index + 1)).join('\n')
@@ -749,7 +783,7 @@ function updateSourceEditorLines() {
 
 async function openSourceFile(path) {
   if (sourceDirty && !window.confirm('Discard unsaved editor typing and open another file?')) {
-    const switcher = $('#source-editor-file-switcher')
+    const switcher = $$('#source-editor-file-switcher')
     if (switcher && sourceFile) switcher.value = sourceFile
     return
   }
@@ -759,9 +793,9 @@ async function openSourceFile(path) {
     sourceOriginal = result.content
     sourceHash = result.sha256
     sourceDirty = false
-    $('#source-editor-name').textContent = result.path
-    $('#source-editor').value = result.content
-    const switcher = $('#source-editor-file-switcher')
+    $$('#source-editor-name').textContent = result.path
+    $$('#source-editor').value = result.content
+    const switcher = $$('#source-editor-file-switcher')
     if (switcher) {
       switcher.replaceChildren()
       for (const item of sourceFolderFiles) {
@@ -773,10 +807,10 @@ async function openSourceFile(path) {
       switcher.value = result.path
     }
     updateSourceEditorLines()
-    $('#source-save').disabled = true
-    $('#source-editor-meta').textContent = `${result.language.toUpperCase() || 'TEXT'} · ${formatBytes(result.size)} · 512 KB limit`
-    $('#source-editor-panel').hidden = false
-    $('#source-editor').focus()
+    $$('#source-save').disabled = true
+    $$('#source-editor-meta').textContent = `${result.language.toUpperCase() || 'TEXT'} · ${formatBytes(result.size)} · 512 KB limit`
+    $$('#source-editor-panel').hidden = false
+    $$('#source-editor').focus()
     setSourceMessage('Opened ' + result.path + '.', 'success')
   } catch (error) {
     setSourceMessage(error.message, 'error')
@@ -785,8 +819,8 @@ async function openSourceFile(path) {
 
 async function saveSourceFile() {
   if (!sourceFile) return
-  const content = $('#source-editor').value
-  $('#source-save').disabled = true
+  const content = $$('#source-editor').value
+  $$('#source-save').disabled = true
   try {
     const result = await api('files/content', {
       method: 'PUT',
@@ -795,7 +829,7 @@ async function saveSourceFile() {
     sourceOriginal = content
     sourceHash = result.sha256
     sourceDirty = false
-    $('#source-save').disabled = true
+    $$('#source-save').disabled = true
     await refreshDraftStatus()
     const savedPath = sourceFile
     setSourceMessage('Saved ' + savedPath + '. It is not running until you apply the changes.', 'success')
@@ -804,7 +838,7 @@ async function saveSourceFile() {
   } catch (error) {
     setSourceMessage(error.message, 'error')
   } finally {
-    $('#source-save').disabled = !sourceDirty
+    $$('#source-save').disabled = !sourceDirty
   }
 }
 
@@ -831,7 +865,7 @@ async function deleteSourceFile(path) {
     if (sourceFile === path) {
       sourceFile = null
       sourceDirty = false
-      $('#source-editor-panel').hidden = true
+      $$('#source-editor-panel').hidden = true
     }
     await loadSourceFolder(sourceFolder)
     setSourceMessage('Deleted ' + path + '. Apply changes to make the deletion active.', 'success')
@@ -843,7 +877,7 @@ async function deleteSourceFile(path) {
 async function applySourceChanges(discard = false) {
   const action = discard ? 'Discard the saved file edits? The running bot will remain unchanged.' : 'Apply the saved source edits and restart Aharane?'
   if (!window.confirm(action)) return
-  const button = discard ? $('#source-discard') : $('#source-apply')
+  const button = discard ? $$('#source-discard') : $$('#source-apply')
   button.disabled = true
   try {
     await api(discard ? 'files/discard' : 'files/apply', {
@@ -853,7 +887,7 @@ async function applySourceChanges(discard = false) {
     if (discard) {
       sourceFile = null
       sourceDirty = false
-      $('#source-editor-panel').hidden = true
+      $$('#source-editor-panel').hidden = true
       await refreshDraftStatus()
       await loadSourceFolder(sourceFolder)
       setSourceMessage('Saved edits discarded. The live Aharane release was never changed.', 'success')
@@ -899,7 +933,7 @@ function pollManualEditStatus() {
 
 async function useStoredPackage(updateId) {
   setView('deploy')
-  $('#preview-panel').hidden = true
+  $$('#preview-panel').hidden = true
   showMessage('#validation-message', 'Rechecking the stored ZIP package…')
   try {
     const preview = await api('update/validate', {
@@ -930,11 +964,11 @@ async function removeStoredPackage(updateId, filename) {
 function clearPackage() {
   selectedFile = null
   validatedUpdateId = ''
-  $('#zip-input').value = ''
-  $('#selected-file').hidden = true
-  $('#preview-panel').hidden = true
-  $('#upload-progress').hidden = true
-  $('#validate-zip').disabled = true
+  $$('#zip-input').value = ''
+  $$('#selected-file').hidden = true
+  $$('#preview-panel').hidden = true
+  $$('#upload-progress').hidden = true
+  $$('#validate-zip').disabled = true
 }
 
 function setPackage(file) {
@@ -953,10 +987,10 @@ function setPackage(file) {
     return
   }
   selectedFile = file
-  $('#selected-file').hidden = false
-  $('#selected-name').textContent = file.name
-  $('#selected-size').textContent = formatBytes(file.size)
-  $('#validate-zip').disabled = false
+  $$('#selected-file').hidden = false
+  $$('#selected-name').textContent = file.name
+  $$('#selected-size').textContent = formatBytes(file.size)
+  $$('#validate-zip').disabled = false
   showMessage('#validation-message', 'Ready to upload and validate.')
 }
 
@@ -975,14 +1009,14 @@ async function sha256(file) {
 }
 
 function setProgress(percent, label) {
-  $('#upload-progress').hidden = false
-  $('#progress-bar').style.width = percent + '%'
-  $('#progress-value').textContent = percent + '%'
-  $('#progress-label').textContent = label
+  $$('#upload-progress').hidden = false
+  $$('#progress-bar').style.width = percent + '%'
+  $$('#progress-value').textContent = percent + '%'
+  $$('#progress-label').textContent = label
 }
 
 function renderChanges(changes) {
-  const target = $('#change-list')
+  const target = $$('#change-list')
   target.replaceChildren()
   const groups = [
     ['New files', changes?.added || []],
@@ -1008,25 +1042,25 @@ function renderChanges(changes) {
 
 function showPreview(data) {
   validatedUpdateId = data.updateId
-  $('#preview-panel').hidden = false
-  $('#preview-target').textContent = data.manifest.target
-  $('#preview-version').textContent = data.manifest.bot_version
-  $('#preview-current-version').textContent = data.currentVersion || 'unknown'
-  $('#preview-file-count').textContent = String(data.fileCount)
-  $('#added-count').textContent = String(data.changes?.counts?.added || 0)
-  $('#replaced-count').textContent = String(data.changes?.counts?.replaced || 0)
-  $('#removed-count').textContent = String(data.changes?.counts?.removed || 0)
+  $$('#preview-panel').hidden = false
+  $$('#preview-target').textContent = data.manifest.target
+  $$('#preview-version').textContent = data.manifest.bot_version
+  $$('#preview-current-version').textContent = data.currentVersion || 'unknown'
+  $$('#preview-file-count').textContent = String(data.fileCount)
+  $$('#added-count').textContent = String(data.changes?.counts?.added || 0)
+  $$('#replaced-count').textContent = String(data.changes?.counts?.replaced || 0)
+  $$('#removed-count').textContent = String(data.changes?.counts?.removed || 0)
   renderChanges(data.changes)
-  $('#deploy-button').disabled = false
+  $$('#deploy-button').disabled = false
   showMessage('#validation-message', 'Package identity and contents passed validation.', 'success')
 }
 
 async function uploadAndValidateZip(file, saveToFiles = false) {
   if (!file) return
   if (!saveToFiles) {
-    $('#validate-zip').disabled = true
-    $('#deploy-button').disabled = true
-    $('#preview-panel').hidden = true
+    $$('#validate-zip').disabled = true
+    $$('#deploy-button').disabled = true
+    $$('#preview-panel').hidden = true
     showMessage('#validation-message', 'Calculating checksum…')
   } else {
     showMessage('#files-upload-message', 'Calculating checksum…')
@@ -1073,10 +1107,10 @@ async function uploadAndValidateZip(file, saveToFiles = false) {
     if (saveToFiles) showMessage('#files-upload-message', error.message, 'error')
     else {
       showMessage('#validation-message', error.message, 'error')
-      $('#deploy-button').disabled = true
+      $$('#deploy-button').disabled = true
     }
   } finally {
-    if (!saveToFiles) $('#validate-zip').disabled = !selectedFile
+    if (!saveToFiles) $$('#validate-zip').disabled = !selectedFile
   }
 }
 
@@ -1086,10 +1120,10 @@ async function validateSelectedZip() {
 
 async function deploySelectedZip() {
   if (!validatedUpdateId) return
-  const version = $('#preview-version').textContent
+  const version = $$('#preview-version').textContent
   const approved = window.confirm(`Deploy Aharane version ${version}? The bot will restart. Its WhatsApp session and persistent data are preserved.`)
   if (!approved) return
-  $('#deploy-button').disabled = true
+  $$('#deploy-button').disabled = true
   showMessage('#deploy-message', 'Preparing a new release. Aharane will restart after installation.', 'success')
   try {
     await api('update/deploy', {
@@ -1098,7 +1132,7 @@ async function deploySelectedZip() {
     })
     startDeploymentPolling()
   } catch (error) {
-    $('#deploy-button').disabled = false
+    $$('#deploy-button').disabled = false
     showMessage('#deploy-message', error.message, 'error')
   }
 }
@@ -1115,7 +1149,7 @@ function startDeploymentPolling() {
         pollingTimer = null
         const success = update.status === 'succeeded'
         showMessage('#deploy-message', update.message || (success ? 'Aharane is running the new release.' : 'The update did not complete successfully.'), success ? 'success' : 'error')
-        $('#service-pill').classList.toggle('ok', success)
+        $$('#service-pill').classList.toggle('ok', success)
         return
       }
       showMessage('#deploy-message', update.status === 'preparing'
@@ -1137,29 +1171,29 @@ function startDeploymentPolling() {
 async function connect(mode = 'login') {
   localOnly = false
   document.body.classList.remove('local-only')
-  const button = mode === 'setup' ? $('#setup-button') : $('#login-button')
+  const button = mode === 'setup' ? $$('#setup-button') : $$('#login-button')
   button.disabled = true
   showMessage('#login-message', mode === 'setup' ? 'Creating your password…' : 'Signing in…')
   try {
     let result
     if (mode === 'setup') {
-      const password = $('#setup-password').value
-      if (password !== $('#setup-password-confirm').value) throw new Error('The two passwords do not match.')
+      const password = $$('#setup-password').value
+      if (password !== $$('#setup-password-confirm').value) throw new Error('The two passwords do not match.')
       result = await api('auth/setup', {
         method: 'POST',
-        body: JSON.stringify({ setupCode: $('#setup-code').value.trim(), password }),
+        body: JSON.stringify({ setupCode: $$('#setup-code').value.trim(), password }),
       })
-      $('#setup-code').value = ''
-      $('#setup-password').value = ''
-      $('#setup-password-confirm').value = ''
+      $$('#setup-code').value = ''
+      $$('#setup-password').value = ''
+      $$('#setup-password-confirm').value = ''
     } else {
-      const password = $('#studio-password').value
+      const password = $$('#studio-password').value
       result = await api('auth/login', { method: 'POST', body: JSON.stringify({ password }) })
-      $('#studio-password').value = ''
+      $$('#studio-password').value = ''
     }
     remoteSession = true
-    $('#login-screen').hidden = true
-    $('#application').hidden = false
+    $$('#login-screen').hidden = true
+    $$('#application').hidden = false
     await refreshStatus()
     await refreshUpdateStatus()
     setView('overview')
@@ -1173,14 +1207,14 @@ async function connect(mode = 'login') {
 }
 
 async function openAuthScreen() {
-  $('#application').hidden = true
-  $('#login-screen').hidden = false
+  $$('#application').hidden = true
+  $$('#login-screen').hidden = false
   showMessage('#login-message', 'Checking sign-in setup…')
   try {
     const auth = await api('auth/status')
-    $('#setup-panel').hidden = !auth.setupRequired
-    $('#login-form').hidden = auth.setupRequired
-    $('#auth-hint').textContent = auth.setupRequired
+    $$('#setup-panel').hidden = !auth.setupRequired
+    $$('#login-form').hidden = auth.setupRequired
+    $$('#auth-hint').textContent = auth.setupRequired
       ? 'Enter the one-time setup code from the Azure terminal, then choose a password of at least 12 characters.'
       : 'Your password is protected on the server. This browser will stay signed in for 30 days.'
     showMessage('#login-message', '')
@@ -1196,21 +1230,21 @@ async function logout() {
   document.body.classList.remove('local-only')
   try { await api('auth/logout', { method: 'POST', body: '{}' }) } catch {}
   if (pollingTimer) clearInterval(pollingTimer)
-  $('#studio-password').value = ''
+  $$('#studio-password').value = ''
   clearPackage()
   localStudioMode('overview')
 }
 
-$('#login-form').addEventListener('submit', event => {
+$$('#login-form').addEventListener('submit', event => {
   event.preventDefault()
   void connect('login')
 })
-$('#setup-form').addEventListener('submit', event => {
+$$('#setup-form').addEventListener('submit', event => {
   event.preventDefault()
   void connect('setup')
 })
-$('#logout-button').addEventListener('click', () => { void logout() })
-$('#refresh-button').addEventListener('click', () => {
+$$('#logout-button').addEventListener('click', () => { void logout() })
+$$('#refresh-button').addEventListener('click', () => {
   Promise.all([refreshStatus(), refreshUpdateStatus()])
     .then(() => showMessage('#overview-message', 'Status refreshed.', 'success'))
     .catch(error => showMessage('#overview-message', error.message, 'error'))
@@ -1221,72 +1255,72 @@ document.addEventListener('click', event => {
   if (target instanceof HTMLAnchorElement) event.preventDefault()
   setView(target.dataset.view)
 })
-$('#pair-button').addEventListener('click', async () => {
-  $('#pair-button').disabled = true
-  $('#pair-code').textContent = ''
+$$('#pair-button').addEventListener('click', async () => {
+  $$('#pair-button').disabled = true
+  $$('#pair-code').textContent = ''
   try {
     const result = await api('pair-code', {
       method: 'POST',
-      body: JSON.stringify({ phoneNumber: $('#phone-number').value }),
+      body: JSON.stringify({ phoneNumber: $$('#phone-number').value }),
     })
-    $('#pair-code').textContent = result.pairingCode
+    $$('#pair-code').textContent = result.pairingCode
     showMessage('#pair-message', 'On the Aharane phone, open WhatsApp → Linked devices → Link with phone number and enter this code.', 'success')
   } catch (error) {
     showMessage('#pair-message', error.message, 'error')
   } finally {
-    $('#pair-button').disabled = false
+    $$('#pair-button').disabled = false
   }
 })
-$('#choose-zip').addEventListener('click', event => {
+$$('#choose-zip').addEventListener('click', event => {
   event.stopPropagation()
-  $('#zip-input').click()
+  $$('#zip-input').click()
 })
-$('#drop-zone').addEventListener('click', event => {
+$$('#drop-zone').addEventListener('click', event => {
   if (event.target.closest('button')) return
-  $('#zip-input').click()
+  $$('#zip-input').click()
 })
-$('#drop-zone').addEventListener('keydown', event => {
+$$('#drop-zone').addEventListener('keydown', event => {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()
-    $('#zip-input').click()
+    $$('#zip-input').click()
   }
 })
-$('#drop-zone').addEventListener('dragover', event => {
+$$('#drop-zone').addEventListener('dragover', event => {
   event.preventDefault()
-  $('#drop-zone').classList.add('dragover')
+  $$('#drop-zone').classList.add('dragover')
 })
-$('#drop-zone').addEventListener('dragleave', () => $('#drop-zone').classList.remove('dragover'))
-$('#drop-zone').addEventListener('drop', event => {
+$$('#drop-zone').addEventListener('dragleave', () => $$('#drop-zone').classList.remove('dragover'))
+$$('#drop-zone').addEventListener('drop', event => {
   event.preventDefault()
-  $('#drop-zone').classList.remove('dragover')
+  $$('#drop-zone').classList.remove('dragover')
   setPackage(event.dataTransfer.files[0])
 })
-$('#zip-input').addEventListener('change', event => setPackage(event.target.files[0]))
-$('#remove-zip').addEventListener('click', clearPackage)
-$('#validate-zip').addEventListener('click', () => { void validateSelectedZip() })
-$('#deploy-button').addEventListener('click', () => { void deploySelectedZip() })
-$('#files-choose-zip').addEventListener('click', event => {
+$$('#zip-input').addEventListener('change', event => setPackage(event.target.files[0]))
+$$('#remove-zip').addEventListener('click', clearPackage)
+$$('#validate-zip').addEventListener('click', () => { void validateSelectedZip() })
+$$('#deploy-button').addEventListener('click', () => { void deploySelectedZip() })
+$$('#files-choose-zip').addEventListener('click', event => {
   event.stopPropagation()
-  $('#files-zip-input').click()
+  $$('#files-zip-input').click()
 })
-$('#files-dropzone').addEventListener('click', event => {
+$$('#files-dropzone').addEventListener('click', event => {
   if (event.target.closest('button')) return
-  $('#files-zip-input').click()
+  $$('#files-zip-input').click()
 })
-$('#files-dropzone').addEventListener('keydown', event => {
+$$('#files-dropzone').addEventListener('keydown', event => {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault()
-    $('#files-zip-input').click()
+    $$('#files-zip-input').click()
   }
 })
-$('#files-dropzone').addEventListener('dragover', event => {
+$$('#files-dropzone').addEventListener('dragover', event => {
   event.preventDefault()
-  $('#files-dropzone').classList.add('dragover')
+  $$('#files-dropzone').classList.add('dragover')
 })
-$('#files-dropzone').addEventListener('dragleave', () => $('#files-dropzone').classList.remove('dragover'))
-$('#files-dropzone').addEventListener('drop', event => {
+$$('#files-dropzone').addEventListener('dragleave', () => $$('#files-dropzone').classList.remove('dragover'))
+$$('#files-dropzone').addEventListener('drop', event => {
   event.preventDefault()
-  $('#files-dropzone').classList.remove('dragover')
+  $$('#files-dropzone').classList.remove('dragover')
   const file = event.dataTransfer.files[0]
   if (!file) return
   if (!file.name.toLowerCase().endsWith('.zip') || file.size > MAX_ZIP_BYTES) {
@@ -1295,7 +1329,7 @@ $('#files-dropzone').addEventListener('drop', event => {
   }
   void uploadAndValidateZip(file, true)
 })
-$('#files-zip-input').addEventListener('change', event => {
+$$('#files-zip-input').addEventListener('change', event => {
   const file = event.target.files[0]
   event.target.value = ''
   if (!file) return
@@ -1305,46 +1339,46 @@ $('#files-zip-input').addEventListener('change', event => {
   }
   void uploadAndValidateZip(file, true)
 })
-$('#refresh-packages').addEventListener('click', () => {
+$$('#refresh-packages').addEventListener('click', () => {
   refreshPackages().catch(error => showMessage('#files-upload-message', error.message, 'error'))
 })
-$('#source-up').addEventListener('click', () => {
+$$('#source-up').addEventListener('click', () => {
   const parts = sourceFolder.split('/').filter(Boolean)
   void loadSourceFolder(parts.slice(0, -1).join('/'))
 })
-$('#source-refresh').addEventListener('click', () => {
+$$('#source-refresh').addEventListener('click', () => {
   loadSourceFolder(sourceFolder).catch(error => setSourceMessage(error.message, 'error'))
 })
-$('#source-new-file').addEventListener('click', () => { void createSourceItem('file') })
-$('#source-new-folder').addEventListener('click', () => { void createSourceItem('folder') })
-$('#source-save').addEventListener('click', () => { void saveSourceFile() })
-$('#source-close-editor').addEventListener('click', () => {
+$$('#source-new-file').addEventListener('click', () => { void createSourceItem('file') })
+$$('#source-new-folder').addEventListener('click', () => { void createSourceItem('folder') })
+$$('#source-save').addEventListener('click', () => { void saveSourceFile() })
+$$('#source-close-editor').addEventListener('click', () => {
   if (sourceDirty && !window.confirm('Discard unsaved editor typing and close this file?')) return
   sourceDirty = false
   sourceFile = null
-  $('#source-editor-panel').hidden = true
+  $$('#source-editor-panel').hidden = true
 })
-$('#source-discard').addEventListener('click', () => { void applySourceChanges(true) })
-$('#source-apply').addEventListener('click', () => { void applySourceChanges(false) })
-$('#file-search')?.addEventListener('input', () => {
-  const query = $('#file-search').value.trim().toLowerCase()
-  $('.source-file-row').forEach(row => { row.hidden = query && !row.dataset.name.includes(query) })
+$$('#source-discard').addEventListener('click', () => { void applySourceChanges(true) })
+$$('#source-apply').addEventListener('click', () => { void applySourceChanges(false) })
+$$('#file-search')?.addEventListener('input', () => {
+  const query = $$('#file-search').value.trim().toLowerCase()
+  $$('.source-file-row').forEach(row => { row.hidden = query && !row.dataset.name.includes(query) })
 })
-$('#source-save-bottom')?.addEventListener('click', () => { void saveSourceFile() })
-$('#source-editor-file-switcher')?.addEventListener('change', event => {
+$$('#source-save-bottom')?.addEventListener('click', () => { void saveSourceFile() })
+$$('#source-editor-file-switcher')?.addEventListener('change', event => {
   const path = event.target.value
   if (path) void openSourceFile(path)
 })
-$('#source-editor')?.addEventListener('scroll', () => {
-  const gutter = $('#source-editor-lines')
-  if (gutter) gutter.scrollTop = $('#source-editor').scrollTop
+$$('#source-editor')?.addEventListener('scroll', () => {
+  const gutter = $$('#source-editor-lines')
+  if (gutter) gutter.scrollTop = $$('#source-editor').scrollTop
 })
-$('#open-password-settings')?.addEventListener('click', () => $('#change-password-button').click())
+$$('#open-password-settings')?.addEventListener('click', () => $$('#change-password-button').click())
 let sourceAutosaveTimer = null
-$('#source-editor').addEventListener('input', () => {
+$$('#source-editor').addEventListener('input', () => {
   updateSourceEditorLines()
-  sourceDirty = $('#source-editor').value !== sourceOriginal
-  $('#source-save').disabled = !sourceDirty
+  sourceDirty = $$('#source-editor').value !== sourceOriginal
+  $$('#source-save').disabled = !sourceDirty
   if (sourceAutosaveTimer) clearTimeout(sourceAutosaveTimer)
   if (sourceDirty) sourceAutosaveTimer = setTimeout(() => {
     sourceAutosaveTimer = null
@@ -1367,57 +1401,57 @@ document.addEventListener('click', event => {
 
 
 // Conversation and media-viewer interactions.
-$('#chat-thread-back')?.addEventListener('click', closeChatThread)
-$('#chat-composer')?.addEventListener('submit', event => {
+$$('#chat-thread-back')?.addEventListener('click', closeChatThread)
+$$('#chat-composer')?.addEventListener('submit', event => {
   event.preventDefault()
   if (!activeChat) return
-  const message = $('#chat-message-input').value.trim()
+  const message = $$('#chat-message-input').value.trim()
   if (!message) return
   showMessage('#chat-thread-message', 'Sending messages is not available on this server yet.', 'error')
 })
-$('#chat-attach-button')?.addEventListener('click', () => {
+$$('#chat-attach-button')?.addEventListener('click', () => {
   showMessage('#chat-thread-message', 'Attachments are not available until the WhatsApp messaging service is connected.', 'error')
 })
-$('#chat-image')?.addEventListener('click', () => {
-  $('#chat-image-viewer').classList.toggle('controls-hidden')
+$$('#chat-image')?.addEventListener('click', () => {
+  $$('#chat-image-viewer').classList.toggle('controls-hidden')
 })
-$('#chat-image-close')?.addEventListener('click', closeChatImageViewer)
-$('#chat-image-details')?.addEventListener('click', () => {
-  const image = $('#chat-image')
-  if (image.naturalWidth && image.naturalHeight) window.alert(`${$('#chat-image-title').textContent}\n${image.naturalWidth} × ${image.naturalHeight}`)
+$$('#chat-image-close')?.addEventListener('click', closeChatImageViewer)
+$$('#chat-image-details')?.addEventListener('click', () => {
+  const image = $$('#chat-image')
+  if (image.naturalWidth && image.naturalHeight) window.alert(`${$$('#chat-image-title').textContent}\n${image.naturalWidth} × ${image.naturalHeight}`)
 })
-$('#chat-image-more')?.addEventListener('click', () => $('#chat-image-details').click())
-$('#chat-image-download')?.addEventListener('click', () => {
+$$('#chat-image-more')?.addEventListener('click', () => $$('#chat-image-details').click())
+$$('#chat-image-download')?.addEventListener('click', () => {
   const message = imageViewerItems[imageViewerIndex]
   if (message) downloadChatMedia(message.url, message.fileName)
 })
-$('#chat-image-share')?.addEventListener('click', () => {
+$$('#chat-image-share')?.addEventListener('click', () => {
   const message = imageViewerItems[imageViewerIndex]
   const url = safeChatMediaUrl(message?.url)
-  if (url && navigator.share) void navigator.share({ title: $('#chat-image-title').textContent, url }).catch(() => {})
+  if (url && navigator.share) void navigator.share({ title: $$('#chat-image-title').textContent, url }).catch(() => {})
   else if (url) showMessage('#chat-thread-message', 'Sharing is not supported by this browser.', 'error')
 })
-$('#chat-image-forward')?.addEventListener('click', () => {
+$$('#chat-image-forward')?.addEventListener('click', () => {
   closeChatImageViewer()
   showMessage('#chat-thread-message', 'Forwarding will be available when message actions are connected.', 'error')
 })
-$('#chat-video-close')?.addEventListener('click', closeChatVideoViewer)
-$('#chat-video-more')?.addEventListener('click', () => {
-  const video = $('#chat-video-player')
+$$('#chat-video-close')?.addEventListener('click', closeChatVideoViewer)
+$$('#chat-video-more')?.addEventListener('click', () => {
+  const video = $$('#chat-video-player')
   const duration = Number.isFinite(video.duration) ? Math.round(video.duration) + ' seconds' : 'Duration unavailable'
-  window.alert(`${$('#chat-video-title').textContent}\n${video.videoWidth} × ${video.videoHeight}\n${duration}`)
+  window.alert(`${$$('#chat-video-title').textContent}\n${video.videoWidth} × ${video.videoHeight}\n${duration}`)
 })
-$('#chat-image-viewer .image-viewer-stage')?.addEventListener('touchstart', event => {
+$$('#chat-image-viewer .image-viewer-stage')?.addEventListener('touchstart', event => {
   imageViewerTouchStart = event.changedTouches[0]?.clientX ?? null
 }, { passive: true })
-$('#chat-image-viewer .image-viewer-stage')?.addEventListener('touchend', event => {
+$$('#chat-image-viewer .image-viewer-stage')?.addEventListener('touchend', event => {
   if (imageViewerTouchStart === null) return
   const delta = (event.changedTouches[0]?.clientX ?? imageViewerTouchStart) - imageViewerTouchStart
   imageViewerTouchStart = null
   if (Math.abs(delta) > 55 && imageViewerItems.length > 1) showChatImageAt(imageViewerIndex + (delta < 0 ? 1 : -1))
 }, { passive: true })
-$('#chat-video-player')?.addEventListener('dblclick', event => {
-  const video = $('#chat-video-player')
+$$('#chat-video-player')?.addEventListener('dblclick', event => {
+  const video = $$('#chat-video-player')
   const rect = video.getBoundingClientRect()
   const offset = event.clientX - rect.left
   video.currentTime = Math.max(0, Math.min(video.duration || Infinity, video.currentTime + (offset < rect.width / 2 ? -10 : 10)))
@@ -1481,17 +1515,17 @@ function studioCanEdit(path, type = '') {
 
 function localStudioMode(initialView = 'overview') {
   const savedTitle = localStorage.getItem('aharane-local-studio-title')
-  if (savedTitle) $('#studio-project-title').value = savedTitle
-  $('#studio-connect-button').textContent = remoteSession ? 'Back to bot controls' : 'Connect to Aharane'
+  if (savedTitle) $$('#studio-project-title').value = savedTitle
+  $$('#studio-connect-button').textContent = remoteSession ? 'Back to bot controls' : 'Connect to Aharane'
   localOnly = !remoteSession
   document.body.classList.toggle('local-only', localOnly)
-  $('#login-screen').hidden = true
-  $('#application').hidden = false
+  $$('#login-screen').hidden = true
+  $$('#application').hidden = false
   if (localOnly) {
-    $('#whatsapp-state').textContent = 'Not connected'
-    $('#connection-detail').textContent = 'Connect to Aharane to retrieve live bot status and controls.'
-    $('#bot-version').textContent = '—'
-    $('#allowed-senders').textContent = '—'
+    $$('#whatsapp-state').textContent = 'Not connected'
+    $$('#connection-detail').textContent = 'Connect to Aharane to retrieve live bot status and controls.'
+    $$('#bot-version').textContent = '—'
+    $$('#allowed-senders').textContent = '—'
   }
   setView(initialView)
   showMessage(initialView === 'studio' ? '#studio-message' : '#overview-message',
@@ -1510,9 +1544,9 @@ function downloadStudioBlob(blob, filename) {
 }
 
 function renderStudioFiles() {
-  const root = $('#studio-file-list')
+  const root = $$('#studio-file-list')
   root.replaceChildren()
-  $('#studio-file-count').textContent = studioFiles.length + (studioFiles.length === 1 ? ' file' : ' files')
+  $$('#studio-file-count').textContent = studioFiles.length + (studioFiles.length === 1 ? ' file' : ' files')
   if (!studioFiles.length) {
     const empty = document.createElement('p')
     empty.className = 'muted'
@@ -1549,11 +1583,11 @@ async function loadStudioFiles() {
     if (studioCanEdit(current.path, current.type)) await openStudioFile(studioCurrentPath, true)
   } else if (!studioFiles.length) {
     studioCurrentPath = ''
-    $('#studio-current-file').textContent = 'Choose a project file'
-    $('#studio-editor').value = ''
-    $('#studio-editor').disabled = true
-    $('#studio-save-file').disabled = true
-    $('#studio-export-file').disabled = true
+    $$('#studio-current-file').textContent = 'Choose a project file'
+    $$('#studio-editor').value = ''
+    $$('#studio-editor').disabled = true
+    $$('#studio-save-file').disabled = true
+    $$('#studio-export-file').disabled = true
   }
 }
 
@@ -1596,40 +1630,40 @@ async function importStudioFiles(fileList) {
 }
 
 async function openStudioFile(path, skipDirtyCheck = false) {
-  if (!skipDirtyCheck && studioCurrentPath && $('#studio-editor').value !== studioOriginalText) {
+  if (!skipDirtyCheck && studioCurrentPath && $$('#studio-editor').value !== studioOriginalText) {
     if (!window.confirm('Discard unsaved typing and open another file?')) return
   }
   const item = studioFiles.find(file => file.path === path)
   if (!item) return
   studioCurrentPath = path
   renderStudioFiles()
-  $('#studio-current-file').textContent = path
-  $('#studio-export-file').disabled = false
+  $$('#studio-current-file').textContent = path
+  $$('#studio-export-file').disabled = false
   const editable = studioCanEdit(path, item.type)
-  $('#studio-editor').disabled = !editable
-  $('#studio-save-file').disabled = true
+  $$('#studio-editor').disabled = !editable
+  $$('#studio-save-file').disabled = true
   if (editable) {
     const text = typeof item.content === 'string' ? item.content : item.blob ? await item.blob.text() : ''
-    $('#studio-editor').value = text
+    $$('#studio-editor').value = text
     studioOriginalText = text
-    $('#studio-editor-hint').textContent = 'Plain text · ' + formatBytes(item.size || new Blob([text]).size)
+    $$('#studio-editor-hint').textContent = 'Plain text · ' + formatBytes(item.size || new Blob([text]).size)
   } else {
-    $('#studio-editor').value = 'This file is stored locally as a project asset and is not editable as text.'
-    studioOriginalText = $('#studio-editor').value
-    $('#studio-editor-hint').textContent = 'Binary asset · use it in the website preview.'
+    $$('#studio-editor').value = 'This file is stored locally as a project asset and is not editable as text.'
+    studioOriginalText = $$('#studio-editor').value
+    $$('#studio-editor-hint').textContent = 'Binary asset · use it in the website preview.'
   }
-  $('#studio-save-state').textContent = 'Saved on this device'
+  $$('#studio-save-state').textContent = 'Saved on this device'
 }
 
 async function saveStudioFile() {
   const item = studioFiles.find(file => file.path === studioCurrentPath)
   if (!item || !studioCanEdit(item.path, item.type)) return
-  const content = $('#studio-editor').value
+  const content = $$('#studio-editor').value
   const blob = new Blob([content], { type: item.type || 'text/plain;charset=utf-8' })
   await studioPut({ ...item, content, blob, size: blob.size, updatedAt: Date.now() })
   studioOriginalText = content
-  $('#studio-save-file').disabled = true
-  $('#studio-save-state').textContent = 'Saved'
+  $$('#studio-save-file').disabled = true
+  $$('#studio-save-state').textContent = 'Saved'
   await loadStudioFiles()
   showMessage('#studio-message', 'Saved ' + studioCurrentPath + ' on this device.', 'success')
 }
@@ -1695,7 +1729,7 @@ async function exportStudioBackup() {
   const payload = {
     format: 'aharane-local-studio-backup',
     version: 1,
-    projectName: $('#studio-project-title').value || 'My project',
+    projectName: $$('#studio-project-title').value || 'My project',
     exportedAt: new Date().toISOString(),
     files: backup,
   }
@@ -1705,17 +1739,17 @@ async function exportStudioBackup() {
 
 function studioSetTab(tab) {
   const preview = tab === 'preview'
-  $('#studio-code-pane').hidden = preview
-  $('#studio-preview-pane').hidden = !preview
-  $('#studio-code-tab').classList.toggle('active', !preview)
-  $('#studio-preview-tab').classList.toggle('active', preview)
-  $('#studio-code-tab').setAttribute('aria-selected', String(!preview))
-  $('#studio-preview-tab').setAttribute('aria-selected', String(preview))
+  $$('#studio-code-pane').hidden = preview
+  $$('#studio-preview-pane').hidden = !preview
+  $$('#studio-code-tab').classList.toggle('active', !preview)
+  $$('#studio-preview-tab').classList.toggle('active', preview)
+  $$('#studio-code-tab').setAttribute('aria-selected', String(!preview))
+  $$('#studio-preview-tab').setAttribute('aria-selected', String(preview))
   if (preview) void renderStudioPreview()
 }
 
 async function updateStudioPreviewOptions() {
-  const select = $('#studio-preview-file')
+  const select = $$('#studio-preview-file')
   const previous = select.value
   const htmlFiles = studioFiles.filter(item => /\.html?$/i.test(item.path))
   select.replaceChildren()
@@ -1766,9 +1800,9 @@ async function rewriteStudioCss(css, cssPath, lookup) {
 }
 
 async function renderStudioPreview() {
-  const pagePath = $('#studio-preview-file').value
+  const pagePath = $$('#studio-preview-file').value
   const page = studioFiles.find(item => item.path === pagePath)
-  const frame = $('#studio-preview-frame')
+  const frame = $$('#studio-preview-frame')
   for (const url of studioObjectUrls) URL.revokeObjectURL(url)
   studioObjectUrls = []
   if (!page) {
@@ -1832,8 +1866,8 @@ async function renderStudioPreview() {
   }
 }
 
-$('#open-local-studio').addEventListener('click', () => localStudioMode('studio'))
-$('#studio-connect-button').addEventListener('click', () => {
+$$('#open-local-studio').addEventListener('click', () => localStudioMode('studio'))
+$$('#studio-connect-button').addEventListener('click', () => {
   if (remoteSession) {
     localOnly = false
     document.body.classList.remove('local-only')
@@ -1842,35 +1876,35 @@ $('#studio-connect-button').addEventListener('click', () => {
   }
   localOnly = false
   document.body.classList.remove('local-only')
-  $('#application').hidden = true
-  $('#login-screen').hidden = false
+  $$('#application').hidden = true
+  $$('#login-screen').hidden = false
   void openAuthScreen()
 })
-$('#studio-import-files').addEventListener('click', () => $('#studio-files-input').click())
-$('#studio-import-folder').addEventListener('click', () => $('#studio-folder-input').click())
-$('#studio-files-input').addEventListener('change', event => {
+$$('#studio-import-files').addEventListener('click', () => $$('#studio-files-input').click())
+$$('#studio-import-folder').addEventListener('click', () => $$('#studio-folder-input').click())
+$$('#studio-files-input').addEventListener('change', event => {
   void importStudioFiles(event.target.files).catch(error => showMessage('#studio-message', error.message, 'error'))
   event.target.value = ''
 })
-$('#studio-folder-input').addEventListener('change', event => {
+$$('#studio-folder-input').addEventListener('change', event => {
   void importStudioFiles(event.target.files).catch(error => showMessage('#studio-message', error.message, 'error'))
   event.target.value = ''
 })
-$('#studio-new-file').addEventListener('click', () => { void createStudioFile().catch(error => showMessage('#studio-message', error.message, 'error')) })
-$('#studio-save-file').addEventListener('click', () => { void saveStudioFile().catch(error => showMessage('#studio-message', error.message, 'error')) })
-$('#studio-export-file').addEventListener('click', () => { void exportStudioFile() })
-$('#studio-export-backup').addEventListener('click', () => { void exportStudioBackup().catch(error => showMessage('#studio-message', error.message, 'error')) })
-$('#studio-code-tab').addEventListener('click', () => studioSetTab('code'))
-$('#studio-preview-tab').addEventListener('click', () => studioSetTab('preview'))
-$('#studio-refresh-preview').addEventListener('click', () => { void renderStudioPreview() })
-$('#studio-preview-file').addEventListener('change', () => { void renderStudioPreview() })
-$('#studio-editor').addEventListener('input', () => {
-  const dirty = $('#studio-editor').value !== studioOriginalText
-  $('#studio-save-file').disabled = !dirty || !studioCurrentPath
-  $('#studio-save-state').textContent = dirty ? 'Unsaved local changes' : 'Saved on this device'
+$$('#studio-new-file').addEventListener('click', () => { void createStudioFile().catch(error => showMessage('#studio-message', error.message, 'error')) })
+$$('#studio-save-file').addEventListener('click', () => { void saveStudioFile().catch(error => showMessage('#studio-message', error.message, 'error')) })
+$$('#studio-export-file').addEventListener('click', () => { void exportStudioFile() })
+$$('#studio-export-backup').addEventListener('click', () => { void exportStudioBackup().catch(error => showMessage('#studio-message', error.message, 'error')) })
+$$('#studio-code-tab').addEventListener('click', () => studioSetTab('code'))
+$$('#studio-preview-tab').addEventListener('click', () => studioSetTab('preview'))
+$$('#studio-refresh-preview').addEventListener('click', () => { void renderStudioPreview() })
+$$('#studio-preview-file').addEventListener('change', () => { void renderStudioPreview() })
+$$('#studio-editor').addEventListener('input', () => {
+  const dirty = $$('#studio-editor').value !== studioOriginalText
+  $$('#studio-save-file').disabled = !dirty || !studioCurrentPath
+  $$('#studio-save-state').textContent = dirty ? 'Unsaved local changes' : 'Saved on this device'
 })
-$('#studio-project-title').addEventListener('change', () => {
-  const title = $('#studio-project-title').value.trim()
+$$('#studio-project-title').addEventListener('change', () => {
+  const title = $$('#studio-project-title').value.trim()
   if (title) {
     localStorage.setItem('aharane-local-studio-title', title)
     document.title = title + ' · Aharane Local Studio'
@@ -1880,14 +1914,14 @@ $('#studio-project-title').addEventListener('change', () => {
 window.addEventListener('beforeinstallprompt', event => {
   event.preventDefault()
   studioInstallPrompt = event
-  $('#install-app-button').hidden = false
+  $$('#install-app-button').hidden = false
 })
-$('#install-app-button').addEventListener('click', async () => {
+$$('#install-app-button').addEventListener('click', async () => {
   if (!studioInstallPrompt) return
   studioInstallPrompt.prompt()
   await studioInstallPrompt.userChoice.catch(() => null)
   studioInstallPrompt = null
-  $('#install-app-button').hidden = true
+  $$('#install-app-button').hidden = true
 })
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -1896,32 +1930,32 @@ if ('serviceWorker' in navigator) {
 }
 
 
-$('#change-password-button').addEventListener('click', () => {
-  $('#current-password').value = ''
-  $('#new-password').value = ''
-  $('#new-password-confirm').value = ''
+$$('#change-password-button').addEventListener('click', () => {
+  $$('#current-password').value = ''
+  $$('#new-password').value = ''
+  $$('#new-password-confirm').value = ''
   showMessage('#password-message', '')
-  $('#password-modal').hidden = false
-  $('#current-password').focus()
+  $$('#password-modal').hidden = false
+  $$('#current-password').focus()
 })
-$('#password-modal-close').addEventListener('click', () => { $('#password-modal').hidden = true })
-$('#password-modal-logout').addEventListener('click', () => { $('#password-modal').hidden = true; void logout() })
-$('#change-password-form').addEventListener('submit', async event => {
+$$('#password-modal-close').addEventListener('click', () => { $$('#password-modal').hidden = true })
+$$('#password-modal-logout').addEventListener('click', () => { $$('#password-modal').hidden = true; void logout() })
+$$('#change-password-form').addEventListener('submit', async event => {
   event.preventDefault()
-  const currentPassword = $('#current-password').value
-  const newPassword = $('#new-password').value
-  if (newPassword !== $('#new-password-confirm').value) {
+  const currentPassword = $$('#current-password').value
+  const newPassword = $$('#new-password').value
+  if (newPassword !== $$('#new-password-confirm').value) {
     showMessage('#password-message', 'The two new passwords do not match.', 'error')
     return
   }
-  const button = $('#change-password-submit')
+  const button = $$('#change-password-submit')
   button.disabled = true
   try {
     await api('auth/change-password', {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
     })
-    $('#password-modal').hidden = true
+    $$('#password-modal').hidden = true
     showMessage('#overview-message', 'Your password was changed. Other signed-in sessions have been revoked.', 'success')
   } catch (error) {
     showMessage('#password-message', error.message, 'error')
@@ -1935,8 +1969,8 @@ api('status').then(async () => {
   remoteSession = true
   localOnly = false
   document.body.classList.remove('local-only')
-  $('#login-screen').hidden = true
-  $('#application').hidden = false
+  $$('#login-screen').hidden = true
+  $$('#application').hidden = false
   await refreshStatus()
   await refreshUpdateStatus()
   connectStudioSocket()
@@ -1948,21 +1982,21 @@ api('status').then(async () => {
 async function appSourceGet(path){const db=await openStudioDatabase();return new Promise((ok,no)=>{const r=db.transaction('appOverrides','readonly').objectStore('appOverrides').get(path);r.onsuccess=()=>ok(r.result||null);r.onerror=()=>no(r.error)})}
 async function appSourceGetAll(){const db=await openStudioDatabase();return new Promise((ok,no)=>{const r=db.transaction('appOverrides','readonly').objectStore('appOverrides').getAll();r.onsuccess=()=>ok(r.result||[]);r.onerror=()=>no(r.error)})}
 async function appSourcePut(path,content){if(!APP_SOURCE_FILES.includes(path))throw Error('Unsupported app source file.');if(typeof content!=='string'||content.length>1024*1024)throw Error('App source must be text and no larger than 1 MB.');const db=await openStudioDatabase();return new Promise((ok,no)=>{const tx=db.transaction('appOverrides','readwrite');tx.objectStore('appOverrides').put({path,content,updatedAt:Date.now()});tx.oncomplete=ok;tx.onerror=()=>no(tx.error)})}
-async function loadAppSourceFile(path){if(!APP_SOURCE_FILES.includes(path))throw Error('Unsupported app source file.');const saved=await appSourceGet(path);let content=saved?.content;if(typeof content!=='string'){const r=await fetch('/aharane/studio/'+path,{cache:'no-store'});if(!r.ok)throw Error('Could not load '+path+'.');content=await r.text()}studioAppSourcePath=path;studioAppSourceOriginal=content;$('#studio-app-source-file').value=path;$('#studio-app-source-editor').value=content;$('#studio-app-source-save').disabled=true;$('#studio-app-source-apply').disabled=(await appSourceGetAll()).length===0;$('#studio-app-source-status').textContent=saved?'Saved local override.':'Editing original '+path+'.'}
-async function openAppSourceEditor(){$('#studio-app-source-panel').hidden=false;try{await loadAppSourceFile($('#studio-app-source-file').value||'index.html')}catch(e){$('#studio-app-source-status').textContent=e.message}}
-async function saveAppSourceDraft(){const content=$('#studio-app-source-editor').value;await appSourcePut(studioAppSourcePath,content);studioAppSourceOriginal=content;$('#studio-app-source-save').disabled=true;$('#studio-app-source-apply').disabled=false;$('#studio-app-source-status').textContent=studioAppSourcePath+' saved on this phone.'}
-async function applyAppSourceChanges(){if($('#studio-app-source-editor').value!==studioAppSourceOriginal)await saveAppSourceDraft();if(!(await appSourceGetAll()).length)return;if(!confirm('Apply saved source changes to this phone and reload Aharane Local Studio?'))return;location.reload()}
+async function loadAppSourceFile(path){if(!APP_SOURCE_FILES.includes(path))throw Error('Unsupported app source file.');const saved=await appSourceGet(path);let content=saved?.content;if(typeof content!=='string'){const r=await fetch('/aharane/studio/'+path,{cache:'no-store'});if(!r.ok)throw Error('Could not load '+path+'.');content=await r.text()}studioAppSourcePath=path;studioAppSourceOriginal=content;$$('#studio-app-source-file').value=path;$$('#studio-app-source-editor').value=content;$$('#studio-app-source-save').disabled=true;$$('#studio-app-source-apply').disabled=(await appSourceGetAll()).length===0;$$('#studio-app-source-status').textContent=saved?'Saved local override.':'Editing original '+path+'.'}
+async function openAppSourceEditor(){$$('#studio-app-source-panel').hidden=false;try{await loadAppSourceFile($$('#studio-app-source-file').value||'index.html')}catch(e){$$('#studio-app-source-status').textContent=e.message}}
+async function saveAppSourceDraft(){const content=$$('#studio-app-source-editor').value;await appSourcePut(studioAppSourcePath,content);studioAppSourceOriginal=content;$$('#studio-app-source-save').disabled=true;$$('#studio-app-source-apply').disabled=false;$$('#studio-app-source-status').textContent=studioAppSourcePath+' saved on this phone.'}
+async function applyAppSourceChanges(){if($$('#studio-app-source-editor').value!==studioAppSourceOriginal)await saveAppSourceDraft();if(!(await appSourceGetAll()).length)return;if(!confirm('Apply saved source changes to this phone and reload Aharane Local Studio?'))return;location.reload()}
 async function exportAppSourceBackup(){const files=[];for(const path of APP_SOURCE_FILES){const saved=await appSourceGet(path);let content=typeof saved?.content==='string'?saved.content:null;if(content===null){const r=await fetch('/aharane/studio/'+path,{cache:'no-store'});if(!r.ok)throw Error('Could not export '+path+'.');content=await r.text()}files.push({path,content})}const data={format:'aharane-local-studio-source-backup',version:1,createdAt:new Date().toISOString(),files};downloadStudioBlob(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),'aharane-local-studio-source-backup.json')}
 async function restoreAppSource(){if(!confirm('Restore the original app source on this phone? Project files will remain untouched.'))return;const db=await openStudioDatabase();await new Promise((ok,no)=>{const tx=db.transaction('appOverrides','readwrite');tx.objectStore('appOverrides').clear();tx.oncomplete=ok;tx.onerror=()=>no(tx.error)});location.reload()}
-$('#studio-edit-app-source').addEventListener('click',()=>{void openAppSourceEditor()})
-$('#studio-app-source-file').addEventListener('change',e=>{void loadAppSourceFile(e.target.value).catch(err=>$('#studio-app-source-status').textContent=err.message)})
-$('#studio-app-source-reload').addEventListener('click',()=>{void loadAppSourceFile(studioAppSourcePath).catch(err=>$('#studio-app-source-status').textContent=err.message)})
-$('#studio-app-source-editor').addEventListener('input',()=>{const dirty=$('#studio-app-source-editor').value!==studioAppSourceOriginal;$('#studio-app-source-save').disabled=!dirty;$('#studio-app-source-status').textContent=dirty?'Unsaved source changes.':'No unsaved changes.'})
-$('#studio-app-source-save').addEventListener('click',()=>{void saveAppSourceDraft().catch(err=>$('#studio-app-source-status').textContent=err.message)})
-$('#studio-app-source-apply').addEventListener('click',()=>{void applyAppSourceChanges().catch(err=>$('#studio-app-source-status').textContent=err.message)})
-$('#studio-app-source-restore').addEventListener('click',()=>{void restoreAppSource().catch(err=>$('#studio-app-source-status').textContent=err.message)})
-$('#studio-app-source-export').addEventListener('click',()=>{void exportAppSourceBackup().catch(err=>$('#studio-app-source-status').textContent=err.message)})
-$('#studio-app-source-close').addEventListener('click',()=>{if($('#studio-app-source-editor').value!==studioAppSourceOriginal&&!confirm('Close and discard unsaved typing?'))return;$('#studio-app-source-panel').hidden=true})
+$$('#studio-edit-app-source').addEventListener('click',()=>{void openAppSourceEditor()})
+$$('#studio-app-source-file').addEventListener('change',e=>{void loadAppSourceFile(e.target.value).catch(err=>$$('#studio-app-source-status').textContent=err.message)})
+$$('#studio-app-source-reload').addEventListener('click',()=>{void loadAppSourceFile(studioAppSourcePath).catch(err=>$$('#studio-app-source-status').textContent=err.message)})
+$$('#studio-app-source-editor').addEventListener('input',()=>{const dirty=$$('#studio-app-source-editor').value!==studioAppSourceOriginal;$$('#studio-app-source-save').disabled=!dirty;$$('#studio-app-source-status').textContent=dirty?'Unsaved source changes.':'No unsaved changes.'})
+$$('#studio-app-source-save').addEventListener('click',()=>{void saveAppSourceDraft().catch(err=>$$('#studio-app-source-status').textContent=err.message)})
+$$('#studio-app-source-apply').addEventListener('click',()=>{void applyAppSourceChanges().catch(err=>$$('#studio-app-source-status').textContent=err.message)})
+$$('#studio-app-source-restore').addEventListener('click',()=>{void restoreAppSource().catch(err=>$$('#studio-app-source-status').textContent=err.message)})
+$$('#studio-app-source-export').addEventListener('click',()=>{void exportAppSourceBackup().catch(err=>$$('#studio-app-source-status').textContent=err.message)})
+$$('#studio-app-source-close').addEventListener('click',()=>{if($$('#studio-app-source-editor').value!==studioAppSourceOriginal&&!confirm('Close and discard unsaved typing?'))return;$$('#studio-app-source-panel').hidden=true})
 
 
 const THEME_KEY = 'aharane-studio-theme'
@@ -1979,23 +2013,23 @@ function applyThemePreference() {
 function applyAccentColour(value) {
   const safe = /^#[0-9a-f]{6}$/i.test(value) ? value : '#526c91'
   document.documentElement.style.setProperty('--accent', safe)
-  $('#accent-picker').value = safe
-  $('#accent-current-value').textContent = safe.toUpperCase()
-  $('#accent-current-swatch').style.background = safe
+  $$('#accent-picker').value = safe
+  $$('#accent-current-value').textContent = safe.toUpperCase()
+  $$('#accent-current-swatch').style.background = safe
   const names = {'#526c91':'Slate blue','#3f7e79':'Teal','#76619a':'Violet','#b36b50':'Terracotta','#6b7484':'Graphite','#3f7394':'Ocean blue'}
-  $('#accent-current-name').textContent = names[safe.toLowerCase()] || 'Custom colour'
+  $$('#accent-current-name').textContent = names[safe.toLowerCase()] || 'Custom colour'
   $$('[data-accent]').forEach(button => button.classList.toggle('active', button.dataset.accent.toLowerCase() === safe.toLowerCase()))
   localStorage.setItem(ACCENT_KEY, safe)
 }
 function renderActivityLog() {
-  const source = $('#live-activity-list')
-  const target = $('#activity-log-list')
+  const source = $$('#live-activity-list')
+  const target = $$('#activity-log-list')
   if (!source || !target) return
   target.replaceChildren(...[...source.children].map(node => node.cloneNode(true)))
   if (!target.children.length) target.textContent = 'Activity will appear here when the Studio is connected to the live event stream.'
 }
 async function refreshStorageUsage() {
-  const used = $('#storage-used'), quota = $('#storage-quota')
+  const used = $$('#storage-used'), quota = $$('#storage-quota')
   if (!used || !quota) return
   try {
     const estimate = await navigator.storage?.estimate?.()
@@ -2011,13 +2045,13 @@ function applyLocalPreferences() {
   const reduceMotion = prefs.reduceMotion === true
   document.body.classList.toggle('compact-files', compact)
   document.body.classList.toggle('reduce-motion', reduceMotion)
-  if ($('#compact-files-toggle')) $('#compact-files-toggle').checked = compact
-  if ($('#reduce-motion-toggle')) $('#reduce-motion-toggle').checked = reduceMotion
+  if ($$('#compact-files-toggle')) $$('#compact-files-toggle').checked = compact
+  if ($$('#reduce-motion-toggle')) $$('#reduce-motion-toggle').checked = reduceMotion
 }
 function saveLocalPreferences() {
   localStorage.setItem(PREFS_KEY, JSON.stringify({
-    compactFiles: $('#compact-files-toggle')?.checked !== false,
-    reduceMotion: $('#reduce-motion-toggle')?.checked === true
+    compactFiles: $$('#compact-files-toggle')?.checked !== false,
+    reduceMotion: $$('#reduce-motion-toggle')?.checked === true
   }))
   applyLocalPreferences()
 }
@@ -2026,10 +2060,10 @@ $$('[data-theme-choice]').forEach(button => button.addEventListener('click', () 
   applyThemePreference()
 }))
 $$('[data-accent]').forEach(button => button.addEventListener('click', () => applyAccentColour(button.dataset.accent)))
-$('#accent-picker')?.addEventListener('input', event => applyAccentColour(event.target.value))
-$('#compact-files-toggle')?.addEventListener('change', saveLocalPreferences)
-$('#reduce-motion-toggle')?.addEventListener('change', saveLocalPreferences)
-$('#refresh-storage')?.addEventListener('click', () => { void refreshStorageUsage() })
+$$('#accent-picker')?.addEventListener('input', event => applyAccentColour(event.target.value))
+$$('#compact-files-toggle')?.addEventListener('change', saveLocalPreferences)
+$$('#reduce-motion-toggle')?.addEventListener('change', saveLocalPreferences)
+$$('#refresh-storage')?.addEventListener('click', () => { void refreshStorageUsage() })
 applyThemePreference()
 applyAccentColour(localStorage.getItem(ACCENT_KEY) || '#526c91')
 applyLocalPreferences()
@@ -2038,6 +2072,7 @@ document.addEventListener('click', event => {
   if (event.target instanceof Element && event.target.closest('.source-item-actions, .package-actions')) return
   $$('.source-item-menu, .package-menu').forEach(menu => { menu.hidden = true })
   $$('.source-menu-button').forEach(button => button.setAttribute('aria-expanded', 'false'))
+  $$('.source-file-row.menu-open').forEach(row => row.classList.remove('menu-open'))
 })
 window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
   if (localStorage.getItem(THEME_KEY) === 'system') applyThemePreference()

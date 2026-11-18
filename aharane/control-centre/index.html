@@ -125,18 +125,25 @@
       </section>
 
       <section class="view-section" id="view-files" hidden>
-        <div class="page-heading"><div><p class="eyebrow">BOT SOURCE</p><h1>Files</h1><p class="muted">Browse and manage Aharane's source files.</p></div></div>
+        <div class="page-heading files-page-heading"><div><h1>Files</h1></div></div>
         <div class="files-toolbar">
-          <div class="files-breadcrumb-row">
-            <div id="source-breadcrumb" class="source-breadcrumb" aria-label="Folder path"></div>
-            <button class="text-button export-source-button" id="export-bot-source" type="button" disabled title="Source-only export requires a dedicated server export endpoint">Export Bot Source</button>
-          </div>
           <div class="files-search-row">
-            <label class="search-field" for="file-search"><span aria-hidden="true">⌕</span><input id="file-search" type="search" placeholder="Search files and folders" autocomplete="off"></label>
-            <button class="button button-outline" id="source-new-folder" type="button">New folder</button>
-            <button class="button button-dark" id="source-new-file" type="button">New file</button>
+            <label class="search-field" for="file-search">
+              <svg class="files-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"></circle><path d="m16 16 5 5"></path></svg>
+              <input id="file-search" type="search" placeholder="Search files and folders" autocomplete="off">
+            </label>
           </div>
-          <div class="files-quiet-actions"><button class="text-button" id="source-up" type="button" disabled>Up one folder</button><button class="text-button" id="source-refresh" type="button">Refresh</button></div>
+          <div class="files-create-row">
+            <button class="button button-dark" id="source-new-file" type="button">New file</button>
+            <button class="button button-outline" id="source-new-folder" type="button">New folder</button>
+          </div>
+        </div>
+        <div class="files-breadcrumb-row">
+          <div id="source-breadcrumb" class="source-breadcrumb" aria-label="Folder path"></div>
+          <button class="button export-source-button" id="export-bot-source" type="button" disabled title="Source-only export is not available on this server yet">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 9 5v10l-9 5-9-5V7l9-5Z"></path><path d="m3.5 7 8.5 5 8.5-5M12 12v10"></path></svg>
+            <span>Export Bot Source</span>
+          </button>
         </div>
         <div id="source-message" class="message" role="status"></div>
         <div id="source-file-list" class="source-file-list"><p class="muted">Loading Aharane source files…</p></div>

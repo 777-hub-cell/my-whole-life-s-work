@@ -795,3 +795,368 @@ body[data-theme="dark"] .chat-message-row.outgoing .chat-bubble { background:#34
 }
 
 .editor-back-button,.chat-back-button,.media-viewer-header button { width:auto; min-width:38px; padding:0 5px; font-size:11px; font-weight:600; }
+
+
+/* Files screen — layout and proportions follow the supplied Android reference. */
+@media (max-width: 760px) {
+  #view-files {
+    font-family: Georgia, "Times New Roman", serif;
+  }
+  #view-files .files-page-heading {
+    margin: 2px 0 16px;
+    min-height: 29px;
+  }
+  #view-files .files-page-heading h1 {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 27px;
+    line-height: 1.12;
+    font-weight: 600;
+    letter-spacing: -.045em;
+    color: #171717;
+  }
+  #view-files .files-toolbar {
+    padding: 0 0 17px;
+    border: 0;
+  }
+  #view-files .files-search-row {
+    display: flex;
+    margin: 0;
+    gap: 0;
+  }
+  #view-files .files-search-row .search-field {
+    display: flex;
+    width: 100%;
+    min-height: 48px;
+    padding: 0 14px;
+    gap: 10px;
+    border: 0;
+    border-radius: 13px;
+    background: #f0f0ee;
+  }
+  #view-files .files-search-icon {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    fill: none;
+    stroke: #858583;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  #view-files .files-search-row .search-field input {
+    min-height: 46px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #242424;
+    font: 13px Georgia, "Times New Roman", serif;
+  }
+  #view-files .files-search-row .search-field input::placeholder {
+    color: #999996;
+    opacity: 1;
+  }
+  #view-files .files-create-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+    padding-bottom: 17px;
+    border-bottom: 1px solid #e1e1de;
+  }
+  #view-files .files-create-row .button {
+    min-height: 48px;
+    border: 0;
+    border-radius: 10px;
+    font: 14px Georgia, "Times New Roman", serif;
+    font-weight: 500;
+  }
+  #view-files .files-create-row #source-new-file {
+    background: #171717;
+    color: #fff;
+  }
+  #view-files .files-create-row #source-new-folder {
+    background: #eeeeec;
+    color: #292929;
+  }
+  #view-files .files-breadcrumb-row {
+    min-height: 65px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 0;
+  }
+  #view-files .source-breadcrumb {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+    font: 13px Georgia, "Times New Roman", serif;
+    color: #262626;
+  }
+  #view-files .crumb-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 2px 0;
+    border: 0;
+    background: transparent;
+    color: #252525;
+    font: 13px Georgia, "Times New Roman", serif;
+  }
+  #view-files .root-crumb {
+    color: #888;
+  }
+  #view-files .breadcrumb-home-icon {
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+  }
+  #view-files .breadcrumb-home-icon svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  #view-files .crumb-separator {
+    color: #9b9b98;
+    font: 13px Georgia, "Times New Roman", serif;
+  }
+  #view-files .export-source-button {
+    display: inline-flex;
+    min-height: 36px;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 0 11px;
+    border: 0;
+    border-radius: 12px;
+    background: #eeeeec;
+    color: #292929;
+    font: 11px Georgia, "Times New Roman", serif;
+    white-space: nowrap;
+    opacity: 1;
+  }
+  #view-files .export-source-button:disabled {
+    opacity: 1;
+    cursor: not-allowed;
+  }
+  #view-files .export-source-button svg {
+    width: 17px;
+    height: 17px;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  #view-files #source-message:empty {
+    display: none;
+  }
+  #view-files .source-file-list {
+    position: relative;
+    display: grid;
+    gap: 8px;
+    margin: 0 -16px;
+    padding: 8px;
+    background: #f5f5f2;
+    overflow: visible;
+  }
+  #view-files .source-file-row {
+    position: relative;
+    z-index: 0;
+    display: flex;
+    min-height: 57px;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 9px;
+    border: 1px solid #e2e2df;
+    border-radius: 14px;
+    background: #fff;
+    overflow: visible;
+  }
+  #view-files .source-file-row.menu-open {
+    z-index: 30;
+  }
+  #view-files .source-file-row.selected {
+    border-color: #999995;
+    background: #fdfdfc;
+  }
+  #view-files .source-file-select {
+    appearance: none;
+    display: grid;
+    width: 14px;
+    height: 14px;
+    min-height: 14px;
+    flex: none;
+    place-items: center;
+    margin: 0 1px;
+    padding: 0;
+    border: 1.5px solid #a5a5a2;
+    border-radius: 3px;
+    background: #fff;
+    box-shadow: none;
+  }
+  #view-files .source-file-select:checked {
+    border-color: #252525;
+    background: #252525;
+  }
+  #view-files .source-file-select:checked::after {
+    content: "✓";
+    color: #fff;
+    font: 10px/1 Arial, sans-serif;
+  }
+  #view-files .source-file-open {
+    display: flex;
+    min-width: 0;
+    min-height: 39px;
+    flex: 1;
+    align-items: center;
+    gap: 9px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #191919;
+    text-align: left;
+  }
+  #view-files .source-file-icon {
+    display: grid;
+    width: 39px;
+    height: 39px;
+    flex: none;
+    place-items: center;
+    border-radius: 10px;
+    background: #efefed;
+    color: #5c5c5a;
+  }
+  #view-files .source-file-icon svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  #view-files .source-file-label {
+    display: block;
+    min-width: 0;
+  }
+  #view-files .source-file-label strong {
+    display: block;
+    overflow-wrap: anywhere;
+    color: #151515;
+    font: 15px Georgia, "Times New Roman", serif;
+    font-weight: 400;
+  }
+  #view-files .source-file-label small {
+    display: none;
+  }
+  #view-files .source-item-actions {
+    position: static;
+    z-index: 2;
+    flex: none;
+  }
+  #view-files .source-menu-button {
+    display: grid;
+    width: 27px;
+    height: 40px;
+    min-height: 40px;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #777;
+  }
+  #view-files .source-menu-button svg {
+    width: 19px;
+    height: 19px;
+    fill: currentColor;
+    stroke: none;
+  }
+  #view-files .source-item-menu {
+    position: absolute;
+    z-index: 50;
+    top: calc(100% + 8px);
+    right: 0;
+    width: min(206px, calc(100vw - 42px));
+    min-width: 190px;
+    padding: 6px;
+    border: 1px solid #dededb;
+    border-radius: 13px;
+    background: #fff;
+    box-shadow: 0 7px 24px #00000012;
+  }
+  #view-files .source-item-menu[hidden] {
+    display: none !important;
+  }
+  #view-files .source-item-menu button {
+    display: flex;
+    width: 100%;
+    min-height: 38px;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #444;
+    text-align: left;
+    font: 13px Georgia, "Times New Roman", serif;
+  }
+  #view-files .source-item-menu button:hover:not(:disabled) {
+    background: #f5f5f3;
+  }
+  #view-files .source-item-menu button:disabled {
+    opacity: 1;
+    cursor: default;
+  }
+  #view-files .source-menu-icon {
+    display: grid;
+    width: 17px;
+    height: 17px;
+    flex: none;
+    place-items: center;
+    color: #4b4b49;
+  }
+  #view-files .source-menu-icon svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  #view-files .source-item-menu button.source-menu-danger {
+    color: #bd3d3d;
+  }
+  #view-files .source-item-menu button.source-menu-danger .source-menu-icon {
+    color: #bd3d3d;
+  }
+  #view-files .source-utility-row {
+    margin-top: 10px;
+    padding: 10px 0;
+  }
+  #view-files .zip-library {
+    margin-top: 18px;
+  }
+}
+@media (max-width: 380px) {
+  #view-files .export-source-button {
+    padding: 0 8px;
+    font-size: 10px;
+  }
+  #view-files .source-file-row {
+    gap: 7px;
+    padding-left: 7px;
+    padding-right: 7px;
+  }
+}

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isPrivateSelfCommand, isPublicOwnerSender } from '../src/authorization.js'
+import { isPrivateSelfChat, isPrivateSelfCommand, isPublicOwnerSender } from '../src/authorization.js'
 
 const registry = { scope: 'private', commands: new Map([['status', {}]]) }
 const self = '2348012345678@s.whatsapp.net'
@@ -42,4 +42,20 @@ test('Public Owner is distinct from Private Owner and is only recognised on the 
   assert.equal(isPublicOwnerSender({
     sessionId: 'public', remoteJid: 'opaque@lid', publicOwnerNumber: '14155550123',
   }), false)
+})
+
+test('the private Chats tab is restricted to the exact private self-chat only', () => {
+  const args = {
+    sessionId: 'private',
+    remoteJid: self,
+    ownJid: self,
+    privateOwnerNumber: '2348012345678',
+  }
+  assert.equal(isPrivateSelfChat(args), true)
+  assert.equal(isPrivateSelfChat({ ...args, sessionId: 'public' }), false)
+  assert.equal(isPrivateSelfChat({ ...args, remoteJid: '2348099999999@s.whatsapp.net' }), false)
+  assert.equal(isPrivateSelfChat({ ...args, remoteJid: '120363000000000000@g.us' }), false)
+  assert.equal(isPrivateSelfChat({ ...args, remoteJid: 'opaque@lid' }), false)
+  assert.equal(isPrivateSelfChat({ ...args, ownJid: '2348099999999@s.whatsapp.net' }), false)
+  assert.equal(isPrivateSelfChat({ ...args, privateOwnerNumber: '2348099999999' }), false)
 })

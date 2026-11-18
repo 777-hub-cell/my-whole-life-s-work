@@ -18,7 +18,7 @@ import {
 } from './policy.js'
 import { createAccountRuntime } from './account-runtime.js'
 import { loadCommandRegistry, dispatchCommand } from './command-registry.js'
-import { isPrivateSelfCommand, isPublicOwnerSender } from './authorization.js'
+import { isPrivateSelfChat, isPrivateSelfCommand, isPublicOwnerSender } from './authorization.js'
 import { loadOwnerConfig, normalizeOwnerConfig, saveOwnerConfig } from './owner-config.js'
 import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_ARCHIVE_BYTES } from './update-manager.js'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
@@ -694,9 +694,10 @@ async function handleMessages(sessionId, currentSocket, event) {
     if (sessionId === 'private') {
       // Private Account A is an owner console, never a public responder.
       // Only registered commands in its exact self-chat may run.
-      const privateOwnNumber = senderNumberFromJid(currentSocket.user?.id || '')
-      const privateChatNumber = senderNumberFromJid(remoteJid)
-      if (message.key.fromMe !== true || !ownerConfig.privateOwnerNumber || privateOwnNumber !== ownerConfig.privateOwnerNumber || privateChatNumber !== ownerConfig.privateOwnerNumber) continue
+      if (message.key.fromMe !== true || !isPrivateSelfChat({
+        sessionId, remoteJid, ownJid: currentSocket.user?.id || '',
+        privateOwnerNumber: ownerConfig.privateOwnerNumber,
+      })) continue
       await chatStore.recordMessage({ sessionId, message, socket: currentSocket, downloadMedia: (msg, socket) => downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: socket.updateMediaMessage }) })
       if (studioSettings.private.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
       privateControl = isPrivateSelfCommand({
@@ -1142,7 +1143,7 @@ function authorizedChat(accountId, jid) {
   if (accountId === 'private') {
     const session = accountRuntime.get('private')
     const own = senderNumberFromJid(session.socket?.user?.id || session.auth?.state?.creds?.me?.id || '')
-    return Boolean(ownerConfig.privateOwnerNumber && target === ownerConfig.privateOwnerNumber && own === ownerConfig.privateOwnerNumber)
+    return isPrivateSelfChat({ sessionId: accountId, remoteJid: jid, ownJid: session.socket?.user?.id || session.auth?.state?.creds?.me?.id || '', privateOwnerNumber: ownerConfig.privateOwnerNumber })
   }
   return publicAllowedSenders().has(target)
 }

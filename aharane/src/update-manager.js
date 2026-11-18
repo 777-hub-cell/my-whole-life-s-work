@@ -11,8 +11,9 @@ const MAX_SINGLE_FILE_BYTES = 32 * 1024 * 1024
 const MAX_MANIFEST_BYTES = 16 * 1024
 
 const RESERVED_SEGMENTS = new Set([
-  '.git', '.github', 'node_modules', 'whatsapp-auth', 'data',
-  'storage', 'backups', 'logs', 'uploads', 'tmp', '.ssh',
+  '.git', '.github', 'node_modules', 'whatsapp-auth', 'whatsapp-auth-private',
+  'whatsapp-auth-backups', 'data', 'storage', 'backups', 'logs', 'uploads',
+  'tmp', '.ssh',
 ])
 
 function fail(message) {

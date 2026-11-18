@@ -1,2191 +1,378 @@
-const $ = selector => document.querySelector(selector)
-const $$ = selector => [...document.querySelectorAll(selector)]
-const CHUNK_BYTES = 1024 * 1024
-const MAX_ZIP_BYTES = 50 * 1024 * 1024
-let selectedFile = null
-let validatedUpdateId = ''
-let pollingTimer = null
-let sourceFolder = ''
-let sourceFile = null
-let sourceOriginal = ''
-let sourceHash = ''
-let sourceDirty = false
-let sourceFolderFiles = []
-let sourceFolderItems = []
-let sourceOpenTabs = []
 
-let localOnly = false
-let remoteSession = false
-let studioSocket = null
-let studioSocketRetryTimer = null
-let studioSocketRetryDelay = 1000
-let studioDbPromise = null
-let studioFiles = []
-let studioCurrentPath = ''
-let studioOriginalText = ''
-let studioInstallPrompt = null
-let studioObjectUrls = []
-const STUDIO_MAX_FILE_BYTES = 2 * 1024 * 1024
-const STUDIO_MAX_PROJECT_BYTES = 20 * 1024 * 1024
-const STUDIO_MAX_FILES = 250
-const APP_SOURCE_FILES = ['index.html', 'styles.css', 'app.js', 'manifest.webmanifest']
-let studioAppSourcePath = 'index.html'
-let studioAppSourceOriginal = ''
-
-function showMessage(target, message, kind = '') {
-  const element = typeof target === 'string' ? $$(target) : target
-  if (!element) return
-  element.textContent = message || ''
-  element.className = 'message' + (kind ? ' ' + kind : '')
-}
-
-async function api(path, options = {}) {
-  const response = await fetch('/aharane/api/' + path.replace(/^\//, ''), {
-    credentials: 'same-origin',
-    cache: 'no-store',
-    ...options,
-    headers: {
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(options.headers || {}),
-    },
-  })
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok || data.ok === false) {
-    throw new Error(data.error || data.message || `Request failed (${response.status}).`)
-  }
-  return data
-}
-
-// Register the entry-point controls before the rest of the UI initializes.
-// A later screen-specific error must not disable sign-in or the on-device workspace.
-$('#login-form')?.addEventListener('submit', event => {
-  event.preventDefault()
-  void connect('login')
-})
-$('#setup-form')?.addEventListener('submit', event => {
-  event.preventDefault()
-  void connect('setup')
-})
-$('#open-local-studio')?.addEventListener('click', () => localStudioMode('studio'))
-
-function formatBytes(bytes) {
-  if (!Number.isFinite(Number(bytes))) return '—'
-  const value = Number(bytes)
-  if (value < 1024) return value + ' B'
-  if (value < 1024 * 1024) return (value / 1024).toFixed(1) + ' KB'
-  return (value / 1024 / 1024).toFixed(2) + ' MB'
-}
-
-function formatDate(value) {
-  if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString()
-}
-
-function setView(name) {
-  const titles = { overview: 'Home', pairing: 'Pairing', deploy: 'Update bot', files: 'Files', studio: 'Local workspace', env: 'ENV', chats: 'Chats', configuration: 'Configuration', more: 'More', appearance: 'Appearance', 'app-preferences': 'App preferences', storage: 'Storage', activity: 'Activity and logs', help: 'Help and feedback', about: 'About Aharane Studio' }
-  if (['pairing', 'deploy', 'files'].includes(name) && (!remoteSession || localOnly)) {
-    void verifyRemoteAccess(name)
-    return
-  }
-  $$('.view-section').forEach(section => { section.hidden = section.id !== 'view-' + name })
-  $$('.nav-item[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === name))
-  $$('.bottom-nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === name))
-  $('#page-name').textContent = titles[name] || 'Overview'
-  if (name === 'studio') loadStudioFiles().catch(error => showMessage('#studio-message', error.message, 'error'))
-  if (!localOnly && name === 'overview') { refreshStatus().catch(error => showMessage('#overview-message', error.message, 'error')); refreshUpdateStatus().catch(() => {}); }
-  if (!localOnly && name === 'deploy') refreshUpdateStatus().catch(error => showMessage('#deploy-message', error.message, 'error'))
-  if (name === 'storage') void refreshStorageUsage()
-  if (name === 'activity') renderActivityLog()
-  if (!localOnly && name === 'files') {
-    refreshPackages().catch(error => showMessage('#files-upload-message', error.message, 'error'))
-    refreshDraftStatus().catch(error => showMessage('#source-message', error.message, 'error'))
-    loadSourceFolder('').catch(error => showMessage('#source-message', error.message, 'error'))
-  }
-}
-
-let remoteAccessCheck = null
-
-async function verifyRemoteAccess(viewName) {
-  if (remoteAccessCheck) return remoteAccessCheck
-  remoteAccessCheck = (async () => {
-    try {
-      await api('status')
-      remoteSession = true
-      localOnly = false
-      document.body.classList.remove('local-only')
-      setView(viewName)
-    } catch {
-      remoteSession = false
-      await openAuthScreen()
-    }
-  })()
-  try {
-    await remoteAccessCheck
-  } finally {
-    remoteAccessCheck = null
-  }
-}
-
-function setLiveLinkState(label, state = '') {
-  const pill = $('#live-link-pill')
-  if (!pill) return
-  pill.classList.toggle('ok', state === 'connected')
-  pill.classList.toggle('bad', state === 'error')
-  $('#live-link-label').textContent = label
-}
-
-function addLiveActivity(label, kind = '') {
-  const list = $('#live-activity-list')
-  if (!list) return
-  const empty = list.querySelector('.muted')
-  if (empty) list.replaceChildren()
-  const row = document.createElement('div')
-  row.className = 'live-activity-row'
-  const dot = document.createElement('i')
-  dot.className = 'live-activity-dot' + (kind ? ' ' + kind : '')
-  const message = document.createElement('span')
-  message.textContent = label
-  const time = document.createElement('time')
-  time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  row.append(dot, message, time)
-  list.prepend(row)
-  while (list.children.length > 12) list.lastElementChild.remove()
-}
-
-function applyLiveRuntime(snapshot) {
-  if (!snapshot || typeof snapshot !== 'object') return
-  const online = snapshot.state === 'connected'
-  $('#service-pill')?.classList.toggle('ok', online)
-  $('#service-pill')?.classList.toggle('bad', ['degraded', 'needs-pairing', 'disconnected'].includes(snapshot.state))
-  if ($('#service-pill-label')) $('#service-pill-label').textContent = online ? 'Connected' : 'Aharane ' + String(snapshot.state || 'unknown')
-  if ($('#whatsapp-state')) $('#whatsapp-state').textContent = snapshot.connected ? 'Connected' : snapshot.state || 'Unknown'
-  if ($('#whatsapp-dot')) {
-    $('#whatsapp-dot').classList.toggle('connected', Boolean(snapshot.connected))
-    $('#whatsapp-dot').classList.toggle('offline', !snapshot.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(snapshot.state))
-  }
-  if ($('#allowed-senders')) $('#allowed-senders').textContent = String(snapshot.allowlistedSenderCount ?? '—')
-  if ($('#account-status-text')) $('#account-status-text').textContent = snapshot.connected ? 'Connected' : (snapshot.state || 'Not connected')
-  if ($('#home-account-dot')) $('#home-account-dot').classList.toggle('connected', Boolean(snapshot.connected))
-  if ($('#account-status-dot')) $('#account-status-dot').classList.toggle('connected', Boolean(snapshot.connected))
-  if ($('#connection-detail')) {
-    $('#connection-detail').textContent = snapshot.connected
-      ? ''
-      : snapshot.registered ? 'The saved WhatsApp session is not currently connected.' : 'This Aharane instance has not completed WhatsApp pairing.'
-  }
-}
-
-function handleStudioEvent(event) {
-  if (!event || typeof event.type !== 'string') return
-  if (['studio.connected', 'studio.snapshot', 'whatsapp.status'].includes(event.type)) {
-    applyLiveRuntime(event.data)
-    if (event.type === 'whatsapp.status') {
-      const state = event.data?.state || 'unknown'
-      addLiveActivity('WhatsApp connection: ' + state, state === 'connected' ? 'good' : 'neutral')
-    }
-    return
-  }
-  if (event.type === 'whatsapp.command.received') {
-    addLiveActivity('Received command ' + String(event.data?.command || 'unknown').slice(0, 40), 'neutral')
-    return
-  }
-  if (event.type === 'whatsapp.command.replied') {
-    addLiveActivity('Replied to ' + String(event.data?.command || 'command').slice(0, 40), 'good')
-    return
-  }
-  if (event.type === 'studio.error') addLiveActivity('Live connection error: ' + String(event.data?.error || 'unknown'), 'bad')
-}
-
-function stopStudioSocket() {
-  if (studioSocketRetryTimer) clearTimeout(studioSocketRetryTimer)
-  studioSocketRetryTimer = null
-  const active = studioSocket
-  studioSocket = null
-  if (active) {
-    active.onclose = null
-    try { active.close(1000, 'Signed out') } catch {}
-  }
-  setLiveLinkState('Live link off')
-}
-
-function connectStudioSocket() {
-  if (!remoteSession || localOnly) return
-  if (studioSocket && [WebSocket.CONNECTING, WebSocket.OPEN].includes(studioSocket.readyState)) return
-  if (studioSocketRetryTimer) clearTimeout(studioSocketRetryTimer)
-  studioSocketRetryTimer = null
-  setLiveLinkState('Connecting…')
-  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const socket = new WebSocket(protocol + '//' + location.host + '/aharane/ws')
-  studioSocket = socket
-  socket.addEventListener('open', () => {
-    studioSocketRetryDelay = 1000
-    setLiveLinkState('Live', 'connected')
-    addLiveActivity('Live connection established', 'good')
-    try { socket.send(JSON.stringify({ type: 'status.get' })) } catch {}
-  })
-  socket.addEventListener('message', event => {
-    try { handleStudioEvent(JSON.parse(String(event.data))) } catch {}
-  })
-  socket.addEventListener('error', () => {
-    setLiveLinkState('Connection issue', 'error')
-    try { socket.close() } catch {}
-  })
-  socket.addEventListener('close', () => {
-    if (studioSocket === socket) studioSocket = null
-    if (!remoteSession || localOnly) return
-    setLiveLinkState('Reconnecting…', 'error')
-    studioSocketRetryTimer = setTimeout(() => {
-      studioSocketRetryTimer = null
-      connectStudioSocket()
-    }, studioSocketRetryDelay)
-    studioSocketRetryDelay = Math.min(30_000, studioSocketRetryDelay * 2)
-  })
-}
-
-async function refreshStatus() {
-  const status = await api('status')
-  const pill = $('#service-pill')
-  const online = status.state === 'connected'
-  pill.classList.toggle('ok', online)
-  pill.classList.toggle('bad', ['degraded', 'needs-pairing', 'disconnected'].includes(status.state))
-  $('#service-pill-label').textContent = online ? 'Connected' : 'Aharane ' + String(status.state || 'unknown')
-  $('#whatsapp-state').textContent = status.connected ? 'Connected' : status.state || 'Unknown'
-  $('#whatsapp-dot').classList.toggle('connected', status.connected)
-  $('#whatsapp-dot').classList.toggle('offline', !status.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(status.state))
-  $('#connection-detail').textContent = status.connected
-    ? ''
-    : status.registered ? 'The saved WhatsApp session is not currently connected.' : 'This Aharane instance has not completed WhatsApp pairing.'
-  $('#allowed-senders').textContent = String(status.allowlistedSenderCount ?? '—')
-  if ($('#account-status-text')) $('#account-status-text').textContent = status.connected ? 'Connected' : (status.state || 'Not connected')
-  if ($('#home-account-dot')) $('#home-account-dot').classList.toggle('connected', Boolean(status.connected))
-  if ($('#account-status-dot')) $('#account-status-dot').classList.toggle('connected', Boolean(status.connected))
-  return status
-}
-
-async function refreshUpdateStatus() {
-  const status = await api('update/status')
-  $('#bot-version').textContent = status.currentVersion || '—'
-  const update = status.update || { status: 'idle' }
-  $('#last-update-status').textContent = update.status || 'No update recorded'
-  $('#last-update-version').textContent = update.version || '—'
-  $('#last-update-date').textContent = formatDate(update.finishedAt || update.startedAt)
-  $('#deployment-state').textContent = update.status || 'idle'
-  $('#deployment-version').textContent = update.version || '—'
-  $('#deployment-finished').textContent = formatDate(update.finishedAt)
-  return update
-}
-
-async function refreshPackages() {
-  const result = await api('files/packages')
-  const list = $('#package-list')
-  list.replaceChildren()
-  if (!result.packages?.length) {
-    const empty = document.createElement('p')
-    empty.className = 'muted'
-    empty.textContent = 'No ZIP packages stored yet.'
-    list.append(empty)
-    return
-  }
-  for (const item of result.packages) {
-    const row = document.createElement('div')
-    row.className = 'package-row'
-    const icon = document.createElement('span')
-    icon.className = 'package-file-icon'
-    icon.textContent = 'ZIP'
-    const info = document.createElement('div')
-    info.className = 'package-info'
-    const name = document.createElement('strong')
-    name.textContent = item.filename
-    const details = document.createElement('small')
-    details.textContent = `Version ${item.version} · ${formatBytes(item.size)} · ${item.fileCount} files`
-    info.append(name, details)
-    const version = document.createElement('span')
-    version.className = 'package-version'
-    version.textContent = item.version
-    const actions = document.createElement('div')
-    actions.className = 'package-actions'
-    const menuButton = document.createElement('button')
-    menuButton.className = 'package-menu-button'
-    menuButton.type = 'button'
-    menuButton.textContent = '⋯'
-    menuButton.setAttribute('aria-label', 'More actions for ' + item.filename)
-    const menu = document.createElement('div')
-    menu.className = 'package-menu'
-    menu.hidden = true
-    const updateButton = document.createElement('button')
-    updateButton.type = 'button'
-    updateButton.textContent = 'Update Aharane'
-    updateButton.addEventListener('click', () => {
-      menu.hidden = true
-      void useStoredPackage(item.updateId)
-    })
-    const removeButton = document.createElement('button')
-    removeButton.type = 'button'
-    removeButton.textContent = 'Remove ZIP'
-    removeButton.addEventListener('click', () => {
-      menu.hidden = true
-      void removeStoredPackage(item.updateId, item.filename)
-    })
-    menu.append(updateButton, removeButton)
-    menuButton.addEventListener('click', () => { menu.hidden = !menu.hidden })
-    actions.append(menuButton, menu)
-    row.append(icon, info, version, actions)
-    list.append(row)
-  }
-}
-
-
-
-let activeChat = null
-let activeChatMessages = []
-let imageViewerItems = []
-let imageViewerIndex = -1
-let imageViewerTouchStart = null
-
-function safeChatMediaUrl(value) {
-  try {
-    const url = new URL(String(value || ''), location.origin)
-    return ['http:', 'https:'].includes(url.protocol) ? url.href : ''
-  } catch {
-    return ''
-  }
-}
-
-function chatTimeLabel(value) {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-function renderChatList(chats) {
-  const target = $('#chat-list')
-  if (!target) return
-  target.replaceChildren()
-  if (!Array.isArray(chats) || !chats.length) {
-    const empty = document.createElement('div')
-    empty.className = 'chat-empty-state'
-    const title = document.createElement('strong')
-    title.textContent = 'No conversations to show'
-    const note = document.createElement('p')
-    note.textContent = 'Chats will appear here when the WhatsApp messaging service is connected.'
-    empty.append(title, note)
-    target.append(empty)
-    return
-  }
-  for (const chat of chats) {
-    const row = document.createElement('button')
-    row.type = 'button'
-    row.className = 'chat-row'
-    row.addEventListener('click', () => openChatThread(chat))
-    const avatar = document.createElement('span')
-    avatar.className = 'chat-row-avatar'
-    const imageUrl = safeChatMediaUrl(chat.avatarUrl)
-    if (imageUrl) {
-      const image = document.createElement('img')
-      image.src = imageUrl
-      image.alt = ''
-      avatar.append(image)
-    } else avatar.textContent = String(chat.name || '?').trim().charAt(0).toUpperCase() || '?'
-    const copy = document.createElement('span')
-    copy.className = 'chat-row-copy'
-    const top = document.createElement('span')
-    top.className = 'chat-row-top'
-    const name = document.createElement('strong')
-    name.textContent = String(chat.name || chat.phone || 'Unknown contact')
-    const time = document.createElement('time')
-    time.textContent = chatTimeLabel(chat.timestamp || chat.updatedAt)
-    top.append(name, time)
-    const bottom = document.createElement('span')
-    bottom.className = 'chat-row-bottom'
-    const preview = document.createElement('small')
-    preview.textContent = String(chat.lastMessage || '')
-    bottom.append(preview)
-    if (Number(chat.unreadCount) > 0) {
-      const unread = document.createElement('span')
-      unread.className = 'chat-unread-count'
-      unread.textContent = String(chat.unreadCount)
-      bottom.append(unread)
-    }
-    copy.append(top, bottom)
-    row.append(avatar, copy)
-    target.append(row)
-  }
-}
-
-function renderChatMessages(messages) {
-  const target = $('#chat-thread-messages')
-  if (!target) return
-  target.replaceChildren()
-  if (!Array.isArray(messages) || !messages.length) {
-    const empty = document.createElement('div')
-    empty.className = 'chat-thread-empty'
-    empty.textContent = 'Messages from this conversation will appear here.'
-    target.append(empty)
-    return
-  }
-  for (const message of messages) {
-    const row = document.createElement('div')
-    row.className = 'chat-message-row ' + (message.fromMe === true || message.direction === 'outgoing' ? 'outgoing' : 'incoming')
-    const bubble = document.createElement('div')
-    const type = String(message.type || 'text').toLowerCase()
-    bubble.className = 'chat-bubble chat-bubble-' + type
-    const url = safeChatMediaUrl(message.url)
-    const caption = String(message.caption || message.text || '')
-    if (type === 'text') {
-      bubble.textContent = caption
-    } else if (['image', 'gif', 'sticker'].includes(type) && url) {
-      const media = document.createElement('button')
-      media.type = 'button'
-      media.className = 'chat-media-open'
-      const image = document.createElement('img')
-      image.src = url
-      image.alt = caption || (type === 'sticker' ? 'Sticker' : 'Shared image')
-      media.append(image)
-      media.addEventListener('click', () => openChatImageViewer(message))
-      bubble.append(media)
-      if (caption) {
-        const text = document.createElement('div')
-        text.textContent = caption
-        bubble.append(text)
-      }
-    } else if (type === 'video' && url) {
-      const media = document.createElement('button')
-      media.type = 'button'
-      media.className = 'chat-media-open'
-      const preview = document.createElement('span')
-      preview.className = 'chat-video-preview'
-      preview.textContent = 'Play video'
-      media.append(preview)
-      media.addEventListener('click', () => openChatVideoViewer(message))
-      bubble.append(media)
-      if (caption) {
-        const text = document.createElement('div')
-        text.textContent = caption
-        bubble.append(text)
-      }
-    } else if (type === 'audio' && url) {
-      const audio = document.createElement('audio')
-      audio.className = 'chat-audio'
-      audio.controls = true
-      audio.preload = 'none'
-      audio.src = url
-      bubble.append(audio)
-    } else if (type === 'document' && url) {
-      const link = document.createElement('a')
-      link.className = 'chat-document-link'
-      link.href = url
-      link.download = String(message.fileName || 'WhatsApp document')
-      const mark = document.createElement('span')
-      mark.className = 'chat-document-mark'
-      mark.textContent = 'FILE'
-      const name = document.createElement('span')
-      name.textContent = String(message.fileName || 'Download document')
-      link.append(mark, name)
-      bubble.append(link)
-    } else {
-      bubble.textContent = caption || 'Attachment'
-    }
-    if (message.timestamp) {
-      const time = document.createElement('time')
-      time.className = 'chat-message-time'
-      time.textContent = chatTimeLabel(message.timestamp)
-      bubble.append(time)
-    }
-    row.append(bubble)
-    target.append(row)
-  }
-  target.scrollTop = target.scrollHeight
-}
-
-function openChatThread(chat) {
-  if (!chat || typeof chat !== 'object') return
-  activeChat = chat
-  activeChatMessages = Array.isArray(chat.messages) ? chat.messages : []
-  const name = String(chat.name || chat.phone || 'WhatsApp chat')
-  $('#chat-thread-name').textContent = name
-  $('#chat-thread-presence').textContent = chat.statusText || 'WhatsApp conversation'
-  const avatar = $('#chat-thread-avatar')
-  avatar.replaceChildren()
-  const imageUrl = safeChatMediaUrl(chat.avatarUrl)
-  if (imageUrl) {
-    const image = document.createElement('img')
-    image.src = imageUrl
-    image.alt = ''
-    avatar.append(image)
-  } else avatar.textContent = name.trim().charAt(0).toUpperCase() || '?'
-  $('#chat-thread-message').textContent = ''
-  $('#chat-message-input').value = ''
-  renderChatMessages(activeChatMessages)
-  $('#chat-thread-screen').hidden = false
-  document.body.classList.add('chat-thread-open')
-}
-
-function closeChatThread() {
-  $('#chat-thread-screen').hidden = true
-  document.body.classList.remove('chat-thread-open')
-  activeChat = null
-  activeChatMessages = []
-  setView('chats')
-}
-
-function showChatImageAt(index) {
-  if (!imageViewerItems.length) return
-  imageViewerIndex = (index + imageViewerItems.length) % imageViewerItems.length
-  const message = imageViewerItems[imageViewerIndex]
-  const url = safeChatMediaUrl(message.url)
-  if (!url) return
-  $('#chat-image').src = url
-  $('#chat-image-title').textContent = String(message.fileName || (message.type === 'sticker' ? 'Sticker' : 'Photo'))
-}
-
-function openChatImageViewer(message) {
-  imageViewerItems = activeChatMessages.filter(item => ['image', 'gif', 'sticker'].includes(String(item.type || '').toLowerCase()) && safeChatMediaUrl(item.url))
-  imageViewerIndex = imageViewerItems.indexOf(message)
-  if (imageViewerIndex < 0) return
-  showChatImageAt(imageViewerIndex)
-  $('#chat-image-viewer').hidden = false
-  document.body.classList.add('chat-media-open')
-}
-
-function closeChatImageViewer() {
-  $('#chat-image-viewer').hidden = true
-  $('#chat-image').removeAttribute('src')
-  imageViewerItems = []
-  imageViewerIndex = -1
-  document.body.classList.remove('chat-media-open')
-}
-
-function openChatVideoViewer(message) {
-  const url = safeChatMediaUrl(message.url)
-  if (!url) return
-  const player = $('#chat-video-player')
-  $('#chat-video-title').textContent = String(message.fileName || 'Video')
-  player.src = url
-  $('#chat-video-viewer').hidden = false
-  document.body.classList.add('chat-media-open')
-  void player.play().catch(() => {})
-}
-
-function closeChatVideoViewer() {
-  const player = $('#chat-video-player')
-  player.pause()
-  player.removeAttribute('src')
-  player.load()
-  $('#chat-video-viewer').hidden = true
-  document.body.classList.remove('chat-media-open')
-}
-
-function downloadChatMedia(url, filename) {
-  const safeUrl = safeChatMediaUrl(url)
-  if (!safeUrl) return
-  const link = document.createElement('a')
-  link.href = safeUrl
-  link.download = filename || 'whatsapp-media'
-  link.rel = 'noopener'
-  document.body.append(link)
-  link.click()
-  link.remove()
-}
-
-function setSourceMessage(message, kind = '') {
-  showMessage('#source-message', message, kind)
-}
-
-async function refreshDraftStatus() {
-  const status = await api('files/draft-status')
-  $('#source-draft-status').textContent = status.pending
-    ? `${status.changedCount} saved file change${status.changedCount === 1 ? '' : 's'} waiting to be applied`
-    : 'No saved file changes'
-  $('#source-apply').disabled = !status.pending
-  $('#source-discard').hidden = !status.pending
-  return status
-}
-
-function updateSourceBreadcrumb() {
-  const parts = sourceFolder ? sourceFolder.split('/') : []
-  const root = document.createElement('button')
-  root.type = 'button'
-  root.className = 'crumb-button root-crumb'
-  const homeIcon = document.createElement('span')
-  homeIcon.className = 'breadcrumb-home-icon'
-  homeIcon.setAttribute('aria-hidden', 'true')
-  homeIcon.innerHTML = '<svg viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1V10Z"></path></svg>'
-  const homeLabel = document.createElement('span')
-  homeLabel.textContent = 'Home'
-  root.append(homeIcon, homeLabel)
-  root.addEventListener('click', () => { void loadSourceFolder('') })
-  const breadcrumb = $('#source-breadcrumb')
-  breadcrumb.replaceChildren(root)
-  for (let index = 0; index < parts.length; index += 1) {
-    const separator = document.createElement('span')
-    separator.textContent = '/'
-    separator.className = 'crumb-separator'
-    breadcrumb.append(separator)
-    const button = document.createElement('button')
-    button.type = 'button'
-    button.className = 'crumb-button'
-    button.textContent = parts[index]
-    const path = parts.slice(0, index + 1).join('/')
-    button.addEventListener('click', () => { void loadSourceFolder(path) })
-    breadcrumb.append(button)
-  }
-  $('#source-up').disabled = !sourceFolder
-  $('#source-new-file').disabled = false
-  $('#source-new-folder').disabled = false
-}
-
-async function loadSourceFolder(folder) {
-  if (sourceDirty && !window.confirm('Discard unsaved editor typing and close this file?')) return
-  sourceFolder = String(folder || '')
-  sourceFile = null
-  sourceOriginal = ''
-  sourceHash = ''
-  sourceDirty = false
-  $('#source-editor-panel').hidden = true
-  updateSourceBreadcrumb()
-  $('#source-file-list').replaceChildren()
-  const loading = document.createElement('p')
-  loading.className = 'muted'
-  loading.textContent = 'Loading source files…'
-  $('#source-file-list').append(loading)
-  const query = sourceFolder ? '?item=' + encodeURIComponent(sourceFolder) : ''
-  const result = await api('files/tree' + query)
-  const list = $('#source-file-list')
-  list.replaceChildren()
-  if (!result.children?.length) {
-    const empty = document.createElement('p')
-    empty.className = 'muted'
-    empty.textContent = 'This folder is empty.'
-    list.append(empty)
-  }
-  const orderedChildren = [...(result.children || [])].sort((a, b) => (a.type === b.type ? 0 : a.type === 'folder' ? -1 : 1) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
-  sourceFolderItems = orderedChildren
-  sourceFolderFiles = orderedChildren.filter(item => item.type === 'file')
-  renderSourceEditorExplorer()
-  for (const item of orderedChildren) {
-    const row = document.createElement('div')
-    row.className = 'source-file-row'
-    row.dataset.name = item.name.toLowerCase()
-    row.dataset.type = item.type
-
-    const select = document.createElement('input')
-    select.type = 'checkbox'
-    select.className = 'source-file-select'
-    select.setAttribute('aria-label', 'Select ' + item.name)
-    select.addEventListener('change', () => row.classList.toggle('selected', select.checked))
-
-    const name = document.createElement('button')
-    name.className = 'source-file-open'
-    name.type = 'button'
-    const icon = document.createElement('span')
-    icon.className = 'source-file-icon'
-    icon.setAttribute('aria-hidden', 'true')
-    icon.innerHTML = item.type === 'folder'
-      ? '<svg viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11Z"></path><path d="M3.5 9h17"></path></svg>'
-      : '<svg viewBox="0 0 24 24"><path d="m8 7-4 5 4 5M16 7l4 5-4 5M14 5l-4 14"></path></svg>'
-    const text = document.createElement('span')
-    text.className = 'source-file-label'
-    const title = document.createElement('strong')
-    title.textContent = item.name
-    const meta = document.createElement('small')
-    meta.textContent = item.type === 'folder' ? 'Folder' : formatBytes(item.size)
-    text.append(title, meta)
-    name.append(icon, text)
-    name.addEventListener('click', () => {
-      if (item.type === 'folder') void loadSourceFolder(item.path)
-      else void openSourceFile(item.path)
-    })
-    row.append(select, name)
-
-    const actionWrap = document.createElement('div')
-    actionWrap.className = 'source-item-actions'
-    const menuButton = document.createElement('button')
-    menuButton.className = 'source-menu-button'
-    menuButton.type = 'button'
-    menuButton.setAttribute('aria-label', 'Actions for ' + item.name)
-    menuButton.setAttribute('aria-expanded', 'false')
-    menuButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.5"></circle><circle cx="12" cy="12" r="1.5"></circle><circle cx="12" cy="19" r="1.5"></circle></svg>'
-
-    const menu = document.createElement('div')
-    menu.className = 'source-item-menu'
-    menu.hidden = true
-    const menuIcons = {
-      preview: '<svg viewBox="0 0 24 24"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.5"></circle></svg>',
-      download: '<svg viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 19h16"></path></svg>',
-      rename: '<svg viewBox="0 0 24 24"><path d="m14 5 5 5M4 20l4.2-.8L19 8.4a2.1 2.1 0 0 0-3-3L5.2 16.2 4 20Z"></path></svg>',
-      duplicate: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>',
-      move: '<svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"></path><path d="M7 14h10m-4-4 4 4-4 4"></path></svg>',
-      archive: '<svg viewBox="0 0 24 24"><path d="M4 7h16v13H4zM3 4h18v3H3zM9 11h6"></path></svg>',
-      delete: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"></path></svg>'
-    }
-    const addMenuAction = (label, iconName, handler, disabled = false, danger = false) => {
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.className = danger ? 'source-menu-danger' : ''
-      button.disabled = disabled
-      if (disabled) button.title = 'This action is not available on the server yet.'
-      const iconNode = document.createElement('span')
-      iconNode.className = 'source-menu-icon'
-      iconNode.setAttribute('aria-hidden', 'true')
-      iconNode.innerHTML = menuIcons[iconName] || ''
-      const labelNode = document.createElement('span')
-      labelNode.textContent = label
-      button.append(iconNode, labelNode)
-      button.addEventListener('click', () => {
-        menu.hidden = true
-        menuButton.setAttribute('aria-expanded', 'false')
-        row.classList.remove('menu-open')
-        if (handler) void handler()
-      })
-      menu.append(button)
-    }
-
-    if (item.type === 'file') {
-      addMenuAction('Preview', 'preview', () => openSourceFile(item.path))
-      addMenuAction('Download', 'download', async () => {
-        try {
-          const result = await api('files/preview?item=' + encodeURIComponent(item.path))
-          const blob = new Blob([result.content], { type: 'text/plain;charset=utf-8' })
-          const url = URL.createObjectURL(blob)
-          const link = document.createElement('a')
-          link.href = url
-          link.download = item.name
-          document.body.append(link)
-          link.click()
-          link.remove()
-          URL.revokeObjectURL(url)
-        } catch (error) { setSourceMessage(error.message, 'error') }
-      })
-      addMenuAction('Rename', 'rename', null, true)
-      addMenuAction('Duplicate', 'duplicate', null, true)
-      addMenuAction('Move', 'move', null, true)
-      addMenuAction('Delete', 'delete', () => deleteSourceFile(item.path), ['README.md', 'UPDATE-PACKAGE.md', 'LICENSE', 'AGENTS.md'].includes(item.name), true)
-    } else {
-      addMenuAction('Rename', 'rename', null, true)
-      addMenuAction('Duplicate', 'duplicate', null, true)
-      addMenuAction('Move', 'move', null, true)
-      addMenuAction('Download as ZIP', 'archive', null, true)
-      addMenuAction('Delete', 'delete', null, true, true)
-    }
-
-    menuButton.addEventListener('click', event => {
-      event.stopPropagation()
-      const opening = menu.hidden
-      $$('.source-item-menu').forEach(other => {
-        other.hidden = true
-        other.closest('.source-file-row')?.classList.remove('menu-open')
-      })
-      $$('.source-menu-button').forEach(other => other.setAttribute('aria-expanded', 'false'))
-      menu.hidden = !opening
-      menuButton.setAttribute('aria-expanded', String(opening))
-      row.classList.toggle('menu-open', opening)
-    })
-    actionWrap.append(menuButton, menu)
-    row.append(actionWrap)
-    list.append(row)
-  }
-  await refreshDraftStatus()
-}
-
-function escapeEditorHtml(value) {
-  return String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]))
-}
-function highlightEditorLine(line) {
-  const pattern = /(\/\/.*$|\/\*[\s\S]*?\*\/|`(?:\\.|[^`\\])*`|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|\b(?:async|await|break|case|catch|class|const|continue|default|else|export|extends|false|finally|for|from|function|if|import|in|let|new|null|of|return|static|super|switch|this|throw|true|try|typeof|var|void|while|yield)\b|\b\d+(?:\.\d+)?\b|\b[A-Za-z_$][\w$]*(?=\s*\()|\b[A-Za-z_$][\w$]*(?=\s*:))/g
-  let output = '', cursor = 0, match
-  while ((match = pattern.exec(line))) {
-    output += escapeEditorHtml(line.slice(cursor, match.index))
-    const token = match[0]
-    let type = 'property'
-    if (token.startsWith('//') || token.startsWith('/*')) type = 'comment'
-    else if (/^['"`]/.test(token)) type = 'string'
-    else if (/^\d/.test(token)) type = 'number'
-    else if (/^(async|await|break|case|catch|class|const|continue|default|else|export|extends|false|finally|for|from|function|if|import|in|let|new|null|of|return|static|super|switch|this|throw|true|try|typeof|var|void|while|yield)$/.test(token)) type = 'keyword'
-    else if (token.endsWith('(')) type = 'function'
-    output += '<span class="editor-token-' + type + '">' + escapeEditorHtml(token) + '</span>'
-    cursor = match.index + token.length
-  }
-  return output + escapeEditorHtml(line.slice(cursor)) + (line ? '' : ' ')
-}
-function renderSourceEditorTabs() {
-  const root = $('#source-editor-tabs')
-  if (!root) return
-  root.replaceChildren()
-  for (const path of sourceOpenTabs) {
-    const tab = document.createElement('div')
-    tab.className = 'source-editor-tab' + (path === sourceFile ? ' is-active' : '')
-    const open = document.createElement('button')
-    open.type = 'button'; open.className = 'source-editor-tab-open'; open.setAttribute('role', 'tab')
-    open.setAttribute('aria-selected', path === sourceFile ? 'true' : 'false')
-    const icon = document.createElement('span'); icon.className = 'editor-tab-code-icon'; icon.textContent = '</>'
-    const name = document.createElement('span'); name.className = 'editor-tab-name'; name.textContent = path.split('/').pop()
-    open.append(icon, name); open.addEventListener('click', () => { if (path !== sourceFile) void openSourceFile(path) })
-    const close = document.createElement('button')
-    close.type = 'button'; close.className = 'source-editor-tab-close'; close.textContent = '×'; close.setAttribute('aria-label', 'Close ' + path)
-    close.addEventListener('click', event => {
-      event.stopPropagation()
-      if (sourceDirty && path === sourceFile && !window.confirm('Discard unsaved editor typing and close this file?')) return
-      sourceOpenTabs = sourceOpenTabs.filter(item => item !== path)
-      if (path === sourceFile) {
-        sourceDirty = false
-        const nextPath = sourceOpenTabs.at(-1)
-        if (nextPath) void openSourceFile(nextPath)
-        else { sourceFile = null; sourceDirty = false; $('#source-editor-panel').hidden = true }
-      } else renderSourceEditorTabs()
-    })
-    tab.append(open, close); root.append(tab)
-  }
-}
-function renderSourceEditorExplorer() {
-  const root = $('#source-editor-explorer-list')
-  if (!root) return
-  root.replaceChildren()
-  for (const item of sourceFolderItems) {
-    const button = document.createElement('button')
-    button.type = 'button'; button.className = 'source-editor-explorer-item'
-    const icon = document.createElement('span'); icon.textContent = item.type === 'folder' ? '▱' : '</>'
-    const name = document.createElement('span'); name.textContent = item.name
-    button.append(icon, name)
-    button.addEventListener('click', () => item.type === 'folder' ? void loadSourceFolder(item.path) : void openSourceFile(item.path))
-    root.append(button)
-  }
-}
-function updateEditorSaveStatus(state, label) {
-  const status = $('#source-editor-save-status')
-  if (!status) return
-  status.classList.toggle('is-dirty', state === 'dirty')
-  status.classList.toggle('is-saving', state === 'saving')
-  status.querySelector('span').textContent = label
-}
-function updateSourceEditorLines() {
-  const editor = $('#source-editor'), gutter = $('#source-editor-lines'), highlight = $('#source-editor-highlight')
-  if (!editor || !gutter || !highlight) return
-  const lines = editor.value.split('\n')
-  const activeLine = editor.value.slice(0, editor.selectionStart).split('\n').length - 1
-  gutter.innerHTML = lines.map((_, index) => '<span class="editor-gutter-line' + (index === activeLine ? ' is-active' : '') + '">' + (index + 1) + '</span>').join('')
-  highlight.innerHTML = lines.map((line, index) => '<span class="editor-code-line' + (index === activeLine ? ' is-active' : '') + '">' + highlightEditorLine(line) + '</span>').join('')
-  gutter.scrollTop = editor.scrollTop; highlight.scrollTop = editor.scrollTop; highlight.scrollLeft = editor.scrollLeft
-}
-
-async function openSourceFile(path) {
-  if (sourceDirty && !window.confirm('Discard unsaved editor typing and open another file?')) {
-    const switcher = $('#source-editor-file-switcher')
-    if (switcher && sourceFile) switcher.value = sourceFile
-    return
-  }
-  try {
-    const result = await api('files/preview?item=' + encodeURIComponent(path))
-    sourceFile = result.path
-    sourceOriginal = result.content
-    sourceHash = result.sha256
-    sourceDirty = false
-    $('#source-editor-name').textContent = result.path.split('/').pop()
-    $('#source-editor-folder').textContent = sourceFolder.split('/').pop() || 'Aharane'
-    if (!sourceOpenTabs.includes(result.path)) sourceOpenTabs.push(result.path)
-    $('#source-editor').value = result.content
-    const switcher = $('#source-editor-file-switcher')
-    if (switcher) {
-      switcher.replaceChildren()
-      for (const item of sourceFolderFiles) {
-        const option = document.createElement('option')
-        option.value = item.path
-        option.textContent = item.name
-        switcher.append(option)
-      }
-      switcher.value = result.path
-    }
-    updateSourceEditorLines()
-    renderSourceEditorTabs()
-    updateEditorSaveStatus('saved', 'Saved')
-    $('#source-save').disabled = true
-    $('#source-editor-meta').textContent = `${result.language.toUpperCase() || 'TEXT'} · ${formatBytes(result.size)} · 512 KB limit`
-    $('#source-editor-panel').hidden = false
-    $('#source-editor').focus()
-    setSourceMessage('Opened ' + result.path + '.', 'success')
-  } catch (error) {
-    setSourceMessage(error.message, 'error')
-  }
-}
-
-async function saveSourceFile() {
-  if (!sourceFile) return
-  const content = $('#source-editor').value
-  updateEditorSaveStatus('saving', 'Saving')
-  $('#source-save').disabled = true
-  try {
-    const result = await api('files/content', {
-      method: 'PUT',
-      body: JSON.stringify({ path: sourceFile, content, expectedSha256: sourceHash }),
-    })
-    sourceOriginal = content
-    sourceHash = result.sha256
-    sourceDirty = false
-    updateEditorSaveStatus('saved', 'Saved')
-    $('#source-save').disabled = true
-    await refreshDraftStatus()
-    const savedPath = sourceFile
-    setSourceMessage('Saved ' + savedPath + '. It is not running until you apply the changes.', 'success')
-    await loadSourceFolder(sourceFolder)
-    await openSourceFile(savedPath)
-  } catch (error) {
-    updateEditorSaveStatus('dirty', 'Not saved')
-    setSourceMessage(error.message, 'error')
-  } finally {
-    $('#source-save').disabled = !sourceDirty
-  }
-}
-
-async function createSourceItem(type) {
-  const name = window.prompt(type === 'folder' ? 'New folder name' : 'New source filename')
-  if (!name || !name.trim()) return
-  try {
-    const result = await api('files', {
-      method: 'POST',
-      body: JSON.stringify({ parentPath: sourceFolder, name: name.trim(), type, content: type === 'file' ? '' : undefined }),
-    })
-    await loadSourceFolder(sourceFolder)
-    if (type === 'file') await openSourceFile(result.path)
-    setSourceMessage((type === 'folder' ? 'Created folder ' : 'Created file ') + result.path + '.', 'success')
-  } catch (error) {
-    setSourceMessage(error.message, 'error')
-  }
-}
-
-async function deleteSourceFile(path) {
-  if (!window.confirm('Delete ' + path + '? A backup will be kept until the edits are applied or discarded.')) return
-  try {
-    await api('files/delete', { method: 'POST', body: JSON.stringify({ paths: [path] }) })
-    if (sourceFile === path) {
-      sourceFile = null
-      sourceDirty = false
-      $('#source-editor-panel').hidden = true
-    }
-    await loadSourceFolder(sourceFolder)
-    setSourceMessage('Deleted ' + path + '. Apply changes to make the deletion active.', 'success')
-  } catch (error) {
-    setSourceMessage(error.message, 'error')
-  }
-}
-
-async function applySourceChanges(discard = false) {
-  const action = discard ? 'Discard the saved file edits? The running bot will remain unchanged.' : 'Apply the saved source edits and restart Aharane?'
-  if (!window.confirm(action)) return
-  const button = discard ? $('#source-discard') : $('#source-apply')
-  button.disabled = true
-  try {
-    await api(discard ? 'files/discard' : 'files/apply', {
-      method: 'POST',
-      body: JSON.stringify({ confirm: true }),
-    })
-    if (discard) {
-      sourceFile = null
-      sourceDirty = false
-      $('#source-editor-panel').hidden = true
-      await refreshDraftStatus()
-      await loadSourceFolder(sourceFolder)
-      setSourceMessage('Saved edits discarded. The live Aharane release was never changed.', 'success')
-    } else {
-      setSourceMessage('Checks passed. Restarting Aharane with your saved edits…', 'success')
-      pollManualEditStatus()
-    }
-  } catch (error) {
-    button.disabled = false
-    setSourceMessage(error.message, 'error')
-  }
-}
-
-function pollManualEditStatus() {
-  if (pollingTimer) clearInterval(pollingTimer)
-  let attempts = 0
-  pollingTimer = setInterval(async () => {
-    attempts += 1
-    try {
-      const update = await refreshUpdateStatus()
-      const draft = await refreshDraftStatus()
-      if (['succeeded', 'rolled_back', 'failed', 'rollback_failed'].includes(update.status)) {
-        clearInterval(pollingTimer)
-        pollingTimer = null
-        const success = update.status === 'succeeded'
-        setSourceMessage(update.message || (success ? 'Aharane restarted successfully.' : 'The restart did not pass its health check.'), success ? 'success' : 'error')
-        if (!draft.pending) {
-          sourceFile = null
-          sourceDirty = false
-          await loadSourceFolder(sourceFolder)
-        }
-      }
-    } catch (error) {
-      setSourceMessage(error.message, 'error')
-    }
-    if (attempts > 90) {
-      clearInterval(pollingTimer)
-      pollingTimer = null
-      setSourceMessage('Status polling stopped. Refresh the Files Manager to check the deployment result.', 'error')
-    }
-  }, 2000)
-}
-
-async function useStoredPackage(updateId) {
-  setView('deploy')
-  $('#preview-panel').hidden = true
-  showMessage('#validation-message', 'Rechecking the stored ZIP package…')
-  try {
-    const preview = await api('update/validate', {
-      method: 'POST',
-      body: JSON.stringify({ updateId }),
-    })
-    showPreview(preview)
-    showMessage('#validation-message', 'Loaded from Files Manager. Review the changes before deploying.', 'success')
-  } catch (error) {
-    showMessage('#validation-message', error.message, 'error')
-  }
-}
-
-async function removeStoredPackage(updateId, filename) {
-  if (!window.confirm(`Remove ${filename} from the Aharane package library?`)) return
-  try {
-    await api('files/packages/remove', {
-      method: 'POST',
-      body: JSON.stringify({ updateId }),
-    })
-    await refreshPackages()
-    showMessage('#files-upload-message', 'ZIP package removed from Files Manager.', 'success')
-  } catch (error) {
-    showMessage('#files-upload-message', error.message, 'error')
-  }
-}
-
-function clearPackage() {
-  selectedFile = null
-  validatedUpdateId = ''
-  $('#zip-input').value = ''
-  $('#selected-file').hidden = true
-  $('#preview-panel').hidden = true
-  $('#upload-progress').hidden = true
-  $('#validate-zip').disabled = true
-}
-
-function setPackage(file) {
-  clearPackage()
-  if (!file) return
-  if (!file.name.toLowerCase().endsWith('.zip') || file.type && !['application/zip', 'application/x-zip-compressed', 'application/octet-stream'].includes(file.type)) {
-    showMessage('#validation-message', 'Choose a ZIP archive.', 'error')
-    return
-  }
-  if (file.size > MAX_ZIP_BYTES) {
-    showMessage('#validation-message', 'This ZIP is larger than the 50 MB limit.', 'error')
-    return
-  }
-  if (file.size < 22) {
-    showMessage('#validation-message', 'The selected file is too small to be a valid ZIP archive.', 'error')
-    return
-  }
-  selectedFile = file
-  $('#selected-file').hidden = false
-  $('#selected-name').textContent = file.name
-  $('#selected-size').textContent = formatBytes(file.size)
-  $('#validate-zip').disabled = false
-  showMessage('#validation-message', 'Ready to upload and validate.')
-}
-
-function bytesToBase64(bytes) {
-  let binary = ''
-  const blockSize = 0x8000
-  for (let offset = 0; offset < bytes.length; offset += blockSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + blockSize))
-  }
-  return btoa(binary)
-}
-
-async function sha256(file) {
-  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer())
-  return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, '0')).join('')
-}
-
-function setProgress(percent, label) {
-  $('#upload-progress').hidden = false
-  $('#progress-bar').style.width = percent + '%'
-  $('#progress-value').textContent = percent + '%'
-  $('#progress-label').textContent = label
-}
-
-function renderChanges(changes) {
-  const target = $('#change-list')
-  target.replaceChildren()
-  const groups = [
-    ['New files', changes?.added || []],
-    ['Replaced files', changes?.replaced || []],
-    ['Removed files', changes?.removed || []],
-  ]
-  for (const [title, items] of groups) {
-    if (!items.length) continue
-    const group = document.createElement('div')
-    group.className = 'change-group'
-    const heading = document.createElement('strong')
-    heading.textContent = title
-    group.append(heading)
-    for (const item of items) {
-      const line = document.createElement('p')
-      line.textContent = typeof item === 'string' ? item : item.path
-      group.append(line)
-    }
-    target.append(group)
-  }
-  if (!target.childElementCount) target.textContent = 'No file changes were detected.'
-}
-
-function showPreview(data) {
-  validatedUpdateId = data.updateId
-  $('#preview-panel').hidden = false
-  $('#preview-target').textContent = data.manifest.target
-  $('#preview-version').textContent = data.manifest.bot_version
-  $('#preview-current-version').textContent = data.currentVersion || 'unknown'
-  $('#preview-file-count').textContent = String(data.fileCount)
-  $('#added-count').textContent = String(data.changes?.counts?.added || 0)
-  $('#replaced-count').textContent = String(data.changes?.counts?.replaced || 0)
-  $('#removed-count').textContent = String(data.changes?.counts?.removed || 0)
-  renderChanges(data.changes)
-  $('#deploy-button').disabled = false
-  showMessage('#validation-message', 'Package identity and contents passed validation.', 'success')
-}
-
-async function uploadAndValidateZip(file, saveToFiles = false) {
-  if (!file) return
-  if (!saveToFiles) {
-    $('#validate-zip').disabled = true
-    $('#deploy-button').disabled = true
-    $('#preview-panel').hidden = true
-    showMessage('#validation-message', 'Calculating checksum…')
-  } else {
-    showMessage('#files-upload-message', 'Calculating checksum…')
-  }
-  try {
-    const updateId = crypto.randomUUID()
-    const totalChunks = Math.ceil(file.size / CHUNK_BYTES)
-    const checksum = await sha256(file)
-    await api('update/upload/start', {
-      method: 'POST',
-      body: JSON.stringify({
-        updateId,
-        filename: file.name,
-        size: file.size,
-        totalChunks,
-        sha256: checksum,
-      }),
-    })
-    for (let index = 0; index < totalChunks; index += 1) {
-      const start = index * CHUNK_BYTES
-      const buffer = new Uint8Array(await file.slice(start, start + CHUNK_BYTES).arrayBuffer())
-      await api('update/upload/chunk', {
-        method: 'POST',
-        body: JSON.stringify({ updateId, index, data: bytesToBase64(buffer) }),
-      })
-      if (!saveToFiles) {
-        setProgress(Math.round(((index + 1) / totalChunks) * 92), `Uploading chunk ${index + 1} of ${totalChunks}`)
-      }
-    }
-    if (!saveToFiles) setProgress(96, 'Checking ZIP contents')
-    else showMessage('#files-upload-message', 'Checking the Aharane manifest and package…')
-    const preview = await api('update/validate', {
-      method: 'POST',
-      body: JSON.stringify({ updateId }),
-    })
-    if (saveToFiles) {
-      await refreshPackages()
-      showMessage('#files-upload-message', `Saved ${file.name} to the Files Manager. Use its three-dot menu to update Aharane.`, 'success')
-    } else {
-      setProgress(100, 'Validation complete')
-      showPreview(preview)
-    }
-  } catch (error) {
-    if (saveToFiles) showMessage('#files-upload-message', error.message, 'error')
-    else {
-      showMessage('#validation-message', error.message, 'error')
-      $('#deploy-button').disabled = true
-    }
-  } finally {
-    if (!saveToFiles) $('#validate-zip').disabled = !selectedFile
-  }
-}
-
-async function validateSelectedZip() {
-  return uploadAndValidateZip(selectedFile, false)
-}
-
-async function deploySelectedZip() {
-  if (!validatedUpdateId) return
-  const version = $('#preview-version').textContent
-  const approved = window.confirm(`Deploy Aharane version ${version}? The bot will restart. Its WhatsApp session and persistent data are preserved.`)
-  if (!approved) return
-  $('#deploy-button').disabled = true
-  showMessage('#deploy-message', 'Preparing a new release. Aharane will restart after installation.', 'success')
-  try {
-    await api('update/deploy', {
-      method: 'POST',
-      body: JSON.stringify({ updateId: validatedUpdateId, confirm: true }),
-    })
-    startDeploymentPolling()
-  } catch (error) {
-    $('#deploy-button').disabled = false
-    showMessage('#deploy-message', error.message, 'error')
-  }
-}
-
-function startDeploymentPolling() {
-  if (pollingTimer) clearInterval(pollingTimer)
-  let attempts = 0
-  pollingTimer = setInterval(async () => {
-    attempts += 1
-    try {
-      const update = await refreshUpdateStatus()
-      if (['succeeded', 'failed', 'rolled_back', 'rollback_failed'].includes(update.status)) {
-        clearInterval(pollingTimer)
-        pollingTimer = null
-        const success = update.status === 'succeeded'
-        showMessage('#deploy-message', update.message || (success ? 'Aharane is running the new release.' : 'The update did not complete successfully.'), success ? 'success' : 'error')
-        $('#service-pill').classList.toggle('ok', success)
-        return
-      }
-      showMessage('#deploy-message', update.status === 'preparing'
-        ? 'Installing dependencies and preparing the new release…'
-        : update.status === 'awaiting-healthcheck'
-          ? 'Restarting Aharane and checking the new release…'
-          : 'Deployment status: ' + update.status)
-    } catch (error) {
-      showMessage('#deploy-message', error.message, 'error')
-    }
-    if (attempts > 90) {
-      clearInterval(pollingTimer)
-      pollingTimer = null
-      showMessage('#deploy-message', 'Status polling stopped. Refresh the page to check the final result.', 'error')
-    }
-  }, 2000)
-}
-
-async function connect(mode = 'login') {
-  localOnly = false
-  document.body.classList.remove('local-only')
-  const button = mode === 'setup' ? $('#setup-button') : $('#login-button')
-  button.disabled = true
-  showMessage('#login-message', mode === 'setup' ? 'Creating your password…' : 'Signing in…')
-  try {
-    let result
-    if (mode === 'setup') {
-      const password = $('#setup-password').value
-      if (password !== $('#setup-password-confirm').value) throw new Error('The two passwords do not match.')
-      result = await api('auth/setup', {
-        method: 'POST',
-        body: JSON.stringify({ setupCode: $('#setup-code').value.trim(), password }),
-      })
-      $('#setup-code').value = ''
-      $('#setup-password').value = ''
-      $('#setup-password-confirm').value = ''
-    } else {
-      const password = $('#studio-password').value
-      result = await api('auth/login', { method: 'POST', body: JSON.stringify({ password }) })
-      $('#studio-password').value = ''
-    }
-    remoteSession = true
-    $('#login-screen').hidden = true
-    $('#application').hidden = false
-    await refreshStatus()
-    await refreshUpdateStatus()
-    setView('overview')
-    connectStudioSocket()
-    showMessage('#overview-message', 'Connected to Aharane. This device will stay signed in for 30 days.', 'success')
-  } catch (error) {
-    showMessage('#login-message', error.message, 'error')
-  } finally {
-    button.disabled = false
-  }
-}
-
-async function openAuthScreen() {
-  $('#application').hidden = true
-  $('#login-screen').hidden = false
-  showMessage('#login-message', 'Checking sign-in setup…')
-  try {
-    const auth = await api('auth/status')
-    $('#setup-panel').hidden = !auth.setupRequired
-    $('#login-form').hidden = auth.setupRequired
-    $('#auth-hint').textContent = auth.setupRequired
-      ? 'Enter the one-time setup code from the Azure terminal, then choose a password of at least 12 characters.'
-      : 'Your password is protected on the server. This browser will stay signed in for 30 days.'
-    showMessage('#login-message', '')
-  } catch (error) {
-    showMessage('#login-message', error.message, 'error')
-  }
-}
-
-async function logout() {
-  remoteSession = false
-  stopStudioSocket()
-  localOnly = false
-  document.body.classList.remove('local-only')
-  try { await api('auth/logout', { method: 'POST', body: '{}' }) } catch {}
-  if (pollingTimer) clearInterval(pollingTimer)
-  $('#studio-password').value = ''
-  clearPackage()
-  localStudioMode('overview')
-}
-
-
-$('#logout-button').addEventListener('click', () => { void logout() })
-$('#refresh-button').addEventListener('click', () => {
-  Promise.all([refreshStatus(), refreshUpdateStatus()])
-    .then(() => showMessage('#overview-message', 'Status refreshed.', 'success'))
-    .catch(error => showMessage('#overview-message', error.message, 'error'))
-})
-document.addEventListener('click', event => {
-  const target = event.target instanceof Element ? event.target.closest('[data-view]') : null
-  if (!target) return
-  if (target instanceof HTMLAnchorElement) event.preventDefault()
-  setView(target.dataset.view)
-})
-$('#pair-button').addEventListener('click', async () => {
-  $('#pair-button').disabled = true
-  $('#pair-code').textContent = ''
-  try {
-    const result = await api('pair-code', {
-      method: 'POST',
-      body: JSON.stringify({ phoneNumber: $('#phone-number').value }),
-    })
-    $('#pair-code').textContent = result.pairingCode
-    showMessage('#pair-message', 'On the Aharane phone, open WhatsApp → Linked devices → Link with phone number and enter this code.', 'success')
-  } catch (error) {
-    showMessage('#pair-message', error.message, 'error')
-  } finally {
-    $('#pair-button').disabled = false
-  }
-})
-$('#choose-zip').addEventListener('click', event => {
-  event.stopPropagation()
-  $('#zip-input').click()
-})
-$('#drop-zone').addEventListener('click', event => {
-  if (event.target.closest('button')) return
-  $('#zip-input').click()
-})
-$('#drop-zone').addEventListener('keydown', event => {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault()
-    $('#zip-input').click()
-  }
-})
-$('#drop-zone').addEventListener('dragover', event => {
-  event.preventDefault()
-  $('#drop-zone').classList.add('dragover')
-})
-$('#drop-zone').addEventListener('dragleave', () => $('#drop-zone').classList.remove('dragover'))
-$('#drop-zone').addEventListener('drop', event => {
-  event.preventDefault()
-  $('#drop-zone').classList.remove('dragover')
-  setPackage(event.dataTransfer.files[0])
-})
-$('#zip-input').addEventListener('change', event => setPackage(event.target.files[0]))
-$('#remove-zip').addEventListener('click', clearPackage)
-$('#validate-zip').addEventListener('click', () => { void validateSelectedZip() })
-$('#deploy-button').addEventListener('click', () => { void deploySelectedZip() })
-$('#files-choose-zip').addEventListener('click', event => {
-  event.stopPropagation()
-  $('#files-zip-input').click()
-})
-$('#files-dropzone').addEventListener('click', event => {
-  if (event.target.closest('button')) return
-  $('#files-zip-input').click()
-})
-$('#files-dropzone').addEventListener('keydown', event => {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault()
-    $('#files-zip-input').click()
-  }
-})
-$('#files-dropzone').addEventListener('dragover', event => {
-  event.preventDefault()
-  $('#files-dropzone').classList.add('dragover')
-})
-$('#files-dropzone').addEventListener('dragleave', () => $('#files-dropzone').classList.remove('dragover'))
-$('#files-dropzone').addEventListener('drop', event => {
-  event.preventDefault()
-  $('#files-dropzone').classList.remove('dragover')
-  const file = event.dataTransfer.files[0]
-  if (!file) return
-  if (!file.name.toLowerCase().endsWith('.zip') || file.size > MAX_ZIP_BYTES) {
-    showMessage('#files-upload-message', 'Choose an Aharane ZIP no larger than 50 MB.', 'error')
-    return
-  }
-  void uploadAndValidateZip(file, true)
-})
-$('#files-zip-input').addEventListener('change', event => {
-  const file = event.target.files[0]
-  event.target.value = ''
-  if (!file) return
-  if (!file.name.toLowerCase().endsWith('.zip') || file.size > MAX_ZIP_BYTES) {
-    showMessage('#files-upload-message', 'Choose an Aharane ZIP no larger than 50 MB.', 'error')
-    return
-  }
-  void uploadAndValidateZip(file, true)
-})
-$('#refresh-packages').addEventListener('click', () => {
-  refreshPackages().catch(error => showMessage('#files-upload-message', error.message, 'error'))
-})
-$('#source-up')?.addEventListener('click', () => {
-  const parts = sourceFolder.split('/').filter(Boolean)
-  void loadSourceFolder(parts.slice(0, -1).join('/'))
-})
-$('#source-refresh')?.addEventListener('click', () => {
-  loadSourceFolder(sourceFolder).catch(error => setSourceMessage(error.message, 'error'))
-})
-$('#source-new-file').addEventListener('click', () => { void createSourceItem('file') })
-$('#source-new-folder').addEventListener('click', () => { void createSourceItem('folder') })
-$('#source-save').addEventListener('click', () => { void saveSourceFile() })
-$('#source-close-editor').addEventListener('click', () => {
-  if (sourceDirty && !window.confirm('Discard unsaved editor typing and close this file?')) return
-  sourceDirty = false
-  sourceFile = null
-  $('#source-editor-panel').hidden = true
-})
-$('#source-discard').addEventListener('click', () => { void applySourceChanges(true) })
-$('#source-apply').addEventListener('click', () => { void applySourceChanges(false) })
-$('#file-search')?.addEventListener('input', () => {
-  const query = $('#file-search').value.trim().toLowerCase()
-  $$('.source-file-row').forEach(row => { row.hidden = query && !row.dataset.name.includes(query) })
-})
-$('#source-save-bottom')?.addEventListener('click', () => { void saveSourceFile() })
-$('#source-editor-file-switcher')?.addEventListener('change', event => {
-  const path = event.target.value
-  if (path) void openSourceFile(path)
-})
-$('#source-editor')?.addEventListener('scroll', () => {
-  const editor = $('#source-editor'), gutter = $('#source-editor-lines'), highlight = $('#source-editor-highlight')
-  if (gutter) gutter.scrollTop = editor.scrollTop
-  if (highlight) { highlight.scrollTop = editor.scrollTop; highlight.scrollLeft = editor.scrollLeft }
-})
-$('#source-editor')?.addEventListener('click', updateSourceEditorLines)
-$('#source-editor')?.addEventListener('keyup', updateSourceEditorLines)
-$('#source-editor-explorer-toggle')?.addEventListener('click', () => {
-  const panel = $('#source-editor-explorer'), button = $('#source-editor-explorer-toggle')
-  panel.hidden = !panel.hidden
-  button.setAttribute('aria-expanded', String(!panel.hidden))
-})
-$('#source-editor-folder')?.addEventListener('click', () => {
-  const panel = $('#source-editor-explorer')
-  panel.hidden = !panel.hidden
-  $('#source-editor-explorer-toggle')?.setAttribute('aria-expanded', String(!panel.hidden))
-})
-$('#source-editor-new-file')?.addEventListener('click', () => { void createSourceItem('file') })
-$('#source-editor-new-folder')?.addEventListener('click', () => { void createSourceItem('folder') })
-$('#source-problems-toggle')?.addEventListener('click', () => {
-  const panel = $('#source-problems-console-panel'), button = $('#source-problems-toggle')
-  panel.hidden = !panel.hidden
-  button.setAttribute('aria-expanded', String(!panel.hidden))
-})
-$('#source-problems-close')?.addEventListener('click', () => {
-  $('#source-problems-console-panel').hidden = true
-  $('#source-problems-toggle').setAttribute('aria-expanded', 'false')
-})
-$('#open-password-settings')?.addEventListener('click', () => $('#change-password-button').click())
-let sourceAutosaveTimer = null
-$('#source-editor').addEventListener('input', () => {
-  updateSourceEditorLines()
-  sourceDirty = $('#source-editor').value !== sourceOriginal
-  updateEditorSaveStatus(sourceDirty ? 'dirty' : 'saved', sourceDirty ? 'Modified' : 'Saved')
-  $('#source-save').disabled = !sourceDirty
-  if (sourceAutosaveTimer) clearTimeout(sourceAutosaveTimer)
-  if (sourceDirty) sourceAutosaveTimer = setTimeout(() => {
-    sourceAutosaveTimer = null
-    void saveSourceFile()
-  }, 900)
-})
-
-
-
-// Close anchored menus when the user taps outside them.
-document.addEventListener('click', event => {
-  if (!event.target.closest('.source-item-actions')) {
-    $$('.source-item-menu').forEach(menu => { menu.hidden = true })
-    $$('.source-menu-button').forEach(button => button.setAttribute('aria-expanded', 'false'))
-  }
-  if (!event.target.closest('.package-actions')) {
-    $$('.package-menu').forEach(menu => { menu.hidden = true })
-  }
-})
-
-
-// Conversation and media-viewer interactions.
-$('#chat-thread-back')?.addEventListener('click', closeChatThread)
-$('#chat-composer')?.addEventListener('submit', event => {
-  event.preventDefault()
-  if (!activeChat) return
-  const message = $('#chat-message-input').value.trim()
-  if (!message) return
-  showMessage('#chat-thread-message', 'Sending messages is not available on this server yet.', 'error')
-})
-$('#chat-attach-button')?.addEventListener('click', () => {
-  showMessage('#chat-thread-message', 'Attachments are not available until the WhatsApp messaging service is connected.', 'error')
-})
-$('#chat-image')?.addEventListener('click', () => {
-  $('#chat-image-viewer').classList.toggle('controls-hidden')
-})
-$('#chat-image-close')?.addEventListener('click', closeChatImageViewer)
-$('#chat-image-details')?.addEventListener('click', () => {
-  const image = $('#chat-image')
-  if (image.naturalWidth && image.naturalHeight) window.alert(`${$('#chat-image-title').textContent}\n${image.naturalWidth} × ${image.naturalHeight}`)
-})
-$('#chat-image-more')?.addEventListener('click', () => $('#chat-image-details').click())
-$('#chat-image-download')?.addEventListener('click', () => {
-  const message = imageViewerItems[imageViewerIndex]
-  if (message) downloadChatMedia(message.url, message.fileName)
-})
-$('#chat-image-share')?.addEventListener('click', () => {
-  const message = imageViewerItems[imageViewerIndex]
-  const url = safeChatMediaUrl(message?.url)
-  if (url && navigator.share) void navigator.share({ title: $('#chat-image-title').textContent, url }).catch(() => {})
-  else if (url) showMessage('#chat-thread-message', 'Sharing is not supported by this browser.', 'error')
-})
-$('#chat-image-forward')?.addEventListener('click', () => {
-  closeChatImageViewer()
-  showMessage('#chat-thread-message', 'Forwarding will be available when message actions are connected.', 'error')
-})
-$('#chat-video-close')?.addEventListener('click', closeChatVideoViewer)
-$('#chat-video-more')?.addEventListener('click', () => {
-  const video = $('#chat-video-player')
-  const duration = Number.isFinite(video.duration) ? Math.round(video.duration) + ' seconds' : 'Duration unavailable'
-  window.alert(`${$('#chat-video-title').textContent}\n${video.videoWidth} × ${video.videoHeight}\n${duration}`)
-})
-$('#chat-image-viewer .image-viewer-stage')?.addEventListener('touchstart', event => {
-  imageViewerTouchStart = event.changedTouches[0]?.clientX ?? null
-}, { passive: true })
-$('#chat-image-viewer .image-viewer-stage')?.addEventListener('touchend', event => {
-  if (imageViewerTouchStart === null) return
-  const delta = (event.changedTouches[0]?.clientX ?? imageViewerTouchStart) - imageViewerTouchStart
-  imageViewerTouchStart = null
-  if (Math.abs(delta) > 55 && imageViewerItems.length > 1) showChatImageAt(imageViewerIndex + (delta < 0 ? 1 : -1))
-}, { passive: true })
-$('#chat-video-player')?.addEventListener('dblclick', event => {
-  const video = $('#chat-video-player')
-  const rect = video.getBoundingClientRect()
-  const offset = event.clientX - rect.left
-  video.currentTime = Math.max(0, Math.min(video.duration || Infinity, video.currentTime + (offset < rect.width / 2 ? -10 : 10)))
-})
-
-function openStudioDatabase() {
-  if (studioDbPromise) return studioDbPromise
-  studioDbPromise = new Promise((resolve, reject) => {
-    if (!('indexedDB' in window)) return reject(new Error('This browser does not support local project storage.'))
-    const request = indexedDB.open('aharane-local-studio', 2)
-    request.onupgradeneeded = () => {
-      const db = request.result
-      if (!db.objectStoreNames.contains('files')) db.createObjectStore('files', { keyPath: 'path' })
-      if (!db.objectStoreNames.contains('appOverrides')) db.createObjectStore('appOverrides', { keyPath: 'path' })
-    }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error || new Error('Could not open local project storage.'))
-  })
-  return studioDbPromise
-}
-
-async function studioGetAll() {
-  const db = await openStudioDatabase()
-  return new Promise((resolve, reject) => {
-    const request = db.transaction('files', 'readonly').objectStore('files').getAll()
-    request.onsuccess = () => resolve(request.result || [])
-    request.onerror = () => reject(request.error)
-  })
-}
-
-async function studioPut(item) {
-  const db = await openStudioDatabase()
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction('files', 'readwrite')
-    transaction.objectStore('files').put(item)
-    transaction.oncomplete = () => resolve()
-    transaction.onerror = () => reject(transaction.error || new Error('Could not save this file locally.'))
-    transaction.onabort = () => reject(transaction.error || new Error('Local save was cancelled.'))
-  })
-}
-
-function normalizeStudioPath(path) {
-  const parts = String(path || '').replace(/\\/g, '/').split('/').filter(part => part && part !== '.')
-  if (!parts.length || parts.some(part => part === '..')) return ''
-  return parts.join('/')
-}
-
-function blockedStudioPath(path) {
-  const parts = path.toLowerCase().split('/')
-  const name = parts[parts.length - 1]
-  if (parts.some(part => ['node_modules', '.git', 'whatsapp-auth', 'auth', 'backups', 'backup', 'logs'].includes(part))) return true
-  if (name === '.env' || (name.startsWith('.env.') && name !== '.env.example')) return true
-  if (/\.(log|bak|backup|pem|key|p12|pfx)$/i.test(name)) return true
-  return false
-}
-
-function studioCanEdit(path, type = '') {
-  return /\.(js|mjs|cjs|ts|tsx|jsx|json|html?|css|md|txt|ya?ml|xml|svg|sh|py|java|go|sql|toml|ini|conf|example|gitignore)$/i.test(path) ||
-    String(type).startsWith('text/')
-}
-
-function localStudioMode(initialView = 'overview') {
-  const savedTitle = localStorage.getItem('aharane-local-studio-title')
-  if (savedTitle) $('#studio-project-title').value = savedTitle
-  $('#studio-connect-button').textContent = remoteSession ? 'Back to bot controls' : 'Connect to Aharane'
-  localOnly = !remoteSession
-  document.body.classList.toggle('local-only', localOnly)
-  $('#login-screen').hidden = true
-  $('#application').hidden = false
-  if (localOnly) {
-    $('#whatsapp-state').textContent = 'Not connected'
-    $('#connection-detail').textContent = 'Connect to Aharane to retrieve live bot status and controls.'
-    $('#bot-version').textContent = '—'
-    $('#allowed-senders').textContent = '—'
-  }
-  setView(initialView)
-  showMessage(initialView === 'studio' ? '#studio-message' : '#overview-message',
-    localOnly ? 'Aharane Local Studio is open on this device. Connect to unlock remote bot management.' : 'Aharane Local Studio is ready.', 'success')
-}
-
-function downloadStudioBlob(blob, filename) {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 30000)
-}
-
-function renderStudioFiles() {
-  const root = $('#studio-file-list')
-  root.replaceChildren()
-  $('#studio-file-count').textContent = studioFiles.length + (studioFiles.length === 1 ? ' file' : ' files')
-  if (!studioFiles.length) {
-    const empty = document.createElement('p')
-    empty.className = 'muted'
-    empty.textContent = 'No local files yet. Import a folder or create a file.'
-    root.appendChild(empty)
-    return
-  }
-  for (const item of studioFiles) {
-    const row = document.createElement('div')
-    row.className = 'studio-file-row' + (item.path === studioCurrentPath ? ' active' : '')
-    const open = document.createElement('button')
-    open.type = 'button'
-    open.className = 'studio-file-open'
-    open.textContent = item.path
-    open.title = item.path
-    open.addEventListener('click', () => openStudioFile(item.path))
-    const remove = document.createElement('button')
-    remove.type = 'button'
-    remove.className = 'studio-file-remove'
-    remove.textContent = '×'
-    remove.setAttribute('aria-label', 'Remove ' + item.path)
-    remove.addEventListener('click', () => removeStudioFile(item.path))
-    row.append(open, remove)
-    root.appendChild(row)
-  }
-}
-
-async function loadStudioFiles() {
-  studioFiles = (await studioGetAll()).sort((a, b) => a.path.localeCompare(b.path))
-  renderStudioFiles()
-  await updateStudioPreviewOptions()
-  if (studioCurrentPath && studioFiles.some(item => item.path === studioCurrentPath)) {
-    const current = studioFiles.find(item => item.path === studioCurrentPath)
-    if (studioCanEdit(current.path, current.type)) await openStudioFile(studioCurrentPath, true)
-  } else if (!studioFiles.length) {
-    studioCurrentPath = ''
-    $('#studio-current-file').textContent = 'Choose a project file'
-    $('#studio-editor').value = ''
-    $('#studio-editor').disabled = true
-    $('#studio-save-file').disabled = true
-    $('#studio-export-file').disabled = true
-  }
-}
-
-async function importStudioFiles(fileList) {
-  const files = Array.from(fileList || [])
-  if (!files.length) return
-  let added = 0
-  let skipped = 0
-  let total = studioFiles.reduce((sum, item) => sum + Number(item.size || 0), 0)
-  if (studioFiles.length + files.length > STUDIO_MAX_FILES) {
-    showMessage('#studio-message', 'This workspace supports up to 250 files. Import a smaller selection.', 'error')
-    return
-  }
-  for (const file of files) {
-    const path = normalizeStudioPath(file.webkitRelativePath || file.name)
-    if (!path || blockedStudioPath(path) || file.size > STUDIO_MAX_FILE_BYTES) {
-      skipped++
-      continue
-    }
-    const existing = studioFiles.find(item => item.path === path)
-    const newTotal = total - Number(existing?.size || 0) + file.size
-    if (newTotal > STUDIO_MAX_PROJECT_BYTES) {
-      skipped++
-      continue
-    }
-    const type = file.type || 'application/octet-stream'
-    const item = { path, type, size: file.size, blob: file, updatedAt: Date.now() }
-    if (studioCanEdit(path, type)) item.content = await file.text()
-    try {
-      await studioPut(item)
-      total = newTotal
-      added++
-    } catch (error) {
-      showMessage('#studio-message', 'Local storage could not save the import. Export a backup or free device storage.', 'error')
-      break
-    }
-  }
-  await loadStudioFiles()
-  showMessage('#studio-message', added + ' file(s) imported.' + (skipped ? ' ' + skipped + ' skipped (protected, too large or over the workspace limit).' : ''), skipped ? '' : 'success')
-}
-
-async function openStudioFile(path, skipDirtyCheck = false) {
-  if (!skipDirtyCheck && studioCurrentPath && $('#studio-editor').value !== studioOriginalText) {
-    if (!window.confirm('Discard unsaved typing and open another file?')) return
-  }
-  const item = studioFiles.find(file => file.path === path)
-  if (!item) return
-  studioCurrentPath = path
-  renderStudioFiles()
-  $('#studio-current-file').textContent = path
-  $('#studio-export-file').disabled = false
-  const editable = studioCanEdit(path, item.type)
-  $('#studio-editor').disabled = !editable
-  $('#studio-save-file').disabled = true
-  if (editable) {
-    const text = typeof item.content === 'string' ? item.content : item.blob ? await item.blob.text() : ''
-    $('#studio-editor').value = text
-    studioOriginalText = text
-    $('#studio-editor-hint').textContent = 'Plain text · ' + formatBytes(item.size || new Blob([text]).size)
-  } else {
-    $('#studio-editor').value = 'This file is stored locally as a project asset and is not editable as text.'
-    studioOriginalText = $('#studio-editor').value
-    $('#studio-editor-hint').textContent = 'Binary asset · use it in the website preview.'
-  }
-  $('#studio-save-state').textContent = 'Saved on this device'
-}
-
-async function saveStudioFile() {
-  const item = studioFiles.find(file => file.path === studioCurrentPath)
-  if (!item || !studioCanEdit(item.path, item.type)) return
-  const content = $('#studio-editor').value
-  const blob = new Blob([content], { type: item.type || 'text/plain;charset=utf-8' })
-  await studioPut({ ...item, content, blob, size: blob.size, updatedAt: Date.now() })
-  studioOriginalText = content
-  $('#studio-save-file').disabled = true
-  $('#studio-save-state').textContent = 'Saved'
-  await loadStudioFiles()
-  showMessage('#studio-message', 'Saved ' + studioCurrentPath + ' on this device.', 'success')
-}
-
-async function createStudioFile() {
-  const raw = window.prompt('New file path', 'index.html')
-  if (!raw) return
-  const path = normalizeStudioPath(raw)
-  if (!path || blockedStudioPath(path)) {
-    showMessage('#studio-message', 'That file path is not allowed in the local workspace.', 'error')
-    return
-  }
-  if (studioFiles.some(item => item.path === path)) {
-    showMessage('#studio-message', 'A file with that path already exists.', 'error')
-    return
-  }
-  const blob = new Blob([''], { type: 'text/plain;charset=utf-8' })
-  await studioPut({ path, type: 'text/plain', size: 0, content: '', blob, updatedAt: Date.now() })
-  await loadStudioFiles()
-  await openStudioFile(path, true)
-  showMessage('#studio-message', 'Created ' + path + '.', 'success')
-}
-
-async function removeStudioFile(path) {
-  if (!window.confirm('Remove ' + path + ' from this device workspace?')) return
-  const db = await openStudioDatabase()
-  await new Promise((resolve, reject) => {
-    const transaction = db.transaction('files', 'readwrite')
-    transaction.objectStore('files').delete(path)
-    transaction.oncomplete = resolve
-    transaction.onerror = () => reject(transaction.error)
-  })
-  if (studioCurrentPath === path) studioCurrentPath = ''
-  await loadStudioFiles()
-}
-
-async function exportStudioFile() {
-  const item = studioFiles.find(file => file.path === studioCurrentPath)
-  if (!item) return
-  const blob = item.blob || new Blob([item.content || ''], { type: item.type || 'application/octet-stream' })
-  downloadStudioBlob(blob, item.path.split('/').pop() || 'project-file.txt')
-}
-
-async function blobToBase64(blob) {
-  const bytes = new Uint8Array(await blob.arrayBuffer())
-  let binary = ''
-  const size = 0x8000
-  for (let i = 0; i < bytes.length; i += size) binary += String.fromCharCode(...bytes.subarray(i, i + size))
-  return btoa(binary)
-}
-
-async function exportStudioBackup() {
-  const files = await studioGetAll()
-  if (!files.length) {
-    showMessage('#studio-message', 'There are no project files to back up yet.', 'error')
-    return
-  }
-  const backup = []
-  for (const item of files) {
-    const blob = item.blob || new Blob([item.content || ''], { type: item.type || 'application/octet-stream' })
-    backup.push({ path: item.path, type: item.type, content: await blobToBase64(blob) })
-  }
-  const payload = {
-    format: 'aharane-local-studio-backup',
-    version: 1,
-    projectName: $('#studio-project-title').value || 'My project',
-    exportedAt: new Date().toISOString(),
-    files: backup,
-  }
-  downloadStudioBlob(new Blob([JSON.stringify(payload)], { type: 'application/json' }), 'aharane-local-studio-backup.json')
-  showMessage('#studio-message', 'Local project backup exported.', 'success')
-}
-
-function studioSetTab(tab) {
-  const preview = tab === 'preview'
-  $('#studio-code-pane').hidden = preview
-  $('#studio-preview-pane').hidden = !preview
-  $('#studio-code-tab').classList.toggle('active', !preview)
-  $('#studio-preview-tab').classList.toggle('active', preview)
-  $('#studio-code-tab').setAttribute('aria-selected', String(!preview))
-  $('#studio-preview-tab').setAttribute('aria-selected', String(preview))
-  if (preview) void renderStudioPreview()
-}
-
-async function updateStudioPreviewOptions() {
-  const select = $('#studio-preview-file')
-  const previous = select.value
-  const htmlFiles = studioFiles.filter(item => /\.html?$/i.test(item.path))
-  select.replaceChildren()
-  if (!htmlFiles.length) {
-    const option = document.createElement('option')
-    option.value = ''
-    option.textContent = 'Import an HTML file first'
-    select.appendChild(option)
-    return
-  }
-  for (const item of htmlFiles) {
-    const option = document.createElement('option')
-    option.value = item.path
-    option.textContent = item.path
-    select.appendChild(option)
-  }
-  select.value = htmlFiles.some(item => item.path === previous) ? previous : htmlFiles[0].path
-}
-
-function resolveStudioAsset(basePath, reference) {
-  const raw = String(reference || '').trim().split(/[?#]/)[0]
-  if (!raw || /^(data:|https?:|blob:|\/\/|#|mailto:|tel:|javascript:)/i.test(raw)) return ''
-  const base = raw.startsWith('/') ? '' : basePath.split('/').slice(0, -1).join('/')
-  return normalizeStudioPath((base ? base + '/' : '') + raw.replace(/^\/+/, ''))
-}
-
-function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(reader.error || new Error('Could not read preview asset.'))
-    reader.readAsDataURL(blob)
-  })
-}
-
-
-async function rewriteStudioCss(css, cssPath, lookup) {
-  const matches = [...css.matchAll(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi)]
-  for (const match of matches) {
-    const targetPath = resolveStudioAsset(cssPath, match[2])
-    const asset = lookup.get(targetPath)
-    if (asset?.blob) {
-      const dataUrl = await blobToDataUrl(asset.blob)
-      css = css.replace(match[0], 'url("' + dataUrl + '")')
-    }
-  }
-  return css
-}
-
-async function renderStudioPreview() {
-  const pagePath = $('#studio-preview-file').value
-  const page = studioFiles.find(item => item.path === pagePath)
-  const frame = $('#studio-preview-frame')
-  for (const url of studioObjectUrls) URL.revokeObjectURL(url)
-  studioObjectUrls = []
-  if (!page) {
-    frame.removeAttribute('src')
-    return
-  }
-  try {
-    const htmlText = typeof page.content === 'string' ? page.content : await page.blob.text()
-    const parser = new DOMParser()
-    const documentPreview = parser.parseFromString(htmlText, 'text/html')
-    const lookup = new Map(studioFiles.map(item => [item.path, item]))
-    for (const link of [...documentPreview.querySelectorAll('link[rel~="stylesheet"][href]')]) {
-      const targetPath = resolveStudioAsset(pagePath, link.getAttribute('href'))
-      const asset = lookup.get(targetPath)
-      if (asset) {
-        const cssText = await rewriteStudioCss(typeof asset.content === 'string' ? asset.content : await asset.blob.text(), targetPath, lookup)
-        const cssUrl = URL.createObjectURL(new Blob([cssText], { type: 'text/css' }))
-        studioObjectUrls.push(cssUrl)
-        link.setAttribute('href', cssUrl)
-      }
-    }
-    for (const style of [...documentPreview.querySelectorAll('style')]) {
-      const styleText = await rewriteStudioCss(style.textContent || '', pagePath, lookup)
-      const cssUrl = URL.createObjectURL(new Blob([styleText], { type: 'text/css' }))
-      studioObjectUrls.push(cssUrl)
-      const link = documentPreview.createElement('link')
-      link.rel = 'stylesheet'
-      link.href = cssUrl
-      style.replaceWith(link)
-    }
-    for (const script of [...documentPreview.querySelectorAll('script')]) {
-      if (script.src) {
-        const targetPath = resolveStudioAsset(pagePath, script.getAttribute('src'))
-        const asset = lookup.get(targetPath)
-        if (asset) {
-          const scriptText = typeof asset.content === 'string' ? asset.content : await asset.blob.text()
-          const scriptUrl = URL.createObjectURL(new Blob([scriptText], { type: 'text/javascript' }))
-          studioObjectUrls.push(scriptUrl)
-          script.src = scriptUrl
-        }
-      } else if (script.textContent.trim()) {
-        const scriptUrl = URL.createObjectURL(new Blob([script.textContent], { type: 'text/javascript' }))
-        studioObjectUrls.push(scriptUrl)
-        script.textContent = ''
-        script.src = scriptUrl
-      }
-    }
-    for (const element of [...documentPreview.querySelectorAll('[src]')]) {
-      if (element.tagName === 'SCRIPT') continue
-      const targetPath = resolveStudioAsset(pagePath, element.getAttribute('src'))
-      const asset = lookup.get(targetPath)
-      if (asset?.blob) element.setAttribute('src', await blobToDataUrl(asset.blob))
-    }
-    const previewBlob = new Blob(['<!doctype html>\n' + documentPreview.documentElement.outerHTML], { type: 'text/html' })
-    const previewUrl = URL.createObjectURL(previewBlob)
-    studioObjectUrls.push(previewUrl)
-    frame.src = previewUrl
-    showMessage('#studio-message', 'Preview refreshed from local project files.', 'success')
-  } catch (error) {
-    showMessage('#studio-message', 'Preview error: ' + error.message, 'error')
-  }
-}
-
-
-$('#studio-connect-button').addEventListener('click', () => {
-  if (remoteSession) {
-    localOnly = false
-    document.body.classList.remove('local-only')
-    setView('overview')
-    return
-  }
-  localOnly = false
-  document.body.classList.remove('local-only')
-  $('#application').hidden = true
-  $('#login-screen').hidden = false
-  void openAuthScreen()
-})
-$('#studio-import-files').addEventListener('click', () => $('#studio-files-input').click())
-$('#studio-import-folder').addEventListener('click', () => $('#studio-folder-input').click())
-$('#studio-files-input').addEventListener('change', event => {
-  void importStudioFiles(event.target.files).catch(error => showMessage('#studio-message', error.message, 'error'))
-  event.target.value = ''
-})
-$('#studio-folder-input').addEventListener('change', event => {
-  void importStudioFiles(event.target.files).catch(error => showMessage('#studio-message', error.message, 'error'))
-  event.target.value = ''
-})
-$('#studio-new-file').addEventListener('click', () => { void createStudioFile().catch(error => showMessage('#studio-message', error.message, 'error')) })
-$('#studio-save-file').addEventListener('click', () => { void saveStudioFile().catch(error => showMessage('#studio-message', error.message, 'error')) })
-$('#studio-export-file').addEventListener('click', () => { void exportStudioFile() })
-$('#studio-export-backup').addEventListener('click', () => { void exportStudioBackup().catch(error => showMessage('#studio-message', error.message, 'error')) })
-$('#studio-code-tab').addEventListener('click', () => studioSetTab('code'))
-$('#studio-preview-tab').addEventListener('click', () => studioSetTab('preview'))
-$('#studio-refresh-preview').addEventListener('click', () => { void renderStudioPreview() })
-$('#studio-preview-file').addEventListener('change', () => { void renderStudioPreview() })
-$('#studio-editor').addEventListener('input', () => {
-  const dirty = $('#studio-editor').value !== studioOriginalText
-  $('#studio-save-file').disabled = !dirty || !studioCurrentPath
-  $('#studio-save-state').textContent = dirty ? 'Unsaved local changes' : 'Saved on this device'
-})
-$('#studio-project-title').addEventListener('change', () => {
-  const title = $('#studio-project-title').value.trim()
-  if (title) {
-    localStorage.setItem('aharane-local-studio-title', title)
-    document.title = title + ' · Aharane Local Studio'
-  }
-})
-
-window.addEventListener('beforeinstallprompt', event => {
-  event.preventDefault()
-  studioInstallPrompt = event
-  $('#install-app-button').hidden = false
-})
-$('#install-app-button').addEventListener('click', async () => {
-  if (!studioInstallPrompt) return
-  studioInstallPrompt.prompt()
-  await studioInstallPrompt.userChoice.catch(() => null)
-  studioInstallPrompt = null
-  $('#install-app-button').hidden = true
-})
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/aharane/studio/sw.js', { scope: '/aharane/studio/' }).catch(() => {})
-  })
-}
-
-
-$('#change-password-button').addEventListener('click', () => {
-  $('#current-password').value = ''
-  $('#new-password').value = ''
-  $('#new-password-confirm').value = ''
-  showMessage('#password-message', '')
-  $('#password-modal').hidden = false
-  $('#current-password').focus()
-})
-$('#password-modal-close').addEventListener('click', () => { $('#password-modal').hidden = true })
-$('#password-modal-logout').addEventListener('click', () => { $('#password-modal').hidden = true; void logout() })
-$('#change-password-form').addEventListener('submit', async event => {
-  event.preventDefault()
-  const currentPassword = $('#current-password').value
-  const newPassword = $('#new-password').value
-  if (newPassword !== $('#new-password-confirm').value) {
-    showMessage('#password-message', 'The two new passwords do not match.', 'error')
-    return
-  }
-  const button = $('#change-password-submit')
-  button.disabled = true
-  try {
-    await api('auth/change-password', {
-      method: 'POST',
-      body: JSON.stringify({ currentPassword, newPassword }),
-    })
-    $('#password-modal').hidden = true
-    showMessage('#overview-message', 'Your password was changed. Other signed-in sessions have been revoked.', 'success')
-  } catch (error) {
-    showMessage('#password-message', error.message, 'error')
-  } finally {
-    button.disabled = false
-  }
-})
-
-// A valid session cookie is HttpOnly; status is the session check.
-api('status').then(async () => {
-  remoteSession = true
-  localOnly = false
-  document.body.classList.remove('local-only')
-  $('#login-screen').hidden = true
-  $('#application').hidden = false
-  await refreshStatus()
-  await refreshUpdateStatus()
-  connectStudioSocket()
-}).catch(() => {
-  remoteSession = false
-  void openAuthScreen()
-})
-
-async function appSourceGet(path){const db=await openStudioDatabase();return new Promise((ok,no)=>{const r=db.transaction('appOverrides','readonly').objectStore('appOverrides').get(path);r.onsuccess=()=>ok(r.result||null);r.onerror=()=>no(r.error)})}
-async function appSourceGetAll(){const db=await openStudioDatabase();return new Promise((ok,no)=>{const r=db.transaction('appOverrides','readonly').objectStore('appOverrides').getAll();r.onsuccess=()=>ok(r.result||[]);r.onerror=()=>no(r.error)})}
-async function appSourcePut(path,content){if(!APP_SOURCE_FILES.includes(path))throw Error('Unsupported app source file.');if(typeof content!=='string'||content.length>1024*1024)throw Error('App source must be text and no larger than 1 MB.');const db=await openStudioDatabase();return new Promise((ok,no)=>{const tx=db.transaction('appOverrides','readwrite');tx.objectStore('appOverrides').put({path,content,updatedAt:Date.now()});tx.oncomplete=ok;tx.onerror=()=>no(tx.error)})}
-async function loadAppSourceFile(path){if(!APP_SOURCE_FILES.includes(path))throw Error('Unsupported app source file.');const saved=await appSourceGet(path);let content=saved?.content;if(typeof content!=='string'){const r=await fetch('/aharane/studio/'+path,{cache:'no-store'});if(!r.ok)throw Error('Could not load '+path+'.');content=await r.text()}studioAppSourcePath=path;studioAppSourceOriginal=content;$('#studio-app-source-file').value=path;$('#studio-app-source-editor').value=content;$('#studio-app-source-save').disabled=true;$('#studio-app-source-apply').disabled=(await appSourceGetAll()).length===0;$('#studio-app-source-status').textContent=saved?'Saved local override.':'Editing original '+path+'.'}
-async function openAppSourceEditor(){$('#studio-app-source-panel').hidden=false;try{await loadAppSourceFile($('#studio-app-source-file').value||'index.html')}catch(e){$('#studio-app-source-status').textContent=e.message}}
-async function saveAppSourceDraft(){const content=$('#studio-app-source-editor').value;await appSourcePut(studioAppSourcePath,content);studioAppSourceOriginal=content;$('#studio-app-source-save').disabled=true;$('#studio-app-source-apply').disabled=false;$('#studio-app-source-status').textContent=studioAppSourcePath+' saved on this phone.'}
-async function applyAppSourceChanges(){if($('#studio-app-source-editor').value!==studioAppSourceOriginal)await saveAppSourceDraft();if(!(await appSourceGetAll()).length)return;if(!confirm('Apply saved source changes to this phone and reload Aharane Local Studio?'))return;location.reload()}
-async function exportAppSourceBackup(){const files=[];for(const path of APP_SOURCE_FILES){const saved=await appSourceGet(path);let content=typeof saved?.content==='string'?saved.content:null;if(content===null){const r=await fetch('/aharane/studio/'+path,{cache:'no-store'});if(!r.ok)throw Error('Could not export '+path+'.');content=await r.text()}files.push({path,content})}const data={format:'aharane-local-studio-source-backup',version:1,createdAt:new Date().toISOString(),files};downloadStudioBlob(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),'aharane-local-studio-source-backup.json')}
-async function restoreAppSource(){if(!confirm('Restore the original app source on this phone? Project files will remain untouched.'))return;const db=await openStudioDatabase();await new Promise((ok,no)=>{const tx=db.transaction('appOverrides','readwrite');tx.objectStore('appOverrides').clear();tx.oncomplete=ok;tx.onerror=()=>no(tx.error)});location.reload()}
-$('#studio-edit-app-source').addEventListener('click',()=>{void openAppSourceEditor()})
-$('#studio-app-source-file').addEventListener('change',e=>{void loadAppSourceFile(e.target.value).catch(err=>$('#studio-app-source-status').textContent=err.message)})
-$('#studio-app-source-reload').addEventListener('click',()=>{void loadAppSourceFile(studioAppSourcePath).catch(err=>$('#studio-app-source-status').textContent=err.message)})
-$('#studio-app-source-editor').addEventListener('input',()=>{const dirty=$('#studio-app-source-editor').value!==studioAppSourceOriginal;$('#studio-app-source-save').disabled=!dirty;$('#studio-app-source-status').textContent=dirty?'Unsaved source changes.':'No unsaved changes.'})
-$('#studio-app-source-save').addEventListener('click',()=>{void saveAppSourceDraft().catch(err=>$('#studio-app-source-status').textContent=err.message)})
-$('#studio-app-source-apply').addEventListener('click',()=>{void applyAppSourceChanges().catch(err=>$('#studio-app-source-status').textContent=err.message)})
-$('#studio-app-source-restore').addEventListener('click',()=>{void restoreAppSource().catch(err=>$('#studio-app-source-status').textContent=err.message)})
-$('#studio-app-source-export').addEventListener('click',()=>{void exportAppSourceBackup().catch(err=>$('#studio-app-source-status').textContent=err.message)})
-$('#studio-app-source-close').addEventListener('click',()=>{if($('#studio-app-source-editor').value!==studioAppSourceOriginal&&!confirm('Close and discard unsaved typing?'))return;$('#studio-app-source-panel').hidden=true})
-
-
-const THEME_KEY = 'aharane-studio-theme'
-const ACCENT_KEY = 'aharane-studio-accent'
-const PREFS_KEY = 'aharane-studio-preferences'
-function applyThemePreference() {
-  const saved = localStorage.getItem(THEME_KEY) || 'light'
-  const systemDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
-  const theme = saved === 'system' ? (systemDark ? 'dark' : 'light') : saved
-  document.body.dataset.theme = theme
-  document.documentElement.style.colorScheme = theme
-  $$('[data-theme-choice]').forEach(button => button.classList.toggle('active', button.dataset.themeChoice === saved))
-}
-function applyAccentColour(value) {
-  const safe = /^#[0-9a-f]{6}$/i.test(value) ? value : '#526c91'
-  document.documentElement.style.setProperty('--accent', safe)
-  $('#accent-picker').value = safe
-  $('#accent-current-value').textContent = safe.toUpperCase()
-  $('#accent-current-swatch').style.background = safe
-  const names = {'#526c91':'Slate blue','#3f7e79':'Teal','#76619a':'Violet','#b36b50':'Terracotta','#6b7484':'Graphite','#3f7394':'Ocean blue'}
-  $('#accent-current-name').textContent = names[safe.toLowerCase()] || 'Custom colour'
-  $$('[data-accent]').forEach(button => button.classList.toggle('active', button.dataset.accent.toLowerCase() === safe.toLowerCase()))
-  localStorage.setItem(ACCENT_KEY, safe)
-}
-function renderActivityLog() {
-  const source = $('#live-activity-list')
-  const target = $('#activity-log-list')
-  if (!source || !target) return
-  target.replaceChildren(...[...source.children].map(node => node.cloneNode(true)))
-  if (!target.children.length) target.textContent = 'Activity will appear here when the Studio is connected to the live event stream.'
-}
-async function refreshStorageUsage() {
-  const used = $('#storage-used'), quota = $('#storage-quota')
-  if (!used || !quota) return
-  try {
-    const estimate = await navigator.storage?.estimate?.()
-    if (!estimate) { used.textContent = 'Unavailable'; quota.textContent = 'Unavailable'; return }
-    used.textContent = formatBytes(estimate.usage || 0)
-    quota.textContent = formatBytes(estimate.quota || 0)
-  } catch { used.textContent = 'Unavailable'; quota.textContent = 'Unavailable' }
-}
-function applyLocalPreferences() {
-  let prefs = {}
-  try { prefs = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') } catch {}
-  const compact = prefs.compactFiles !== false
-  const reduceMotion = prefs.reduceMotion === true
-  document.body.classList.toggle('compact-files', compact)
-  document.body.classList.toggle('reduce-motion', reduceMotion)
-  if ($('#compact-files-toggle')) $('#compact-files-toggle').checked = compact
-  if ($('#reduce-motion-toggle')) $('#reduce-motion-toggle').checked = reduceMotion
-}
-function saveLocalPreferences() {
-  localStorage.setItem(PREFS_KEY, JSON.stringify({
-    compactFiles: $('#compact-files-toggle')?.checked !== false,
-    reduceMotion: $('#reduce-motion-toggle')?.checked === true
-  }))
-  applyLocalPreferences()
-}
-$$('[data-theme-choice]').forEach(button => button.addEventListener('click', () => {
-  localStorage.setItem(THEME_KEY, button.dataset.themeChoice)
-  applyThemePreference()
-}))
-$$('[data-accent]').forEach(button => button.addEventListener('click', () => applyAccentColour(button.dataset.accent)))
-$('#accent-picker')?.addEventListener('input', event => applyAccentColour(event.target.value))
-$('#compact-files-toggle')?.addEventListener('change', saveLocalPreferences)
-$('#reduce-motion-toggle')?.addEventListener('change', saveLocalPreferences)
-$('#refresh-storage')?.addEventListener('click', () => { void refreshStorageUsage() })
-applyThemePreference()
-applyAccentColour(localStorage.getItem(ACCENT_KEY) || '#526c91')
-applyLocalPreferences()
-
-document.addEventListener('click', event => {
-  if (event.target instanceof Element && event.target.closest('.source-item-actions, .package-actions')) return
-  $$('.source-item-menu, .package-menu').forEach(menu => { menu.hidden = true })
-  $$('.source-menu-button').forEach(button => button.setAttribute('aria-expanded', 'false'))
-  $$('.source-file-row.menu-open').forEach(row => row.classList.remove('menu-open'))
-})
-window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
-  if (localStorage.getItem(THEME_KEY) === 'system') applyThemePreference()
-})
+const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const I={lock:'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/>',globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/>',vn:'<path d="M9 18V6l10-2v12M9 18a3 3 0 11-3-3 3 3 0 013 3zM19 16a3 3 0 11-3-3 3 3 0 013 3z"/>',cfg:'<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',grp:'<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0112 0M16 5a3 3 0 010 6M18 14a5 5 0 013 6"/>',home:'<path d="M3 11l9-8 9 8v10h-6v-6H9v6H3z"/>',files:'<path d="M3 6a2 2 0 012-2h4l2 2h8a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>',env:'<path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/>',chats:'<path d="M4 5h16v11H9l-5 4z"/>',more:'<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',file:'<path d="M6 3h8l5 5v13H6zM14 3v5h5"/>'};
+const ico=k=>`<svg viewBox="0 0 24 24">${I[k]}</svg>`;
+let fs={admin:{'auth.js':"module.exports = (id) => OWNERS.includes(id);\n"},media:{},commands:{'anime.js':"module.exports = async (client, message) => {\n  await message.reply('Anime search');\n};\n",'help.js':"module.exports = async (client, message) => {\n  await message.reply('Type .menu for commands');\n};\n",'ping.js':"const command = {\n  name: 'ping',\n  description:\n    'Check bot status',\n  async execute(client, message) {\n    const start = Date.now();\n    await message.reply(\n      'Bot is online!'\n    );\n  }\n};",'play.js':"const command = {\n  name: 'play',\n  description: 'Play a track',\n  async execute(client, message, args) {\n    await message.reply(`Searching for ${args.join(' ')}`);\n  }\n};",'sticker.js':"const command = {\n  name: 'sticker',\n  description: 'Turn an image into a sticker',\n  async execute(client, message) {\n    const media = await message.downloadMedia();\n    await message.reply(media, { asSticker: true });\n  }\n};",'menu.js':"module.exports = async (client, message) => {\n  await message.reply('Aharane menu');\n};\n"},plugins:{},'config.js':"module.exports = {\n  name: 'Aharane',\n  prefix: '.',\n  port: 8790\n};\n",'index.js':"const config = require('./config');\nconsole.log(`${config.name} is starting`);\n",'package.json':'{\n  "name": "aharane",\n  "version": "1.0.0",\n  "main": "index.js"\n}\n','README.md':"# Aharane\nPrivate WhatsApp bot.\n"};
+let envs=[{k:'BOT_NAME',v:'Aharane'},{k:'PREFIX',v:'.'},{k:'OWNER_NUMBER',v:'2348012345678'},{k:'MODE',v:'private'},{k:'AUTO_READ',v:'true'},{k:'SHOW_TYPING',v:'true'},{k:'REJECT_CALLS',v:'true'},{k:'ALWAYS_ONLINE',v:'false'},{k:'COMMAND_COOLDOWN',v:'3'},{k:'WELCOME_MESSAGE',v:'Welcome, @user! Type .menu to see what I can do.'},{k:'SESSION_SECRET',v:'k29x-83hd-77qa',s:1},{k:'MEGA_EMAIL',v:''},{k:'MEGA_PASSWORD',v:'',s:1},{k:'PORT',v:'8790'},{k:'LOG_LEVEL',v:'info'}],envDirty=false,show={};
+let chats=[{n:'Mira',m:[['i','Hey, are you around?'],['o','Yes, I’m here.']]},{n:'Quincy',m:[['i','Did the menu update go out?']]},{n:'Family group',m:[['i','Dinner at 7?']]},{n:'Work group',m:[['i','Standup moved to 10.']]}];
+let S={tab:'home',path:[],open:['commands/ping.js','commands/play.js','commands/sticker.js'],cur:'commands/ping.js',sel:{},ex:false,xp:{commands:true},pn:false,pt:'p',pr:[],q:'',cq:'',run:true,t0:Date.now()-(3*864e5+4*36e5),ed:false,chat:null};
+let bars=Array.from({length:24},(_,i)=>20+Math.round(Math.abs(Math.sin(i*1.3))*60+Math.random()*20));
+let logs=[['Almighty session connected'],['Bot service started'],['Loaded 24 commands']];
+const T={home:'Home',files:'Files',env:'ENV',chats:'Chats',more:'More'};
+const accts=[{n:'Almighty',d:'Private account',on:1,slot:'private'},{n:'Balance',d:'Public account',on:0,slot:'public'}];
+function save(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>e.classList.remove('on'),1800)}
+function sheet(h){$('#sheet').innerHTML=h;$('#scrim').classList.add('open')}
+function closeSheet(){$('#scrim').classList.remove('open')}
+$('#scrim').onclick=e=>{if(e.target.id==='scrim')closeSheet()};
+document.addEventListener('keydown',e=>{if(MV&&!$('#scrim').classList.contains('open')){if(e.key==='Escape')closeMv();else if(e.key==='ArrowRight')mvGo(1);else if(e.key==='ArrowLeft')mvGo(-1);else if(e.key===' '){const v=$('#mvvid');if(v){e.preventDefault();v.paused?v.play():v.pause()}}return}if(e.key==='Escape'){closeSheet();closePop()}});
+function ask(title,val,cta,cb){sheet(`<h3>${title}</h3><form id="af"><input class="field" id="av" value="${esc(val)}" autocomplete="off" aria-label="${title}"><div class="btns"><button type="button" class="btn" onclick="closeSheet()">Cancel</button><button class="btn p">${cta}</button></div></form>`);const i=$('#av');i.focus();i.select();$('#af').onsubmit=e=>{e.preventDefault();const v=i.value.trim();if(v){closeSheet();cb(v)}}}
+const node=p=>p.reduce((o,k)=>o[k],fs);
+function getFile(p){const a=p.split('/'),n=a.pop();return[node(a),n]}
+function up(){const s=Math.floor((Date.now()-S.t0)/1e3),d=Math.floor(s/86400),h=String(Math.floor(s%86400/3600)).padStart(2,'0'),m=String(Math.floor(s%3600/60)).padStart(2,'0'),x=String(s%60).padStart(2,'0');return`${d}d ${h}:${m}:${x}`}
+function pill(){const p=$('#pill');p.className='stbtn';p.setAttribute('aria-label',S.run?'Bot running':'Bot stopped');p.innerHTML=`<i class="st ${S.run?'live':'off'}"></i>`;p.onclick=()=>go('home')}
+function go(t){S.tab=t;S.ed=false;S.sub=null;NK='tab';render();scrollTo(0,0)}
+function nav(){$('#nav').innerHTML=Object.keys(T).map(k=>`<button class="${S.tab===k?'on':''}" onclick="go('${k}')" ${S.tab===k?'aria-current="page"':''}>${ico(k)}${T[k]}</button>`).join('')}
+function render(){nav();pill();const v=$('#view');v.className='pg';v.innerHTML=({home:()=>S.sub==='cfg'?cfgV():S.sub==='acc'?accV():S.sub==='pair'?pairV():home(),files:filesV,env:envV,chats:chatsV,more:()=>S.sub==='ap'?apV():S.sub==='act'?actV():S.sub==='stor'?storV():moreV()})[S.tab]();bind();wsDraw();syncNav()}
+function home(){return`<h1>Welcome back</h1><p class="sub">Your private bot workspace.</p>
+<div class="card hero ${S.run?'':'off-state'}"><div class="state" style="display:flex;align-items:center;gap:10px"><i class="st ${S.run?'live':'off'}" role="img" aria-label="${S.run?'Running':'Stopped'}"></i>Aharane bot</div><div class="up">${S.run?'Up <span id="up">'+up()+'</span>':'&nbsp;'}</div>
+<div class="bars" aria-hidden="true">${bars.map(b=>`<i style="height:${S.run?b:6}%"></i>`).join('')}</div><div class="cap"><span>Messages handled, last 24 hours</span><b>${S.run?bars.reduce((a,b)=>a+b*3,0).toLocaleString():0}</b></div>
+<div class="btns">${S.run?`<button class="btn" onclick="svc('restart')">Restart</button><button class="btn d" onclick="svc('stop')">Stop</button>`:`<button class="btn p" onclick="svc('start')">Start bot</button>`}</div></div>
+<h2>Accounts</h2><div class="card list">${accts.map((a,i)=>`<button class="row" onclick="openPair(${i})"><span class="av">${a.n[0]}</span><div class="grow"><div class="t">${a.n}</div><div class="d">${a.d}</div></div><i class="st ${a.on?'':'off'}" role="img" aria-label="${a.on?'Connected':'Offline'}"></i><span class="d">›</span></button>`).join('')}</div>
+<h2>Setup</h2><div class="card list"><button class="row" onclick="openCfg()"><span class="ic">${ico('cfg')}</span><span class="grow"><div class="t">Configuration</div><div class="d">Prefix, access and bot behavior</div></span><span class="d">›</span></button></div><h2>Recent activity <button class="btn sm" onclick="go('more');openAct()">View all</button></h2><div class="card log" id="log">${logs.map(l=>`<div><b>${l[1]||'now'}</b>  ${esc(l[0])}</div>`).join('')}</div>
+`}
+function svc(a){if(a==='stop'){S.run=false;logs.unshift(['Service stopped',clock()])}else if(a==='start'){S.run=true;S.t0=Date.now();logs.unshift(['Service started',clock()])}else{S.t0=Date.now();logs.unshift(['Service restarted',clock()])}toast(a==='stop'?'Bot stopped':a==='start'?'Bot started':'Bot restarted');render()}
+const clock=()=>new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+function sorted(o){return Object.keys(o).sort((a,b)=>(typeof o[b]==='object')-(typeof o[a]==='object')||a.localeCompare(b))}
+function filesV(){const d=node(S.path),q=S.q.toLowerCase(),ks=sorted(d).filter(k=>k.toLowerCase().includes(q));
+return`<h1>Files</h1><p class="sub">Browse and edit Aharane source files.</p><input class="field" id="fq" placeholder="Search files and folders" aria-label="Search files" value="${esc(S.q)}">
+<div class="btns" style="margin:12px 0 0"><button class="btn sm" onclick="mk('file')">New file</button><button class="btn sm" onclick="$('#upl').click()">Upload</button><button class="btn sm" onclick="mk('dir')">New folder</button></div>
+<div class="crumbs" style="flex:1;min-width:0"><button onclick="cd(-1)">root</button>${S.path.map((p,i)=>`<span>/</span><button onclick="cd(${i})">${esc(p)}</button>`).join('')}</div><button class="btn sm" onclick="exportZip(fs,'aharane-source.zip')">Export Bot Source</button></div>
+${selBar(d,ks)}<div class="card list">${ks.length?ks.map(k=>{const dir=typeof d[k]==='object';return`<div class="row" style="padding:0 4px 0 14px"><input type="checkbox" class="ck" data-ck="${esc(k)}" ${S.sel[k]?'checked':''} aria-label="Select ${esc(k)}"><button class="row" style="border:0;padding:8px 0" data-open="${esc(k)}"><span class="ic ${dir?'dir':''}">${dir?ico('files'):(thumb(d[k])||ico('file'))}</span><span class="grow"><div class="t">${esc(k)}</div><div class="d">${dir?Object.keys(d[k]).length+' items':(mediaInfo(d[k])||d[k].length+' characters')}</div></span></button><button class="more" data-m="${esc(k)}" aria-label="Actions for ${esc(k)}">⋮</button></div>`}).join(''):`<div class="empty">${q?'No match for “'+esc(S.q)+'”':'This folder is empty. Create a file to start.'}</div><p class="d" style="margin-top:10px">Folders A–Z first, then files A–Z.</p><h2>Code editor <button class="btn sm" onclick="S.ed=true;render()">Open editor</button></h2>`}</div>`}
+function cd(i){S.path=i<0?[]:S.path.slice(0,i+1);S.q='';S.sel={};render()}
+function mk(t){ask(t==='dir'?'New folder':'New file','',"Create",n=>{const d=node(S.path);if(d[n]!==undefined)return toast('That name already exists');d[n]=t==='dir'?{}:'';toast('Created '+n);render()})}
+function openF(k){const mv=node(S.path)[k];if(typeof mv==='string'&&mv.startsWith('@media:'))return openMedia(k);const p=[...S.path,k].join('/');if(!S.open.includes(p))S.open.push(p);S.cur=p;S.ed=true;S.tab='files';render()}
+const selK=d=>Object.keys(S.sel).filter(k=>S.sel[k]&&d[k]!==undefined);
+function selBar(d,ks){S.ks=ks;const n=selK(d).length;return`<div class="sel"><label><input type="checkbox" class="ck" id="ca" ${ks.length&&ks.every(k=>S.sel[k])?'checked':''}> Select all</label><span class="grow"></span>${n?`<span class="d">${n} selected</span><button class="btn sm" id="bm">Move</button><button class="btn sm" id="bz">ZIP</button><button class="btn sm d" id="bd">Delete</button>`:''}</div>`}
+function selUI(){const d=node(S.path);$('.sel').outerHTML=selBar(d,S.ks);bindSel()}
+function bindSel(){const d=node(S.path),ca=$('#ca');if(ca)ca.onchange=()=>{S.ks.forEach(k=>S.sel[k]=ca.checked);document.querySelectorAll('[data-ck]').forEach(c=>c.checked=ca.checked);selUI()};
+const bd=$('#bd');if(bd)bd.onclick=()=>{const n=selK(d);sheet(`<h3>Delete ${n.length} item${n.length>1?'s':''}?</h3><p class="sub">This removes them from the bot’s files.</p><div class="btns"><button class="btn" onclick="closeSheet()">Cancel</button><button class="btn d" id="m5">Delete</button></div>`);$('#m5').onclick=()=>{n.forEach(k=>delete d[k]);S.sel={};closeSheet();toast('Deleted '+n.length);render()}};
+const bz=$('#bz');if(bz)bz.onclick=()=>{const o={};selK(d).forEach(k=>o[k]=d[k]);exportZip(o,'aharane-selection.zip')};
+const bm=$('#bm');if(bm)bm.onclick=()=>ask('Move to folder (e.g. commands, or root)','','Move',v=>moveTo(selK(d),d,v))}
+function moveTo(ns,d,v){const parts=v==='root'||v==='/'?[]:v.split('/').filter(Boolean);let t;try{t=node(parts)}catch(e){}if(!t||typeof t!=='object')return toast('Folder not found');if(t===d)return toast('Already in that folder');if(ns.some(k=>typeof d[k]==='object'&&within(d[k],t)))return toast('Can’t move a folder into itself');if(ns.some(k=>t[k]!==undefined))return toast('A name already exists there');ns.forEach(k=>{t[k]=d[k];delete d[k]});S.sel={};toast('Moved '+ns.length);render()}
+async function exportZip(src,filename){let dl=null;try{dl=window.claude?await claude.use('downloads'):null}catch(e){}if(!dl||!window.JSZip)return toast('Downloads aren’t available in this view');const z=new JSZip(),add=(o,p)=>{for(const k in o){if(typeof o[k]==='object'){z.folder(p+k);add(o[k],p+k+'/')}else z.file(p+k,isMed(o[k])?((medOf(o[k])||{}).blob||''):o[k])}};add(src,'');try{const blob=await z.generateAsync({type:'blob'});await dl.save({filename,data:blob});toast('Export ready')}catch(e){toast(e&&e.code==='declined'?'Export cancelled':'Export unavailable')}}
+const PD={theme:'system',accent:'',zoom:1,rad:1,dn:1,et:'dark',ef:14,ln:1},ACC=[['Teal',''],['Blue','#2f6fed'],['Violet','#7c4dff'],['Orange','#e8590c'],['Rose','#d6336c'],['Slate','#5b6b72']];
+let P=Object.assign({},PD);
+try{const raw=localStorage.getItem('aharane-prefs');if(raw)Object.assign(P,JSON.parse(raw));else{const t=localStorage.getItem('aharane-theme');if(t)P.theme=t.toLowerCase()}}catch(e){}
+const LH=()=>Math.round(P.ef*1.5);
+function applyPrefs(){if(P.et==='midnight')P.et='amoled';const r=document.documentElement,s=r.style;P.theme==='system'?r.removeAttribute('data-theme'):r.dataset.theme=P.theme;
+if(P.accent){const h=P.accent,n=parseInt(h.slice(1),16),l=((n>>16&255)*.299+(n>>8&255)*.587+(n&255)*.114)/255;s.setProperty('--acc',h);s.setProperty('--on',l>.6?'#0b1210':'#fff');s.setProperty('--soft','color-mix(in srgb,'+h+' 16%,var(--surf))')}else['--acc','--on','--soft'].forEach(k=>s.removeProperty(k));
+s.setProperty('--zm',P.zoom);s.setProperty('--rs',P.rad);s.setProperty('--dn',P.dn);s.setProperty('--efp',P.ef+'px');s.setProperty('--lh',LH()+'px');
+const w=$('#ws');if(w){w.dataset.et=P.et;w.dataset.ln=P.ln?'on':'off'}
+try{localStorage.setItem('aharane-prefs',JSON.stringify(P))}catch(e){}}
+function h2x(h,s,l){s/=100;l/=100;const k=n=>(n+h/30)%12,a=s*Math.min(l,1-l),f=n=>l-a*Math.max(-1,Math.min(k(n)-3,Math.min(9-k(n),1)));return'#'+[f(0),f(8),f(4)].map(x=>Math.round(x*255).toString(16).padStart(2,'0')).join('')}
+function x2h(hex){const n=parseInt(hex.slice(1),16),r=(n>>16&255)/255,g=(n>>8&255)/255,b=(n&255)/255,mx=Math.max(r,g,b),mn=Math.min(r,g,b),l=(mx+mn)/2,d=mx-mn;let h=0,s=0;if(d){s=d/(1-Math.abs(2*l-1));h=mx===r?((g-b)/d+(g<b?6:0)):mx===g?(b-r)/d+2:(r-g)/d+4;h*=60}return[Math.round(h),Math.round(s*100),Math.round(l*100)]}
+function cpanel(){const c=P.accent||'#0e7a5c',[h,s,l]=x2h(c),sl=(id,t,max,v,bg)=>`<label class="cl">${t}<input type="range" id="${id}" min="0" max="${max}" value="${v}" style="background:${bg}"></label>`;return`<div class="cp"><div class="cpt"><span class="cprev" id="cprev" style="background:${c}"></span><input class="field" id="chex" value="${c}" maxlength="7" autocapitalize="off" spellcheck="false" aria-label="Hex color"></div>${sl('cph','Hue',360,h,'linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)')}${sl('cps','Saturation',100,s,'linear-gradient(90deg,'+h2x(h,0,l)+','+h2x(h,100,l)+')')}${sl('cpl','Lightness',100,l,'linear-gradient(90deg,#000,'+h2x(h,s,50)+',#fff)')}</div>`}
+const fmtS=s=>Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+const genPin=()=>{const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let s='';for(let i=0;i<8;i++)s+=a[Math.floor(Math.random()*a.length)];return s};
+function qrSvg(t){try{const q=qrcode(0,'M');q.addData(t);q.make();const n=q.getModuleCount();let p='';for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(q.isDark(r,c))p+=`M${c},${r}h1v1h-1z`;return`<svg viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges" role="img" aria-label="Pairing QR code"><path d="${p}" fill="#000"/></svg>`}catch(e){return'<div class="empty">QR code unavailable</div>'}}
+function newQr(){S.qs='aharane-'+Math.random().toString(36).slice(2,12)+'-'+Date.now();S.qt=60;const b=$('#qrbox');if(b)b.innerHTML=qrSvg(S.qs);const t=$('#qrt');if(t)t.textContent=S.qt}
+function openAcc(){S.sub='acc';render();scrollTo(0,0)}
+function openPair(i){S.pi=i;S.pm=S.pm||'pin';S.pin=null;S.qs=null;S.qx=0;S.sub='pair';render();scrollTo(0,0)}
+function newAcc(){ask('Account name','','Continue',n=>{accts.push({n,d:'Linked account',on:0});openPair(accts.length-1)})}
+function unlink(i){sheet(`<h3>Unlink ${esc(accts[i].n)}?</h3><p class="sub">The bot will stop using this number until you pair it again.</p><div class="btns"><button class="btn" onclick="closeSheet()">Cancel</button><button class="btn d" id="ul">Unlink</button></div>`);$('#ul').onclick=()=>{accts[i].on=0;closeSheet();toast('Account unlinked');render()}}
+function finishPair(){const a=accts[S.pi];a.on=1;toast(a.n+' linked');S.sub=null;render()}
+function accV(){return`<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Accounts</h1><p class="sub">Link and manage the WhatsApp numbers your bot runs on.</p><div class="card list">${accts.map((a,i)=>`<div class="row"><span class="av">${esc(a.n[0])}<i class="st av-dot ${a.on?'':'off'}" role="img" aria-label="${a.on?'Connected':'Offline'}"></i></span><div class="grow"><div class="t">${esc(a.n)}</div><div class="d">${esc(a.d)}</div></div><button class="btn sm ${a.on?'':'p'}" onclick="openPair(${i})">${a.on?'Re-link':'Pair'}</button>${a.on?`<button class="btn sm d" onclick="unlink(${i})">Unlink</button>`:''}</div>`).join('')}</div><div class="btns"><button class="btn p" onclick="newAcc()">Add account</button></div>`}
+function qrOld(){return`<div class="qrw" id="qrbox">${qrSvg(S.qs)}</div><p class="d" style="text-align:center;margin:14px 0 0;white-space:normal">New code in <b id="qrt">${S.qt}</b>s <button class="btn sm" onclick="newQr()" style="margin-left:6px">Refresh</button></p><p class="d" style="text-align:center;margin:8px 0 0;white-space:normal">Preview code. Your live bot supplies the real one.</p>`}
+function reqOk(){const w=S.lr?Math.ceil((30000-(Date.now()-S.lr))/1000):0;if(w>0){toast('Wait '+w+'s before requesting another code');return false}S.lr=Date.now();return true}
+function qrPane(){if(!S.qs)return`<div class="empty" style="padding:6px 0 16px">${S.qx?'That QR code expired.':'No number needed. Scan it from the phone you want to link.'}</div><button class="btn p" style="width:100%" id="gqr">${S.qx?'Get new QR code':'Get QR code'}</button><p class="d" style="text-align:center;margin:12px 0 0;white-space:normal">Request a code only when you’re ready to link.</p>`;
+return`<div class="qrw" id="qrbox">${qrSvg(S.qs)}</div><p class="d" style="text-align:center;margin:14px 0 0">Expires in <b id="qrt">${S.qt}</b>s</p><p class="d" style="text-align:center;margin:8px 0 0;white-space:normal">Preview code. Your live bot supplies the real one.</p>`}
+function pinOld(){if(!S.pin)return`<label for="pnum" class="t" style="display:block;margin-bottom:8px">Phone number to link</label><input class="field" id="pnum" inputmode="numeric" placeholder="2348012345678" value="${esc(S.pnum||'')}" autocomplete="off"><p class="d" style="white-space:normal;margin:8px 0 14px">Digits only, with country code.</p><button class="btn p" style="width:100%" id="gpin">Get pairing code</button>`;
+return`<div class="d" style="text-align:center;white-space:normal">Enter this code on ${esc(S.pnum)}</div><div class="pin" role="img" aria-label="Pairing code ${S.pin.split('').join(' ')}">${[...S.pin].map((c,i)=>(i===4?'<span class="pd">-</span>':'')+'<b>'+c+'</b>').join('')}</div><div class="btns" style="justify-content:center"><button class="btn" id="cpin">Copy code</button><button class="btn" id="npin">New code</button></div><p class="d" style="text-align:center;margin:12px 0 0">Expires in <b id="pint">${fmtS(S.pt)}</b></p><p class="d" style="text-align:center;margin:8px 0 0;white-space:normal">Preview code. Your live bot supplies the real one.</p>`}
+function ownerNum(){const a=accts[S.pi]||accts[0],x=envs.find(e=>e.k===(a.slot==='public'?'PUBLIC_NUMBER':'OWNER_NUMBER'));return x?x.v.replace(/\D/g,''):''}
+function pinPane(){const o=ownerNum();if(!o)return`<div class="empty" style="padding:8px 0 16px">Add the ${accts[S.pi].slot==='public'?'public account':'owner'} number in Configuration to get a pairing code.</div><button class="btn p" style="width:100%" onclick="cfgFor(${S.pi})">Open Configuration</button>`;
+if(!S.pin)return`<div class="d" style="text-align:center;margin-bottom:14px">For +${o}</div><button class="btn p" style="width:100%" id="gpin">Get pairing code</button><p class="d" style="text-align:center;margin:12px 0 0;white-space:normal">Request a code only when you’re ready to link.</p>`;
+return`<div class="d" style="text-align:center;white-space:normal">Code for +${o}</div><div class="pin" role="img" aria-label="Pairing code ${S.pin.split('').join(' ')}">${[...S.pin].map((c,i)=>(i===4?'<span class="pd">-</span>':'')+'<b>'+c+'</b>').join('')}</div><div class="btns" style="justify-content:center"><button class="btn" id="cpin">Copy code</button><button class="btn" id="npin">New code</button></div><p class="d" style="text-align:center;margin:12px 0 0">Expires in <b id="pint">${fmtS(S.pt)}</b></p><p class="d" style="text-align:center;margin:8px 0 0;white-space:normal">Preview code. Your live bot supplies the real one.</p>`}
+function pairV(){const a=accts[S.pi],m=S.pm,st=[];m==='qr'?['Open WhatsApp on the phone you want to link.','Go to Settings, then Linked devices.','Tap Link a device and scan this code.']:['Open WhatsApp on the phone you want to link.','Go to Settings, then Linked devices, then Link a device.','Tap Link with phone number instead and enter the code.'];
+return`<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Link ${a.slot==='public'?'public':'private'} account</h1><p class="sub" style="display:flex;align-items:center;gap:8px"><i class="st ${a.on?'':'off'}" role="img" aria-label="${a.on?'Connected':'Offline'}"></i>Choose how you want to link this number.</p><div class="seg" style="margin-bottom:16px"><button class="${m==='pin'?'on':''}" data-pm="pin">Pairing code</button><button class="${m==='qr'?'on':''}" data-pm="qr">QR code</button></div><div class="card" style="padding:16px">${m==='qr'?qrPane():pinPane()}</div><div class="btns"><button class="btn" onclick="finishPair()">Mark as connected (prototype)</button>${a.on?'<button class="btn d" onclick="unlink('+S.pi+')">Unlink account</button>':''}</div>`}
+
+const LOGS=[];let lid=0,VNI=null,VR=1,REC=null;
+function pushLog(lv,src,msg,det,ts){LOGS.unshift({id:++lid,ts:ts||Date.now(),lv,src,msg,det});if(LOGS.length>500)LOGS.pop();if(S.tab==='more'&&S.sub==='act'&&!S.lp&&$('#lg'))lgDraw()}
+(function(){const T=[['info','cmd','Command .ping ran'],['info','msg','Message handled'],['info','cmd','Command .menu ran'],['info','session','Session keep-alive'],['info','msg','Menu sent to a chat'],['warn','session','Slow response from WhatsApp (1.8s)'],['info','system','Config reloaded'],['warn','cmd','Command .play timed out'],['error','system','Message send failed','Error: Connection Closed\n  at sendMessage (lib/socket.js:212)\nRetrying in 5s'],['info','system','Bot service started']];let t=Date.now()-6*36e5,x=7;const a=[];while(t<Date.now()-30000){x=(x*9301+49297)%233280;const e=T[x%T.length];a.push({id:++lid,ts:t,lv:e[0],src:e[1],msg:e[2],det:e[3]});t+=60000+(x%240000)}a.reverse();LOGS.push(...a)})();
+const lgF=()=>{const q=(S.lq||'').toLowerCase(),f=S.lf||'all';return LOGS.filter(l=>(f==='all'||l.lv===f)&&(!q||(l.msg+' '+l.src).toLowerCase().includes(q)))};
+const lgText=a=>a.map(l=>`${new Date(l.ts).toISOString()} ${l.lv.toUpperCase()} [${l.src}] ${l.msg}${l.det?'\n'+l.det:''}`).join('\n');
+async function saveFile(name,blob){let dl=null;try{dl=window.claude?await claude.use('downloads'):null}catch(e){}if(!dl)return toast('Downloads aren’t available in this view');try{await dl.save({filename:name,data:blob});toast('Saved')}catch(e){toast(e&&e.code==='declined'?'Cancelled':'Download unavailable')}}
+function openAct(){S.sub='act';S.lq='';S.lf='all';S.ln=60;S.lp=false;render();scrollTo(0,0)}
+function actV(){const cnt=k=>LOGS.filter(l=>k==='all'||l.lv===k).length;return`<button class="btn sm" onclick="S.sub=null;render()">Back to More</button><h1 style="margin-top:14px">Activity and logs</h1><p class="sub" id="lgsub"></p><input class="field" id="lq" placeholder="Search logs" aria-label="Search logs" value="${esc(S.lq||'')}" style="margin-bottom:12px"><div class="seg" style="margin-bottom:12px">${[['all','All'],['info','Info'],['warn','Warnings'],['error','Errors']].map(([v,t])=>`<button class="${(S.lf||'all')===v?'on':''}" data-lf="${v}">${t} <span class="kk">${cnt(v)}</span></button>`).join('')}</div><div class="btns" style="margin:0 0 12px;flex-wrap:wrap"><button class="btn sm" id="lpz"></button><button class="btn sm" id="lcp">Copy</button><button class="btn sm" id="lex">Export</button><button class="btn sm d" id="lcl">Clear</button></div><div class="card list" id="lg"></div>`}
+function lgDraw(){const a=lgF(),n=S.ln||60,el=$('#lg');if(!el)return;$('#lgsub').textContent=a.length+' entries'+(S.lp?' · paused':'');el.innerHTML=a.length?a.slice(0,n).map(l=>`<button class="row lr" data-lx="${l.id}"><i class="st ${l.lv==='error'?'off':l.lv==='warn'?'warn':''}" role="img" aria-label="${l.lv}"></i><span class="grow"><div class="t lm">${esc(l.msg)}</div><div class="d"><span class="mono">${fmtT(l.ts)}</span> · ${esc(l.src)}</div>${S.le&&S.le[l.id]&&l.det?`<pre class="det">${esc(l.det)}</pre>`:''}</span></button>`).join('')+(a.length>n?'<button class="row" id="lmo"><span class="grow t" style="text-align:center;color:var(--acc)">Show more</span></button>':''):'<div class="empty">No log entries match.</div>';el.querySelectorAll('[data-lx]').forEach(b=>b.onclick=()=>{S.le=S.le||{};S.le[b.dataset.lx]=!S.le[b.dataset.lx];lgDraw()});const mo=$('#lmo');if(mo)mo.onclick=()=>{S.ln=n+60;lgDraw()};$('#lpz').innerHTML=S.lp?'Resume':'<i class="st live" style="width:9px;height:9px"></i> Live'}
+const SC=[['text','Code and text','#3b82f6'],['img','Images','#0e7a5c'],['vid','Videos','#d6336c'],['aud','Audio','#e0a100']],MG={on:false,auto:'off',inc:{src:1,media:1,env:0},hist:[],busy:0,pg:0};
+function storStats(){const cat={text:0,img:0,vid:0,aud:0},files=[];(function w(o,p){for(const k in o){const v=o[k];if(typeof v==='object')w(v,p+k+'/');else if(isMed(v)){const m=medOf(v);if(m){cat[m.k]+=m.size;files.push({path:p+k,name:k,k:m.k,size:m.size})}}else{const s=new Blob([v]).size;cat.text+=s;files.push({path:p+k,name:k,k:'text',size:s})}}})(fs,'');return{cat,files,total:cat.text+cat.img+cat.vid+cat.aud}}
+function openStor(){S.sub='stor';render();scrollTo(0,0)}
+function openPath(p){const a=p.split('/'),n=a.pop();S.path=a;openF(n)}
+function storV(){const st=storStats(),lim=(S.slim||1024)*1048576,fo={};st.files.forEach(f=>{const s=f.path.includes('/')?f.path.split('/')[0]:'Root files';fo[s]=(fo[s]||0)+f.size});
+return`<button class="btn sm" onclick="S.sub=null;render()">Back to More</button><h1 style="margin-top:14px">Storage</h1><p class="sub">What the bot’s files take up.</p><div class="card" style="padding:18px"><div class="big">${fsz(st.total)}</div><div class="d" style="margin-bottom:12px">of ${fsz(lim)} limit <button class="btn sm" id="slim" style="margin-left:6px">Change</button></div><div class="sbar" id="sbar">${SC.map(([k,,c])=>st.cat[k]?`<i style="flex:${st.cat[k]};background:${c}"></i>`:'').join('')}<i style="flex:${Math.max(1,lim-st.total)};background:var(--line)"></i></div>${SC.map(([k,n,c])=>`<div class="row" style="padding:6px 0;min-height:42px"><i class="st" style="color:${c}"></i><span class="grow t">${n}</span><span class="d">${fsz(st.cat[k])}</span></div>`).join('')}</div>`+
+`<h2>Largest files</h2><div class="card list">${st.files.length?st.files.slice().sort((a,b)=>b.size-a.size).slice(0,5).map(f=>`<button class="row" data-op="${esc(f.path)}"><span class="ic">${ico(f.k==='aud'?'vn':'file')}</span><span class="grow"><div class="t">${esc(f.name)}</div><div class="d">${esc(f.path)}</div></span><span class="d">${fsz(f.size)}</span></button>`).join(''):'<div class="empty">No files yet.</div>'}</div><h2>By folder</h2><div class="card list">${Object.entries(fo).sort((a,b)=>b[1]-a[1]).map(([n,s])=>`<div class="row"><span class="ic dir">${ico('files')}</span><span class="grow t">${esc(n)}</span><span class="d">${fsz(s)}</span></div>`).join('')}</div>`+mgV()}
+function mgV(){const e=envs.find(x=>x.k==='MEGA_EMAIL'),p=envs.find(x=>x.k==='MEGA_PASSWORD'),ready=e&&e.v&&p&&p.v,tg=(k,t,d)=>`<div class="row"><span class="grow"><div class="t">${t}</div><div class="d" style="white-space:normal">${d}</div></span><button class="tgl ${MG.inc[k]?'on':''}" role="switch" aria-checked="${!!MG.inc[k]}" aria-label="${t}" data-mgt="${k}"></button></div>`;
+let h=`<h2><span>MEGA backup</span><i class="st ${MG.on?'':'off'}" role="img" aria-label="${MG.on?'Connected to MEGA':'Not connected to MEGA'}"></i></h2><div class="card list">`;
+if(!MG.on)h+=`<div class="env"><div class="d" style="white-space:normal;margin:0 0 12px">Back up the bot’s files to your MEGA account. The studio reads <span class="kk">MEGA_EMAIL</span> and <span class="kk">MEGA_PASSWORD</span> from ENV, so your password stays with your other secrets.</div>${ready?'<button class="btn p" id="mgc" style="width:100%">Connect to MEGA</button>':'<button class="btn" id="mge" style="width:100%">Add credentials in ENV</button>'}</div>`;
+else{const em=e.v,i=em.indexOf('@'),mk=i>1?em[0]+'***'+em.slice(i):em;h+=`<div class="row"><span class="grow"><div class="t">${esc(mk)}</div><div class="d">MEGA account</div></span><button class="btn sm d" id="mgd">Disconnect</button></div>`+tg('src','Source files','Commands, config and other code.')+tg('media','Media','Images, videos and audio.')+tg('env','ENV values','Includes your secrets. Keep off unless the archive is encrypted.')+`<div class="env"><div class="t" style="margin-bottom:8px">Automatic backup</div><div class="seg">${[['off','Off'],['daily','Daily'],['weekly','Weekly']].map(([v,t])=>`<button class="${MG.auto===v?'on':''}" data-mga="${v}">${t}</button>`).join('')}</div></div><div class="env">${MG.busy?`<div class="d" style="margin-bottom:8px">Backing up…</div><div class="pbar"><i id="mgp" style="width:${MG.pg}%"></i></div>`:'<button class="btn p" id="mgb" style="width:100%">Back up now</button>'}</div>`+(MG.hist.length?MG.hist.map(x=>`<div class="row"><span class="grow"><div class="t">${new Date(x.ts).toLocaleDateString([],{day:'numeric',month:'short'})}, ${fmtT(x.ts)}</div><div class="d">${fsz(x.sz)}</div></span><button class="btn sm" data-mgr="${fmtT(x.ts)}">Restore</button></div>`).join(''):'<div class="empty" style="padding:16px">No backups yet.</div>');}
+return h+'</div><p class="d" style="margin:10px 2px 0;white-space:normal">Preview only. Nothing is uploaded until the live studio is connected.</p>'}
+function mgBackup(){toast('MEGA backup is not connected in this production build.');}
+function storBind(){const g=s=>$(s),all=(s,f)=>document.querySelectorAll(s).forEach(f);g('#slim').onclick=()=>ask('Disk limit in MB',String(S.slim||1024),'Save',v=>{const n=+v;if(!(n>0))return toast('Enter a number');S.slim=n;render()});all('[data-op]',b=>b.onclick=()=>openPath(b.dataset.op));
+const c=g('#mgc');if(c)c.onclick=()=>{MG.on=true;pushLog('info','system','Connected to MEGA');toast('Connected to MEGA');render()};const e=g('#mge');if(e)e.onclick=()=>go('env');
+const d=g('#mgd');if(d)d.onclick=()=>{sheet(`<h3>Disconnect MEGA?</h3><p class="sub">Backups already in MEGA stay there. Automatic backups will stop.</p><div class="btns"><button class="btn" onclick="closeSheet()">Cancel</button><button class="btn d" id="mgy">Disconnect</button></div>`);g('#mgy').onclick=()=>{MG.on=false;MG.auto='off';closeSheet();toast('Disconnected');render()}};
+all('[data-mgt]',b=>b.onclick=()=>{MG.inc[b.dataset.mgt]=!MG.inc[b.dataset.mgt];b.classList.toggle('on',!!MG.inc[b.dataset.mgt]);b.setAttribute('aria-checked',!!MG.inc[b.dataset.mgt])});all('[data-mga]',b=>b.onclick=()=>{MG.auto=b.dataset.mga;all('[data-mga]',x=>x.classList.toggle('on',x===b))});
+const bk=g('#mgb');if(bk)bk.onclick=mgBackup;all('[data-mgr]',b=>b.onclick=()=>{sheet(`<h3>Restore this backup?</h3><p class="sub">Files in the bot will be replaced with the backup from ${esc(b.dataset.mgr)}.</p><div class="btns"><button class="btn" onclick="closeSheet()">Cancel</button><button class="btn p" id="mgz">Restore</button></div>`);g('#mgz').onclick=()=>{closeSheet();toast('Restore started (preview)');pushLog('warn','system','Restore from MEGA requested')}})}
+const fmtDur=s=>{s=Math.round(s||0);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')},wfSeed=()=>Array.from({length:30},()=>6+Math.floor(Math.random()*20));
+const MICI='<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg>',SENDI='<svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+const vnb=(m,ix)=>`<div class="vn" data-vn="${ix}"><button type="button" class="vnp" aria-label="Play voice note">${vico('play')}</button><div class="wf" role="img" aria-label="Voice note, ${fmtDur(m.dur)}">${(m.wf||(m.wf=wfSeed())).map(h=>`<i style="height:${h}px"></i>`).join('')}</div><button type="button" class="vns">1x</button><span class="vnd">${fmtDur(m.dur)}</span></div>`;
+const VA=new Audio();
+function vnPaint(){if(S.chat==null)return;document.querySelectorAll('[data-vn]').forEach(b=>{const ix=+b.dataset.vn,act=VNI===ix,m=CH[S.chat].m[ix],d=(act&&VA.duration)||m.dur||0,p=act&&d?VA.currentTime/d:0,bars=b.querySelectorAll('.wf i'),n=Math.floor(p*bars.length);bars.forEach((x,i)=>x.classList.toggle('on',i<n));b.classList.toggle('act',act);b.querySelector('.vnp').innerHTML=vico(act&&!VA.paused?'pause':'play');b.querySelector('.vnd').textContent=fmtDur(act&&VA.currentTime>0?Math.max(0,d-VA.currentTime):d);b.querySelector('.vns').textContent=VR+'x'})}
+VA.ontimeupdate=VA.onplay=VA.onpause=VA.onended=vnPaint;
+function vnBind(){document.querySelectorAll('[data-vn]').forEach(b=>{const ix=+b.dataset.vn;b.querySelector('.vns').onclick=ev=>{ev.stopPropagation();VR=VR===1?1.5:VR===1.5?2:1;VA.playbackRate=VR;vnPaint()};b.onclick=ev=>{const m=CH[S.chat].m[ix],wf=ev.target.closest('.wf');if(wf&&VNI===ix&&VA.duration){const r=wf.getBoundingClientRect();VA.currentTime=Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width))*VA.duration;return}if(VNI===ix&&!VA.paused){VA.pause();return}if(VNI!==ix){VA.src=m.u;VNI=ix;VA.playbackRate=VR}VA.play().catch(()=>toast('Can’t play this voice note here'))}});vnPaint()}
+async function recStart(){if(REC)return;if(!navigator.mediaDevices||!window.MediaRecorder)return toast('Voice notes aren’t available in this view');try{const s=await navigator.mediaDevices.getUserMedia({audio:true}),mr=new MediaRecorder(s),ch=[];mr.ondataavailable=e=>ch.push(e.data);REC={mr,s,ch,t0:Date.now(),send:true,tm:setInterval(()=>{$('#rect').textContent=fmtDur((Date.now()-REC.t0)/1000)},250)};mr.onstop=()=>{const r=REC;clearInterval(r.tm);s.getTracks().forEach(t=>t.stop());REC=null;$('#cf').classList.remove('recording');if(!r.send)return;const b=new Blob(r.ch,{type:mr.mimeType||'audio/webm'}),dur=(Date.now()-r.t0)/1000,fr=new FileReader();fr.onload=()=>sendMsg({d:'o',k:'vn',u:fr.result,b,dur,f:'Voice note',z:fsz(b.size),sz:b.size,ts:Date.now()});fr.readAsDataURL(b)};mr.start();$('#cf').classList.add('recording');$('#rect').textContent='0:00'}catch(e){toast('Microphone access was blocked')}}
+$('#recx').onclick=()=>{if(REC){REC.send=false;REC.mr.stop()}};$('#recs').onclick=()=>{if(REC){if(Date.now()-REC.t0<800){REC.send=false;toast('Too short')}REC.mr.stop()}};
+function wavData(sec){const sr=8000,n=sr*sec,ab=new ArrayBuffer(44+n*2),v=new DataView(ab),w=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));w(0,'RIFF');v.setUint32(4,36+n*2,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,n*2,true);const nt=[262,330,392,330,294,349,440,349];for(let i=0;i<n;i++){const t=i/sr,f=nt[Math.floor(t*2)%8],ph=(t*2)%1,env=Math.min(1,ph*8)*Math.max(0,1-ph*.9);v.setInt16(44+i*2,Math.sin(2*Math.PI*f*t)*env*9000,true)}const u=new Uint8Array(ab);let s='';for(let i=0;i<u.length;i+=8192)s+=String.fromCharCode.apply(null,u.subarray(i,i+8192));return{url:'data:audio/wav;base64,'+btoa(s),blob:new Blob([ab],{type:'audio/wav'}),size:ab.byteLength}}
+function seedVn(){const a=wavData(4);CH[0].m.push({d:'i',k:'vn',f:'Voice note',u:a.url,b:a.blob,sz:a.size,z:fsz(a.size),dur:4,ts:NW-20*6e4});fs.media['voice-sample.wav']=addMedia({k:'aud',name:'voice-sample.wav',url:a.url,blob:a.blob,size:a.size});CH[0].m[1].q={n:'Mira',t:CH[0].m[0].t,ref:CH[0].m[0]}}
+let SKIP=0,NK=null;const HS=['home'],hname=()=>location.hash.slice(1)||'home',SUBN={cfg:()=>'configuration',pair:()=>'pair-'+S.pi,ap:()=>'appearance',act:()=>'activity',stor:()=>'storage',acc:()=>'accounts'};
+function navName(){if(S.chat!=null)return'chat-'+S.chat;if(S.ed)return'editor';if(S.sub&&SUBN[S.sub])return SUBN[S.sub]();if(S.tab==='files'&&S.path.length)return'files-'+S.path.length;return S.tab}
+function pushNav(n){HS.push(n);try{history.pushState(null,'','#'+n)}catch(e){}}
+function replNav(n){HS[HS.length-1]=n;try{history.replaceState(null,'','#'+n)}catch(e){}}
+function backN(k){SKIP=1;HS.length-=k;history.go(-k);setTimeout(()=>{if(SKIP){SKIP=0;syncNav()}},500)}
+function syncNav(){if(SKIP)return;const n=navName(),top=HS[HS.length-1],k=NK;NK=null;if(n===top)return;if(n==='home'){if(HS.length>1)backN(HS.length-1);else replNav('home');return}if(HS[HS.length-2]===n){backN(1);return}if(k==='tab'){if(HS.length===1)pushNav(n);else if(HS.length===2)replNav(n);else{NK='tab';backN(HS.length-2)}return}pushNav(n)}
+function syncHS(){const n=hname(),i=HS.lastIndexOf(n);if(i>=0)HS.length=i+1;else{HS.length=1;HS[0]=n}}
+function closeTop(){if($('#scrim').classList.contains('open')){closeSheet();return true}if($('#pop')){closePop();return true}if(MV){closeMv();return true}if(S.ed&&S.ex){S.ex=false;$('#xp').classList.remove('open');$('#xs').classList.remove('open');return true}if(S.ed&&S.pn){S.pn=false;$('#pn').classList.remove('open');return true}return false}
+function chatClose(){VA.pause();VNI=null;$('#chat').classList.remove('open');$('.nav').style.display='';S.chat=null}
+function restore(n){const m=n.match(/^([a-z]+)(?:-(\d+))?$/)||[],b=m[1]||n,k=m[2]==null?null:+m[2];closeSheet();closePop();if(MV)closeMv();S.ed=false;S.sub=null;if(S.chat!=null&&b!=='chat')chatClose();
+if(T[b]){S.tab=b;if(b==='files')S.path=k==null?[]:S.path.slice(0,k)}else if(b==='configuration'){S.tab='home';S.sub='cfg'}else if(b==='pair'){S.tab='home';S.sub='pair';S.pi=k||0}else if(b==='accounts'){S.tab='home';S.sub='acc'}else if(b==='appearance'){S.tab='more';S.sub='ap'}else if(b==='activity'){S.tab='more';S.sub='act'}else if(b==='storage'){S.tab='more';S.sub='stor'}else if(b==='editor'){S.tab='files';S.ed=true}else if(b==='chat'){S.tab='chats';if(S.chat!==k){if(S.chat!=null)chatClose();openChat(k)}}else S.tab='home';render()}
+addEventListener('popstate',()=>{if(SKIP){SKIP=0;syncHS();syncNav();return}if(closeTop()){try{history.pushState(null,'','#'+HS[HS.length-1])}catch(e){}return}syncHS();restore(hname())});
+const lbl=m=>m.t||({img:'Photo',vid:'Video',vn:'Voice note'}[m.k])||('File · '+(m.f||''));
+const qblk=q=>{const i=CH[S.chat].m.indexOf(q.ref),col=q.n==='You'?'var(--acc)':sCol(q.n);return`<div class="qb" ${i>=0?'data-qi="'+i+'"':''} style="border-left-color:${col}"><div class="qn" style="color:${col}">${esc(q.n)}</div><div class="qt">${esc(q.t)}</div></div>`};
+function rpDraw(){const r=$('#rpb');if(!S.rp){r.classList.remove('on');r.innerHTML='';return}const col=S.rp.n==='You'?'var(--acc)':sCol(S.rp.n);r.classList.add('on');r.innerHTML=`<div class="rpi" style="border-left-color:${col}"><div class="qn" style="color:${col}">${esc(S.rp.n)}</div><div class="qt">${esc(S.rp.t)}</div></div><button type="button" class="ib" id="rpx" aria-label="Cancel reply"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>`;$('#rpx').onclick=()=>{S.rp=null;rpDraw();grow()};grow()}
+function setReply(i){const c=CH[S.chat],m=c.m[i];if(!m)return;S.rp={n:m.d==='o'?'You':(m.s||c.n),t:lbl(m),ref:m};rpDraw();$('#ci').focus()}
+{const ms=$('#msgs');let g=null;
+ms.onpointerdown=e=>{const b=e.target.closest('.b[data-i]');if(!b||e.target.closest('button,.wf'))return;g={b,x:e.clientX,y:e.clientY,d:0,on:0,id:e.pointerId}};
+ms.onpointermove=e=>{if(!g||e.pointerId!==g.id)return;const dx=e.clientX-g.x,dy=e.clientY-g.y;if(!g.on){if(Math.abs(dy)>10&&Math.abs(dy)>Math.abs(dx)){g=null;return}if(dx>12&&dx>Math.abs(dy)*1.5){g.on=1;try{ms.setPointerCapture(e.pointerId)}catch(x){}g.b.style.transition='none';g.b.classList.add('sw')}else return}g.d=Math.max(0,Math.min(88,dx*.7));g.b.style.transform='translateX('+g.d+'px)';g.b.classList.toggle('rdy',g.d>=48)};
+const end=e=>{if(!g||e.pointerId!==g.id)return;const b=g.b;b.style.transition='transform .18s';b.style.transform='';if(g.on&&g.d>=48){setReply(+b.dataset.i);try{navigator.vibrate&&navigator.vibrate(12)}catch(x){}}b.classList.remove('rdy','sw');g=null};
+ms.onpointerup=ms.onpointercancel=end;ms.ondblclick=e=>{const b=e.target.closest('.b[data-i]');if(b&&!e.target.closest('button,.vn'))setReply(+b.dataset.i)}}
+const CHS={private:null,public:null},mkPub=()=>[{n:'Tunde',on:1,un:1,m:[{d:'i',t:'Hi, is the blue sneaker still available?',ts:NW-50*6e4}]},{n:'Orders group',g:1,on:1,un:0,mem:['Ngozi','Sam'],m:[{d:'i',s:'Ngozi',t:'Order 1042 has been paid.',ts:NW-2*HR},{d:'o',t:'Thanks, packing it now.',ts:NW-2*HR+3e5,r:1}]},{n:'Bisi',on:0,un:0,m:[{d:'o',t:'Your order has shipped.',ts:NW-DY,r:1}]}];S.cacc='private';
+function switchChats(){const n=S.cacc==='private'?'public':'private';CHS[S.cacc]=CH.slice();if(!CHS[n])CHS[n]=mkPub();CH.splice(0,CH.length,...CHS[n]);S.cacc=n;S.cq='';S.fl='all';render();toast((n==='public'?'Public':'Private')+' account chats')}
+function openAp(){S.sub='ap';render();scrollTo(0,0)}
+function apV(){const seg=(k,o)=>`<div class="seg" role="group">${o.map(([v,l])=>`<button class="${String(P[k])===String(v)?'on':''}" data-p="${k}" data-v="${v}">${l}</button>`).join('')}</div>`;
+const row=(t,d,c)=>`<div class="env"><div class="t">${t}</div><div class="d" style="white-space:normal;margin:2px 0 10px">${d}</div>${c}</div>`;
+const custom=P.accent&&!ACC.some(a=>a[1]===P.accent);
+return`<button class="btn sm" onclick="S.sub=null;render()">Back to More</button><h1 style="margin-top:14px">Appearance</h1><p class="sub">Changes apply instantly and are remembered.</p><h2>App</h2><div class="card list">`+
+row('Theme','Light, dark, or follow your phone.',seg('theme',[['system','System'],['light','Light'],['dark','Dark'],['amoled','AMOLED']]))+
+row('Accent color','Used for buttons, active tabs and highlights.',`<div class="sw">${ACC.map(([n,c])=>`<button class="sws ${P.accent===c?'on':''}" data-ac="${c}" style="background:${c||'#0e7a5c'}" aria-label="${n}"></button>`).join('')}<button class="sws cust ${custom||S.cp?'on':''}" id="cpb" aria-label="Custom color"></button></div>${custom||S.cp?cpanel():''}`)+
+row('Interface size','Scales text and spacing across the app.',seg('zoom',[[.9,'Small'],[1,'Default'],[1.15,'Large'],[1.3,'Largest']]))+
+row('Corners','Roundness of cards and buttons.',seg('rad',[[.3,'Sharp'],[1,'Default'],[1.5,'Round']]))+
+row('Spacing','Row height in lists.',seg('dn',[[.8,'Compact'],[1,'Comfortable'],[1.15,'Roomy']]))+
+`</div><h2>Code editor</h2><div class="card list">`+
+row('Color scheme','The editor has its own look, separate from the app.',seg('et',[['dark','Dark+'],['amoled','AMOLED'],['light','Light']]))+
+row('Font size',`<span id="efv">${P.ef}px</span>`,`<input type="range" min="11" max="20" step="1" value="${P.ef}" id="efr" style="width:100%;accent-color:var(--acc)" aria-label="Editor font size">`)+
+row('Line numbers','Show the numbered gutter beside your code.',seg('ln',[[1,'On'],[0,'Off']]))+
+`</div><div class="btns"><button class="btn" id="apr">Reset to defaults</button></div>`}
+const CDEF=()=>({name:'Aharane',prefix:'.',owner:'',autoread:true,typing:true,reject:true,online:false,cooldown:3,welcome:'Welcome, @user! Type .menu to see what I can do.'}),CS={private:CDEF(),public:CDEF()},C0S={private:'',public:''},DS={private:false,public:false};S.cprof='private';let C=CS.private,C0='',cfgD=false;
+function cfgDirty(v){cfgD=v;DS[S.cprof]=v;const sb=$('#sbar2');if(sb)sb.classList.toggle('show',v);const s=$('#csv'),d=$('#cds');[s,d].forEach(b=>{if(b){b.disabled=!v;b.style.opacity=v?1:.5}})}
+const MAP0=[['name','BOT_NAME','s'],['prefix','PREFIX','s'],['owner','NUMBER','s'],['autoread','AUTO_READ','b'],['typing','SHOW_TYPING','b'],['reject','REJECT_CALLS','b'],['online','ALWAYS_ONLINE','b'],['cooldown','COMMAND_COOLDOWN','n'],['welcome','WELCOME_MESSAGE','s']],keyOf=(p,f)=>{const s=MAP0.find(m=>m[0]===f)[1];return f==='owner'&&p==='private'?'OWNER_NUMBER':p.toUpperCase()+'_'+s},ek=k=>keyOf(S.cprof,k);
+function loadP(p){const c=CS[p];MAP0.forEach(([k,s,t])=>{const x=envs.find(v=>v.k===keyOf(p,k));if(!x)return;c[k]=t==='b'?x.v==='true':t==='n'?(+x.v||0):x.v});C0S[p]=JSON.stringify(c)}
+function cfgLoad(){loadP(S.cprof);C0=C0S[S.cprof];cfgD=false;DS[S.cprof]=false}
+function switchProf(){DS[S.cprof]=cfgD;C0S[S.cprof]=C0;const n=S.cprof==='private'?'public':'private';S.cprof=n;C=CS[n];if(!DS[n])loadP(n);C0=C0S[n];cfgD=DS[n];render();toast((n==='public'?'Public':'Private')+' configuration')}
+function cfgFor(i){if(S.cprof!==accts[i].slot)switchProf();openCfg()}
+function cfgSave(){const c=C,p=S.cprof;MAP0.forEach(([k,s,t])=>{const v=t==='b'?String(!!c[k]):String(c[k]),key=keyOf(p,k),x=envs.find(a=>a.k===key);x?x.v=v:envs.push({k:key,v})})}
+(function(){const ren={BOT_NAME:1,PREFIX:1,AUTO_READ:1,SHOW_TYPING:1,REJECT_CALLS:1,ALWAYS_ONLINE:1,COMMAND_COOLDOWN:1,WELCOME_MESSAGE:1};envs=envs.filter(e=>e.k!=='MODE');envs.forEach(e=>{if(ren[e.k])e.k='PRIVATE_'+e.k});loadP('private');Object.assign(CS.public,{prefix:'!',autoread:false,online:true,cooldown:5,welcome:'Hi! Send !menu to see what I can do.'});['private','public'].forEach(p=>{const c=CS[p];MAP0.forEach(([k,s,t])=>{const key=keyOf(p,k);if(!envs.find(x=>x.k===key))envs.push({k:key,v:t==='b'?String(!!c[k]):String(c[k])})})});C0S.public=JSON.stringify(CS.public);C0=C0S.private})();
+function openCfg(){if(!cfgD)cfgLoad();S.sub='cfg';render();scrollTo(0,0)}
+function editCfg(){S.path=[];S.sub=null;openF('config.js')}
+function cfgV(){const tg=(k,t,d)=>`<div class="row"><span class="grow"><div class="t">${t}</div><div class="d" style="white-space:normal">${d} <span class="kk">${ek(k)}</span></div></span><button class="tgl ${C[k]?'on':''}" role="switch" aria-checked="${!!C[k]}" aria-label="${t}" data-tg="${k}"></button></div>`;
+const f=(k,t,ph,x='')=>`<div class="env"><label for="c_${k}" style="display:block;font:600 13px var(--body);margin-bottom:7px">${t} <span class="kk">${ek(k)}</span></label><input class="field" id="c_${k}" data-cf="${k}" value="${esc(C[k])}" placeholder="${ph}" ${x}></div>`;
+return`<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 4px"><h1 style="margin:0">Configuration</h1><button class="modeb" id="cmode" aria-label="Switch to ${S.cprof==='public'?'private':'public'} configuration">${ico(S.cprof==='public'?'globe':'lock')}</button></div><p class="sub">${S.cprof==='public'?'Public account':'Private account'} · changes sync with the ENV tab.</p><h2>General</h2><div class="card list">`+
+f('name','Bot name','Aharane')+f('prefix','Command prefix','.','maxlength="3"')+f('owner',S.cprof==='public'?'Account number':'Owner number','2348012345678','inputmode="numeric"')+
+`</div>`+
+`<h2>Behavior</h2><div class="card list">`+tg('autoread','Mark messages as read','Show blue ticks when the bot sees a message.')+tg('typing','Show typing','Display “typing…” while the bot prepares a reply.')+tg('reject','Decline calls','Automatically reject incoming calls.')+tg('online','Always online','Keep the bot’s status as online.')+
+`<div class="env"><div class="t">Command cooldown <span class="kk">COMMAND_COOLDOWN</span> <span id="ccv" class="d">${C.cooldown}s</span></div><div class="d" style="margin:2px 0 8px">Wait time between commands from the same person.</div><input type="range" id="ccd" min="0" max="10" value="${C.cooldown}" style="width:100%;accent-color:var(--acc)" aria-label="Command cooldown"></div></div>`+
+`<h2>Messages</h2><div class="card list"><div class="env"><label for="c_welcome" style="display:block;font:600 13px var(--body);margin-bottom:7px">Welcome message <span class="kk">WELCOME_MESSAGE</span></label><textarea class="field" id="c_welcome" data-cf="welcome" rows="3" style="resize:vertical">${esc(C.welcome)}</textarea></div></div>`+
+`<h2>Advanced</h2><div class="card list"><button class="row" onclick="editCfg()"><span class="ic">${ico('file')}</span><span class="grow"><div class="t">Edit config.js</div><div class="d">Open the file in the code editor</div></span><span class="d">›</span></button></div><div style="height:84px"></div><div class="savebar ${cfgD?'show':''}" id="sbar2"><span class="d" style="display:flex;align-items:center;gap:8px;white-space:nowrap"><i class="st warn"></i>Unsaved</span><span class="grow"></span><button class="btn" id="cds">Discard</button><button class="btn p" id="csv">Save changes</button></div>`}
+function closePop(){const p=$('#pop');if(p)p.remove()}
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('#pop')&&!e.target.closest('[data-m]'))closePop()});
+addEventListener('scroll',closePop,true);addEventListener('resize',closePop);
+const within=(o,t)=>o===t||Object.values(o).some(v=>typeof v==='object'&&within(v,t));
+function menu(k,b){closePop();const d=node(S.path),m=document.createElement('div');m.id='pop';m.className='pop';m.setAttribute('role','menu');
+m.innerHTML=['Rename','Duplicate','Move','Download as ZIP','Delete'].map(x=>`<button role="menuitem" data-a="${x}"${x==='Delete'?' class="del"':''}>${x}</button>`).join('');
+document.body.appendChild(m);const r=b.getBoundingClientRect(),h=m.offsetHeight,w=m.offsetWidth;
+m.style.left=Math.max(8,Math.min(innerWidth-w-8,r.right-w))+'px';m.style.top=(r.bottom+h+8>innerHeight?Math.max(8,r.top-h-2):r.bottom+2)+'px';
+m.onclick=e=>{const a=e.target.dataset.a;if(!a)return;closePop();rowAct(a,k,d)};m.querySelector('button').focus({preventScroll:true})}
+function rowAct(a,k,d){
+if(a==='Rename')ask('Rename',k,'Save',n=>{if(d[n]!==undefined)return toast('That name already exists');d[n]=d[k];delete d[k];toast('Renamed');render()});
+else if(a==='Duplicate'){const n=k.replace(/(\.[^.]+)?$/,' copy$1');d[n]=JSON.parse(JSON.stringify(d[k]));toast('Duplicated');render()}
+else if(a==='Move')ask('Move to folder (e.g. commands, or root)','','Move',v=>{const parts=v==='root'||v==='/'?[]:v.split('/').filter(Boolean);let t;try{t=node(parts)}catch(e){}if(!t||typeof t!=='object')return toast('Folder not found');if(typeof d[k]==='object'&&within(d[k],t))return toast('Can’t move a folder into itself');if(t[k]!==undefined)return toast('That name already exists there');t[k]=d[k];delete d[k];toast('Moved '+k);render()});
+else if(a==='Download as ZIP')exportZip({[k]:d[k]},k.replace(/\.[^.]+$/,'')+'.zip');
+else{sheet(`<h3>Delete ${esc(k)}?</h3><p class="sub">This removes it from the bot’s files.</p><div class="btns"><button class="btn" onclick="closeSheet()">Cancel</button><button class="btn d" id="m4">Delete</button></div>`);$('#m4').onclick=()=>{delete d[k];closeSheet();toast('Deleted '+k);render()}}}
+function menuOld(k){sheet(`<h3>${esc(k)}</h3><button class="row" id="m1">Rename</button><button class="row" id="m2">Duplicate</button><button class="row" id="m3" style="color:var(--bad)">Delete</button>`);
+const d=node(S.path);
+$('#m1').onclick=()=>{closeSheet();ask('Rename',k,'Save',n=>{if(d[n]!==undefined)return toast('That name already exists');d[n]=d[k];delete d[k];toast('Renamed');render()})};
+$('#m2').onclick=()=>{closeSheet();const n=k.replace(/(\.[^.]+)?$/,' copy$1');d[n]=JSON.parse(JSON.stringify(d[k]));toast('Duplicated');render()};
+$('#m3').onclick=()=>{sheet(`<h3>Delete ${esc(k)}?</h3><p class="sub">This removes it from the bot’s files.</p><div class="btns"><button class="btn" onclick="closeSheet()">Cancel</button><button class="btn d" id="m4">Delete</button></div>`);$('#m4').onclick=()=>{delete d[k];S.open=S.open.filter(o=>o!==[...S.path,k].join('/'));closeSheet();toast('Deleted '+k);render()}}}
+function editorOld(){const [d,n]=getFile(S.cur),txt=d&&typeof d[n]==='string'?d[n]:'';
+return`<button class="btn sm" onclick="S.ed=false;render()">Back to files</button><h1 style="margin-top:14px;font-size:24px">Code editor</h1><div class="tabs">${S.open.map(p=>`<button class="${p===S.cur?'on':''}" data-t="${esc(p)}">${esc(p.split('/').pop())}</button>`).join('')}</div>
+<textarea class="editor" id="ed" spellcheck="false" aria-label="Editing ${esc(S.cur)}">${esc(txt)}</textarea><div class="status"><span id="es">Saved</span><span id="ec">${txt.split('\n').length} lines</span></div>`}
+function envOld(){return`<h1>ENV</h1><p class="sub">Configure bot environment variables.</p><div class="note">Secret values stay hidden until you tap Show.</div><div class="card list">${envs.map((e,i)=>`<div class="env"><label for="e${i}">${esc(e.k)}${e.s?`<button data-s="${i}">${show[i]?'Hide':'Show'}</button>`:''}</label><input class="field" id="e${i}" data-e="${i}" type="${e.s&&!show[i]?'password':'text'}" value="${esc(e.v)}" autocomplete="off"></div>`).join('')}</div>
+<div class="btns"><button class="btn" onclick="addEnv()">Add variable</button><button class="btn p" id="se" ${envDirty?'':'disabled style="opacity:.5"'}>Save changes</button></div>`}
+function hl(t,f){if(!/\.(js|json)$/.test(f))return esc(t);const re=/(\/\/.*|\/\*[\s\S]*?\*\/)|('(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`)|\b(const|let|var|function|async|await|return|if|else|for|while|new|class|throw|try|catch|of|in|typeof)\b|\b(true|false|null|undefined)\b|\b(\d+(?:\.\d+)?)\b|\b([A-Za-z_$][\w$]*)(?=\()/g;let o='',i=0,m;while(m=re.exec(t)){o+=esc(t.slice(i,m.index));const c=m[1]?'c':m[2]?'s':m[3]||m[4]?'k':m[5]?'n':'f';o+=`<span class="${c}">${esc(m[0])}</span>`;i=re.lastIndex}return o+esc(t.slice(i))}
+function lint(t,f){const p=[];if(/\.json$/.test(f)){try{JSON.parse(t||'null')}catch(e){p.push([1,e.message])}return p}if(!/\.js$/.test(f))return p;const st=[],pair={')':'(',']':'[','}':'{'};let ln=1,q=null,cm=null;for(let i=0;i<t.length;i++){const c=t[i],n=t[i+1];if(c==='\n'){ln++;if(cm==='l')cm=null;if(q&&q!=='`'){p.push([ln-1,'Unterminated string']);q=null}continue}if(cm){if(cm==='b'&&c==='*'&&n==='/'){cm=null;i++}continue}if(q){if(c==='\\')i++;else if(c===q)q=null;continue}if(c==='/'&&n==='/'){cm='l';continue}if(c==='/'&&n==='*'){cm='b';i++;continue}if(c==="'"||c==='"'||c==='`'){q=c;continue}if('([{'.includes(c))st.push([c,ln]);else if(')]}'.includes(c)){const s=st.pop();if(!s||s[0]!==pair[c])p.push([ln,`Unexpected '${c}'`])}}st.forEach(s=>p.push([s[1],`Unclosed '${s[0]}'`]));return p}
+const exists=p=>{try{const[d,n]=getFile(p);return typeof d[n]==='string'}catch(e){return false}};
+function tree(o,pre,d){return sorted(o).map(k=>{const p=pre?pre+'/'+k:k,dir=typeof o[k]==='object',op=S.xp[p];return`<button class="xr ${p===S.cur?'on':''}" style="padding-left:${12+d*16}px" data-xp="${esc(p)}" data-dir="${dir?1:0}"><span class="ch">${dir?(op?'▾':'▸'):''}</span>${esc(k)}</button>`+(dir&&op?tree(o[k],p,d+1):'')}).join('')}
+function ins(s){const ta=$('#wta');ta.setRangeText(s,ta.selectionStart,ta.selectionEnd,'end');ta.dispatchEvent(new Event('input'))}
+function caret(){const ta=$('#wta'),c=$('#code'),ln=ta.value.slice(0,ta.selectionStart).split('\n').length,y=12+ln*LH();if(y>c.scrollTop+c.clientHeight-8)c.scrollTop=y-c.clientHeight+8;else if(y-LH()<c.scrollTop)c.scrollTop=Math.max(0,y-2*LH())}
+function wsSync(){const ta=$('#wta');if(!ta)return;const t=ta.value,n=t.split('\n').length;$('#hl').innerHTML=hl(t,S.cur)+'\n ';$('#gut').textContent=Array.from({length:n},(_,i)=>i+1).join('\n');S.pr=lint(t,S.cur);$('#sbp').textContent='Problems & Console · '+S.pr.length;if(S.pn)pnBody()}
+function pnBody(){const b=$('#pb');if(!b)return;b.innerHTML=S.pt==='p'?(S.pr.length?S.pr.map(p=>`<button class="pr" data-ln="${p[0]}"><span class="pe">●</span><span class="grow">${esc(p[1])}</span><span style="color:var(--wm)">Line ${p[0]}</span></button>`).join(''):'<div class="pr" style="color:var(--wm)">No problems in this file.</div>'):logs.slice(0,12).map(l=>`<div class="pr"><span style="color:var(--wm)">${l[1]||'earlier'}</span>${esc(l[0])}</div>`).join('')+'<div class="pr" style="color:var(--wm)">The live studio streams the bot’s console here.</div>';b.querySelectorAll('[data-ln]').forEach(x=>x.onclick=()=>goLine(+x.dataset.ln))}
+function goLine(n){const ta=$('#wta'),v=ta.value.split('\n');let i=0;for(let k=0;k<n-1;k++)i+=v[k].length+1;ta.focus();ta.setSelectionRange(i,i+(v[n-1]||'').length);$('#code').scrollTop=Math.max(0,(n-3)*LH())}
+function wsDraw(){const w=$('#ws');S.open=S.open.filter(exists);if(S.ed&&!exists(S.cur))S.cur=S.open[S.open.length-1];if(S.ed&&!S.cur)S.ed=false;if(!S.ed){w.style.display='none';document.body.classList.remove('typing');return}
+const f=S.cur,[d,n]=getFile(f),lang={js:'JavaScript',json:'JSON',md:'Markdown'}[f.split('.').pop()]||'Plain text';w.style.display='flex';
+w.innerHTML=`<div class="wb"><button class="wi" id="wx" aria-label="Toggle explorer">${ico('files')}</button><div class="bc"><button id="wh">Home</button>${f.split('/').map(x=>`<span>/</span><i>${esc(x)}</i>`).join('')}</div><span class="sv" id="sv">Saved</span><button class="wi" id="wc" aria-label="Close editor">✕</button></div>
+<div class="wt">${S.open.map(p=>`<div class="tb ${p===f?'on':''}"><button data-wt="${esc(p)}">${esc(p.split('/').pop())}</button><button class="x" data-wk="${esc(p)}" aria-label="Close ${esc(p)}">×</button></div>`).join('')}</div>
+<div class="wm"><div class="code" id="code"><div class="gut" id="gut"></div><div class="cw"><pre class="hl" id="hl"></pre><textarea id="wta" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="Editing ${esc(f)}"></textarea></div></div><div class="xp ${S.ex?'open':''}" id="xp"><div class="xh">Explorer<button class="wi" id="xc" aria-label="Close explorer">✕</button></div><div class="xt">${tree(fs,'',0)}</div></div><div class="xs ${S.ex?'open':''}" id="xs"></div></div>
+<div class="keys" id="keys">${['Tab','{','}','(',')','[',']',';',"'",'"','=','>','.','`'].map(k=>`<button data-k="${k}">${k}</button>`).join('')}</div>
+<div class="pn ${S.pn?'open':''}" id="pn"><div class="ph"><button data-pt="p" class="${S.pt==='p'?'on':''}">Problems</button><button data-pt="c" class="${S.pt==='c'?'on':''}">Console</button><span class="sp"></span><button id="pxc" aria-label="Close panel">✕</button></div><div class="pb" id="pb"></div></div>
+<div class="sb"><button id="sbp"></button><span>${lang} · Auto-save on</span></div>`;
+const ta=$('#wta');ta.value=typeof d[n]==='string'?d[n]:'';wsSync();
+const xt=()=>{$('#xp').classList.toggle('open',S.ex);$('#xs').classList.toggle('open',S.ex)};
+$('#wx').onclick=()=>{S.ex=!S.ex;xt()};$('#xc').onclick=$('#xs').onclick=()=>{S.ex=false;xt()};
+$('#wh').onclick=()=>go('home');$('#wc').onclick=()=>{S.ed=false;render()};
+$('#xp').onclick=e=>{const b=e.target.closest('[data-xp]');if(!b)return;const p=b.dataset.xp;if(b.dataset.dir==='1'){S.xp[p]=!S.xp[p];$('.xt').innerHTML=tree(fs,'',0)}else{const q2=p.split('/'),nm=q2.pop();let dd;try{dd=node(q2)}catch(x){}if(dd&&isMed(dd[nm])){S.ex=false;xt();openMedia(nm,q2);return}if(!S.open.includes(p))S.open.push(p);S.cur=p;S.ex=false;wsDraw()}};
+w.querySelectorAll('[data-wt]').forEach(b=>b.onclick=()=>{S.cur=b.dataset.wt;wsDraw()});
+w.querySelectorAll('[data-wk]').forEach(b=>b.onclick=()=>{const p=b.dataset.wk;S.open=S.open.filter(o=>o!==p);if(S.cur===p)S.cur=S.open[S.open.length-1];if(!S.cur)S.ed=false;S.ed?wsDraw():render()});
+$('#sbp').onclick=()=>{S.pn=!S.pn;$('#pn').classList.toggle('open',S.pn);pnBody()};$('#pxc').onclick=()=>{S.pn=false;$('#pn').classList.remove('open')};
+w.querySelectorAll('[data-pt]').forEach(b=>b.onclick=()=>{S.pt=b.dataset.pt;w.querySelectorAll('[data-pt]').forEach(x=>x.classList.toggle('on',x===b));pnBody()});
+w.querySelectorAll('[data-k]').forEach(b=>{b.onmousedown=e=>e.preventDefault();b.onclick=()=>{ta.focus();ins(b.dataset.k==='Tab'?'  ':b.dataset.k)}});
+let sh;ta.oninput=()=>{const[dd,nn]=getFile(S.cur);dd[nn]=ta.value;wsSync();const sv=$('#sv');sv.textContent='Saving…';clearTimeout(sh);sh=setTimeout(()=>{const e=$('#sv');if(e)e.textContent='Saved'},600);caret()};
+ta.onkeydown=e=>{if(e.key==='Tab'){e.preventDefault();ins('  ')}else if(e.key==='Enter'){const v=ta.value,s=ta.selectionStart,ls=v.lastIndexOf('\n',s-1)+1,ind=v.slice(ls,s).match(/^\s*/)[0]+(v[s-1]==='{'?'  ':'');e.preventDefault();ins('\n'+ind)}};
+ta.onkeyup=ta.onclick=caret;
+ta.onfocus=()=>{w.classList.add('kb');document.body.classList.add('typing')};ta.onblur=()=>setTimeout(()=>{if(document.activeElement!==ta){w.classList.remove('kb');document.body.classList.remove('typing')}},120);
+const a=w.querySelector('.tb.on');if(a)a.scrollIntoView({inline:'center',block:'nearest'});pnBody()}
+const normKey=n=>n.toUpperCase().replace(/[^A-Z0-9_]/g,'_');
+function envV(){const sh=i=>show[i]||S.sa;return`<h1>ENV</h1><p class="sub">Edit any variable. Configuration reads and writes these too.</p>${envs.some(e=>e.s)?`<div class="btns" style="margin:0 0 12px"><button class="btn sm" id="sall">${S.sa?'Hide all secrets':'Show all secrets'}</button></div>`:''}<div class="card list">${envs.length?envs.map((e,i)=>`<div class="env"><label for="e${i}">${esc(e.k)}<span style="display:flex;gap:2px;align-items:center">${e.s?`<button data-s="${i}">${sh(i)?'Hide':'Show'}</button>`:''}<button class="more2" data-em="${i}" aria-label="Actions for ${esc(e.k)}">⋮</button></span></label><input class="field" id="e${i}" data-e="${i}" type="${e.s&&!sh(i)?'password':'text'}" value="${esc(e.v)}" autocomplete="off" autocapitalize="off" spellcheck="false"></div>`).join(''):'<div class="empty">No variables yet.</div>'}</div><div class="btns"><button class="btn" id="adde">Add variable</button><button class="btn p" id="se" ${envDirty?'':'disabled style="opacity:.5"'}>Save changes</button></div>`}
+function envMenu(i,b){closePop();const e=envs[i],m=document.createElement('div');m.id='pop';m.className='pop';m.setAttribute('role','menu');m.innerHTML=['Copy value',e.s?'Make visible':'Mark as secret','Rename','Delete'].map(x=>`<button role="menuitem" data-a="${x}"${x==='Delete'?' class="del"':''}>${x}</button>`).join('');document.body.appendChild(m);const r=b.getBoundingClientRect(),h=m.offsetHeight,w=m.offsetWidth;m.style.left=Math.max(8,Math.min(innerWidth-w-8,r.right-w))+'px';m.style.top=(r.bottom+h+8>innerHeight?Math.max(8,r.top-h-2):r.bottom+2)+'px';m.onclick=ev=>{const a=ev.target.dataset.a;if(!a)return;closePop();envAct(a,i)}}
+async function envAct(a,i){const e=envs[i];if(a==='Copy value'){try{await navigator.clipboard.writeText(e.v);toast('Value copied')}catch(x){toast('Couldn’t copy')}}
+else if(a==='Mark as secret'||a==='Make visible'){e.s=e.s?0:1;envDirty=true;render()}
+else if(a==='Rename')ask('Rename variable',e.k,'Save',n=>{n=normKey(n.trim());if(!n)return;if(envs.some((x,j)=>j!==i&&x.k===n))return toast('That name already exists');e.k=n;envDirty=true;render()});
+else{sheet(`<h3>Delete ${esc(e.k)}?</h3><p class="sub">The bot will no longer see this variable.</p><div class="btns"><button class="btn" onclick="closeSheet()">Cancel</button><button class="btn d" id="de">Delete</button></div>`);$('#de').onclick=()=>{envs.splice(i,1);envDirty=true;closeSheet();render()}}}
+function addEnv2(){sheet(`<h3>Add variable</h3><form id="nf"><label class="t" for="nk" style="display:block;margin:0 0 6px">Name</label><input class="field" id="nk" placeholder="API_KEY" autocapitalize="characters" autocomplete="off"><label class="t" for="nv" style="display:block;margin:12px 0 6px">Value</label><input class="field" id="nv" autocomplete="off" autocapitalize="off"><label style="display:flex;align-items:center;gap:10px;margin:14px 0 0"><input type="checkbox" class="ck" id="ns"> Keep this value secret</label><div class="btns"><button type="button" class="btn" onclick="closeSheet()">Cancel</button><button class="btn p">Add</button></div></form>`);$('#nk').focus();$('#nf').onsubmit=e=>{e.preventDefault();const k=normKey($('#nk').value.trim());if(!k)return toast('Enter a name');if(envs.some(x=>x.k===k))return toast('That name already exists');envs.push({k,v:$('#nv').value,s:$('#ns').checked?1:0});envDirty=true;closeSheet();render()}}
+function addEnv(){ask('New variable name','','Add',n=>{envs.push({k:n.toUpperCase().replace(/\s+/g,'_'),v:''});envDirty=true;render()})}
+function chatsOld(){const q=S.cq.toLowerCase(),l=chats.map((c,i)=>[c,i]).filter(([c])=>c.n.toLowerCase().includes(q));
+return`<h1>Chats</h1><p class="sub">Conversations from connected accounts.</p><input class="field" id="cq" placeholder="Search chats" aria-label="Search chats" value="${esc(S.cq)}" style="margin-bottom:14px"><div class="card list">${l.length?l.map(([c,i])=>`<button class="row" data-c="${i}"><span class="av">${c.n[0]}</span><span class="grow"><div class="t">${c.n}</div><div class="d">${esc(c.m[c.m.length-1][1])}</div></span></button>`).join(''):'<div class="empty">No chats match.</div>'}</div>`}
+function openChatOld(i){S.chat=i;$('#cn').textContent=chats[i].n;drawMsgs();$('#chat').classList.add('open');$('.nav').style.display='none'}
+function drawMsgsOld(){const m=$('#msgs');m.innerHTML=chats[S.chat].m.map(x=>`<div class="b ${x[0]==='o'?'o':''}">${esc(x[1])}</div>`).join('');m.scrollTop=m.scrollHeight}
+$('#cb').onclick=()=>{VA.pause();VNI=null;$('#chat').classList.remove('open');$('.nav').style.display='';S.chat=null;render()};
+const NW=Date.now(),HR=36e5,DY=864e5;
+const CH=[{n:'Mira',on:1,un:0,m:[{d:'i',t:'Hey, are you around?',ts:NW-DY-3*HR},{d:'o',t:'Yes, I’m here.',ts:NW-DY-3*HR+6e4,r:1},{d:'i',t:'Can you send me the menu?',ts:NW-42*6e4},{d:'o',t:'Sending it now.',ts:NW-40*6e4,r:1}]},{n:'Quincy',on:0,un:2,m:[{d:'i',t:'Did the menu update go out?',ts:NW-3*HR},{d:'i',t:'Some people still see the old one.',ts:NW-3*HR+4*6e4}]},{n:'Family group',g:1,on:1,un:0,mem:['Mum','Tobi','Ada'],m:[{d:'i',s:'Mum',t:'Dinner at 7?',ts:NW-5*HR},{d:'i',s:'Tobi',t:'I’ll bring the drinks.',ts:NW-5*HR+60e3},{d:'i',s:'Tobi',t:'Should I get extra ice?',ts:NW-5*HR+90e3},{d:'o',t:'Works for me.',ts:NW-5*HR+2*6e4,r:1}]},{n:'Work group',g:1,on:0,un:2,mem:['Dayo','Quincy'],m:[{d:'i',s:'Dayo',t:'Standup moved to 10.',ts:NW-2*DY},{d:'i',s:'Quincy',t:'Noted, thanks.',ts:NW-2*DY+3e5}]}];
+const fmtT=t=>new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+const dayL=t=>{const d=new Date(t),n=new Date(),s=x=>x.toDateString();return s(d)===s(n)?'Today':s(d)===s(new Date(n-864e5))?'Yesterday':d.toLocaleDateString([],{day:'numeric',month:'short'})};
+const rel=t=>{const d=dayL(t);return d==='Today'?fmtT(t):d};
+const tick=m=>`<i class="tk ${m.r?'rd':''}" aria-label="${m.r?'Read':'Sent'}">${m.r?'✓✓':'✓'}</i>`;
+const sCol=s=>{let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))%360;return`hsl(${h} 62% 52%)`};
+const avDot=c=>`<i class="st av-dot ${c.on?'':'off'}" role="img" aria-label="${c.on?'Online':'Offline'}"></i>`;
+function chatsV(){const q=S.cq.toLowerCase(),fl=S.fl||'all',last=c=>c.m[c.m.length-1];
+const l=CH.map((c,i)=>[c,i]).filter(([c])=>(!q||c.n.toLowerCase().includes(q)||c.m.some(x=>(x.t||x.f||'').toLowerCase().includes(q)))&&(fl==='all'||(fl==='unread'&&c.un)||(fl==='groups'&&c.g))).sort((a,b)=>last(b[0]).ts-last(a[0]).ts);
+const un=CH.reduce((a,c)=>a+c.un,0);
+return`<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin:4px 0"><h1 style="margin:0">Chats</h1><button class="modeb" id="chsw" aria-label="Switch to ${S.cacc==='public'?'private':'public'} account chats">${ico(S.cacc==='public'?'globe':'lock')}<i class="st av-dot ${accts.find(a=>a.slot===S.cacc).on?'':'off'}" role="img" aria-label="${accts.find(a=>a.slot===S.cacc).on?'Connected':'Offline'}"></i></button></div><p class="sub">${accts.find(a=>a.slot===S.cacc).n} · ${CH.length} conversations${un?' · '+un+' unread':''}</p><input class="field" id="cq" placeholder="Search chats and messages" aria-label="Search chats" value="${esc(S.cq)}" style="margin-bottom:12px"><div class="seg" style="margin-bottom:14px">${[['all','All'],['unread','Unread'],['groups','Groups']].map(([v,t])=>`<button class="${fl===v?'on':''}" data-fl="${v}">${t}</button>`).join('')}</div><div class="card list">${l.length?l.map(([c,i])=>{const m=last(c),o=m.d==='o';return`<button class="row" data-c="${i}"><span class="av ${c.g?'grp':''}">${c.g?ico('grp'):c.n[0]}${avDot(c)}</span><span class="grow"><div class="t">${esc(c.n)}</div><div class="d">${o?tick(m)+' ':(c.g&&m.s?esc(m.s)+': ':'')}${esc(m.t||'Attachment · '+m.f)}</div></span><span class="meta"><span class="d">${rel(m.ts)}</span>${c.un?`<b class="bd">${c.un}</b>`:''}</span></button>`}).join(''):'<div class="empty">No chats match.</div>'}</div>`}
+function openChat(i){S.chat=i;const c=CH[i];c.un=0;$('#cn').textContent=c.n;$('#cm').textContent=c.g?c.mem.join(', ')+', You':'';const a=$('#ca');a.className='av '+(c.g?'grp':'');a.innerHTML=(c.g?ico('grp'):c.n[0])+avDot(c);drawMsgs();$('#chat').classList.add('open');$('.nav').style.display='none';$('#ci').value='';S.rp=null;rpDraw();grow();syncNav()}
+function bub(m,f,l,ix){const o=m.d==='o';return`<div class="b ${o?'o':''} ${f?'f':''} ${l?'l':''}" data-i="${ix}">${!o&&f&&CH[S.chat].g&&m.s?`<div class="sn" style="color:${sCol(m.s)}">${esc(m.s)}</div>`:''}${m.q?qblk(m.q):''}${m.k==='once'?`${m.t?`<div>${esc(m.t)}</div>`:''}<button type="button" class="once-open" data-once="${ix}" ${m.viewed||m.unavailable||m.loading?'disabled':''}>${m.viewed?'Already opened':m.loading?'Opening…':m.unavailable?'Unavailable':'View once'}</button>`:m.k==='vn'?vnb(m,ix):m.u?mth(m,ix):m.f?`<div class="att"><span class="ic">${ico('file')}</span><span class="grow"><div class="t">${esc(m.f)}</div><div class="d" style="color:inherit;opacity:.7">${m.z}</div></span></div>`:esc(m.t)}<span class="mt">${fmtT(m.ts)}${o?' '+tick(m):''}</span></div>`}
+function drawMsgs(){const c=CH[S.chat],m=$('#msgs');let h='',ld='';c.m.forEach((x,i)=>{const d=dayL(x.ts);if(d!==ld){h+=`<div class="day">${d}</div>`;ld=d}const p=c.m[i-1],n=c.m[i+1];h+=bub(x,!p||p.d!==x.d||p.s!==x.s||dayL(p.ts)!==d,!n||n.d!==x.d||n.s!==x.s||dayL(n.ts)!==d,i)});if(c.ty)h+='<div class="b ty f l" aria-label="Typing"><i></i><i></i><i></i></div>';m.innerHTML=h;m.querySelectorAll('[data-mv]').forEach(b=>b.onclick=()=>openChatMv(+b.dataset.mv));m.querySelectorAll('[data-once]').forEach(b=>b.onclick=()=>{if(typeof window.openViewOnceP==='function')window.openViewOnceP(+b.dataset.once)});vnBind();m.querySelectorAll('[data-qi]').forEach(b=>b.onclick=e=>{e.stopPropagation();const t=m.querySelector('.b[data-i="'+b.dataset.qi+'"]');if(t){t.scrollIntoView({block:'center',behavior:'smooth'});t.classList.add('flash');setTimeout(()=>t.classList.remove('flash'),1100)}});m.scrollTop=m.scrollHeight;$('#jump').classList.remove('on')}
+function grow(){const t=$('#ci');t.style.height='auto';t.style.height=Math.min(t.scrollHeight,120)+'px';const has=!!t.value.trim();$('#cs').disabled=false;$('#cs').innerHTML=has?SENDI:MICI;$('#cs').setAttribute('aria-label',has?'Send message':'Record voice note');$('#jump').style.bottom=($('#cf').offsetHeight+$('#rpb').offsetHeight+10)+'px'}
+function sendMsg(m){const i=S.chat,c=CH[i];if(S.rp){m.q=S.rp;S.rp=null;rpDraw()}c.m.push(m);drawMsgs();clearTimeout(c.h1);clearTimeout(c.h2);c.h1=setTimeout(()=>{c.ty=true;if(S.chat===i)drawMsgs()},900);c.h2=setTimeout(()=>{c.ty=false;c.m.forEach(x=>{if(x.d==='o')x.r=1});const R=['Got it.','Okay, thanks.','Noted.','On it.','Sounds good.'];c.m.push({d:'i',t:m.f?'Received.':R[Math.floor(Math.random()*R.length)],ts:Date.now(),s:c.g?c.mem[Math.floor(Math.random()*c.mem.length)]:undefined});if(S.chat===i)drawMsgs();else c.un++},2600)}
+$('#cf').onsubmit=e=>{e.preventDefault();const t=$('#ci'),v=t.value.trim();if(!v)return recStart();t.value='';grow();sendMsg({d:'o',t:v,ts:Date.now()});t.focus()};
+$('#ci').oninput=grow;$('#ci').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&matchMedia('(pointer:fine)').matches){e.preventDefault();if($('#ci').value.trim())$('#cf').requestSubmit()}};
+$('#cat').onclick=()=>$('#cfile').click();
+const MEDIA={};let mvn=0,MV=null,mvT;
+const fsz=b=>b<1024?b+' B':b<1048576?Math.round(b/1024)+' KB':(b/1048576).toFixed(1)+' MB';
+const isMed=v=>typeof v==='string'&&v.startsWith('@media:'),medOf=v=>isMed(v)?MEDIA[v.slice(7)]:null;
+const addMedia=m=>{const id='m'+(++mvn);MEDIA[id]=m;return'@media:'+id};
+const thumb=v=>{const m=medOf(v);if(!m)return'';if(m.k==='aud')return ico('vn');return m.k==='img'?`<img class="th" src="${m.url}" alt="">`:`<video class="th" src="${m.url}#t=0.1" muted preload="metadata"></video>`};
+const mediaInfo=v=>{if(!isMed(v))return'';const m=medOf(v);return m?({img:'Image',vid:'Video',aud:'Audio'}[m.k])+' · '+fsz(m.size):'Media'};
+const svgArt=(a,b,t)=>`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="800" height="600" fill="url(#g)"/><circle cx="620" cy="150" r="100" fill="#fff" fill-opacity=".18"/><circle cx="160" cy="470" r="140" fill="#fff" fill-opacity=".12"/><text x="60" y="320" font-family="Arial,sans-serif" font-size="72" font-weight="700" fill="#fff">${t}</text></svg>`;
+const svgUrl=s=>'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(s);
+[['banner.svg','#0e7a5c','#0b3d5c','Aharane'],['menu-art.svg','#7c4dff','#d6336c','Menu'],['welcome.svg','#e8590c','#f59f00','Welcome']].forEach(([n,a,b,t])=>{const s=svgArt(a,b,t);fs.media[n]=addMedia({k:'img',name:n,url:svgUrl(s),blob:new Blob([s],{type:'image/svg+xml'}),size:s.length})});
+{const s=svgArt('#2f6fed','#7c4dff','Hello');CH[0].m.push({d:'i',f:'hello-card.svg',z:'2 KB',k:'img',u:svgUrl(s),b:new Blob([s],{type:'image/svg+xml'}),sz:s.length,ts:NW-30*6e4})}
+function openMedia(k,parts){const d=node(parts||S.path),names=sorted(d).filter(n=>isMed(d[n]));openMv(names.map(n=>{const m=medOf(d[n])||{};return{name:n,k:m.k,url:m.url,blob:m.blob,size:m.size}}),Math.max(0,names.indexOf(k)))}
+function openChatMv(ix){const ms=CH[S.chat].m.map((m,i)=>[m,i]).filter(([m])=>m.u);openMv(ms.map(([m])=>({name:m.f,k:m.k,url:m.u,blob:m.b,size:m.sz})),Math.max(0,ms.findIndex(x=>x[1]===ix)))}
+const mth=(m,ix)=>`<button class="mth" data-mv="${ix}" aria-label="Open ${esc(m.f)}">${m.k==='vid'?`<video src="${m.u}#t=0.1" muted preload="metadata" playsinline></video><i class="pl"></i>`:`<img src="${m.u}" alt="${esc(m.f)}">`}</button><div class="cap2">${esc(m.f)}</div>`;
+function attach(f){const base={d:'o',f:f.name,z:fsz(f.size),ts:Date.now(),sz:f.size,b:f};if(f.type.startsWith('image/')){const r=new FileReader();r.onload=()=>sendMsg({...base,k:'img',u:r.result});r.readAsDataURL(f)}else if(f.type.startsWith('audio/')){const r=new FileReader();r.onload=()=>{const a=new Audio(r.result),go=d=>sendMsg({...base,k:'vn',u:r.result,dur:d});a.onloadedmetadata=()=>go(a.duration||0);a.onerror=()=>go(0)};r.readAsDataURL(f)}else if(f.type.startsWith('video/'))sendMsg({...base,k:'vid',u:URL.createObjectURL(f)});else sendMsg(base)}
+$('#cfile').onchange=e=>{[...e.target.files].forEach(attach);e.target.value=''};
+$('#upl').onchange=e=>{const d=node(S.path);let n=0;[...e.target.files].forEach(f=>{let name=f.name;for(let i=2;d[name]!==undefined;i++)name=f.name.replace(/(\.[^.]+)?$/,' '+i+'$1');const k=f.type.startsWith('image/')?'img':f.type.startsWith('video/')?'vid':f.type.startsWith('audio/')?'aud':null;if(k==='img'||k==='aud'){const r=new FileReader();r.onload=()=>{d[name]=addMedia({k,name,url:r.result,blob:f,size:f.size});if(S.tab==='files'&&!S.ed)render()};r.readAsDataURL(f)}else if(k==='vid')d[name]=addMedia({k,name,url:URL.createObjectURL(f),blob:f,size:f.size});else if(f.size<5e5)f.text().then(t=>{d[name]=t;if(S.tab==='files'&&!S.ed)render()});else return toast(f.name+' is too large');n++});e.target.value='';if(n)toast('Added '+n+' file'+(n>1?'s':''));render()};
+const VI={play:'<path d="M8 5v14l11-7z" fill="currentColor"/>',pause:'<path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/>',vol:'<path d="M4 9v6h4l5 4V5L8 9zM16 8a5 5 0 010 8"/>',mute:'<path d="M4 9v6h4l5 4V5L8 9zM17 9l4 6M21 9l-4 6"/>',fs:'<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'};
+const vico=k=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${VI[k]}</svg>`;
+const G={s:1,x:0,y:0,p:new Map(),d0:0,s0:1,gx:0,gy:0,sx:0,sy:0,lt:0,lx:0,t0:0};
+const tf=()=>{const i=$('#mvimg');if(i)i.style.transform=`translate(${G.x}px,${G.y}px) scale(${G.s})`},gReset=()=>{G.s=1;G.x=0;G.y=0;G.p.clear()};
+function openMv(items,i){MV={items,i};$('#mv').classList.remove('hid');$('#mv').classList.add('open');showMv()}
+window.showViewOnceMedia=function(item){openMv([{...item,oneTime:true}],0)};
+function closeMv(){const v=$('#mvvid');if(v)v.pause();const it=MV&&MV.items[MV.i];if(it?.oneTime&&it.url?.startsWith('blob:'))URL.revokeObjectURL(it.url);$('#mvd').style.display='';$('#mv').classList.remove('open');MV=null;$('#mvs').innerHTML='';$('#mvc').innerHTML=''}
+function mvGo(d){if(!MV)return;const j=MV.i+d;if(j<0||j>=MV.items.length)return;const v=$('#mvvid');if(v)v.pause();MV.i=j;showMv()}
+function mvHide(){clearTimeout(mvT);mvT=setTimeout(()=>{const v=$('#mvvid');if(v&&!v.paused)$('#mv').classList.add('hid')},3000)}
+function showMv(){const it=MV.items[MV.i],n=MV.items.length,pre=n>1?`${MV.i+1} of ${n} \u00b7 `:'';gReset();$('#mvd').style.display=it.oneTime?'none':'';$('#mvn').textContent=it.name;$('#mvi').textContent=pre+(it.size?fsz(it.size):'');$('#mvprev').style.display=MV.i>0?'':'none';$('#mvnext').style.display=MV.i<n-1?'':'none';const s=$('#mvs'),c=$('#mvc');c.innerHTML='';
+if(!it.url){s.innerHTML='<div class="mvm">Preview unavailable</div>';return}
+if(it.k==='img'){s.innerHTML=`<img id="mvimg" src="${it.url}" alt="${esc(it.name)}" draggable="false" ${it.oneTime?'oncontextmenu="return false"':''}>`;const im=$('#mvimg');im.onload=()=>{$('#mvi').textContent=pre+im.naturalWidth+' \u00d7 '+im.naturalHeight+(it.size?' \u00b7 '+fsz(it.size):'')};im.onerror=()=>{s.innerHTML='<div class="mvm">This image can\u2019t be shown</div>'}}
+else{s.innerHTML=`<video id="mvvid" src="${it.url}" playsinline preload="metadata"></video><button class="bigp" id="bigp" aria-label="Play">${vico('play')}</button>`;c.innerHTML=`<div class="vc"><input type="range" id="vs" min="0" max="1000" value="0" aria-label="Seek"><div class="vr"><span id="vt">0:00 / 0:00</span><span class="grow"></span><button id="vsp" aria-label="Playback speed">1x</button><button id="vm" aria-label="Mute">${vico('vol')}</button><button id="vfs" aria-label="Full screen">${vico('fs')}</button></div><div class="vr c"><button id="vb">\u221210s</button><button class="vp" id="vp" aria-label="Play">${vico('play')}</button><button id="vf">+10s</button></div></div>`;vbind(pre,it)}}
+function vbind(pre,it){const v=$('#mvvid'),sp=[1,1.25,1.5,2,.5];let si=0;const tm=x=>{x=Math.max(0,Math.floor(x||0));return Math.floor(x/60)+':'+String(x%60).padStart(2,'0')},upd=()=>{$('#vt').textContent=tm(v.currentTime)+' / '+tm(v.duration);if(v.duration)$('#vs').value=v.currentTime/v.duration*1000},pl=()=>v.paused?v.play().catch(()=>{}):v.pause();
+v.onloadedmetadata=()=>{upd();$('#mvi').textContent=pre+(v.videoWidth?v.videoWidth+' \u00d7 '+v.videoHeight+' \u00b7 ':'')+tm(v.duration)+(it.size?' \u00b7 '+fsz(it.size):'')};v.ontimeupdate=upd;
+v.onplay=()=>{$('#vp').innerHTML=vico('pause');$('#bigp').style.display='none';mvHide()};v.onpause=()=>{$('#vp').innerHTML=vico('play');$('#bigp').style.display='';$('#mv').classList.remove('hid')};
+v.onerror=()=>{$('#mvs').innerHTML='<div class="mvm">This video can\u2019t be played in this view</div>';$('#mvc').innerHTML=''};
+$('#vs').oninput=e=>{if(v.duration)v.currentTime=e.target.value/1000*v.duration};$('#vp').onclick=$('#bigp').onclick=pl;
+$('#vb').onclick=()=>v.currentTime=Math.max(0,v.currentTime-10);$('#vf').onclick=()=>v.currentTime=Math.min(v.duration||0,v.currentTime+10);
+$('#vsp').onclick=e=>{si=(si+1)%sp.length;v.playbackRate=sp[si];e.target.textContent=sp[si]+'x'};$('#vm').onclick=()=>{v.muted=!v.muted;$('#vm').innerHTML=vico(v.muted?'mute':'vol')};
+$('#vfs').onclick=()=>{try{(v.requestFullscreen||v.webkitEnterFullscreen).call(v)}catch(e){toast('Full screen isn\u2019t available here')}}}
+async function mvDl(){const it=MV&&MV.items[MV.i];if(it?.oneTime)return toast('View-once media cannot be downloaded');if(!it||!it.blob)return toast('Nothing to download');let dl=null;try{dl=window.claude?await claude.use('downloads'):null}catch(e){}if(!dl)return toast('Downloads aren\u2019t available in this view');try{await dl.save({filename:it.name,data:it.blob});toast('Saved')}catch(e){toast(e&&e.code==='declined'?'Download cancelled':'Download unavailable')}}
+$('#mvx').onclick=closeMv;$('#mvprev').onclick=()=>mvGo(-1);$('#mvnext').onclick=()=>mvGo(1);$('#mvd').onclick=mvDl;
+{const st=$('#mvs');
+st.onpointerdown=e=>{if(e.target.closest('button'))return;st.setPointerCapture(e.pointerId);G.p.set(e.pointerId,{x:e.clientX,y:e.clientY});if(G.p.size===2){const[a,b]=[...G.p.values()];G.d0=Math.hypot(a.x-b.x,a.y-b.y);G.s0=G.s}else{G.sx=e.clientX;G.sy=e.clientY;G.gx=G.x;G.gy=G.y;G.t0=Date.now()}};
+st.onpointermove=e=>{if(!G.p.has(e.pointerId)||!$('#mvimg'))return;G.p.set(e.pointerId,{x:e.clientX,y:e.clientY});if(G.p.size===2){const[a,b]=[...G.p.values()];G.s=Math.min(6,Math.max(1,G.s0*Math.hypot(a.x-b.x,a.y-b.y)/G.d0));if(G.s===1){G.x=0;G.y=0}tf()}else if(G.s>1){G.x=G.gx+e.clientX-G.sx;G.y=G.gy+e.clientY-G.sy;tf()}};
+st.onpointerup=st.onpointercancel=e=>{const had=G.p.has(e.pointerId);G.p.delete(e.pointerId);if(!had||G.p.size)return;const dx=e.clientX-G.sx,dy=e.clientY-G.sy,tap=Math.hypot(dx,dy)<10&&Date.now()-G.t0<350;
+if(tap){const now=Date.now(),dbl=now-G.lt<300&&Math.abs(e.clientX-G.lx)<40;G.lt=dbl?0:now;G.lx=e.clientX;const later=()=>setTimeout(()=>{if(G.lt===now)$('#mv').classList.toggle('hid')},300);
+if($('#mvimg')){if(dbl){G.s=G.s>1?1:2.5;if(G.s===1){G.x=0;G.y=0}tf()}else later()}
+else{const v=$('#mvvid');if(!v)return;const r=st.getBoundingClientRect(),fx=(e.clientX-r.left)/r.width;if(dbl){if(fx<.35)v.currentTime=Math.max(0,v.currentTime-10);else if(fx>.65)v.currentTime=Math.min(v.duration||0,v.currentTime+10);else v.paused?v.play().catch(()=>{}):v.pause()}else later()}}
+else if(G.s===1&&Math.abs(dx)>60&&Math.abs(dy)<90)mvGo(dx<0?1:-1)};
+st.onwheel=e=>{if(!$('#mvimg'))return;e.preventDefault();G.s=Math.min(6,Math.max(1,G.s*(e.deltaY<0?1.15:.87)));if(G.s===1){G.x=0;G.y=0}tf()}}
+$('#msgs').onscroll=()=>{const m=$('#msgs');$('#jump').classList.toggle('on',m.scrollHeight-m.scrollTop-m.clientHeight>160)};
+$('#jump').onclick=()=>{const m=$('#msgs');m.scrollTo({top:m.scrollHeight,behavior:'smooth'})};
+function moreV(){const sec=(t,r)=>`<h2 style="margin:22px 0 8px;font-size:14px;color:var(--mut)">${t}</h2><div class="card list">${r.map(x=>`<button class="row" onclick="${x[2]}"><span class="grow"><div class="t">${x[0]}</div><div class="d" style="white-space:normal">${x[1]}</div></span><span class="d">›</span></button>`).join('')}</div>`;
+return`<h1>More</h1><p class="sub">Additional tools and information</p>${sec('Tools',[['Activity and logs','Review bot activity and diagnostic records','openAct()'],['Storage information','View disk and storage usage','openStor()']])}${sec('Preferences',[['Appearance','Theme, accent color, text size and editor','openAp()']])}${sec('Support',[['Help','Guidance for using Aharane Studio','helpS()'],['About Aharane','Version and application information','aboutS()']])}`}
+function stor(){let f=0,d=0,b=0;(function w(o){for(const k in o){if(typeof o[k]==='object'){d++;w(o[k])}else{f++;b+=new Blob([o[k]]).size}}})(fs);const r=(a,c)=>`<div class="row"><span class="grow t">${a}</span><span class="d">${c}</span></div>`;sheet(`<h3>Storage information</h3>${r('Files',f)}${r('Folders',d)}${r('Source size',b<1024?b+' B':(b/1024).toFixed(1)+' KB')}<p class="d" style="margin:12px 0 0;white-space:normal">Server disk usage appears in the live studio.</p>`)}
+function helpS(){sheet(`<h3>Help</h3>${[['Files','Tap a file to edit it. Use the ⋮ button to rename, move or delete.'],['ENV','Edit environment variables, then save changes to apply them.'],['Chats','Open a conversation to read and reply.'],['Accounts','Manage WhatsApp sessions from Home.']].map(x=>`<div class="row"><span class="grow"><div class="t">${x[0]}</div><div class="d" style="white-space:normal">${x[1]}</div></span></div>`).join('')}`)}
+function aboutS(){sheet(`<h3>About Aharane</h3><div class="row"><span class="grow t">Aharane Local Studio</span><span class="d">v1.0.0</span></div><p class="d" style="margin:12px 0 0;white-space:normal">Prototype build. Files, variables and chats reset when you reload the page.</p>`)}
+function moreOld(){return`<h1>More</h1><p class="sub">Studio preferences and account tools.</p><div class="card list">${[['Accounts','acc()'],['Appearance','theme()'],['Activity','act()'],['Help','toast(\'Guides arrive with the live studio\')'],['Change password','toast(\'Available in the live studio\')']].map(x=>`<button class="row" onclick="${x[1]}"><span class="grow t">${x[0]}</span><span class="d">${x[0]==='Appearance'?(document.documentElement.dataset.theme||'System'):'›'}</span></button>`).join('')}</div><div class="btns"><button class="btn d" onclick="toast('Signed out · Prototype')">Log out</button></div><p class="d" style="margin-top:22px">Aharane Local Studio · v1.0</p>`}
+function acc(){sheet(`<h3>Accounts</h3>${accts.map((a,i)=>`<div class="row"><span class="av">${a.n[0]}</span><div class="grow"><div class="t">${a.n}</div><div class="d">${a.d}</div></div><i class="st ${a.on?'':'off'}" role="img" aria-label="${a.on?'Connected':'Disconnected'}"></i><button class="btn sm" data-a="${i}">${a.on?'Repair':'Pair'}</button></div>`).join('')}`);document.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{const a=accts[b.dataset.a];closeSheet();toast(a.on?'Session repaired':'Pairing code ready');if(!a.on){a.on=1;render()}})}
+function act(){sheet(`<h3>Activity and logs</h3>${logs.map(l=>`<div class="row"><span class="grow">${esc(l[0])}</span><span class="d">${l[1]||'earlier'}</span></div>`).join('')}`)}
+function theme(){sheet(`<h3>Appearance</h3>${['System','Light','Dark'].map(t=>`<button class="row" data-th="${t}"><span class="grow t">${t==='System'?'Match system':t}</span><span style="color:var(--acc)">${(document.documentElement.dataset.theme||'system')===t.toLowerCase()?'✓':''}</span></button>`).join('')}`);document.querySelectorAll('[data-th]').forEach(b=>b.onclick=()=>{const t=b.dataset.th,r=document.documentElement;t==='System'?r.removeAttribute('data-theme'):r.dataset.theme=t.toLowerCase();save('aharane-theme',t);closeSheet();render()})}
+function bind(){const q=(s,f)=>document.querySelectorAll(s).forEach(f);
+q('[data-open]',b=>b.onclick=()=>{const k=b.dataset.open;typeof node(S.path)[k]==='object'?(S.path.push(k),S.q='',S.sel={},render()):openF(k)});
+q('[data-m]',b=>b.onclick=()=>menu(b.dataset.m,b));
+q('[data-tg]',b=>b.onclick=()=>{const k=b.dataset.tg;C[k]=!C[k];cfgDirty(true);b.classList.toggle('on',C[k]);b.setAttribute('aria-checked',C[k])});
+q('[data-cf]',i=>i.oninput=()=>{C[i.dataset.cf]=i.value;cfgDirty(true)});
+q('[data-cm]',b=>b.onclick=()=>{C.mode=b.dataset.cm;cfgDirty(true);document.querySelectorAll('[data-cm]').forEach(x=>x.classList.toggle('on',x===b))});
+const ccd=$('#ccd');if(ccd)ccd.oninput=()=>{C.cooldown=+ccd.value;$('#ccv').textContent=C.cooldown+'s';cfgDirty(true)};
+const csv=$('#csv');if(csv)csv.onclick=()=>{if(!String(C.prefix).trim())return toast('Command prefix can’t be empty');if(C.owner&&!/^\d{7,15}$/.test(C.owner))return toast('Owner number: digits only, with country code');C0=JSON.stringify(C);cfgSave();cfgDirty(false);toast((S.cprof==='public'?'Public':'Private')+' configuration saved')};
+const cds=$('#cds');if(cds)cds.onclick=()=>{C=CS[S.cprof]=JSON.parse(C0);cfgDirty(false);render()};
+q('[data-fl]',b=>b.onclick=()=>{S.fl=b.dataset.fl;render()});
+q('[data-em]',b=>b.onclick=()=>envMenu(+b.dataset.em,b));
+const cmo=$('#cmode');if(cmo)cmo.onclick=switchProf;const chs=$('#chsw');if(chs)chs.onclick=switchChats;
+if($('#lg')){const lq=$('#lq');lq.oninput=()=>{S.lq=lq.value;S.ln=60;lgDraw()};q('[data-lf]',b=>b.onclick=()=>{S.lf=b.dataset.lf;S.ln=60;render()});$('#lpz').onclick=()=>{S.lp=!S.lp;lgDraw()};$('#lcp').onclick=async()=>{try{await navigator.clipboard.writeText(lgText(lgF()));toast('Logs copied')}catch(e){toast('Couldn’t copy')}};$('#lex').onclick=()=>saveFile('aharane-logs.log',new Blob([lgText(lgF())],{type:'text/plain'}));$('#lcl').onclick=()=>{sheet(`<h3>Clear all logs?</h3><p class="sub">This removes the entries shown here. It can’t be undone.</p><div class="btns"><button class="btn" onclick="closeSheet()">Cancel</button><button class="btn d" id="lcy">Clear</button></div>`);$('#lcy').onclick=()=>{LOGS.length=0;logs.length=0;closeSheet();toast('Logs cleared');render()}};lgDraw()}
+if($('#sbar'))storBind();
+const sall=$('#sall');if(sall)sall.onclick=()=>{S.sa=!S.sa;render()};
+const adde=$('#adde');if(adde)adde.onclick=addEnv2;
+q('[data-pm]',b=>b.onclick=()=>{S.pm=b.dataset.pm;render()});
+const pn=$('#pnum');if(pn)pn.oninput=()=>{S.pnum=pn.value};
+const gp=$('#gpin');if(gp)gp.onclick=()=>{if(!reqOk())return;S.pin=genPin();S.pt=120;render()};
+const gq=$('#gqr');if(gq)gq.onclick=()=>{if(!reqOk())return;S.qx=0;newQr();render()};
+const cp2=$('#cpin');if(cp2)cp2.onclick=async()=>{try{await navigator.clipboard.writeText(S.pin);toast('Code copied')}catch(e){toast('Couldn’t copy. Select the code instead')}};
+const np=$('#npin');if(np)np.onclick=()=>{if(!reqOk())return;S.pin=genPin();S.pt=120;render()};
+const cpb=$('#cpb');if(cpb)cpb.onclick=()=>{S.cp=true;if(!P.accent){P.accent='#0e7a5c';applyPrefs()}render()};
+if($('#cph')){const up=()=>{const a=+$('#cph').value,b=+$('#cps').value,l=+$('#cpl').value,c=h2x(a,b,l);P.accent=c;applyPrefs();$('#cprev').style.background=c;$('#chex').value=c;$('#cps').style.background='linear-gradient(90deg,'+h2x(a,0,l)+','+h2x(a,100,l)+')';$('#cpl').style.background='linear-gradient(90deg,#000,'+h2x(a,b,50)+',#fff)'};['#cph','#cps','#cpl'].forEach(s=>$(s).oninput=up);$('#chex').oninput=e=>{let v=e.target.value.trim();if(v[0]!=='#')v='#'+v;if(/^#[0-9a-fA-F]{6}$/.test(v)){P.accent=v.toLowerCase();applyPrefs();const[a,b,l]=x2h(P.accent);$('#cph').value=a;$('#cps').value=b;$('#cpl').value=l;$('#cprev').style.background=P.accent}}}
+q('[data-p]',b=>b.onclick=()=>{const k=b.dataset.p,v=b.dataset.v;P[k]=(k==='et'||k==='theme')?v:+v;applyPrefs();render()});
+q('[data-ac]',b=>b.onclick=()=>{S.cp=false;P.accent=b.dataset.ac;applyPrefs();render()});
+const ai=$('#acc');if(ai){ai.oninput=()=>{P.accent=ai.value;applyPrefs()};ai.onchange=()=>render()}
+const er=$('#efr');if(er)er.oninput=()=>{P.ef=+er.value;$('#efv').textContent=P.ef+'px';applyPrefs()};
+const ar=$('#apr');if(ar)ar.onclick=()=>{P=Object.assign({},PD);applyPrefs();render();toast('Appearance reset')};
+q('[data-ck]',c=>c.onchange=()=>{S.sel[c.dataset.ck]=c.checked;selUI()});if($('#ca'))bindSel();
+q('[data-t]',b=>b.onclick=()=>{S.cur=b.dataset.t;render()});
+q('[data-c]',b=>b.onclick=()=>openChat(+b.dataset.c));
+q('[data-s]',b=>b.onclick=()=>{show[b.dataset.s]=!show[b.dataset.s];render()});
+q('[data-e]',i=>i.oninput=()=>{envs[i.dataset.e].v=i.value;if(!envDirty){envDirty=true;const s=$('#se');s.disabled=false;s.style.opacity=1}});
+const se=$('#se');if(se)se.onclick=()=>{envDirty=false;toast('Changes saved');render()};
+const fq=$('#fq');if(fq)fq.oninput=()=>{S.q=fq.value;const p=fq.selectionStart;render();const n=$('#fq');n.focus();n.setSelectionRange(p,p)};
+const cq=$('#cq');if(cq)cq.oninput=()=>{S.cq=cq.value;const p=cq.selectionStart;render();const n=$('#cq');n.focus();n.setSelectionRange(p,p)};
+const ed=$('#ed');if(ed)ed.oninput=()=>{const[d,n]=getFile(S.cur);d[n]=ed.value;$('#ec').textContent=ed.value.split('\n').length+' lines';$('#es').textContent='Saved'};
+}
+setInterval(()=>{const u=$('#up');if(u&&S.run)u.textContent=up()},1000);
+
+applyPrefs();
+try{history.replaceState(null,'','#home')}catch(e){}seedVn();const h=location.hash.slice(1);if(T[h])S.tab=h;
+render();

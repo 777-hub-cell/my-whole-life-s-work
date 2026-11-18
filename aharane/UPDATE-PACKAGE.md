@@ -33,6 +33,10 @@ aharane-update.zip
 ├── src/
 │   ├── index.js
 │   └── ...
+├── commands/             # public command registry
+├── private-commands/     # Private Owner self-chat registry
+├── plugins/              # shared plugin code
+├── lib/                  # shared helpers
 ├── public/
 ├── scripts/
 └── test/
@@ -47,7 +51,7 @@ The root `package.json` must:
 
 ## Protected content
 
-Do not include `.env` files (except the example `.env.example`), API keys, certificates, SSH keys, auth sessions, user data, backups, logs, `node_modules`, `.git`, `whatsapp-auth`, or other persistent-data directories. Symlinks and special filesystem entries are rejected. Absolute paths, path traversal, duplicate entries, encrypted files and unsupported compression methods are rejected.
+Do not include `.env` files (except the example `.env.example`), API keys, certificates, SSH keys, auth sessions, user data, backups, logs, `node_modules`, `.git`, `whatsapp-auth`, `whatsapp-auth-private`, `whatsapp-auth-backups`, or other persistent-data directories. Private and public command source is deployable code; WhatsApp credentials and owner runtime configuration are not. Symlinks and special filesystem entries are rejected. Absolute paths, path traversal, duplicate entries, encrypted files and unsupported compression methods are rejected.
 
 The current limits are 50 MB compressed, 160 MB expanded, 1,500 archive entries and 32 MB per file.
 

@@ -276,7 +276,7 @@ async function saveLiveFileP(){
   const parts=S.cur.split('/'),name=parts.pop();let dir=fs;for(const p of parts)dir=dir[p];dir[name]=verified.content;
   const status=Q('#es');if(status)status.textContent='Saved and verified (staged)';
   const count=Q('#ec');if(count)count.textContent=content.split('\n').length+' lines';
-  P.pending=true;notifyP('File saved and verified on the server');
+  P.pending=true;P.changedCount=Number(r.changedCount)||P.changedCount||1;notifyP('File saved and verified on the server');
  }catch(error){notifyP(error.message)}finally{if(button)button.disabled=false}
 }
 function createLiveFileP(type){

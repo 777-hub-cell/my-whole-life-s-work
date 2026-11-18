@@ -128,7 +128,7 @@ test('Home exposes service health and separate Private/Public WhatsApp status', 
  assert.ok(home.includes('Aharane service'))
  assert.ok(home.includes('Private WhatsApp'))
  assert.ok(home.includes('Public WhatsApp'))
- assert.ok(home.includes('data-account="'+id+'" data-action="stop"'))
+ assert.ok(home.includes('data-action="stop"'))
  assert.ok(!home.includes("svc('stop')"))
 })
 

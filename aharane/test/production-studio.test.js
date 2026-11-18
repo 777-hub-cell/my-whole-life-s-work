@@ -9,7 +9,7 @@ test('the uploaded Local Studio preview is the served production UI', async () =
   const bridge = await read('../control-centre/production-bridge.js')
   assert.ok(html.includes('<title>Aharane Local Studio</title>'))
   assert.ok(html.includes('/aharane/studio/production-bridge.js'))
-  assert.ok(bridge.includes('let filesBase, openFileBase, actBase, moreBase, homeBase, bubBase, openChatBase, bindBase;'), 'The strict-mode bridge must declare its shared preview callbacks before installBridgeP runs.')
+  assert.ok(bridge.includes('let filesBase, openFileBase, actBase, moreBase, homeBase, bubBase, openChatBase, bindBase, openPairBaseP, drawMsgsBaseP;'), 'The strict-mode bridge must declare its shared preview callbacks before installBridgeP runs.')
   assert.ok(bridge.includes("Studio startup failed:"), 'A bridge startup error must be visible instead of leaving a blank screen.')
   for (const marker of [
     "apiP('chats/",

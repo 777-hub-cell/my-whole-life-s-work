@@ -160,7 +160,7 @@ export function createAccountRuntime({
     session.reconnectTimer.unref?.()
   }
 
-  async function start(id) {
+  async function start(id, { deferUnregistered = false } = {}) {
     const session = get(id)
     if (shuttingDown) return null
     if (session.socket) return session.socket
@@ -176,6 +176,12 @@ export function createAccountRuntime({
       const auth = await loadAuthState(session.authDir)
       session.auth = auth
       session.registered = auth.state?.creds?.registered === true
+      if (deferUnregistered && !session.registered) {
+        session.state = 'not-paired'
+        session.qr = ''
+        emit()
+        return null
+      }
       session.readyPromise = new Promise(resolveReady => { session.resolveReady = resolveReady })
 
       const currentSocket = makeSocket({ sessionId: id, auth: auth.state })
@@ -303,6 +309,9 @@ export function createAccountRuntime({
     const session = get(id)
     if (session.state === 'needs-pairing') {
       throw Object.assign(new Error('This session was rejected by WhatsApp. Use Re-pair so its saved authentication is backed up first.'), { status: 409 })
+    }
+    if (!session.registered && !session.socket) {
+      throw Object.assign(new Error('This WhatsApp account has not been paired yet. Use the explicit Pair action to request a code or QR.'), { status: 409 })
     }
     if (session.socket) return sessionSnapshot(session)
     session.manuallyStopped = false

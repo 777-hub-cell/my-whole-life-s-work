@@ -8,6 +8,7 @@ const pack=JSON.stringify;
 // bindings declared inside this strict-mode closure before installBridgeP assigns them.
 let filesBase, openFileBase, actBase, moreBase, homeBase, bubBase, openChatBase, bindBase, openPairBaseP, drawMsgsBaseP;
 const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],packageError:'',filesError:'',fileMeta:new Map(),fileData:new Map(),pending:false,changedCount:0,uploadProgress:null,chatTimer:null,chatRefreshBusy:false,chatSearchTimer:null,chatSearchQuery:'',chatSearchResults:[],chatSearchLoading:false,chatSearchError:'',messageFingerprints:new Map(),qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false,visibility:null,visibilityChats:[]};
+let fileAutosaveTimerP=null,fileAutosaveBusyP=false,fileAutosaveQueuedP=null;
 function notifyP(s){if(typeof toast==='function')toast(s);else console.info(s)}
 async function apiP(path,options={}){
  const response=await fetch(API+'/'+String(path).replace(/^\/+/,''),{credentials:'same-origin',cache:'no-store',...options,headers:{...(options.body&&!(options.body instanceof ArrayBuffer)&&!(options.body instanceof Blob)?{'Content-Type':'application/json'}:{}),...(options.headers||{})}});
@@ -246,7 +247,7 @@ async function discardFilesP(){
 function filesScreenP(){
  if(S.path[0]==='updates')return packagePageP();
  if(S.ed){
-  return editorOld()+'<div class="btns"><button class="btn p" id="prod-file-save">Save changes</button><button class="btn" id="prod-file-download">Download</button></div>';
+  return editorOld().replace('id="es">Saved</span>','id="es">Autosave on</span>')+'<div class="btns"><button class="btn" id="prod-file-save">Save now</button><button class="btn" id="prod-file-download">Download</button></div>';
  }
  let html=filesBase();
  if(!S.path.length){
@@ -262,22 +263,63 @@ function filesScreenP(){
 }
 function filePathP(name){return [currentPathP(),name].filter(Boolean).join('/')}
 async function openLiveFileP(name){const path=filePathP(name);await loadSourceFileP(path);openFileBase(name)}
-async function saveLiveFileP(){
- const data=P.fileData.get(S.cur),editor=Q('#ed');
- if(!data||!editor){notifyP('Could not find the open file editor. Reopen the file and try again.');return}
- const content=editor.value;
- if(!content&&data.content&&!confirm('This will replace the existing file with an empty file. Continue?'))return;
- const button=Q('#prod-file-save');if(button)button.disabled=true;
+function setFileEditorStatusP(path, message) {
+ if (S.cur !== path) return;
+ const status=Q('#es');if(status)status.textContent=message;
+}
+function updateSourceMemoryP(path, content) {
+ const parts=path.split('/'),name=parts.pop();let dir=fs;
+ for(const part of parts){if(!dir[part]||typeof dir[part]!=='object')return;dir=dir[part]}
+ dir[name]=content;
+}
+function scheduleFileAutosaveP(path, content, delay=1000) {
+ fileAutosaveQueuedP={path,content};
+ if(fileAutosaveTimerP)clearTimeout(fileAutosaveTimerP);
+ setFileEditorStatusP(path,'Unsaved changes · autosaving…');
+ fileAutosaveTimerP=setTimeout(()=>{fileAutosaveTimerP=null;void flushFileAutosaveP()},delay);
+}
+async function flushFileAutosaveP() {
+ if(fileAutosaveTimerP){clearTimeout(fileAutosaveTimerP);fileAutosaveTimerP=null}
+ if(fileAutosaveBusyP)return;
+ const job=fileAutosaveQueuedP;
+ if(!job)return;
+ fileAutosaveQueuedP=null;
+ const data=P.fileData.get(job.path);
+ if(!data){setFileEditorStatusP(job.path,'Autosave unavailable · reopen this file');return}
+ if(job.content===data.content){setFileEditorStatusP(job.path,'Autosaved to server (staged)');return}
+ fileAutosaveBusyP=true;
+ const button=S.cur===job.path?Q('#prod-file-save'):null;if(button)button.disabled=true;
  try{
-  const r=await apiP('files/content',{method:'PUT',body:pack({path:S.cur,content,expectedSha256:data.sha256})});
-  const verified=await apiP('files/preview?item='+encodeURIComponent(S.cur));
-  if(verified.content!==content||verified.sha256!==r.sha256)throw new Error('The server accepted the save but the file did not match when read back. Do not leave this page yet; retry saving.');
-  P.fileData.set(S.cur,verified);
-  const parts=S.cur.split('/'),name=parts.pop();let dir=fs;for(const p of parts)dir=dir[p];dir[name]=verified.content;
-  const status=Q('#es');if(status)status.textContent='Saved and verified (staged)';
-  const count=Q('#ec');if(count)count.textContent=content.split('\n').length+' lines';
-  P.pending=true;P.changedCount=Number(r.changedCount)||P.changedCount||1;notifyP('File saved and verified on the server');
- }catch(error){notifyP(error.message)}finally{if(button)button.disabled=false}
+  const r=await apiP('files/content',{method:'PUT',body:pack({path:job.path,content:job.content,expectedSha256:data.sha256})});
+  const verified=await apiP('files/preview?item='+encodeURIComponent(job.path));
+  if(verified.content!==job.content||verified.sha256!==r.sha256)throw new Error('The server response did not match the saved file. Your edit is still marked unsaved.');
+  P.fileData.set(job.path,verified);
+  updateSourceMemoryP(job.path,verified.content);
+  P.pending=true;P.changedCount=Number(r.changedCount)||P.changedCount||1;
+  const editor=S.cur===job.path?Q('#ed'):null;
+  if(editor&&editor.value===job.content&&!fileAutosaveQueuedP){
+   setFileEditorStatusP(job.path,'Autosaved to server (staged)');
+   const count=Q('#ec');if(count)count.textContent=job.content.split('\n').length+' lines';
+  }else if(editor){
+   setFileEditorStatusP(job.path,'Newer edits · autosaving…');
+  }
+ }catch(error){
+  setFileEditorStatusP(job.path,'Autosave failed: '+String(error?.message||error).slice(0,110));
+ }finally{
+  fileAutosaveBusyP=false;
+  if(button)button.disabled=false;
+  if(fileAutosaveQueuedP&&!fileAutosaveTimerP){
+   fileAutosaveTimerP=setTimeout(()=>{fileAutosaveTimerP=null;void flushFileAutosaveP()},150);
+  }
+ }
+}
+async function saveLiveFileP(){
+ const editor=Q('#ed'),path=S.cur;
+ if(!editor||!P.fileData.get(path)){notifyP('Could not find the open file editor. Reopen the file and try again.');return}
+ const content=editor.value,data=P.fileData.get(path);
+ if(!content&&data.content&&!confirm('This will replace the existing file with an empty file. Continue?'))return;
+ scheduleFileAutosaveP(path,content,0);
+ await flushFileAutosaveP();
 }
 function createLiveFileP(type){
  ask(type==='folder'?'New folder':'New file','','Create',async name=>{
@@ -663,11 +705,15 @@ function bindProductionP(){
  const env=Q('#prod-save-env');if(env)env.onclick=saveEnvP;
  const saveConfig=Q('#csv');if(saveConfig)saveConfig.onclick=saveConfigP;
  document.querySelectorAll('[data-e]').forEach(input=>input.oninput=()=>{const row=envs[Number(input.dataset.e)];if(row&&!row.readOnly){row.v=input.value;envDirty=true}});
- const fileEditor=Q('#ed');if(fileEditor)fileEditor.oninput=()=>{
-  const [directory,name]=getFile(S.cur);directory[name]=fileEditor.value;
-  const status=Q('#es');if(status)status.textContent='Unsaved changes';
-  const count=Q('#ec');if(count)count.textContent=fileEditor.value.split('\\n').length+' lines';
- };
+ const fileEditor=Q('#ed');if(fileEditor){
+  fileEditor.oninput=()=>{
+   const path=S.cur;
+   const [directory,name]=getFile(path);directory[name]=fileEditor.value;
+   const count=Q('#ec');if(count)count.textContent=fileEditor.value.split('\\n').length+' lines';
+   scheduleFileAutosaveP(path,fileEditor.value);
+  };
+  fileEditor.onblur=()=>{if(fileAutosaveQueuedP?.path===S.cur)void flushFileAutosaveP()};
+ }
  const save=Q('#prod-file-save');if(save)save.onclick=saveLiveFileP;
  const discard=Q('#prod-discard-files');if(discard)discard.onclick=discardFilesP;
  const down=Q('#prod-file-download');if(down)down.onclick=()=>downloadSourceFileP(S.cur,S.cur.split('/').pop()).catch(e=>notifyP(e.message));

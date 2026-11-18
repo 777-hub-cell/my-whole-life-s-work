@@ -75,7 +75,7 @@ test('Files mobile screen matches the supplied file-manager layout',async()=>{
  assert.ok(h.includes('id="export-bot-source"'))
  assert.ok(a.includes("homeLabel.textContent = 'Home'"))
  assert.ok(a.includes("className = 'source-file-select'"))
- assert.ok(a.includes("className = 'source-menu-danger'"))
+ assert.ok(a.includes("danger ? 'source-menu-danger' : ''"))
  assert.ok(a.includes("$$('.source-item-menu').forEach"))
  assert.ok(c.includes('#view-files .source-file-row.menu-open'))
  assert.ok(c.includes('#view-files .source-item-menu'))

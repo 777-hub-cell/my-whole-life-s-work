@@ -305,6 +305,7 @@ export function createAccountRuntime({
   async function stop(id) {
     const session = get(id)
     session.manuallyStopped = true
+    session.qr = ''
     if (session.reconnectTimer) clearTimeout(session.reconnectTimer)
     session.reconnectTimer = null
     const currentSocket = session.socket
@@ -379,6 +380,7 @@ export function createAccountRuntime({
     shuttingDown = true
     for (const session of sessions.values()) {
       session.manuallyStopped = true
+      session.qr = ''
       if (session.reconnectTimer) clearTimeout(session.reconnectTimer)
       session.reconnectTimer = null
       const currentSocket = session.socket

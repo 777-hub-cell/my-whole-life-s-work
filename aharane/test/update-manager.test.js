@@ -44,6 +44,23 @@ test('blocks auth, persistent data, dependency and secret directories', () => {
   }
 })
 
+test('blocks both WhatsApp auth directories and the isolated auth-backup directory', () => {
+  for (const value of [
+    'whatsapp-auth/creds.json',
+    'whatsapp-auth-private/creds.json',
+    'whatsapp-auth-backups/private-2026/creds.json',
+  ]) assert.throws(() => normalizeUpdatePath(value))
+})
+
+test('accepts separate public/private command folders and shared plugin source', () => {
+  for (const value of [
+    'commands/ping.js',
+    'private-commands/status.js',
+    'plugins/media.js',
+    'lib/format.js',
+  ]) assert.doesNotThrow(() => normalizeUpdatePath(value))
+})
+
 test('accepts a correctly identified Aharane update package', () => {
   assert.deepEqual(validateUpdateManifest(validManifest, validPackage), validManifest)
 })

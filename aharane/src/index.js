@@ -945,9 +945,15 @@ app.post('/api/accounts/:accountId/repair', requireAdmin, async (req, res) => {
   }
 })
 // Backwards-compatible pairing endpoint defaults to the existing public session.
-app.post('/api/pair-code', requireAdmin, (req, res) => {
-  req.params.accountId = String(req.body?.accountId || 'public')
-  return app.handle(req, res)
+app.post('/api/pair-code', requireAdmin, async (req, res) => {
+  try {
+    const phoneNumber = normalizePhone(req.body?.phoneNumber)
+    if (!phoneNumber) return res.status(400).json({ ok: false, error: 'Enter a valid international phone number using 7 to 15 digits.' })
+    const pairingCode = await accountRuntime.requestPairingCode('public', phoneNumber)
+    res.json({ ok: true, accountId: 'public', pairingCode })
+  } catch (error) {
+    res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Pairing code could not be generated.') })
+  }
 })
 app.get('/api/update/status', requireAdmin, async (_req, res) => {
   const manual = await readJsonFile(MANUAL_EDIT_STATE_FILE)
@@ -1486,21 +1492,21 @@ server.on('error', error => {
   process.exitCode = 1
 })
 
-await startSocket().catch(() => {
-  state = 'degraded'
-  publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
-  logger.error({ event: 'whatsapp.initial-start-failed' })
-  scheduleReconnect()
-})
+// Start both sessions independently. A problem with one account must not
+// prevent the other account from connecting or accepting commands.
+await Promise.all(['private', 'public'].map(async accountId => {
+  try {
+    await accountRuntime.start(accountId)
+  } catch (error) {
+    logger.error({ event: 'whatsapp.initial-start-failed', accountId, error: String(error?.message || error) })
+  }
+}))
 
 async function shutdown(signal) {
   if (shuttingDown) return
   shuttingDown = true
-  state = 'stopping'
-  publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
   for (const client of studioClients) client.close(1001, 'Aharane is shutting down')
-  if (reconnectTimer) clearTimeout(reconnectTimer)
-  try { socket?.end?.(undefined) } catch {}
+  await accountRuntime.shutdown()
   await new Promise(resolveClose => server.close(() => resolveClose()))
   logger.info({ event: 'process.stopped', signal })
 }

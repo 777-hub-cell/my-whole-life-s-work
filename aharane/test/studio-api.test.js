@@ -45,6 +45,7 @@ test('the production home, accounts, files, ENV and chats use real server data',
  const runtime=await read('../src/index.js')
  for(const marker of ["apiP('studio/snapshot'","apiP('metrics'","apiP('accounts/'+id+'/qr'","apiP('chats/'+account","apiP('files/preview?item='","apiP('env'","apiP('storage'","apiP('activity?limit="])assert.ok(bridge.includes(marker),marker)
  for(const marker of ["app.get('/api/chats/:accountId'","app.get('/api/chats/:accountId/:jid/messages'","app.post('/api/chats/:accountId/:jid/send'","app.post('/api/chats/:accountId/:jid/media'","app.get('/api/storage'","app.get('/api/activity'"])assert.ok(runtime.includes(marker),marker)
+ assert.ok(runtime.includes("!authorizedChat(accountId, media.jid) || !isChatVisible(studioSettings[accountId], media.jid)"), 'Media URLs enforce the same account visibility filter as messages')
 })
 
 test('the preview keeps its original mobile file-manager and editor interactions', async () => {

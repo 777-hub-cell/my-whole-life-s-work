@@ -268,24 +268,58 @@ function accountViewP(){
 }
 function pairViewP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private',a=P.runtime?.accounts?.[id]||{};
- return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Link '+id+' account</h1><p class="sub">'+escP(a.connected?'Connected':a.state||'Offline')+'</p><div class="seg" style="margin-bottom:16px"><button class="'+(S.pm==='pin'?'on':'')+'" data-pm="pin">Pairing code</button><button class="'+(S.pm==='qr'?'on':'')+'" data-pm="qr">QR code</button></div><div class="card" style="padding:16px">'+(S.pm==='qr'?'<div class="empty" id="prod-qr-panel">Waiting for WhatsApp pairing QR…</div><p class="d">Open WhatsApp → Linked devices → Link a device.</p><button class="btn sm" id="prod-qr-refresh">Refresh QR</button>':'<label class="t" for="pair-phone" style="display:block;margin-bottom:8px">'+(id==='private'?'Private Owner number':'Public bot WhatsApp number')+'</label><input class="field" id="pair-phone" inputmode="numeric" value="'+escP(id==='private'?(P.owners.privateOwnerNumber||''):'')+'" placeholder="Country code + number"><button class="btn p" id="prod-pair-code" style="margin-top:12px;width:100%">Get pairing code</button>'+(S.pin?'<div class="pin" style="text-align:center;margin:18px 0"><b>'+escP(S.pin)+'</b></div><button class="btn" id="prod-copy-code">Copy code</button>':'')+'</div>');
+ const number=id==='private'?P.owners.privateOwnerNumber:P.owners.publicBotNumber;
+ const label=id==='private'?'Private Owner number':'Public bot WhatsApp number';
+ let panel='';
+ if(a.connected){
+  panel='<div class="empty" style="padding:10px 0 18px"><strong>Already connected</strong><p class="d" style="white-space:normal">This WhatsApp account is linked. You do not need another pairing code.</p></div>';
+ }else if(a.state==='needs-pairing'){
+  panel='<div class="note">WhatsApp rejected this saved session. Before linking again, Aharane will back up its existing authentication data.</div><button class="btn p" id="prod-pair-repair" style="width:100%">Back up session and prepare re-pairing</button>';
+ }else if(a.registered){
+  panel='<div class="note">This account is already paired, but currently offline. It does not need a new pairing code.</div><button class="btn p" id="prod-pair-reconnect" style="width:100%">Reconnect existing account</button>';
+ }else if(!number){
+  panel='<div class="empty" style="padding:8px 0 16px">Add the '+label+' in Configuration first. The pairing screen will use that saved number automatically.</div><button class="btn p" id="pair-open-config" style="width:100%">Open Configuration</button>';
+ }else if(S.pm==='qr'){
+  panel='<div class="d" style="text-align:center;margin-bottom:12px">Account number · +'+escP(number)+'</div>'+(S.qrRequested?'<div class="empty" id="prod-qr-panel">Requesting QR code…</div>':'<div class="empty" style="padding:14px 0">No QR code requested. Aharane will only request one when you tap the button.</div>')+'<p class="d" style="white-space:normal">Open WhatsApp on the phone you want to link → Linked devices → Link a device.</p><button class="btn p" id="prod-qr-request" style="width:100%">'+(S.qrRequested?'Request fresh QR code':'Get QR code')+'</button>';
+ }else{
+  panel='<div class="d" style="text-align:center;margin-bottom:12px">'+label+' · +'+escP(number)+'</div>'+(S.pin?'<div class="pin" style="text-align:center;margin:18px 0"><b>'+escP(S.pin)+'</b></div><p class="d" style="text-align:center;white-space:normal">Enter this code in WhatsApp → Linked devices → Link with phone number.</p><div class="btns" style="justify-content:center"><button class="btn" id="prod-copy-code">Copy code</button><button class="btn" id="prod-pair-code">Request new code</button></div>':'<p class="d" style="text-align:center;white-space:normal">A pairing code will only be requested when you tap below.</p><button class="btn p" id="prod-pair-code" style="width:100%">Get pairing code</button>');
+ }
+ return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Link '+(id==='public'?'Public':'Private')+' account</h1><p class="sub">'+escP(a.connected?'Connected':a.registered?'Paired · '+(a.state||'Offline'):a.state||'Not paired')+'</p><div class="seg" style="margin-bottom:16px"><button type="button" class="'+(S.pm==='pin'?'on':'')+'" data-pm="pin">Pairing code</button><button type="button" class="'+(S.pm==='qr'?'on':'')+'" data-pm="qr">QR code</button></div><div class="card" style="padding:16px">'+panel+'</div>';
 }
 async function getPairCodeP(){
- const id=accts[S.pi]?.slot==='public'?'public':'private',phone=String(Q('#pair-phone')?.value||'').replace(/\D/g,'');
- if(!phone)return notifyP('Enter the WhatsApp number to pair.');
- try{const r=await apiP('accounts/'+id+'/pair-code',{method:'POST',body:pack({phoneNumber:phone})});S.pin=r.pairingCode;render()}
- catch(error){notifyP(error.message)}
+ const id=accts[S.pi]?.slot==='public'?'public':'private';
+ const button=Q('#prod-pair-code');if(button)button.disabled=true;
+ try{const r=await apiP('accounts/'+id+'/pair-code',{method:'POST',body:pack({})});S.pin=r.pairingCode;S.qrRequested=false;render()}
+ catch(error){notifyP(error.message);if(button)button.disabled=false}
 }
 let qrSeenP='';
 async function readQrP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private';
- try{const r=await apiP('accounts/'+id+'/qr'),el=Q('#prod-qr-panel');if(!el)return;
+ try{
+  const r=await apiP('accounts/'+id+'/qr'),el=Q('#prod-qr-panel');if(!el)return;
   if(r.qr&&r.qr!==qrSeenP){qrSeenP=r.qr;el.innerHTML=qrSvg(r.qr)}
-  else if(!r.qr&&!qrSeenP)el.textContent='Waiting for WhatsApp to generate the pairing QR…';
+  else if(!r.qr&&!qrSeenP)el.textContent='Waiting for WhatsApp to generate the QR you requested…';
   if(P.runtime?.accounts?.[id]?.connected){el.textContent='Account connected.';clearInterval(P.qrTimer);P.qrTimer=null}
- }catch(error){if(Q('#prod-qr-panel'))Q('#prod-qr-panel').textContent=error.message}
+ }catch(error){if(Q('#prod-qr-panel'))Q('#prod-qr-panel').textContent=error.message;clearInterval(P.qrTimer);P.qrTimer=null}
 }
-function startQrP(){if(P.qrTimer)clearInterval(P.qrTimer);qrSeenP='';readQrP();P.qrTimer=setInterval(readQrP,1800)}
+function startQrP(){if(P.qrTimer)clearInterval(P.qrTimer);qrSeenP='';readQrP();P.qrTimer=setInterval(()=>{if(!document.hidden)readQrP()},1800)}
+async function requestQrP(){
+ const id=accts[S.pi]?.slot==='public'?'public':'private',button=Q('#prod-qr-request');
+ if(button)button.disabled=true;
+ try{await apiP('accounts/'+id+'/qr',{method:'POST',body:pack({})});S.pin=null;S.qrRequested=true;render();startQrP()}
+ catch(error){notifyP(error.message);if(button)button.disabled=false}
+}
+async function repairPairP(){
+ const id=accts[S.pi]?.slot==='public'?'public':'private';
+ if(!confirm('Back up the existing '+id+' WhatsApp authentication before preparing a new pairing?'))return;
+ try{await apiP('accounts/'+id+'/repair',{method:'POST',body:pack({})});S.pin=null;S.qrRequested=false;await refreshRuntimeP();render();notifyP('Session backed up. Request a pairing code or QR when you are ready.')}
+ catch(error){notifyP(error.message)}
+}
+async function reconnectPairP(){
+ const id=accts[S.pi]?.slot==='public'?'public':'private';
+ try{await apiP('accounts/'+id+'/reconnect',{method:'POST',body:pack({})});await refreshRuntimeP();render();notifyP('Reconnect requested')}
+ catch(error){notifyP(error.message)}
+}
 async function saveOwnersP(){
  try{const r=await apiP('owners',{method:'PUT',body:pack({privateOwnerNumber:Q('#owner-private').value,publicOwnerNumber:Q('#owner-public').value,allowedPublicSenders:Q('#owner-allow').value.split(/[,\s]+/).filter(Boolean)})});P.owners=r.owners;notifyP('Owner identities saved');render()}
  catch(error){notifyP(error.message)}
@@ -298,11 +332,14 @@ async function saveConfigP(){
  const button=Q('#csv');if(button)button.disabled=true;
  try{
   const profile=S.cprof==='public'?'public':'private';
-  const ownerValue=String(C.owner||'').replace(/\D/g,'');
+  const clean=value=>String(value||'').replace(/\D/g,'');
+  const ownerValue=clean(C.owner),pairingNumber=clean(C.pairingNumber);
   if(ownerValue&&!/^\d{7,15}$/.test(ownerValue))throw new Error('Owner number must contain 7–15 digits, including the country code.');
+  if(profile==='public'&&pairingNumber&&!/^\d{7,15}$/.test(pairingNumber))throw new Error('Public bot WhatsApp number must contain 7–15 digits, including the country code.');
   const owners={
    privateOwnerNumber:profile==='private'?ownerValue:(P.owners.privateOwnerNumber||''),
    publicOwnerNumber:profile==='public'?ownerValue:(P.owners.publicOwnerNumber||''),
+   publicBotNumber:profile==='public'?pairingNumber:(P.owners.publicBotNumber||''),
    allowedPublicSenders:P.owners.allowedPublicSenders||[]
   };
   const ownerResult=await apiP('owners',{method:'PUT',body:pack(owners)});
@@ -314,6 +351,7 @@ async function saveConfigP(){
   loadP(profile);
   C=CS[profile];
   C.owner=profile==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicOwnerNumber||'');
+  C.pairingNumber=P.owners.publicBotNumber||'';
   C.prefix=profile==='private'?'.':'!';
   C0=JSON.stringify(C);C0S[profile]=C0;
   cfgDirty(false);

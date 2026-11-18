@@ -105,7 +105,24 @@ async function loadSourceFileP(path){
  const r=await apiP('files/preview?item='+encodeURIComponent(path));P.fileData.set(path,r);
  const parts=path.split('/'),name=parts.pop();let dir=fs;for(const part of parts)dir=dir[part];dir[name]=r.content;return r;
 }
-function downloadP(name,blob){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+function downloadP(name,blob){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000)}
+async function exportBotSourceP(button){
+ if(button?.disabled)return;
+ if(button)button.disabled=true;
+ try{
+  const response=await fetch(API+'/files/export',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/zip'}});
+  if(!response.ok){
+   const type=response.headers.get('content-type')||'';
+   const error=type.includes('application/json')?await response.json().catch(()=>({})): {};
+   throw new Error(error.error||'The source ZIP could not be created ('+response.status+').');
+  }
+  const blob=await response.blob();
+  if(!blob.size||!((response.headers.get('content-type')||'').includes('application/zip')))throw new Error('The server did not return a valid source ZIP.');
+  downloadP('aharane-source.zip',blob);
+  notifyP('Full Aharane source ZIP is ready to download.');
+ }catch(error){notifyP(error.message)}
+ finally{if(button)button.disabled=false}
+}
 async function loadPackagesP(){try{const r=await apiP('files/packages');return r.packages||[]}catch{return []}}
 async function uploadZipP(file){
  if(file.size<22||file.size>50*1024*1024)throw new Error('ZIP files must be no larger than 50 MB.');
@@ -409,6 +426,7 @@ async function attachLiveP(file){try{await sendChatP({b:file,f:file.name});await
 function switchChatsP(){S.cacc=S.cacc==='private'?'public':'private';S.chat=null;P.chatJid='';refreshChatsP().then(render).catch(e=>notifyP(e.message))}
 async function accountActionP(id,action){try{await apiP('accounts/'+id+'/'+action,{method:'POST',body:pack({})});await refreshRuntimeP();render();notifyP('Account '+action+' requested')}catch(error){notifyP(error.message)}}
 function bindProductionP(){
+ const exportSource=Q('#export-bot-source');if(exportSource)exportSource.onclick=()=>exportBotSourceP(exportSource);
  document.querySelectorAll('[data-open]').forEach(b=>b.onclick=async()=>{const name=b.dataset.open;if(typeof node(S.path)[name]==='object'){S.path.push(name);S.sel={};try{await loadTreeP(currentPathP())}catch(e){notifyP(e.message)}render()}else openLiveFileP(name).catch(e=>notifyP(e.message))});
  document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>fileMenuP(b.dataset.m,b));
  document.querySelectorAll('[data-package]').forEach(b=>b.onclick=()=>packageMenuP(b.dataset.package,b));

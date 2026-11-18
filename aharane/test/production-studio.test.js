@@ -205,6 +205,6 @@ test('the production Files screen renders the real editor before exposing server
  assert.ok(screen.includes('return editorOld()'), 'Opening a source file must render the textarea editor, not just a save button.')
  assert.ok(screen.includes('id="prod-file-save"'))
  assert.ok(screen.includes('id="prod-file-download"'))
- assert.ok(bind.includes("const editor=Q('#ed')"))
+ assert.ok(bind.includes("const fileEditor=Q('#ed')"))
  assert.ok(bind.includes("status.textContent='Unsaved changes'"), 'Editing must never be labelled as saved before server verification.')
 });

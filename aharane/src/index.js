@@ -1,4 +1,4 @@
-import { appendFile, cp, lstat, mkdir, open, readFile, realpath, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { appendFile, cp, lstat, mkdir, open, readFile, realpath, readdir, rename, rm, stat, statfs, symlink, writeFile } from 'node:fs/promises'
 import { constants as fsConstants, createReadStream } from 'node:fs'
 import { createHash, createHmac, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto'
 import { execFile } from 'node:child_process'
@@ -21,8 +21,13 @@ import { loadCommandRegistry, dispatchCommand } from './command-registry.js'
 import { isPrivateSelfCommand, isPublicOwnerSender } from './authorization.js'
 import { loadOwnerConfig, normalizeOwnerConfig, saveOwnerConfig } from './owner-config.js'
 import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_ARCHIVE_BYTES } from './update-manager.js'
+import { downloadMediaMessage } from '@whiskeysockets/baileys'
+import { createChatStore } from './chat-store.js'
+import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, envView } from './studio-settings.js'
+import { createActivityStore } from './activity-store.js'
 
 const APP_NAME = 'Aharane'
+
 const PRIVATE_COMMAND_PREFIX = '.'
 const PUBLIC_COMMAND_PREFIX = '!'
 const HOST = process.env.AHARANE_HOST || '127.0.0.1'
@@ -76,6 +81,11 @@ let ownerConfig = await loadOwnerConfig(OWNER_CONFIG_FILE, {
   publicOwnerNumber: LEGACY_PUBLIC_OWNER_NUMBER,
   allowedPublicSenders: LEGACY_PUBLIC_ALLOWED_SENDERS,
 })
+const chatStore = createChatStore({ dataDir: DATA_DIR, logger })
+const activityStore = createActivityStore({ dataDir: DATA_DIR })
+await Promise.all([chatStore.init(), activityStore.init()])
+const SETTINGS_FILE = join(DATA_DIR, 'studio-settings.json')
+let studioSettings = await loadStudioSettings(SETTINGS_FILE)
 let accountRuntime = null
 let publicCommandRegistry = null
 let privateCommandRegistry = null
@@ -116,6 +126,7 @@ function studioRuntimeSnapshot() {
 }
 
 function publishStudioEvent(type, data = {}) {
+  void activityStore.append({ level: type.includes('failed') || type.includes('error') ? 'error' : 'info', source: 'runtime', message: type, details: data }).catch(() => {})
   const event = {
     id: ++studioEventSequence,
     type,
@@ -282,7 +293,8 @@ function allowPairAttempt(ip) {
 function allowCommand(sender) {
   const now = Date.now()
   const previous = commandTimes.get(sender) || 0
-  if (now - previous < 1200) return false
+  const cooldownMs = Math.max(1000, Number(studioSettings?.[sender.split(':')[0]]?.commandCooldown || 1.2) * 1000)
+  if (now - previous < cooldownMs) return false
   commandTimes.set(sender, now)
   if (commandTimes.size > 500) {
     for (const [key, at] of commandTimes) if (now - at > 60_000) commandTimes.delete(key)
@@ -681,6 +693,10 @@ async function handleMessages(sessionId, currentSocket, event) {
     if (sessionId === 'private') {
       // Private Account A is an owner console, never a public responder.
       // Only registered commands in its exact self-chat may run.
+      const privateOwnNumber = senderNumberFromJid(currentSocket.user?.id || '')
+      const privateChatNumber = senderNumberFromJid(remoteJid)
+      if (message.key.fromMe !== true || !ownerConfig.privateOwnerNumber || privateOwnNumber !== ownerConfig.privateOwnerNumber || privateChatNumber !== ownerConfig.privateOwnerNumber) continue
+      await chatStore.recordMessage({ sessionId, message, socket: currentSocket, downloadMedia: (msg, socket) => downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: socket.updateMediaMessage }) })
       privateControl = isPrivateSelfCommand({
         sessionId,
         message,
@@ -693,7 +709,7 @@ async function handleMessages(sessionId, currentSocket, event) {
       })
       if (!privateControl) continue
       registry = privateCommandRegistry
-    } else {
+    } else if (sessionId === 'public') {
       // Every fromMe event on the public account is inert. Public commands
       // come only from an allowlisted direct WhatsApp phone-number identity.
       if (message.key.fromMe === true) continue
@@ -702,12 +718,15 @@ async function handleMessages(sessionId, currentSocket, event) {
         fromMe: false,
         allowedSenders: publicAllowedSenders(),
       })) continue
+      await chatStore.recordMessage({ sessionId, message, socket: currentSocket, downloadMedia: (msg, socket) => downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: socket.updateMediaMessage }) })
       registry = publicCommandRegistry
       isPublicOwner = isPublicOwnerSender({
         sessionId,
         remoteJid,
         publicOwnerNumber: ownerConfig.publicOwnerNumber,
       })
+    } else {
+      continue
     }
 
     if (!text || !allowCommand(sessionId + ':' + (sessionId === 'private'
@@ -725,7 +744,11 @@ async function handleMessages(sessionId, currentSocket, event) {
           privateControl,
           isPrivateOwner: privateControl,
           isPublicOwner,
-          reply: value => currentSocket.sendMessage(remoteJid, { text: String(value) }, { quoted: message }),
+          reply: async value => {
+            const sent = await currentSocket.sendMessage(remoteJid, { text: String(value) }, { quoted: message })
+            await chatStore.recordMessage({ sessionId, message: sent, socket: currentSocket })
+            return sent
+          },
         },
       })
       if (!handled) continue
@@ -1067,6 +1090,162 @@ app.post('/api/update/upload/chunk', requireAdmin, async (req, res) => {
   } catch (error) {
     const status = /EEXIST/.test(String(error?.code || error?.message)) ? 409 : 400
     res.status(status).json({ ok: false, error: status === 409 ? 'This ZIP chunk was already received.' : String(error?.message || 'Could not store ZIP chunk.') })
+  }
+})
+
+
+function chatAccount(value) {
+  const accountId = String(value || '').toLowerCase()
+  if (!['private', 'public'].includes(accountId)) throw Object.assign(new Error('Unknown WhatsApp account.'), { status: 404 })
+  return accountId
+}
+function authorizedChat(accountId, jid) {
+  const target = senderNumberFromJid(jid)
+  if (!target || String(jid).endsWith('@g.us') || String(jid).endsWith('@broadcast')) return false
+  if (accountId === 'private') {
+    const session = accountRuntime.get('private')
+    const own = senderNumberFromJid(session.socket?.user?.id || session.auth?.state?.creds?.me?.id || '')
+    return Boolean(ownerConfig.privateOwnerNumber && target === ownerConfig.privateOwnerNumber && own === ownerConfig.privateOwnerNumber)
+  }
+  return publicAllowedSenders().has(target)
+}
+app.get('/api/env', requireAdmin, (_req, res) => {
+  res.json({ ok: true, env: envView(studioSettings), owners: {
+    privateOwnerNumber: ownerConfig.privateOwnerNumber,
+    publicOwnerNumber: ownerConfig.publicOwnerNumber,
+    allowedPublicSenders: ownerConfig.allowedPublicSenders,
+  } })
+})
+app.put('/api/env', requireAdmin, async (req, res) => {
+  try {
+    const rows = Array.isArray(req.body?.env) ? req.body.env : []
+    const next = structuredClone(studioSettings)
+    for (const row of rows) {
+      const key = String(row?.key || '')
+      const match = key.match(/^(PRIVATE|PUBLIC)_(BOT_NAME|AUTO_READ|SHOW_TYPING|REJECT_CALLS|ALWAYS_ONLINE|COMMAND_COOLDOWN|WELCOME_MESSAGE)$/)
+      if (!match) continue
+      const scope = match[1].toLowerCase()
+      const setting = {
+        BOT_NAME: 'botName', AUTO_READ: 'autoRead', SHOW_TYPING: 'showTyping',
+        REJECT_CALLS: 'rejectCalls', ALWAYS_ONLINE: 'alwaysOnline',
+        COMMAND_COOLDOWN: 'commandCooldown', WELCOME_MESSAGE: 'welcomeMessage',
+      }[match[2]]
+      let value = row.value
+      if (['autoRead','showTyping','rejectCalls','alwaysOnline'].includes(setting)) value = String(value).toLowerCase() === 'true'
+      if (setting === 'commandCooldown') value = Number(value)
+      next[scope][setting] = value
+    }
+    studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings(next))
+    publishStudioEvent('settings.updated', { private: true, public: true })
+    res.json({ ok: true, env: envView(studioSettings), settings: studioSettings })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || 'Could not save the managed environment settings.') })
+  }
+})
+app.get('/api/settings', requireAdmin, (_req, res) => res.json({ ok: true, settings: studioSettings }))
+app.put('/api/settings', requireAdmin, async (req, res) => {
+  try {
+    studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings(req.body?.settings || {}))
+    publishStudioEvent('settings.updated', { private: true, public: true })
+    res.json({ ok: true, settings: studioSettings })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || 'Could not save settings.') })
+  }
+})
+app.get('/api/chats/:accountId', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const chats = await chatStore.listChats(accountId, { limit: req.query.limit, query: req.query.q })
+    res.json({ ok: true, chats: chats.filter(chat => authorizedChat(accountId, chat.jid)) })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not read conversations.') })
+  }
+})
+app.get('/api/chats/:accountId/:jid/messages', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = decodeURIComponent(String(req.params.jid || ''))
+    if (!authorizedChat(accountId, jid) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    const messages = await chatStore.getMessages(accountId, jid, { limit: req.query.limit, before: req.query.before })
+    await chatStore.markRead(accountId, jid)
+    res.json({ ok: true, messages })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not read messages.') })
+  }
+})
+app.post('/api/chats/:accountId/:jid/send', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = decodeURIComponent(String(req.params.jid || ''))
+    const text = String(req.body?.text || '').trim()
+    if (!text || Buffer.byteLength(text, 'utf8') > 12000) return res.status(400).json({ ok: false, error: 'Enter a message up to 12 KB.' })
+    if (!authorizedChat(accountId, jid) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found or not authorized.' })
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected') return res.status(503).json({ ok: false, error: 'This WhatsApp account is not connected.' })
+    const sent = await socket.sendMessage(jid, { text })
+    await chatStore.recordMessage({ sessionId: accountId, message: sent, socket })
+    publishStudioEvent('whatsapp.message.sent', { accountId, jid, type: 'text' })
+    res.json({ ok: true, message: sent?.key?.id || '' })
+  } catch (error) {
+    res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not send the message.') })
+  }
+})
+app.post('/api/chats/:accountId/:jid/media', requireAdmin, express.raw({ type: '*/*', limit: '24mb' }), async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = decodeURIComponent(String(req.params.jid || ''))
+    if (!authorizedChat(accountId, jid) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found or not authorized.' })
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected') return res.status(503).json({ ok: false, error: 'This WhatsApp account is not connected.' })
+    if (!Buffer.isBuffer(req.body) || !req.body.length || req.body.length > 24 * 1024 * 1024) return res.status(400).json({ ok: false, error: 'Choose a file up to 24 MB.' })
+    const mime = String(req.get('x-media-type') || 'application/octet-stream').split(';')[0].toLowerCase()
+    const filename = String(req.get('x-file-name') || 'attachment').slice(0, 100).replace(/[\u0000-\u001f/\\]/g, '_')
+    const caption = String(req.get('x-caption') || '').slice(0, 1000)
+    let content
+    if (mime.startsWith('image/') && mime !== 'image/webp') content = { image: req.body, caption }
+    else if (mime.startsWith('video/')) content = { video: req.body, caption }
+    else if (mime.startsWith('audio/')) content = { audio: req.body, mimetype: mime, ptt: false }
+    else if (mime === 'image/webp') content = { sticker: req.body }
+    else content = { document: req.body, mimetype: mime, fileName: filename, caption }
+    const sent = await socket.sendMessage(jid, content)
+    await chatStore.recordOutgoingMedia({ sessionId: accountId, jid, buffer: req.body, mimeType: mime, fileName: filename, sendResult: sent, text: caption })
+    publishStudioEvent('whatsapp.message.sent', { accountId, jid, type: 'media' })
+    res.json({ ok: true, message: sent?.key?.id || '' })
+  } catch (error) {
+    res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not send the attachment.') })
+  }
+})
+app.get('/api/chats/:accountId/media/:messageId', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const media = await chatStore.getMedia(accountId, req.params.messageId)
+    if (!media) return res.status(404).json({ ok: false, error: 'Attachment not found.' })
+    res.set('Content-Type', media.mimeType)
+    res.set('Content-Length', String(media.size))
+    res.set('Content-Disposition', /^(image|video|audio)\//.test(media.mimeType) ? 'inline' : 'attachment; filename*=UTF-8\\'\\'' + encodeURIComponent(media.fileName))
+    res.set('X-Content-Type-Options', 'nosniff')
+    res.sendFile(media.path)
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not open the attachment.') })
+  }
+})
+app.get('/api/activity', requireAdmin, async (req, res) => {
+  const entries = await activityStore.list({ limit: req.query.limit, level: req.query.level, query: req.query.q })
+  res.json({ ok: true, entries })
+})
+app.delete('/api/activity', requireAdmin, async (_req, res) => {
+  await activityStore.clear()
+  res.json({ ok: true })
+})
+app.get('/api/storage', requireAdmin, async (_req, res) => {
+  try {
+    const disk = await statfs(DATA_DIR)
+    const media = await chatStore.mediaUsage()
+    const diskTotal = Number(disk.blocks) * Number(disk.bsize)
+    const diskFree = Number(disk.bavail) * Number(disk.bsize)
+    res.json({ ok: true, disk: { totalBytes: diskTotal, freeBytes: diskFree, usedBytes: Math.max(0, diskTotal - diskFree) }, media })
+  } catch {
+    res.status(500).json({ ok: false, error: 'Could not read server storage usage.' })
   }
 })
 

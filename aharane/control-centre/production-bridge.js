@@ -357,7 +357,7 @@ async function openLiveFileP(name){
  openFileBase(name);
  const editor=Q('#ed'),draft=fileLocalDraftsP.get(path);
  if(!editor||!draft)return;
- if(draft.content===remote.content){removeFileLocalDraftP(path);return}
+ if(draft.content===remote.content){removeFileLocalDraftP(path);fileAutosaveConflictsP.delete(path);return}
  if(draft.baseSha256===remote.sha256){
   editor.value=draft.content;
   updateSourceMemoryP(path,draft.content);
@@ -494,7 +494,7 @@ async function flushFileAutosavePathP(path){
  }finally{
   fileAutosaveBusyP.delete(path);
   if(button)button.disabled=false;
-  if(fileAutosaveQueuedP.has(path)&&fileAutosaveQueuedP.get(path).content!==job.content){
+  if(fileAutosaveQueuedP.has(path)&&fileAutosaveQueuedP.get(path).content!==job.content&&!fileAutosaveConflictsP.has(path)){
    const timer=setTimeout(()=>{fileAutosaveTimersP.delete(path);void flushFileAutosaveP(path)},150);
    fileAutosaveTimersP.set(path,timer);
   }

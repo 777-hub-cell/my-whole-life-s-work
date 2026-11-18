@@ -331,7 +331,11 @@ function filesScreenP(){
  const staleBanner=staleDraftBannerP();
  if(S.path[0]==='updates')return staleBanner+packagePageP();
  if(S.ed){
-  return editorOld().replace('id="es">Saved</span>','id="es">Autosave on</span>')+localDraftBannerP()+staleBanner+'<div class="btns"><button class="btn" id="prod-file-save">Save now</button><button class="btn" id="prod-file-download">Download</button></div>';
+  const editorMarkup=editorOld().replace('id="es">Saved</span>','id="es">Autosave on</span>');
+  const conflictLocked=fileAutosaveConflictsP.has(S.cur)
+   ?editorMarkup.replace('<textarea class="editor" id="ed"','<textarea class="editor" id="ed" readonly aria-readonly="true"')
+   :editorMarkup;
+  return conflictLocked+localDraftBannerP()+staleBanner+'<div class="btns"><button class="btn" id="prod-file-save">Save now</button><button class="btn" id="prod-file-download">Download</button></div>';
  }
  let html=filesBase();
  if(!S.path.length){
@@ -375,6 +379,26 @@ function updateSourceMemoryP(path, content) {
  dir[name]=content;
  const previous=P.fileMeta.get(path)||{};
  P.fileMeta.set(path,{...previous,path,name,type:'file',size:new Blob([content]).size,modified:new Date().toISOString(),readOnly:false});
+}
+async function queueDeviceDraftForSaveP(path){
+ const draft=fileLocalDraftsP.get(path);
+ if(!draft)return true;
+ if(fileAutosaveQueuedP.has(path)||fileAutosaveBusyP.has(path))return true;
+ let data=P.fileData.get(path);
+ try{if(!data)data=await loadSourceFileP(path)}
+ catch{
+  fileAutosaveConflictsP.add(path);
+  if(S.ed&&S.cur===path)render();
+  return false;
+ }
+ if(!draft.baseSha256||draft.baseSha256!==data.sha256){
+  fileAutosaveConflictsP.add(path);
+  if(S.ed&&S.cur===path)render();
+  return false;
+ }
+ if(draft.content===data.content){removeFileLocalDraftP(path);return true}
+ scheduleFileAutosaveP(path,draft.content,0);
+ return true;
 }
 function clearFileAutosaveTimerP(path){
  const timer=fileAutosaveTimersP.get(path);
@@ -483,9 +507,15 @@ async function flushFileAutosaveP(path){
 }
 async function flushFilePathsP(paths){
  const roots=[...new Set(paths||[])].filter(Boolean);
+ const devicePaths=[...fileLocalDraftsP.keys()].filter(path=>roots.some(root=>path===root||path.startsWith(root+'/')));
+ for(const path of devicePaths){
+  if(fileAutosaveConflictsP.has(path)||!await queueDeviceDraftForSaveP(path))return false;
+ }
  const affected=[...new Set([...fileAutosaveQueuedP.keys(),...fileAutosaveBusyP])].filter(path=>roots.some(root=>path===root||path.startsWith(root+'/')));
  const ok=await flushFileAutosaveP(affected);
- return ok&&affected.every(path=>!fileAutosaveQueuedP.has(path)&&!fileAutosaveBusyP.has(path));
+ return ok&&affected.every(path=>!fileAutosaveQueuedP.has(path)&&!fileAutosaveBusyP.has(path))&&
+  ![...fileLocalDraftsP.keys()].some(path=>roots.some(root=>path===root||path.startsWith(root+'/'))) &&
+  ![...fileAutosaveConflictsP].some(path=>roots.some(root=>path===root||path.startsWith(root+'/')));
 }
 function clearFileDraftSubtreeP(path){
  for(const key of [...fileLocalDraftsP.keys()])if(key===path||key.startsWith(path+'/'))removeFileLocalDraftP(key);
@@ -494,8 +524,11 @@ function clearFileDraftSubtreeP(path){
  for(const key of [...fileAutosaveConflictsP])if(key===path||key.startsWith(path+'/'))fileAutosaveConflictsP.delete(key);
 }
 async function flushAllFileAutosavesP(){
+ for(const path of [...fileLocalDraftsP.keys()]){
+  if(fileAutosaveConflictsP.has(path)||!await queueDeviceDraftForSaveP(path))return false;
+ }
  const ok=await flushFileAutosaveP();
- return ok&&fileAutosaveQueuedP.size===0;
+ return ok&&fileAutosaveQueuedP.size===0&&fileLocalDraftsP.size===0&&fileAutosaveConflictsP.size===0;
 }
 async function restoreDeviceDraftP(){
  const path=S.cur,draft=fileLocalDraftsP.get(path),editor=Q('#ed'),data=P.fileData.get(path);

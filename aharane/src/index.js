@@ -333,9 +333,27 @@ async function currentReleaseDirectory() {
   return realpath(CURRENT_RELEASE)
 }
 
+async function clearEmptyStaleManualEdits(currentRelease, manual) {
+  if (manual?.status !== 'pending' || manual.currentRelease === currentRelease ||
+      !Array.isArray(manual.modifiedPaths) || manual.modifiedPaths.length !== 0) return false
+  const workspace = String(manual.workspaceRelease || '')
+  if (!workspace.startsWith(RELEASES_DIR + sep)) {
+    sourcePathError(409, 'MANUAL_WORKSPACE_INVALID', 'The stale source workspace is outside Aharane releases.')
+  }
+  const actual = await realpath(workspace).catch(() => null)
+  if (!actual || !actual.startsWith(RELEASES_DIR + sep) || actual === currentRelease) {
+    sourcePathError(409, 'MANUAL_WORKSPACE_MISSING', 'The stale source workspace cannot be safely discarded.')
+  }
+  await rm(actual, { recursive: true, force: true })
+  await rm(MANUAL_EDIT_STATE_FILE, { force: true })
+  return true
+}
+
 async function sourceWorkspaceDirectory() {
+  const current = await currentReleaseDirectory()
   const manual = await readJsonFile(MANUAL_EDIT_STATE_FILE)
-  if (manual?.status !== 'pending') return currentReleaseDirectory()
+  if (manual?.status !== 'pending') return current
+  if (await clearEmptyStaleManualEdits(current, manual)) return current
   const workspace = String(manual.workspaceRelease || '')
   if (!workspace.startsWith(RELEASES_DIR + sep)) {
     sourcePathError(409, 'MANUAL_WORKSPACE_INVALID', 'The saved source workspace is outside Aharane releases.')
@@ -467,13 +485,17 @@ async function ensureManualEditBackup() {
   const existing = await readJsonFile(MANUAL_EDIT_STATE_FILE)
   if (existing?.status === 'pending') {
     if (existing.currentRelease !== currentRelease) {
-      sourcePathError(409, 'MANUAL_CHANGES_STALE', 'The active release changed. Discard the old draft before editing this version.')
+      const cleared = await clearEmptyStaleManualEdits(currentRelease, existing)
+      if (!cleared) {
+        sourcePathError(409, 'MANUAL_CHANGES_STALE', 'The active release changed while source edits were staged. Review or discard the old draft before editing this version.')
+      }
+    } else {
+      const workspace = String(existing.workspaceRelease || '')
+      if (!workspace.startsWith(RELEASES_DIR + sep) || !await stat(workspace).catch(() => null)) {
+        sourcePathError(409, 'MANUAL_WORKSPACE_MISSING', 'The saved source workspace is missing. Discard the pending edits before continuing.')
+      }
+      return existing
     }
-    const workspace = String(existing.workspaceRelease || '')
-    if (!workspace.startsWith(RELEASES_DIR + sep) || !await stat(workspace).catch(() => null)) {
-      sourcePathError(409, 'MANUAL_WORKSPACE_MISSING', 'The saved source workspace is missing. Discard the pending edits before continuing.')
-    }
-    return existing
   }
   if (!currentRelease.startsWith(RELEASES_DIR + sep)) {
     sourcePathError(409, 'RELEASE_PATH_INVALID', 'The current Aharane release cannot be copied safely.')
@@ -1844,8 +1866,8 @@ app.post('/api/files/discard', requireAdmin, async (req, res) => {
   try {
     const current = await currentReleaseDirectory()
     const workspace = String(manual.workspaceRelease || '')
-    if (current !== manual.currentRelease || !workspace.startsWith(RELEASES_DIR + sep)) {
-      return res.status(409).json({ ok: false, error: 'The saved edits no longer match the active release.' })
+    if (!workspace.startsWith(RELEASES_DIR + sep)) {
+      return res.status(409).json({ ok: false, error: 'The saved edit workspace is outside Aharane releases.' })
     }
     const actualWorkspace = await realpath(workspace)
     if (!actualWorkspace.startsWith(RELEASES_DIR + sep) || actualWorkspace === current) {

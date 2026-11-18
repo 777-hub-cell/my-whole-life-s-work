@@ -95,6 +95,7 @@ export function createAccountRuntime({
     readyPromise: Promise.resolve(),
     resolveReady: null,
     pairRequestActive: false,
+    qr: '',
     manuallyStopped: false,
   }]))
   let shuttingDown = false
@@ -113,6 +114,11 @@ export function createAccountRuntime({
       lastConnectedAt: session.lastConnectedAt || null,
       pairingInProgress: session.pairRequestActive,
     }
+  }
+
+  function pairingQr(id) {
+    const session = get(id)
+    return session.state === 'connected' ? '' : session.qr
   }
 
   function snapshot() {
@@ -184,6 +190,8 @@ export function createAccountRuntime({
       })
 
       currentSocket.ev.on('connection.update', update => {
+        if (update?.qr) session.qr = String(update.qr)
+        if (update?.connection === 'open' || update?.connection === 'close') session.qr = ''
         if (update?.qr || update?.connection === 'connecting' || update?.connection === 'open') {
           session.resolveReady?.()
           session.resolveReady = null
@@ -389,6 +397,7 @@ export function createAccountRuntime({
   return {
     get,
     snapshot,
+    pairingQr,
     start,
     waitUntilReady,
     requestPairingCode,

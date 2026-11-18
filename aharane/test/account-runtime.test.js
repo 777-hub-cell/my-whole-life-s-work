@@ -139,3 +139,14 @@ test('authentication directory symlinks are rejected even when paths look differ
   })
   await assert.rejects(runtime.start('private'), /real directories|separate authentication directories/)
 })
+
+test('pairing QR is available only until the selected account connects', async t => {
+  const { runtime, sockets } = await fixture(t)
+  await runtime.start('private')
+  sockets[0].ev.emit('connection.update', { qr: 'private-real-qr-value' })
+  assert.equal(runtime.pairingQr('private'), 'private-real-qr-value')
+  assert.equal(runtime.pairingQr('public'), '')
+  sockets[0].ev.emit('connection.update', { connection: 'open' })
+  assert.equal(runtime.pairingQr('private'), '')
+  await runtime.shutdown()
+})

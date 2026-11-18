@@ -949,6 +949,17 @@ app.post('/api/accounts/:accountId/pair-code', requireAdmin, async (req, res) =>
     res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Pairing code could not be generated. Check the server connection and retry shortly.') })
   }
 })
+app.get('/api/accounts/:accountId/qr', requireAdmin, async (req, res) => {
+  try {
+    const accountId = String(req.params.accountId || '').toLowerCase()
+    if (!['private', 'public'].includes(accountId)) return res.status(404).json({ ok: false, error: 'Unknown WhatsApp account.' })
+    const session = accountRuntime.get(accountId)
+    if (!session.socket && session.state !== 'needs-pairing' && session.state !== 'stopped') await accountRuntime.start(accountId)
+    res.json({ ok: true, accountId, qr: accountRuntime.pairingQr(accountId) })
+  } catch (error) {
+    res.status(503).json({ ok: false, error: String(error?.message || 'Could not read the WhatsApp pairing QR.') })
+  }
+})
 app.post('/api/accounts/:accountId/reconnect', requireAdmin, async (req, res) => {
   try {
     const result = await accountRuntime.reconnect(req.params.accountId)

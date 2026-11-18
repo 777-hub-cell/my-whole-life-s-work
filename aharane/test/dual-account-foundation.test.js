@@ -37,23 +37,24 @@ test('Private Owner and Public Owner are separate, persisted identities', async 
   assert.ok(runtime.includes('isPrivateSelfCommand'))
 })
 
-test('private and public account management is available in Local Studio', async () => {
+test('private and public account management is wired into the supplied Studio preview', async () => {
   const html = await read('../control-centre/index.html')
-  const app = await read('../control-centre/app.js')
+  const bridge = await read('../control-centre/production-bridge.js')
+  assert.ok(html.includes('<title>Aharane Local Studio</title>'))
   for (const marker of [
-    'id="private-owner-number"',
-    'id="public-owner-number"',
-    'data-pair-account="private"',
-    'data-pair-account="public"',
-    'data-account-action="reconnect"',
-    'data-account-action="repair"',
-  ]) assert.ok(html.includes(marker), 'Missing Studio account control: ' + marker)
+    'id="owner-private"',
+    'id="owner-public"',
+    'data-pair-account',
+    'data-account',
+    'data-action="reconnect"',
+    'data-action="repair"',
+  ]) assert.ok(bridge.includes(marker), 'Missing production account control: ' + marker)
   for (const marker of [
-    "api('owners'",
-    "api('accounts/'+accountId+'/pair-code'",
-    "api('accounts/'+accountId+'/'+action",
-    "applyAccountsSnapshot(snapshot)",
-  ]) assert.ok(app.includes(marker), 'Missing Studio API integration: ' + marker)
+    "apiP('owners'",
+    "apiP('accounts/'+id+'/pair-code'",
+    "apiP('accounts/'+id+'/'+action",
+    "apiP('accounts/'+id+'/qr'",
+  ]) assert.ok(bridge.includes(marker), 'Missing account API integration: ' + marker)
 })
 
 test('source manager and update archives keep private code editable but exclude auth stores', async () => {

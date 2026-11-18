@@ -1,99 +1,101 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {readFile} from 'node:fs/promises'
-const read=p=>readFile(new URL(p,import.meta.url),'utf8')
-test('Aharane serves Local Studio PWA from its private listener',async()=>{
+import { readFile } from 'node:fs/promises'
+const read = path => readFile(new URL(path, import.meta.url), 'utf8')
+
+test('Aharane serves the Local Studio PWA from its private listener', async () => {
  const s=await read('../src/index.js')
- for(const x of ["app.use('/studio',","new URL('../control-centre/',import.meta.url)","app.use('/studio/api'","app.get('/api/status', requireAdmin","app.get('/api/auth/status'","app.post('/api/auth/setup'","app.post('/api/auth/login'","app.post('/api/auth/logout'","HOST !== '127.0.0.1'"])assert.ok(s.includes(x),x)
+ for(const marker of ["app.use('/studio',","new URL('../control-centre/',import.meta.url)","app.use('/studio/api'","app.get('/api/status', requireAdmin","app.get('/api/auth/status'","app.post('/api/auth/setup'","app.post('/api/auth/login'","app.post('/api/auth/logout'","HOST !== '127.0.0.1'"])assert.ok(s.includes(marker),marker)
 })
-test('owner password is salted and sessions are long-lived HttpOnly cookies',async()=>{
+
+test('owner password is salted and sessions are long-lived HttpOnly cookies', async () => {
  const s=await read('../src/index.js')
- for(const x of ["scryptAsync","randomBytes(16)","ADMIN_SESSION_COOKIE = 'aharane_admin_session'","30 * 24 * 60 * 60","HttpOnly; Secure; SameSite=Strict","Path=/aharane/","ADMIN_AUTH_FILE","ADMIN_SETUP_CODE_FILE","timingSafeEqual(actual, expected)"])assert.ok(s.includes(x),x)
+ for(const marker of ["scryptAsync","randomBytes(16)","ADMIN_SESSION_COOKIE = 'aharane_admin_session'","30 * 24 * 60 * 60","HttpOnly; Secure; SameSite=Strict","Path=/aharane/","ADMIN_AUTH_FILE","ADMIN_SETUP_CODE_FILE","timingSafeEqual(actual, expected)"])assert.ok(s.includes(marker),marker)
  assert.ok(!s.includes("ADMIN_SESSION_SECONDS=12*60*60"))
 })
-test('password change rotates the session key and logout clears the scoped cookie',async()=>{
+
+test('password change rotates the session key and logout clears the scoped cookie', async () => {
  const s=await read('../src/index.js')
  assert.ok(s.includes("app.post('/api/auth/change-password'"))
  assert.ok(s.includes('sessionKey: randomBytes(32)'))
  assert.ok(s.includes("Max-Age=0"))
  assert.ok(s.includes("writeJsonAtomic(ADMIN_AUTH_FILE, updated)"))
 })
-test('HttpOnly session cookies authenticate same-origin GETs and WebSocket upgrades',async()=>{
+
+test('HttpOnly session cookies authenticate same-origin GETs and WebSocket upgrades', async () => {
  const s=await read('../src/index.js')
  assert.ok(s.includes("adminSessionMatches(requestCookie(req, ADMIN_SESSION_COOKIE), auth)"))
  assert.ok(s.includes("sameOriginRequest(req) && adminSessionMatches(cookie, auth)"))
  assert.ok(s.includes("async (req, transport, head)"))
 })
-test('browser uses same-origin API and WebSocket, not Vercel relay',async()=>{
- const s=await read('../control-centre/app.js')
- for(const x of ["fetch('/aharane/api/' + path.replace","location.host + '/aharane/ws'","navigator.serviceWorker.register('/aharane/studio/sw.js'","api('auth/login'","api('auth/setup'","api('auth/change-password'"])assert.ok(s.includes(x),x)
- assert.ok(!s.includes('/api/aharane/'));assert.ok(!s.includes('/api/studio/socket'))
-})
-test('single-element Studio controls use querySelector rather than querySelectorAll',async()=>{
- const a=await read('../control-centre/app.js')
- assert.ok(a.includes("const $ = selector => document.querySelector(selector)"))
- assert.doesNotMatch(a,/\$\$\(\s*['"]#/,'unique ID selectors must not use the multi-element helper')
- for(const id of ['login-form','setup-form','open-local-studio','login-button','setup-button']) {
-   assert.ok(a.includes("$('" + '#' + id + "')"),'single-element selector for ' + id)
- }
-})
-test('remote navigation iterates over every view and nav item',async()=>{
- const s=await read('../control-centre/app.js')
- const start=s.indexOf('function setView(name) {')
- const end=s.indexOf('\nlet remoteAccessCheck',start)
- assert.ok(start>=0&&end>start,'setView function boundaries')
- const view=s.slice(start,end)
- const dollar=String.fromCharCode(36)
- assert.ok(view.includes(dollar.repeat(2)+"('.view-section').forEach"),'all view sections are selected')
- assert.ok(view.includes(dollar.repeat(2)+"('.nav-item[data-view]').forEach"),'all navigation items are selected')
- assert.doesNotMatch(view,/(^|[^$])\$\('\.view-section'\)\.forEach/,'single-element querySelector is not used for all views')
- assert.doesNotMatch(view,/(^|[^$])\$\('\.nav-item\[data-view\]'\)\.forEach/,'single-element querySelector is not used for all nav items')
-})
-test('whole app opens offline; remote views require login',async()=>{
- const s=await read('../control-centre/app.js')
- assert.ok(s.includes("localStudioMode('overview')"))
- assert.ok(s.includes("['pairing', 'deploy', 'files'].includes(name)"))
-})
-test('user can edit, apply, back up and recover app source',async()=>{
- const a=await read('../control-centre/app.js'),w=await read('../control-centre/sw.js'),h=await read('../control-centre/index.html'),r=await read('../control-centre/recover.html')
- for(const f of ['index.html','styles.css','app.js','manifest.webmanifest'])assert.ok(a.includes("'"+f+"'"))
- assert.ok(h.includes('studio-edit-app-source'));assert.ok(a.includes('appOverrides'));assert.ok(h.includes('Apply to this phone'))
- assert.ok(w.includes('SOURCE_PATHS'));assert.ok(w.includes('aharane-local-studio-shell-v8'));assert.ok(w.includes('readOverride'));assert.ok(r.includes("objectStore('appOverrides').clear()"))
- assert.ok(w.includes("u.pathname.startsWith('/aharane/api/')"))
- assert.ok(a.includes("$('#open-local-studio')?.addEventListener('click', () => localStudioMode('studio'))"))
- assert.ok(a.includes("$('#login-form')?.addEventListener('submit', event =>"))
- assert.ok(a.includes("$('#setup-form')?.addEventListener('submit', event =>"))
- const startup=a.slice(a.indexOf('// A valid session cookie'))
- assert.ok(startup.includes('void openAuthScreen()'))
- assert.ok(a.includes("$('#setup-panel').hidden = !auth.setupRequired"))
- assert.ok(a.includes("document.addEventListener('click', event =>"))
- assert.ok(a.includes('async function verifyRemoteAccess(viewName)'))
- assert.ok(a.includes("if (['pairing', 'deploy', 'files'].includes(name) && (!remoteSession || localOnly))"))
- assert.ok(!h.includes('<h2>Quick actions</h2>'))
- assert.ok(!h.includes('<strong>Pair WhatsApp</strong>'))
-})
-test('WebSocket stays protected and exposes only status and ping actions',async()=>{
- const s=await read('../src/index.js')
- for(const x of ["server.on('upgrade'","pathname !== '/ws'","adminSessionMatches(cookie, auth)","message?.type === 'ping'","message?.type === 'status.get'","Unsupported message type"])assert.ok(s.includes(x),x)
-})
-test('Files mobile screen matches the supplied file-manager layout',async()=>{
- const h=await read('../control-centre/index.html'),a=await read('../control-centre/app.js'),c=await read('../control-centre/styles.css')
- assert.ok(h.includes('class="page-heading files-page-heading"'))
- assert.ok(h.includes('class="files-create-row"'))
- assert.ok(h.includes('placeholder="Search files and folders"'))
- assert.ok(h.includes('class="files-breadcrumb-row"'))
- assert.ok(h.includes('id="export-bot-source"'))
- assert.ok(a.includes("homeLabel.textContent = 'Home'"))
- assert.ok(a.includes("className = 'source-file-select'"))
- assert.ok(a.includes("danger ? 'source-menu-danger' : ''"))
- assert.ok(a.includes("$$('.source-item-menu').forEach"))
- assert.ok(c.includes('#view-files .source-file-row.menu-open'))
- assert.ok(c.includes('#view-files .source-item-menu'))
+
+test('the supplied Studio preview uses protected same-origin APIs', async () => {
+ const html=await read('../control-centre/index.html')
+ const bridge=await read('../control-centre/production-bridge.js')
+ assert.ok(html.includes('src="/aharane/studio/app.js"'))
+ assert.ok(html.includes('src="/aharane/studio/production-bridge.js"'))
+ assert.ok(bridge.includes("const API='/aharane/api'"))
+ assert.ok(bridge.includes("credentials:'same-origin'"))
+ for(const marker of ["apiP('auth/status'","apiP('auth/login'","apiP('auth/setup'","apiP('owners'","apiP('env'","apiP('storage'","apiP('activity","apiP('files/tree","apiP('files/content'","apiP('update/upload/start'"])assert.ok(bridge.includes(marker),marker)
+ assert.ok(!bridge.includes('vercel.app'))
 })
 
-test('source editor matches the VS Code-inspired mobile reference',async()=>{
- const h=await read('../control-centre/index.html'),a=await read('../control-centre/app.js'),c=await read('../control-centre/styles.css')
- for(const id of ['source-editor-panel','source-editor-save-status','source-editor-explorer-toggle','source-editor-new-file','source-editor-new-folder','source-editor-explorer','source-editor-tabs','source-editor-lines','source-editor-highlight','source-editor','source-problems-toggle','source-problems-console-panel']) assert.ok(h.includes('id="'+id+'"'),id)
- for(const x of ['function highlightEditorLine','function renderSourceEditorTabs','function renderSourceEditorExplorer','updateEditorSaveStatus','source-editor-file-switcher','source-problems-toggle']) assert.ok(a.includes(x),x)
- for(const x of ['.source-editor-crumb-bar','.source-explorer-toolbar','.source-editor-tabs','.source-editor-tab.is-active','.source-editor-highlight','#source-editor','.source-problems-toggle','.editor-token-keyword','.editor-token-string']) assert.ok(c.includes(x),x)
+test('the production home, accounts, files, ENV and chats use real server data', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const runtime=await read('../src/index.js')
+ for(const marker of ["apiP('studio/snapshot'","apiP('metrics'","apiP('accounts/'+id+'/qr'","apiP('chats/'+account","apiP('files/preview?item='","apiP('env'","apiP('storage'","apiP('activity?limit="])assert.ok(bridge.includes(marker),marker)
+ for(const marker of ["app.get('/api/chats/:accountId'","app.get('/api/chats/:accountId/:jid/messages'","app.post('/api/chats/:accountId/:jid/send'","app.post('/api/chats/:accountId/:jid/media'","app.get('/api/storage'","app.get('/api/activity'"])assert.ok(runtime.includes(marker),marker)
+})
+
+test('the preview keeps its original mobile file-manager and editor interactions', async () => {
+ const html=await read('../control-centre/index.html')
+ const app=await read('../control-centre/app.js')
+ const css=await read('../control-centre/styles.css')
+ const bridge=await read('../control-centre/production-bridge.js')
+ assert.ok(html.includes('<main class="app">')||html.includes('class="app"'))
+ assert.ok(app.includes('function filesV()'))
+ assert.ok(app.includes('function menu('))
+ assert.ok(app.includes('function editorOld()'))
+ assert.ok(app.includes('placeholder="Search files and folders"'))
+ assert.ok(css.includes('.row{'))
+ assert.ok(css.includes('.pop{'))
+ assert.ok(css.includes('.editor{'))
+ for(const marker of ["apiP('files/tree","apiP('files/preview","apiP('files/content'","apiP('files/rename'","apiP('files/move'","apiP('files/delete'","apiP('files/apply'"])assert.ok(bridge.includes(marker),marker)
+})
+
+test('the app source editor works on-device and can safely reset its overrides', async () => {
+ const html=await read('../control-centre/index.html')
+ const bridge=await read('../control-centre/production-bridge.js')
+ const worker=await read('../control-centre/sw.js')
+ const recovery=await read('../control-centre/recover.html')
+ for(const file of ['index.html','styles.css','app.js','production-bridge.js','manifest.webmanifest'])assert.ok(bridge.includes(file))
+ for(const marker of ["id=\"open-local-source\"","indexedDB.open('aharane-local-studio',2)","objectStore('appOverrides').put","objectStore('appOverrides').clear","function openAppSourceP","function saveAppSourceP","function resetAppSourceP"])assert.ok(bridge.includes(marker),marker)
+ assert.ok(worker.includes('aharane-local-studio-shell-v10'))
+ assert.ok(worker.includes('SOURCE_PATHS'))
+ assert.ok(worker.includes("['/aharane/studio/production-bridge.js','production-bridge.js']"))
+ assert.ok(worker.includes("u.pathname.startsWith('/aharane/api/')"))
+ assert.ok(recovery.includes("objectStore('appOverrides').clear()"))
+ assert.ok(html.includes('href="/aharane/studio/manifest.webmanifest"'))
+})
+
+test('Files menus remain compact floating overlays and staged changes require explicit apply', async () => {
+ const app=await read('../control-centre/app.js')
+ const bridge=await read('../control-centre/production-bridge.js')
+ const css=await read('../control-centre/styles.css')
+ assert.ok(app.includes('function menu('))
+ assert.ok(app.includes("m.className='pop'"))
+ assert.ok(css.includes('.pop{'))
+ assert.ok(bridge.includes('function fileMenuP'))
+ assert.ok(bridge.includes('files/apply'))
+ assert.ok(bridge.includes('confirm(\\'Apply staged source changes and restart Aharane?\\')')||bridge.includes('Apply staged source changes and restart Aharane?'))
+})
+
+test('browser navigation remains driven by the supplied five-tab preview', async () => {
+ const app=await read('../control-centre/app.js')
+ for(const marker of ["const T={home:'Home',files:'Files',env:'ENV',chats:'Chats',more:'More'}","function nav()","function render()","function go(t)"])assert.ok(app.includes(marker),marker)
+})
+
+test('WebSocket stays protected and exposes only status and ping actions', async () => {
+ const s=await read('../src/index.js')
+ for(const marker of ["server.on('upgrade'","pathname !== '/ws'","adminSessionMatches(cookie, auth)","message?.type === 'ping'","message?.type === 'status.get'","Unsupported message type"])assert.ok(s.includes(marker),marker)
 })

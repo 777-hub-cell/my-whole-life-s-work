@@ -1,9 +1,10 @@
 (() => {
 'use strict';
 const API='/aharane/api', Q=s=>document.querySelector(s);
+const APP_SOURCE_PATHS=['index.html','styles.css','app.js','production-bridge.js','manifest.webmanifest'];
 const escP=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pack=JSON.stringify;
-const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],fileData:new Map(),pending:false,chatTimer:null,qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false,visibility:null,visibilityChats:[]};
+const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],fileData:new Map(),pending:false,chatTimer:null,qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false};
 function notifyP(s){if(typeof toast==='function')toast(s);else console.info(s)}
 async function apiP(path,options={}){
  const response=await fetch(API+'/'+String(path).replace(/^\/+/,''),{credentials:'same-origin',cache:'no-store',...options,headers:{...(options.body&&!(options.body instanceof ArrayBuffer)&&!(options.body instanceof Blob)?{'Content-Type':'application/json'}:{}),...(options.headers||{})}});
@@ -15,7 +16,7 @@ function stopTimersP(){['chatTimer','qrTimer','statusTimer'].forEach(k=>{if(P[k]
 function loginPanelP(){
  Q('#aharane-auth')?.remove();
  const panel=document.createElement('section');panel.id='aharane-auth';
- panel.innerHTML='<div class="auth-panel"><div class="auth-brand"><span class="mark">'+ico('home')+'</span><span>AHARANE</span></div><h1 id="prod-auth-title">Connect to Aharane</h1><p class="sub" id="prod-auth-sub">Sign in to manage your private bot workspace.</p><form id="prod-auth-form"><div id="prod-code-wrap"><label for="prod-setup-code">One-time setup code</label><input class="field" id="prod-setup-code" type="password" autocomplete="one-time-code" placeholder="Server setup code"></div><label id="prod-pass-label" for="prod-password">Studio password</label><input class="field" id="prod-password" type="password" autocomplete="current-password" minlength="12" maxlength="128" required placeholder="Enter your password"><div id="prod-confirm-wrap"><label for="prod-confirm">Confirm password</label><input class="field" id="prod-confirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" placeholder="Enter it again"></div><button class="btn p" id="prod-auth-button" style="width:100%">Sign in</button></form><p class="d" id="prod-auth-message" role="status"></p><p class="d">Your Studio password protects remote access to this workspace.</p></div>';
+ panel.innerHTML='<div class="auth-panel"><div class="auth-brand"><span class="mark">'+ico('home')+'</span><span>AHARANE</span></div><h1 id="prod-auth-title">Connect to Aharane</h1><p class="sub" id="prod-auth-sub">Sign in to manage your private bot workspace.</p><form id="prod-auth-form"><div id="prod-code-wrap"><label for="prod-setup-code">One-time setup code</label><input class="field" id="prod-setup-code" type="password" autocomplete="one-time-code" placeholder="Server setup code"></div><label id="prod-pass-label" for="prod-password">Studio password</label><input class="field" id="prod-password" type="password" autocomplete="current-password" minlength="12" maxlength="128" required placeholder="Enter your password"><div id="prod-confirm-wrap"><label for="prod-confirm">Confirm password</label><input class="field" id="prod-confirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" placeholder="Enter it again"></div><button class="btn p" id="prod-auth-button" style="width:100%">Sign in</button></form><p class="d" id="prod-auth-message" role="status"></p><p class="d">Your Studio password protects remote access to this workspace.</p><button class="btn" id="open-local-source" style="width:100%">Open on-device source editor</button><p class="d">Edit the app source stored on this phone, even while the server is offline.</p></div>';
  document.body.appendChild(panel);
 }
 let authModeP='login';
@@ -30,6 +31,7 @@ function setLoginModeP(setup){
  Q('#prod-password').autocomplete=setup?'new-password':'current-password';
  Q('#prod-auth-message').textContent='';
  Q('#prod-auth-form').onsubmit=submitLoginP;
+ Q('#open-local-source').onclick=()=>openLocalSourceP();
 }
 async function submitLoginP(e){
  e.preventDefault();const b=Q('#prod-auth-button'),m=Q('#prod-auth-message');b.disabled=true;m.textContent='Connecting…';
@@ -40,11 +42,11 @@ async function submitLoginP(e){
    await apiP('auth/setup',{method:'POST',body:pack({setupCode:Q('#prod-setup-code').value.trim(),password})});
   }else await apiP('auth/login',{method:'POST',body:pack({password:Q('#prod-password').value})});
   Q('#prod-setup-code').value='';Q('#prod-password').value='';Q('#prod-confirm').value='';
-  Q('#aharane-auth')?.remove();document.body.classList.add('aharane-authenticated');await connectLiveP();
+  Q('#aharane-auth')?.remove();document.body.classList.remove('aharane-booting');document.body.classList.add('aharane-authenticated');P.offline=false;await connectLiveP();
  }catch(error){m.textContent=error.message;b.disabled=false}
 }
 async function showLoginP(){
- document.body.classList.remove('aharane-authenticated');stopTimersP();
+ document.body.classList.remove('aharane-authenticated');document.body.classList.add('aharane-booting');P.offline=false;stopTimersP();
  try{const a=await apiP('auth/status');loginPanelP();setLoginModeP(Boolean(a.setupRequired))}
  catch(error){loginPanelP();setLoginModeP(false);Q('#prod-auth-message').textContent=error.message}
 }
@@ -52,7 +54,7 @@ async function connectLiveP(){
  try{
   const r=await Promise.all([apiP('status'),apiP('studio/snapshot'),apiP('owners'),apiP('env'),apiP('metrics'),apiP('activity?limit=300'),apiP('update/status')]);
   P.runtime=r[0];P.snapshot=r[1];P.owners=r[2].owners||{};P.env=r[3].env||[];P.metrics=r[4];P.activity=r[5].entries||[];P.pending=Boolean(r[6].manualEdits?.pending);
-  P.packages=await loadPackagesP();await loadTreeP('');applyRuntimeP();applyEnvP();render();
+  P.packages=await loadPackagesP();await loadTreeP('');applyRuntimeP();applyEnvP();P.offline=false;document.body.classList.remove('aharane-booting');document.body.classList.add('aharane-authenticated');render();
   P.statusTimer=setInterval(()=>refreshRuntimeP().catch(()=>{}),7000);
   if(navigator.serviceWorker)navigator.serviceWorker.register('/aharane/studio/sw.js',{scope:'/aharane/studio/'}).catch(()=>{});
  }catch(error){await showLoginP();Q('#prod-auth-message').textContent=error.message}
@@ -207,7 +209,64 @@ function storageViewP(){return '<button class="btn sm" onclick="S.sub=null;rende
 async function loadStorageP(){try{const r=await apiP('storage'),d=r.disk||{},m=r.media||{},total=Number(d.totalBytes||0),used=Number(d.usedBytes||0);if(Q('#disk-used'))Q('#disk-used').textContent=fsz(used);if(Q('#disk-total'))Q('#disk-total').textContent='of '+fsz(total)+' total disk';if(Q('#disk-free'))Q('#disk-free').textContent=fsz(d.freeBytes||0);if(Q('#media-count'))Q('#media-count').textContent=String(m.files||0);if(Q('#media-size'))Q('#media-size').textContent=fsz(m.bytes||0);if(Q('#disk-bar'))Q('#disk-bar').style.width=(total?Math.min(100,used/total*100):0)+'%'}catch(error){if(Q('#disk-used'))Q('#disk-used').textContent='Unavailable';notifyP(error.message)}}
 async function activityPageP(){await refreshActivityP();S.sub='act';S.lq='';S.lf='all';S.ln=60;S.lp=false;render()}
 async function clearActivityP(){if(!confirm('Clear saved activity history?'))return;try{await apiP('activity',{method:'DELETE'});await refreshActivityP();render()}catch(error){notifyP(error.message)}}
-function moreViewP(){return moreBase()+'<div class="btns" style="margin-top:18px"><button class="btn" id="change-password">Change password</button><button class="btn d" id="sign-out">Sign out</button></div>'}
+async function loadAppSourceP(path){
+ const response=await fetch('/aharane/studio/'+path,{credentials:'same-origin',cache:'no-store'});
+ if(!response.ok)throw new Error('Could not load '+path+' from this device.');
+ P.appSourcePath=path;P.appSourceContent=await response.text();P.appSourceOriginal=P.appSourceContent;P.appSourceDirty=false;
+}
+function appSourceViewP(){
+ const rows=APP_SOURCE_PATHS.map(path=>'<button class="btn sm '+(P.appSourcePath===path?'p':'')+'" data-app-source="'+path+'">'+path+'</button>').join('');
+ return '<button class="btn sm" id="back-from-app-source">Back to More</button><h1 style="margin-top:14px">Studio source</h1><p class="sub">Edit the app files saved on this phone. These changes are local to this device and do not update the bot server.</p><div class="tabs">'+rows+'</div><textarea class="editor" id="app-source-editor" spellcheck="false" aria-label="Studio application source">'+escP(P.appSourceContent||'Loading source…')+'</textarea><div class="status"><span id="app-source-status">'+(P.appSourceDirty?'Unsaved changes':'Saved on this phone')+'</span><span>'+String((P.appSourceContent||'').split('\\n').length)+' lines</span></div><div class="btns"><button class="btn p" id="save-app-source">Save on this phone</button><button class="btn" id="download-app-source">Download</button><button class="btn d" id="reset-app-source">Reset local edits</button></div>';
+}
+async function openAppSourceP(path){
+ S.sub='source';P.appSourcePath=path||P.appSourcePath||'index.html';P.appSourceContent='Loading source…';P.appSourceDirty=false;render();
+ try{await loadAppSourceP(P.appSourcePath);render()}catch(error){notifyP(error.message)}
+}
+async function openLocalSourceP(){
+ P.offline=true;document.body.classList.remove('aharane-booting');document.body.classList.add('aharane-authenticated');
+ Q('#aharane-auth')?.remove();
+ try{if(navigator.serviceWorker)await navigator.serviceWorker.ready}catch{}
+ S.tab='more';await openAppSourceP('index.html');
+}
+function openLocalSourceDbP(){
+ return new Promise((resolve,reject)=>{
+  const request=indexedDB.open('aharane-local-studio',2);
+  request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains('files'))db.createObjectStore('files',{keyPath:'path'});if(!db.objectStoreNames.contains('appOverrides'))db.createObjectStore('appOverrides',{keyPath:'path'})};
+  request.onerror=()=>reject(request.error||new Error('On-device storage is unavailable.'));
+  request.onsuccess=()=>resolve(request.result);
+ });
+}
+async function saveAppSourceP(){
+ const editor=Q('#app-source-editor');if(!editor)return;
+ let db;
+ try{
+  db=await openLocalSourceDbP();
+  await new Promise((resolve,reject)=>{
+   const tx=db.transaction('appOverrides','readwrite');
+   tx.objectStore('appOverrides').put({path:P.appSourcePath,content:editor.value,updatedAt:new Date().toISOString()});
+   tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('Could not save this source file.'));
+  });
+  P.appSourceContent=editor.value;P.appSourceDirty=false;
+  const label=Q('#app-source-status');if(label)label.textContent='Saved on this phone';
+  notifyP('Saved '+P.appSourcePath+' on this phone');
+ }catch(error){notifyP(error.message)}finally{db?.close()}
+}
+async function resetAppSourceP(){
+ if(!confirm('Remove all local Studio source overrides and restore the server-provided app files on this phone?'))return;
+ let db;
+ try{
+  db=await openLocalSourceDbP();
+  await new Promise((resolve,reject)=>{
+   const tx=db.transaction('appOverrides','readwrite');tx.objectStore('appOverrides').clear();
+   tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('Could not reset local source edits.'));
+  });
+  P.appSourceDirty=false;notifyP('Local source overrides cleared. Reloading the Studio…');location.reload();
+ }catch(error){notifyP(error.message)}finally{db?.close()}
+}
+function moreViewP(){
+ if(P.offline)return '<h1>More</h1><p class="sub">On-device Studio source tools.</p><div class="card list"><button class="row" onclick="openAppSourceP(\\'index.html\\')"><span class="grow"><div class="t">Studio source</div><div class="d">Edit HTML, CSS and JavaScript saved on this phone</div></span><span class="d">›</span></button></div>';
+ return moreBase()+'<h2>Development</h2><div class="card list"><button class="row" id="open-app-source"><span class="grow"><div class="t">Studio source</div><div class="d">Edit the app HTML, CSS and JavaScript on this phone</div></span><span class="d">›</span></button></div><div class="btns" style="margin-top:18px"><button class="btn" id="change-password">Change password</button><button class="btn d" id="sign-out">Sign out</button></div>';
+}
 function changePasswordP(){
  sheet('<h3>Change Studio password</h3><form id="prod-password-form"><label class="d" for="old-password">Current password</label><input class="field" id="old-password" type="password" required><label class="d" for="new-password" style="display:block;margin-top:12px">New password (12–128 characters)</label><input class="field" id="new-password" type="password" minlength="12" maxlength="128" required><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Cancel</button><button class="btn p">Save password</button></div></form>');
  Q('#prod-password-form').onsubmit=async e=>{e.preventDefault();try{await apiP('auth/change-password',{method:'POST',body:pack({currentPassword:Q('#old-password').value,newPassword:Q('#new-password').value})});closeSheet();notifyP('Password changed')}catch(error){notifyP(error.message)}};
@@ -221,96 +280,9 @@ function mapMessageP(row){
  else if(row.type==='document'){m.f=row.fileName||'Attachment';m.z=fsz(row.size||0);m.dl=row.mediaUrl||''}
  if(row.pushName)m.s=row.pushName;return m;
 }
-
-let visibilityDraftP=null, visibilityChatsDraftP=[];
-function visibilityModeP(filter){return filter?.mode==='selected'?'selected':'all'}
-function visibilityValueP(filter,jid){
- const override=(filter?.overrides||[]).find(x=>x.jid===jid);
- return override?override.visible===true:visibilityModeP(filter)==='all';
-}
-function setVisibilityValueP(filter,jid,visible){
- filter.overrides=Array.isArray(filter.overrides)?filter.overrides.filter(x=>x.jid!==jid):[];
- const base=visibilityModeP(filter)==='all';
- if(visible!==base)filter.overrides.push({jid,visible});
-}
-async function openChatVisibilityP(){
- const account=S.cacc==='private'?'private':'public';
- try{
-  const result=await apiP('chats/'+account+'/visibility');
-  P.visibility=JSON.parse(JSON.stringify(result.visibility||{}));
-  P.visibilityChats=result.chats||[];
-  visibilityDraftP=JSON.parse(JSON.stringify(P.visibility));
-  visibilityChatsDraftP=P.visibilityChats.slice();
-  drawChatVisibilityP(account,'');
- }catch(error){notifyP(error.message)}
-}
-function drawChatVisibilityP(account,search){
- const label=account==='private'?'Private':'Public';
- const individual=visibilityDraftP.individuals||(visibilityDraftP.individuals={mode:'all',overrides:[]});
- const groups=visibilityDraftP.groups||(visibilityDraftP.groups={mode:'all',overrides:[]});
- const phrase=String(search||'').toLowerCase();
- const matches=visibilityChatsDraftP.filter(chat=>{
-  const kind=chat.kind==='groups'?'groups':'individuals';
-  const filter=kind==='groups'?groups:individual;
-  const query=(String(chat.name||'')+' '+String(chat.jid||'')).toLowerCase();
-  return query.includes(phrase);
- });
- const counts={individuals:{shown:0,total:0},groups:{shown:0,total:0}};
- visibilityChatsDraftP.forEach(chat=>{
-  const kind=chat.kind==='groups'?'groups':'individuals';
-  counts[kind].total++;
-  if(visibilityValueP(kind==='groups'?groups:individual,chat.jid))counts[kind].shown++;
- });
- const modeControl=(kind,title,filter)=>(
-  '<div class="env"><div class="t">'+title+'</div><div class="d" style="white-space:normal;margin:3px 0 9px">'+counts[kind].shown+' of '+counts[kind].total+' known chats shown</div>'+
-  '<div class="seg"><button type="button" data-vis-mode="'+kind+':all" class="'+(visibilityModeP(filter)==='all'?'on':'')+'">Show all</button><button type="button" data-vis-mode="'+kind+':selected" class="'+(visibilityModeP(filter)==='selected'?'on':'')+'">Only selected</button></div></div>'
- );
- const list=matches.length?matches.map(chat=>{
-  const kind=chat.kind==='groups'?'groups':'individuals';
-  const filter=kind==='groups'?groups:individual;
-  const visible=visibilityValueP(filter,chat.jid);
-  return '<label class="row" style="display:flex;align-items:center;gap:12px"><span class="av '+(kind==='groups'?'grp':'')+'">'+(kind==='groups'?ico('grp'):escP(String(chat.name||'?').trim().charAt(0).toUpperCase()))+'</span><span class="grow" style="min-width:0"><span class="t" style="display:block">'+escP(chat.name||chat.jid)+'</span><span class="d" style="display:block">'+(kind==='groups'?'Group chat':'Individual chat')+'</span></span><input class="ck" type="checkbox" data-vis-jid="'+escP(chat.jid)+'" data-vis-kind="'+kind+'" '+(visible?'checked':'')+' aria-label="Show '+escP(chat.name||chat.jid)+'"></label>';
- }).join(''):'<div class="empty">No known conversations match. New conversations appear here after Aharane receives a message.</div>';
- sheet(
-  '<h3>Chat visibility · '+label+'</h3>'+
-  '<p class="sub">Choose which conversations appear in this account’s Chats tab. These settings do not grant command access.</p>'+
-  '<h2 style="margin-top:12px">Individuals</h2>'+modeControl('individuals','Individual chats',individual)+
-  '<h2 style="margin-top:16px">Groups</h2>'+modeControl('groups','Group conversations',groups)+
-  '<h2 style="margin-top:16px">Choose conversations</h2>'+
-  '<input class="field" id="vis-search" placeholder="Find a chat by name" value="'+escP(search)+'">'+
-  '<div class="card list" style="margin-top:10px">'+list+'</div>'+
-  '<p class="d" style="white-space:normal;margin:12px 2px">A checked conversation is visible. Uncheck it to hide it. Hidden chats remain available here so you can show them again later.</p>'+
-  '<div class="btns"><button type="button" class="btn" id="vis-cancel">Cancel</button><button type="button" class="btn p" id="vis-save">Save visibility</button></div>'
- );
- const searchInput=Q('#vis-search');
- if(searchInput)searchInput.oninput=()=>drawChatVisibilityP(account,searchInput.value);
- document.querySelectorAll('[data-vis-mode]').forEach(button=>button.onclick=()=>{
-  const parts=button.dataset.visMode.split(':');
-  const filter=parts[0]==='groups'?groups:individual;
-  filter.mode=parts[1];
-  drawChatVisibilityP(account,searchInput?.value||search);
- });
- document.querySelectorAll('[data-vis-jid]').forEach(input=>input.onchange=()=>{
-  const filter=input.dataset.visKind==='groups'?groups:individual;
-  setVisibilityValueP(filter,input.dataset.visJid,input.checked);
-  const keep=Q('#vis-search')?.value||search;
-  drawChatVisibilityP(account,keep);
- });
- const cancel=Q('#vis-cancel');if(cancel)cancel.onclick=closeSheet;
- const save=Q('#vis-save');if(save)save.onclick=async()=>{
-  save.disabled=true;save.textContent='Saving…';
-  try{
-   const response=await apiP('chats/'+account+'/visibility',{method:'PUT',body:pack({visibility:visibilityDraftP})});
-   P.visibility=response.visibility||visibilityDraftP;
-   visibilityDraftP=null;visibilityChatsDraftP=[];
-   closeSheet();await refreshChatsP();render();notifyP('Chat visibility saved');
-  }catch(error){save.disabled=false;save.textContent='Save visibility';notifyP(error.message)}
- };
-}
-
 async function refreshChatsP(){
  const account=S.cacc==='private'?'private':'public',r=await apiP('chats/'+account+'?limit=500'),current=P.chatJid;
- CH.splice(0,CH.length,...(r.chats||[]).map(c=>({jid:c.jid,n:c.name||c.jid.split('@')[0],g:c.group===true||String(c.jid).endsWith('@g.us'),un:c.unreadCount||0,m:[{d:c.fromMe?'o':'i',t:c.lastMessage||'',ts:c.timestamp||Date.now()}]})));
+ CH.splice(0,CH.length,...(r.chats||[]).map(c=>({jid:c.jid,n:c.name||c.jid.split('@')[0],g:false,un:c.unreadCount||0,m:[{d:c.fromMe?'o':'i',t:c.lastMessage||'',ts:c.timestamp||Date.now()}]})));
  if(current&&S.chat!==null){const i=CH.findIndex(c=>c.jid===current);if(i>=0)S.chat=i;else S.chat=null}
 }
 async function loadMessagesP(index=S.chat){
@@ -344,12 +316,18 @@ function bindProductionP(){
  const upload=Q('#upl');if(upload)upload.onchange=async e=>{const files=[...e.target.files];e.target.value='';for(const file of files){try{if(/\.zip$/i.test(file.name)){const r=await uploadZipP(file);notifyP('Validated '+file.name+' ('+r.fileCount+' files)')}else{if(!/\.(js|mjs|cjs|json|md|html|css|txt|yml|yaml)$/i.test(file.name))throw new Error('Only approved source and text files can be uploaded.');await apiP('files',{method:'POST',body:pack({parentPath:currentPathP(),name:file.name,type:'file',content:await file.text()})});notifyP('Uploaded '+file.name)}}catch(error){notifyP(error.message)}}await loadTreeP(currentPathP());P.packages=await loadPackagesP();render()};
  const search=Q('#cq');if(search)search.oninput=()=>{S.cq=search.value;const p=search.selectionStart;refreshChatsP().then(()=>{render();const x=Q('#cq');if(x){x.focus();x.setSelectionRange(p,p)}}).catch(e=>notifyP(e.message))};
  const swap=Q('#chsw');if(swap)swap.onclick=switchChatsP;
- const visibility=Q('#chat-visibility');if(visibility)visibility.onclick=()=>openChatVisibilityP();
  const pair=Q('#prod-pair-code');if(pair)pair.onclick=getPairCodeP;
  const qr=Q('#prod-qr-refresh');if(qr)qr.onclick=readQrP;
  const copy=Q('#prod-copy-code');if(copy)copy.onclick=()=>navigator.clipboard?.writeText(S.pin||'').then(()=>notifyP('Pairing code copied')).catch(()=>notifyP('Select and copy the code'));
  document.querySelectorAll('[data-pm]').forEach(b=>b.onclick=()=>{S.pm=b.dataset.pm;S.pin=null;render()});
  const clear=Q('#lcl');if(clear)clear.onclick=clearActivityP;
+ const source=Q('#open-app-source');if(source)source.onclick=()=>openAppSourceP('index.html');
+ const backSource=Q('#back-from-app-source');if(backSource)backSource.onclick=()=>{S.sub=null;render()};
+ document.querySelectorAll('[data-app-source]').forEach(b=>b.onclick=()=>openAppSourceP(b.dataset.appSource));
+ const editor=Q('#app-source-editor');if(editor)editor.oninput=()=>{P.appSourceDirty=true;const status=Q('#app-source-status');if(status)status.textContent='Unsaved changes'};
+ const saveSource=Q('#save-app-source');if(saveSource)saveSource.onclick=saveAppSourceP;
+ const downloadSource=Q('#download-app-source');if(downloadSource)downloadSource.onclick=()=>downloadP(P.appSourcePath,new Blob([Q('#app-source-editor')?.value||''],{type:'text/plain'}));
+ const resetSource=Q('#reset-app-source');if(resetSource)resetSource.onclick=resetAppSourceP;
  const change=Q('#change-password');if(change)change.onclick=changePasswordP;
  const logout=Q('#sign-out');if(logout)logout.onclick=signOutP;
  const apply=Q('#prod-apply-files');if(apply)apply.onclick=applyFilesP;
@@ -362,7 +340,6 @@ function bindProductionP(){
 }
 function installBridgeP(){
  filesBase=filesV;openFileBase=openF;actBase=actV;moreBase=moreV;homeBase=home;bubBase=bub;
- const chatsBaseP=chatsV;chatsV=function(){return chatsBaseP().replace('</button></div><p class="sub">','</button><button class="modeb" id="chat-visibility" aria-label="Configure chat visibility">'+ico('cfg')+'</button></div><p class="sub">')};
  filesV=filesScreenP;envV=envViewP;accV=accountViewP;pairV=pairViewP;moreV=moreViewP;storV=storageViewP;
  home=function(){return homeBase().replace(/(<span>Messages handled, last 24 hours<\/span><b>)[\s\S]*?(<\/b>)/,'$1'+Number(P.metrics?.messagesLast24h||0).toLocaleString()+'$2')};
  openAct=activityPageP;openStor=function(){S.sub='stor';render();loadStorageP()};
@@ -388,10 +365,12 @@ function injectStyleP(){
  document.head.appendChild(style);
 }
 async function bootP(){
+ if(navigator.serviceWorker)navigator.serviceWorker.register('/aharane/studio/sw.js',{scope:'/aharane/studio/'}).catch(()=>{});
  injectStyleP();installBridgeP();
  try{const auth=await apiP('auth/status');try{await apiP('status');document.body.classList.add('aharane-authenticated');await connectLiveP()}catch{loginPanelP();setLoginModeP(Boolean(auth.setupRequired))}}
  catch(error){loginPanelP();setLoginModeP(false);Q('#prod-auth-message').textContent=error.message}
 }
-window.AharaneStudio={signOut:signOutP,refresh:refreshRuntimeP};
+window.AharaneStudio={signOut:signOutP,refresh:refreshRuntimeP,openSource:openAppSourceP};
+window.openAppSourceP=openAppSourceP;
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootP,{once:true});else bootP();
 })();

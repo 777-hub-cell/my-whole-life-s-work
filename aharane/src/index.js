@@ -876,7 +876,9 @@ app.put('/api/owners', requireAdmin, async (req, res) => {
     // A configured private owner must match the WhatsApp identity paired to
     // the private session. Never silently change either role during pairing.
     const privateSession = accountRuntime.get('private')
-    const privateOwnNumber = senderNumberFromJid(privateSession.socket?.user?.id || '')
+    const privateOwnNumber = senderNumberFromJid(
+      privateSession.socket?.user?.id || privateSession.auth?.state?.creds?.me?.id || ''
+    )
     if (next.privateOwnerNumber && privateOwnNumber && next.privateOwnerNumber !== privateOwnNumber) {
       return res.status(409).json({ ok: false, error: 'Private Owner must match the phone number paired to the private WhatsApp session.' })
     }
@@ -899,8 +901,10 @@ app.post('/api/accounts/:accountId/pair-code', requireAdmin, async (req, res) =>
     if (!allowPairAttempt(ip)) return res.status(429).json({ ok: false, error: 'Pairing rate limit reached for this account; try again later.' })
     const phoneNumber = normalizePhone(req.body?.phoneNumber)
     if (!phoneNumber) return res.status(400).json({ ok: false, error: 'Enter a valid international phone number using 7 to 15 digits.' })
-    if (accountId === 'private' && ownerConfig.privateOwnerNumber &&
-        ownerConfig.privateOwnerNumber !== phoneNumber) {
+    if (!ownerConfig.privateOwnerNumber || !ownerConfig.publicOwnerNumber) {
+      return res.status(409).json({ ok: false, error: 'Save two different owner numbers before pairing the WhatsApp accounts.' })
+    }
+    if (accountId === 'private' && ownerConfig.privateOwnerNumber !== phoneNumber) {
       return res.status(400).json({ ok: false, error: 'The Private Owner number must match the number you are pairing to the private session.' })
     }
     const pairingCode = await accountRuntime.requestPairingCode(accountId, phoneNumber)

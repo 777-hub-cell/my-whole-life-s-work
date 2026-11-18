@@ -6,7 +6,7 @@ const registry = { scope: 'private', commands: new Map([['status', {}]]) }
 const self = '2348012345678@s.whatsapp.net'
 
 function message(fromMe = true) {
-  return { key: { id: 'message-1', fromMe, remoteJid: self }, message: { conversation: '!status' } }
+  return { key: { id: 'message-1', fromMe, remoteJid: self }, message: { conversation: '.status' } }
 }
 
 test('private control accepts only a registered command in the private account self-chat', () => {
@@ -16,7 +16,7 @@ test('private control accepts only a registered command in the private account s
     remoteJid: self,
     ownJid: self,
     privateOwnerNumber: '2348012345678',
-    text: '!status',
+    text: '.status',
     privateRegistry: registry,
   }
   assert.equal(isPrivateSelfCommand(args), true)
@@ -24,7 +24,7 @@ test('private control accepts only a registered command in the private account s
   assert.equal(isPrivateSelfCommand({ ...args, message: message(false) }), false)
   assert.equal(isPrivateSelfCommand({ ...args, remoteJid: '2348099999999@s.whatsapp.net' }), false)
   assert.equal(isPrivateSelfCommand({ ...args, privateOwnerNumber: '2348099999999' }), false)
-  assert.equal(isPrivateSelfCommand({ ...args, text: '!unknown' }), false)
+  assert.equal(isPrivateSelfCommand({ ...args, text: '.unknown' }), false)
   assert.equal(isPrivateSelfCommand({ ...args, remoteJid: 'opaque@lid', ownJid: 'opaque@lid' }), false)
   assert.equal(isPrivateSelfCommand({ ...args, remoteJid: '120363000000000000@g.us' }), false)
 })

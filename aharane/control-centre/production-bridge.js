@@ -142,6 +142,13 @@ async function downloadSourceFileP(path,name){
  const blob=await response.blob();if(!blob.size)throw new Error('The selected file is empty.');
  downloadP(name||path.split('/').pop(),blob);
 }
+async function exportSelectionZipP(paths,filename='aharane-selection.zip'){
+ if(!Array.isArray(paths)||!paths.length)return notifyP('Select files or folders to export.');
+ const response=await fetch(API+'/files/export-selection',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','Accept':'application/zip'},body:pack({paths})});
+ if(!response.ok){const error=await response.json().catch(()=>({}));throw new Error(error.error||'The selected ZIP could not be created ('+response.status+').')}
+ const blob=await response.blob();if(!blob.size||!(response.headers.get('content-type')||'').includes('application/zip'))throw new Error('The server did not return a valid ZIP archive.');
+ downloadP(filename,blob);notifyP('Selected files are ready to download.');
+}
 async function exportBotSourceP(button){
  if(button?.disabled)return;
  if(button)button.disabled=true;
@@ -718,6 +725,10 @@ function installBridgeP(){
   S.sub='cfg';render();scrollTo(0,0);
  };
  filesBase=filesV;openFileBase=openF;actBase=actV;moreBase=moreV;homeBase=home;bubBase=bub;
+ exportZip=function(source,filename){
+  const paths=Object.keys(source||{}).map(name=>[...S.path,name].filter(Boolean).join('/'));
+  exportSelectionZipP(paths,filename).catch(error=>notifyP(error.message));
+ };
  openPairBaseP=openPair;openPair=function(i){if(P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}S.pin=null;S.qrRequested=false;openPairBaseP(i)};
  const chatsBaseP=chatsV;chatsV=function(){
   const html=chatsBaseP().replace('</button></div><p class="sub">','</button><button class="modeb" id="chat-visibility" aria-label="Configure chat visibility">'+ico('cfg')+'</button></div><p class="sub">');

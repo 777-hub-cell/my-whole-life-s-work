@@ -11,6 +11,8 @@ let sourceOriginal = ''
 let sourceHash = ''
 let sourceDirty = false
 let sourceFolderFiles = []
+let sourceFolderItems = []
+let sourceOpenTabs = []
 
 let localOnly = false
 let remoteSession = false
@@ -658,7 +660,9 @@ async function loadSourceFolder(folder) {
     list.append(empty)
   }
   const orderedChildren = [...(result.children || [])].sort((a, b) => (a.type === b.type ? 0 : a.type === 'folder' ? -1 : 1) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  sourceFolderItems = orderedChildren
   sourceFolderFiles = orderedChildren.filter(item => item.type === 'file')
+  renderSourceEditorExplorer()
   for (const item of orderedChildren) {
     const row = document.createElement('div')
     row.className = 'source-file-row'
@@ -784,13 +788,83 @@ async function loadSourceFolder(folder) {
   await refreshDraftStatus()
 }
 
+function escapeEditorHtml(value) {
+  return String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]))
+}
+function highlightEditorLine(line) {
+  const pattern = /(\/\/.*$|\/\*[\s\S]*?\*\/|`(?:\\.|[^`\\])*`|'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|\b(?:async|await|break|case|catch|class|const|continue|default|else|export|extends|false|finally|for|from|function|if|import|in|let|new|null|of|return|static|super|switch|this|throw|true|try|typeof|var|void|while|yield)\b|\b\d+(?:\.\d+)?\b|\b[A-Za-z_$][\w$]*(?=\s*\()|\b[A-Za-z_$][\w$]*(?=\s*:))/g
+  let output = '', cursor = 0, match
+  while ((match = pattern.exec(line))) {
+    output += escapeEditorHtml(line.slice(cursor, match.index))
+    const token = match[0]
+    let type = 'property'
+    if (token.startsWith('//') || token.startsWith('/*')) type = 'comment'
+    else if (/^['"`]/.test(token)) type = 'string'
+    else if (/^\d/.test(token)) type = 'number'
+    else if (/^(async|await|break|case|catch|class|const|continue|default|else|export|extends|false|finally|for|from|function|if|import|in|let|new|null|of|return|static|super|switch|this|throw|true|try|typeof|var|void|while|yield)$/.test(token)) type = 'keyword'
+    else if (token.endsWith('(')) type = 'function'
+    output += '<span class="editor-token-' + type + '">' + escapeEditorHtml(token) + '</span>'
+    cursor = match.index + token.length
+  }
+  return output + escapeEditorHtml(line.slice(cursor)) + (line ? '' : ' ')
+}
+function renderSourceEditorTabs() {
+  const root = $('#source-editor-tabs')
+  if (!root) return
+  root.replaceChildren()
+  for (const path of sourceOpenTabs) {
+    const tab = document.createElement('div')
+    tab.className = 'source-editor-tab' + (path === sourceFile ? ' is-active' : '')
+    const open = document.createElement('button')
+    open.type = 'button'; open.className = 'source-editor-tab-open'; open.setAttribute('role', 'tab')
+    open.setAttribute('aria-selected', path === sourceFile ? 'true' : 'false')
+    const icon = document.createElement('span'); icon.className = 'editor-tab-code-icon'; icon.textContent = '</>'
+    const name = document.createElement('span'); name.className = 'editor-tab-name'; name.textContent = path.split('/').pop()
+    open.append(icon, name); open.addEventListener('click', () => { if (path !== sourceFile) void openSourceFile(path) })
+    const close = document.createElement('button')
+    close.type = 'button'; close.className = 'source-editor-tab-close'; close.textContent = '×'; close.setAttribute('aria-label', 'Close ' + path)
+    close.addEventListener('click', event => {
+      event.stopPropagation()
+      if (sourceDirty && path === sourceFile && !window.confirm('Discard unsaved editor typing and close this file?')) return
+      sourceOpenTabs = sourceOpenTabs.filter(item => item !== path)
+      if (path === sourceFile) {
+        const nextPath = sourceOpenTabs.at(-1)
+        if (nextPath) void openSourceFile(nextPath)
+        else { sourceFile = null; sourceDirty = false; $('#source-editor-panel').hidden = true }
+      } else renderSourceEditorTabs()
+    })
+    tab.append(open, close); root.append(tab)
+  }
+}
+function renderSourceEditorExplorer() {
+  const root = $('#source-editor-explorer-list')
+  if (!root) return
+  root.replaceChildren()
+  for (const item of sourceFolderItems) {
+    const button = document.createElement('button')
+    button.type = 'button'; button.className = 'source-editor-explorer-item'
+    const icon = document.createElement('span'); icon.textContent = item.type === 'folder' ? '▱' : '</>'
+    const name = document.createElement('span'); name.textContent = item.name
+    button.append(icon, name)
+    button.addEventListener('click', () => item.type === 'folder' ? void loadSourceFolder(item.path) : void openSourceFile(item.path))
+    root.append(button)
+  }
+}
+function updateEditorSaveStatus(state, label) {
+  const status = $('#source-editor-save-status')
+  if (!status) return
+  status.classList.toggle('is-dirty', state === 'dirty')
+  status.classList.toggle('is-saving', state === 'saving')
+  status.querySelector('span').textContent = label
+}
 function updateSourceEditorLines() {
-  const editor = $$('#source-editor')
-  const gutter = $$('#source-editor-lines')
-  if (!editor || !gutter) return
-  const lineCount = Math.max(1, editor.value.split('\n').length)
-  gutter.textContent = Array.from({ length: lineCount }, (_, index) => String(index + 1)).join('\n')
-  gutter.scrollTop = editor.scrollTop
+  const editor = $('#source-editor'), gutter = $('#source-editor-lines'), highlight = $('#source-editor-highlight')
+  if (!editor || !gutter || !highlight) return
+  const lines = editor.value.split('\n')
+  const activeLine = editor.value.slice(0, editor.selectionStart).split('\n').length - 1
+  gutter.innerHTML = lines.map((_, index) => '<span class="editor-gutter-line' + (index === activeLine ? ' is-active' : '') + '">' + (index + 1) + '</span>').join('')
+  highlight.innerHTML = lines.map((line, index) => '<span class="editor-code-line' + (index === activeLine ? ' is-active' : '') + '">' + highlightEditorLine(line) + '</span>').join('')
+  gutter.scrollTop = editor.scrollTop; highlight.scrollTop = editor.scrollTop; highlight.scrollLeft = editor.scrollLeft
 }
 
 async function openSourceFile(path) {
@@ -805,8 +879,10 @@ async function openSourceFile(path) {
     sourceOriginal = result.content
     sourceHash = result.sha256
     sourceDirty = false
-    $$('#source-editor-name').textContent = result.path
-    $$('#source-editor').value = result.content
+    $('#source-editor-name').textContent = result.path.split('/').pop()
+    $('#source-editor-folder').textContent = sourceFolder.split('/').pop() || 'Aharane'
+    if (!sourceOpenTabs.includes(result.path)) sourceOpenTabs.push(result.path)
+    $('#source-editor').value = result.content
     const switcher = $$('#source-editor-file-switcher')
     if (switcher) {
       switcher.replaceChildren()
@@ -819,7 +895,9 @@ async function openSourceFile(path) {
       switcher.value = result.path
     }
     updateSourceEditorLines()
-    $$('#source-save').disabled = true
+    renderSourceEditorTabs()
+    updateEditorSaveStatus('saved', 'Saved')
+    $('#source-save').disabled = true
     $$('#source-editor-meta').textContent = `${result.language.toUpperCase() || 'TEXT'} · ${formatBytes(result.size)} · 512 KB limit`
     $$('#source-editor-panel').hidden = false
     $$('#source-editor').focus()
@@ -841,7 +919,8 @@ async function saveSourceFile() {
     sourceOriginal = content
     sourceHash = result.sha256
     sourceDirty = false
-    $$('#source-save').disabled = true
+    updateEditorSaveStatus('saved', 'Saved')
+    $('#source-save').disabled = true
     await refreshDraftStatus()
     const savedPath = sourceFile
     setSourceMessage('Saved ' + savedPath + '. It is not running until you apply the changes.', 'success')
@@ -1374,16 +1453,41 @@ $$('#source-editor-file-switcher')?.addEventListener('change', event => {
   const path = event.target.value
   if (path) void openSourceFile(path)
 })
-$$('#source-editor')?.addEventListener('scroll', () => {
-  const gutter = $$('#source-editor-lines')
-  if (gutter) gutter.scrollTop = $$('#source-editor').scrollTop
+$('#source-editor')?.addEventListener('scroll', () => {
+  const editor = $('#source-editor'), gutter = $('#source-editor-lines'), highlight = $('#source-editor-highlight')
+  if (gutter) gutter.scrollTop = editor.scrollTop
+  if (highlight) { highlight.scrollTop = editor.scrollTop; highlight.scrollLeft = editor.scrollLeft }
+})
+$('#source-editor')?.addEventListener('click', updateSourceEditorLines)
+$('#source-editor')?.addEventListener('keyup', updateSourceEditorLines)
+$('#source-editor-explorer-toggle')?.addEventListener('click', () => {
+  const panel = $('#source-editor-explorer'), button = $('#source-editor-explorer-toggle')
+  panel.hidden = !panel.hidden
+  button.setAttribute('aria-expanded', String(!panel.hidden))
+})
+$('#source-editor-folder')?.addEventListener('click', () => {
+  const panel = $('#source-editor-explorer')
+  panel.hidden = !panel.hidden
+  $('#source-editor-explorer-toggle')?.setAttribute('aria-expanded', String(!panel.hidden))
+})
+$('#source-editor-new-file')?.addEventListener('click', () => { void createSourceItem('file') })
+$('#source-editor-new-folder')?.addEventListener('click', () => { void createSourceItem('folder') })
+$('#source-problems-toggle')?.addEventListener('click', () => {
+  const panel = $('#source-problems-console-panel'), button = $('#source-problems-toggle')
+  panel.hidden = !panel.hidden
+  button.setAttribute('aria-expanded', String(!panel.hidden))
+})
+$('#source-problems-close')?.addEventListener('click', () => {
+  $('#source-problems-console-panel').hidden = true
+  $('#source-problems-toggle').setAttribute('aria-expanded', 'false')
 })
 $$('#open-password-settings')?.addEventListener('click', () => $$('#change-password-button').click())
 let sourceAutosaveTimer = null
 $$('#source-editor').addEventListener('input', () => {
   updateSourceEditorLines()
-  sourceDirty = $$('#source-editor').value !== sourceOriginal
-  $$('#source-save').disabled = !sourceDirty
+  sourceDirty = $('#source-editor').value !== sourceOriginal
+  updateEditorSaveStatus(sourceDirty ? 'dirty' : 'saved', sourceDirty ? 'Modified' : 'Saved')
+  $('#source-save').disabled = !sourceDirty
   if (sourceAutosaveTimer) clearTimeout(sourceAutosaveTimer)
   if (sourceDirty) sourceAutosaveTimer = setTimeout(() => {
     sourceAutosaveTimer = null

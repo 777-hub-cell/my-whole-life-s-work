@@ -504,10 +504,14 @@ async function refreshChatsP(){
  CH.splice(0,CH.length,...(r.chats||[]).map(c=>({jid:c.jid,n:c.name||c.jid.split('@')[0],g:c.group===true||String(c.jid).endsWith('@g.us'),mem:[],un:c.unreadCount||0,m:[{d:c.fromMe?'o':'i',t:c.lastMessage||'',ts:c.timestamp||Date.now()}]})));
  if(current&&S.chat!==null){const i=CH.findIndex(c=>c.jid===current);if(i>=0)S.chat=i;else S.chat=null}
 }
-async function loadMessagesP(index=S.chat){
+async function loadMessagesP(index=S.chat,before=0){
  const c=CH[index];if(!c?.jid)return;P.chatJid=c.jid;
- const account=S.cacc==='private'?'private':'public',r=await apiP('chats/'+account+'/'+encodeURIComponent(c.jid)+'/messages?limit=500');
- c.m=(r.messages||[]).map(mapMessageP);if(S.chat===index)drawMsgs();
+ const account=S.cacc==='private'?'private':'public',url='chats/'+account+'/'+encodeURIComponent(c.jid)+'/messages?limit=500'+(before?'&before='+encodeURIComponent(before):'');
+ const r=await apiP(url),messages=r.messages||[],fingerprint=JSON.stringify(messages.map(m=>[m.id,m.timestamp,m.type,m.text,m.status,m.mediaUrl,m.viewOnceViewed]));
+ const key=account+'|'+c.jid+'|'+(before||'latest');
+ if(P.messageFingerprints.get(key)===fingerprint)return;
+ P.messageFingerprints.set(key,fingerprint);c.m=messages.map(mapMessageP);
+ if(S.chat===index)drawMsgs();
 }
 async function sendChatP(msg){
  const c=CH[S.chat];if(!c?.jid)throw new Error('Open a conversation first.');
@@ -515,10 +519,56 @@ async function sendChatP(msg){
  if(msg.t)await apiP(base+'/send',{method:'POST',body:pack({text:msg.t})});
  else if(msg.b instanceof Blob)await apiP(base+'/media',{method:'POST',body:await msg.b.arrayBuffer(),headers:{'Content-Type':'application/octet-stream','X-Media-Type':msg.b.type||'application/octet-stream','X-File-Name':encodeURIComponent(msg.f||'attachment')}});
  else return;
- await loadMessagesP();
+ P.messageFingerprints.delete(account+'|'+c.jid+'|latest');
+ await loadMessagesP(S.chat,0);
 }
-async function attachLiveP(file){try{await sendChatP({b:file,f:file.name});await loadMessagesP()}catch(error){notifyP(error.message)}}
-function switchChatsP(){S.cacc=S.cacc==='private'?'public':'private';S.chat=null;P.chatJid='';refreshChatsP().then(render).catch(e=>notifyP(e.message))}
+async function attachLiveP(file){try{await sendChatP({b:file,f:file.name})}catch(error){notifyP(error.message)}}
+function switchChatsP(){S.cacc=S.cacc==='private'?'public':'private';S.chat=null;P.chatJid='';P.chatSearchQuery='';P.chatSearchResults=[];P.chatSearchError='';P.messageFingerprints.clear();refreshChatsP().then(render).catch(e=>notifyP(e.message))}
+function preserveChatScrollDrawP(){
+ const el=Q('#msgs'),top=el?.scrollTop||0,wasNearBottom=el?el.scrollHeight-el.scrollTop-el.clientHeight<120:true;
+ drawMsgsBaseP();
+ if(el&&!wasNearBottom){el.scrollTop=top;Q('#jump')?.classList.add('on')}
+}
+function renderKeepingChatSearchP(){
+ const old=Q('#cq'),focused=old===document.activeElement,start=old?.selectionStart,end=old?.selectionEnd;
+ render();
+ if(focused){const next=Q('#cq');if(next){next.focus({preventScroll:true});try{next.setSelectionRange(start,end)}catch{}}}
+}
+function chatSearchPanelP(){
+ const query=P.chatSearchQuery;
+ if(!query)return '';
+ let body='';
+ if(query.length<2)body='<div class="empty">Type at least two characters to search saved messages.</div>';
+ else if(P.chatSearchLoading)body='<div class="empty">Searching message history…</div>';
+ else if(P.chatSearchError)body='<div class="empty">Search unavailable: '+escP(P.chatSearchError)+'</div>';
+ else if(!P.chatSearchResults.length)body='<div class="empty">No stored messages match “'+escP(query)+'”. Search includes older saved messages, not only the latest preview.</div>';
+ else body=P.chatSearchResults.map(hit=>'<button class="row" data-search-jid="'+escP(hit.jid)+'" data-search-before="'+escP(String(Number(hit.timestamp||0)+1))+'"><span class="av '+(String(hit.jid).endsWith('@g.us')?'grp':'')+'">'+(String(hit.jid).endsWith('@g.us')?ico('grp'):escP(String(hit.pushName||hit.jid).charAt(0).toUpperCase()))+'</span><span class="grow"><span class="t" style="display:block">'+escP(hit.pushName||hit.jid)+'</span><span class="d" style="display:block;white-space:normal">'+escP(hit.text||hit.fileName||('Attachment · '+hit.type))+'</span></span><span class="d">'+rel(hit.timestamp)+'</span></button>').join('');
+ return '<div style="margin:0 0 14px"><div class="d" style="margin:0 2px 6px">Message matches</div><div class="card list">'+body+'</div></div>';
+}
+function scheduleChatSearchP(value){
+ const query=String(value||'').trim();P.chatSearchQuery=query;P.chatSearchResults=[];P.chatSearchError='';P.chatSearchLoading=query.length>=2;
+ if(P.chatSearchTimer)clearTimeout(P.chatSearchTimer);
+ renderKeepingChatSearchP();
+ if(query.length<2)return;
+ P.chatSearchTimer=setTimeout(async()=>{
+  const account=S.cacc==='private'?'private':'public';
+  try{
+   const result=await apiP('chats/'+account+'/search?q='+encodeURIComponent(query)+'&limit=60');
+   if(P.chatSearchQuery!==query||S.cacc!==account)return;
+   P.chatSearchResults=result.results||[];P.chatSearchLoading=false;renderKeepingChatSearchP();
+  }catch(error){
+   if(P.chatSearchQuery!==query)return;
+   P.chatSearchError=error.message;P.chatSearchLoading=false;renderKeepingChatSearchP();
+  }
+ },350);
+}
+async function openChatSearchHitP(jid,before){
+ let index=CH.findIndex(c=>c.jid===jid);
+ if(index<0){await refreshChatsP();index=CH.findIndex(c=>c.jid===jid)}
+ if(index<0)return notifyP('That conversation is no longer visible.');
+ openChatBase(index);
+ await loadMessagesP(index,Number(before)||0);
+}
 async function accountActionP(id,action){try{await apiP('accounts/'+id+'/'+action,{method:'POST',body:pack({})});await refreshRuntimeP();render();notifyP('Account '+action+' requested')}catch(error){notifyP(error.message)}}
 function bindProductionP(){
  const exportSource=Q('#export-bot-source');if(exportSource)exportSource.onclick=()=>exportBotSourceP(exportSource);

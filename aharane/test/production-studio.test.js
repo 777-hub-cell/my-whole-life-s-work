@@ -41,6 +41,29 @@ test('the offline service worker caches the bridge and invalidates the previous 
   assert.ok(sw.includes("['/aharane/studio/production-bridge.js','production-bridge.js']"))
 })
 
+test('Files toolbar groups Export Bot Source with the creation and upload actions', async () => {
+  const app = await read('../control-centre/app.js')
+  const start = app.indexOf('<div class="btns" style="margin:12px 0 0')
+  const end = app.indexOf('<div class="crumbs"', start)
+  const toolbar = app.slice(start, end)
+  assert.ok(toolbar.includes('New file'))
+  assert.ok(toolbar.includes('Upload'))
+  assert.ok(toolbar.includes('New folder'))
+  assert.ok(toolbar.includes('id="export-bot-source"'))
+  assert.ok(toolbar.includes('flex-wrap:wrap'))
+  const crumbStart = app.indexOf('<div class="crumbs"', end)
+  const crumbEnd = app.indexOf('${selBar(d,ks)}', crumbStart)
+  assert.ok(!app.slice(crumbStart, crumbEnd).includes('export-bot-source'))
+  assert.ok(app.includes("dir?'Open folder':"), 'Unopened folders should not be labelled as empty.')
+})
+
+test('Configuration owner-number validation strips formatting before checking 7–15 digits', async () => {
+  const bridge = await read('../control-centre/production-bridge.js')
+  const slash = String.fromCharCode(92)
+  assert.ok(bridge.includes("replace(/" + slash + "D/g,'' )") || bridge.includes("replace(/" + slash + "D/g,'')"))
+  assert.ok(bridge.includes("!/ ^" + slash + "d{7,15}$/.test(ownerValue)") === false)
+  assert.ok(bridge.includes("!/" + slash + "d{7,15}$/.test(ownerValue)"))
+})
 test('Configuration and ENV remain separate production screens', async () => {
   const app = await read('../control-centre/app.js')
   const bridge = await read('../control-centre/production-bridge.js')

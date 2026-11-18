@@ -68,7 +68,7 @@ test('WebSocket stays protected and exposes only status and ping actions',async(
 })
 test('Files mobile screen matches the supplied file-manager layout',async()=>{
  const h=await read('../control-centre/index.html'),a=await read('../control-centre/app.js'),c=await read('../control-centre/styles.css')
- assert.ok(h.includes('class="files-page-heading"'))
+ assert.ok(h.includes('class="page-heading files-page-heading"'))
  assert.ok(h.includes('class="files-create-row"'))
  assert.ok(h.includes('placeholder="Search files and folders"'))
  assert.ok(h.includes('class="files-breadcrumb-row"'))

@@ -265,6 +265,24 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       }))
   }
 
+  async function searchMessages(id, { query = '', limit = 60 } = {}) {
+    const account = accountId(id)
+    const term = String(query || '').trim().toLocaleLowerCase()
+    if (term.length < 2) return []
+    const rows = await readRows(account)
+    return rows
+      .filter(row => [row.text, row.pushName, row.fileName, row.jid].some(value =>
+        String(value || '').toLocaleLowerCase().includes(term)
+      ))
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, Math.max(1, Math.min(100, Number(limit) || 60)))
+      .map(row => ({
+        id: row.id, jid: row.jid, fromMe: row.fromMe, pushName: row.pushName,
+        timestamp: row.timestamp, type: row.type, text: row.text,
+        fileName: row.fileName,
+      }))
+  }
+
   async function hasConversation(id, jidValue) {
     const account = accountId(id), jid = safeJid(jidValue)
     if (!jid) return false
@@ -414,5 +432,5 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return { bytes: total, files: count }
   }
 
-  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
+  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
 }

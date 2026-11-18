@@ -61,7 +61,7 @@ test('Configuration owner-number validation strips formatting before checking 7â
   const bridge = await read('../control-centre/production-bridge.js')
   const slash = String.fromCharCode(92)
   assert.ok(bridge.includes("replace(/" + slash + "D/g,'' )") || bridge.includes("replace(/" + slash + "D/g,'')"))
-  assert.ok(bridge.includes("!/" + slash + "d{7,15}$/.test(ownerValue)"))
+  assert.ok(bridge.includes("!/^" + slash + "d{7,15}$/.test(ownerValue)"))
 })
 test('Configuration and ENV remain separate production screens', async () => {
   const app = await read('../control-centre/app.js')

@@ -150,7 +150,7 @@ test('folder downloads create a ZIP and ZIP uploads display in-place progress', 
  assert.ok(menu.includes("exportSelectionZipP([path],name+'.zip')"))
  const upload=bridge.slice(bridge.indexOf('function updateUploadProgressP(){'),bridge.indexOf('async function pollUpdateP(){'))
  assert.ok(upload.includes("id='prod-upload-progress'"))
- assert.ok(upload.includes("stage='preparing'"))
+ assert.ok(upload.includes("stage:'preparing'"))
  assert.ok(upload.includes("stage='validating'"))
  assert.ok(upload.includes("holder?.remove()"))
 })

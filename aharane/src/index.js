@@ -1904,16 +1904,22 @@ app.post('/api/files', requireAdmin, async (req, res) => {
 
     if (type === 'folder') {
       await mkdir(target.full, { mode: 0o750 })
-      await recordManualEdit(target.path, 'created-folder')
+      try { await recordManualEdit(target.path, 'created-folder') }
+      catch (error) { await rm(target.full, { recursive: true, force: true }).catch(() => {}); throw error }
       return res.status(201).json({ ok: true, path: target.path, type: 'folder' })
     }
 
     const content = String(req.body?.content ?? '')
     await validateSourceContent(target.path, content)
     await writeFile(target.full, content, { encoding: 'utf8', mode: 0o640, flag: 'wx' })
-    const savedContent = await readFile(target.full, 'utf8')
-    if (savedContent !== content) throw new Error('The new file did not pass its on-disk save check. Refresh Files and try again.')
-    await recordManualEdit(target.path, 'created-file')
+    try {
+      const savedContent = await readFile(target.full, 'utf8')
+      if (savedContent !== content) throw new Error('The new file did not pass its on-disk save check. Refresh Files and try again.')
+      await recordManualEdit(target.path, 'created-file')
+    } catch (error) {
+      await rm(target.full, { force: true }).catch(() => {})
+      throw error
+    }
     res.status(201).json({ ok: true, path: target.path, type: 'file', size: Buffer.byteLength(content) })
   } catch (error) {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not create the source file or folder.') })
@@ -1963,6 +1969,7 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
         replaced = false
         throw new Error('The saved file failed verification. The previous content was restored.')
       }
+      await recordManualEdit(target.path, 'modified-file')
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => {})
       if (replaced) {
@@ -1972,7 +1979,7 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
       }
       throw error
     }
-    const manual = await recordManualEdit(target.path, 'modified-file')
+    const manual = await readJsonFile(MANUAL_EDIT_STATE_FILE)
     res.json({
       ok: true,
       path: target.path,
@@ -1990,6 +1997,7 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
 
 
 app.post('/api/files/rename', requireAdmin, async (req, res) => {
+  let renamed = null
   try {
     if (updateInProgress) return res.status(409).json({ ok: false, error: 'Aharane is currently deploying. File changes are disabled.' })
     const sourcePath = String(req.body?.path || '')
@@ -2007,12 +2015,14 @@ app.post('/api/files/rename', requireAdmin, async (req, res) => {
     const currentSource = await safeSourceTarget(source.path)
     const currentDestination = await safeSourceTarget(destinationPath, { allowMissing: true })
     await rename(currentSource.full, currentDestination.full)
+    renamed = { source: currentSource.full, destination: currentDestination.full }
     await recordManualEdits([
       { path: currentSource.path, action: 'renamed-from' },
       { path: destinationPath, action: 'renamed-to' },
     ])
     res.json({ ok: true, path: destinationPath, pending: true })
   } catch (error) {
+    if (renamed) await rename(renamed.destination, renamed.source).catch(() => {})
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not rename the selected source item.') })
   }
 })
@@ -2043,13 +2053,17 @@ app.post('/api/files/move', requireAdmin, async (req, res) => {
       ? await safeSourceTarget(destinationValue)
       : { path: '', full: initialRoot, info: await stat(initialRoot) }
     if (!initialParent.info?.isDirectory()) return res.status(400).json({ ok: false, error: 'Choose an existing destination folder.' })
-    const plans = []
+    const plans = [], plannedDestinations = new Set()
     for (const source of initialSources) {
       if (initialParent.full === source.full || initialParent.full.startsWith(source.full + sep)) {
         return res.status(400).json({ ok: false, error: 'A folder cannot be moved inside itself.' })
       }
       const destinationPath = initialParent.path ? initialParent.path + '/' + source.parts.at(-1) : source.parts.at(-1)
       if (destinationPath === source.path) return res.status(400).json({ ok: false, error: 'The item is already in that folder.' })
+      if (plannedDestinations.has(destinationPath)) {
+        return res.status(409).json({ ok: false, error: 'Two selected items have the same name. Move them separately or rename one first.' })
+      }
+      plannedDestinations.add(destinationPath)
       const target = await safeSourceTarget(destinationPath, { allowMissing: true })
       if (target.info) return res.status(409).json({ ok: false, error: 'The destination already contains an item named ' + source.parts.at(-1) + '.' })
       plans.push({ sourcePath: source.path, destinationPath })
@@ -2125,9 +2139,16 @@ app.post('/api/files/delete', requireAdmin, async (req, res) => {
       targets.push(target)
     }
     for (const target of targets) {
-      await rm(target.full, { recursive: target.info.isDirectory(), force: false })
+      const tombstone = join(dirname(target.full), '.aharane-delete-' + randomUUID())
+      await rename(target.full, tombstone)
+      try {
+        await recordManualEdit(target.path, target.info.isDirectory() ? 'deleted-folder' : 'deleted-file')
+      } catch (error) {
+        await rename(tombstone, target.full).catch(() => {})
+        throw error
+      }
+      await rm(tombstone, { recursive: target.info.isDirectory(), force: true })
       deleted.push(target)
-      await recordManualEdit(target.path, target.info.isDirectory() ? 'deleted-folder' : 'deleted-file')
     }
     res.json({ ok: true, deleted: deleted.map(target => target.path), pending: true })
   } catch (error) {

@@ -1273,3 +1273,10 @@ body[data-theme="dark"] .chat-message-row.outgoing .chat-bubble { background:#34
   .source-editor-lines { width:42px; padding-right:9px; }
   .source-editor-tab { min-width:100px; }
 }
+
+
+.source-editor-tab-open { flex:1; min-width:0; height:100%; display:flex; align-items:center; gap:8px; padding:0; border:0; background:transparent; color:inherit; text-align:left; }
+.source-editor-tab-close { opacity:0; }
+.source-editor-tab.is-active .source-editor-tab-close,.source-editor-tab:hover .source-editor-tab-close,.source-editor-tab:focus-within .source-editor-tab-close { opacity:1; }
+.source-editor-breadcrumb .editor-crumb:focus-visible,.source-editor-tab button:focus-visible,.source-explorer-toolbar button:focus-visible,.source-problems-toggle:focus-visible { outline:2px solid #79b8ff; outline-offset:2px; }
+.source-editor-code-surface #source-editor:focus { box-shadow:none; }

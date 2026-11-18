@@ -878,11 +878,18 @@ app.put('/api/owners', requireAdmin, async (req, res) => {
     // A configured private owner must match the WhatsApp identity paired to
     // the private session. Never silently change either role during pairing.
     const privateSession = accountRuntime.get('private')
+    const publicSession = accountRuntime.get('public')
     const privateOwnNumber = senderNumberFromJid(
       privateSession.socket?.user?.id || privateSession.auth?.state?.creds?.me?.id || ''
     )
+    const publicBotNumber = senderNumberFromJid(
+      publicSession.socket?.user?.id || publicSession.auth?.state?.creds?.me?.id || ''
+    )
     if (next.privateOwnerNumber && privateOwnNumber && next.privateOwnerNumber !== privateOwnNumber) {
       return res.status(409).json({ ok: false, error: 'Private Owner must match the phone number paired to the private WhatsApp session.' })
+    }
+    if (next.publicOwnerNumber && publicBotNumber && next.publicOwnerNumber === publicBotNumber) {
+      return res.status(409).json({ ok: false, error: 'Public Owner must be the sender number you use to message the public bot, not the public bot account itself.' })
     }
     ownerConfig = await saveOwnerConfig(OWNER_CONFIG_FILE, next)
     publishStudioEvent('owners.updated', {

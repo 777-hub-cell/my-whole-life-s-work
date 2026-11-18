@@ -488,8 +488,8 @@ function updateSourceEditorLines() {
   const editor = $('#source-editor')
   const gutter = $('#source-editor-lines')
   if (!editor || !gutter) return
-  const lineCount = Math.max(1, editor.value.split('\\n').length)
-  gutter.textContent = Array.from({ length: lineCount }, (_, index) => String(index + 1)).join('\\n')
+  const lineCount = Math.max(1, editor.value.split('\n').length)
+  gutter.textContent = Array.from({ length: lineCount }, (_, index) => String(index + 1)).join('\n')
   gutter.scrollTop = editor.scrollTop
 }
 

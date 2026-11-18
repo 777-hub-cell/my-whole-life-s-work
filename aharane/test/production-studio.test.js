@@ -194,3 +194,17 @@ test('the Files editor verifies server content before showing a successful save'
  assert.ok(save.includes('File saved and verified on the server'))
  assert.ok(save.includes('This will replace the existing file with an empty file. Continue?'))
 })
+
+test('the production Files screen renders the real editor before exposing server save controls', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const app=await read('../control-centre/app.js')
+ const screen=bridge.slice(bridge.indexOf('function filesScreenP(){'),bridge.indexOf('function filePathP',bridge.indexOf('function filesScreenP(){')))
+ const bind=bridge.slice(bridge.indexOf('function bindProductionP(){'),bridge.indexOf('function homeViewP(){'))
+ assert.ok(app.includes('function editorOld(){'), 'The editor markup must be available from the base Studio UI.')
+ assert.ok(screen.includes('if(S.ed){'))
+ assert.ok(screen.includes('return editorOld()'), 'Opening a source file must render the textarea editor, not just a save button.')
+ assert.ok(screen.includes('id="prod-file-save"'))
+ assert.ok(screen.includes('id="prod-file-download"'))
+ assert.ok(bind.includes("const editor=Q('#ed')"))
+ assert.ok(bind.includes("status.textContent='Unsaved changes'"), 'Editing must never be labelled as saved before server verification.')
+});

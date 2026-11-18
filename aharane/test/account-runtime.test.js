@@ -107,3 +107,35 @@ test('authentication directory overlap is rejected', () => {
     makeSocket: () => ({ ev: new EventEmitter(), end() {} }),
   }), /separate authentication directories/)
 })
+
+test('a disconnect on one account reconnects only that account', async t => {
+  const { runtime, sockets } = await fixture(t)
+  await Promise.all([runtime.start('private'), runtime.start('public')])
+  const oldPrivateSocket = runtime.get('private').socket
+  const publicSocket = runtime.get('public').socket
+  oldPrivateSocket.ev.emit('connection.update', {
+    connection: 'close',
+    lastDisconnect: { error: { output: { statusCode: 500 } } },
+  })
+  await new Promise(resolveWait => setTimeout(resolveWait, 25))
+  assert.notEqual(runtime.get('private').socket, oldPrivateSocket)
+  assert.equal(runtime.get('public').socket, publicSocket)
+  assert.equal(runtime.get('public').state, 'pairing')
+  await runtime.shutdown()
+})
+
+test('authentication directory symlinks are rejected even when paths look different', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'aharane-auth-link-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const real = join(root, 'real')
+  const alias = join(root, 'alias')
+  const { mkdir, symlink } = await import('node:fs/promises')
+  await mkdir(real, { recursive: true })
+  await symlink(real, alias, 'dir')
+  const runtime = createAccountRuntime({
+    authDirs: { public: real, private: alias },
+    loadAuthState: async () => ({ state: { creds: { registered: false } }, saveCreds: async () => {} }),
+    makeSocket: () => ({ ev: new EventEmitter(), end() {} }),
+  })
+  await assert.rejects(runtime.start('private'), /real directories|separate authentication directories/)
+})

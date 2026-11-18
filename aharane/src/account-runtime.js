@@ -1,4 +1,4 @@
-import { chmod, mkdir, rename, stat } from 'node:fs/promises'
+import { chmod, lstat, mkdir, realpath, rename, stat } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
@@ -48,6 +48,37 @@ export function createAccountRuntime({
       directories.private.startsWith(directories.public + sep) ||
       directories.public.startsWith(directories.private + sep)) {
     throw new Error('Private and public WhatsApp accounts must use separate authentication directories.')
+  }
+
+  let authDirectoriesReady = null
+  async function verifyAuthDirectories() {
+    if (!authDirectoriesReady) {
+      authDirectoriesReady = (async () => {
+        const canonical = []
+        for (const id of SESSION_IDS) {
+          const directory = directories[id]
+          await mkdir(directory, { recursive: true, mode: 0o700 })
+          const info = await lstat(directory)
+          if (!info.isDirectory() || info.isSymbolicLink()) {
+            throw new Error('WhatsApp account authentication paths must be real directories, not links.')
+          }
+          await chmod(directory, 0o700)
+          const actual = await realpath(directory)
+          for (const previous of canonical) {
+            if (actual === previous.path ||
+                actual.startsWith(previous.path + sep) ||
+                previous.path.startsWith(actual + sep)) {
+              throw new Error('Private and public WhatsApp accounts must use separate authentication directories.')
+            }
+          }
+          canonical.push({ id, path: actual })
+        }
+      })().catch(error => {
+        authDirectoriesReady = null
+        throw error
+      })
+    }
+    return authDirectoriesReady
   }
 
   const sessions = new Map(SESSION_IDS.map(id => [id, {
@@ -133,8 +164,7 @@ export function createAccountRuntime({
     session.manuallyStopped = false
 
     session.startPromise = (async () => {
-      await mkdir(session.authDir, { recursive: true, mode: 0o700 })
-      await chmod(session.authDir, 0o700)
+      await verifyAuthDirectories()
       const auth = await loadAuthState(session.authDir)
       session.auth = auth
       session.registered = auth.state?.creds?.registered === true
@@ -191,6 +221,7 @@ export function createAccountRuntime({
       })
 
       currentSocket.ev.on('messages.upsert', event => {
+        if (session.socket !== currentSocket || session.manuallyStopped || shuttingDown) return
         Promise.resolve(onMessages({ sessionId: id, socket: currentSocket, event })).catch(() => {
           logger.warn?.({ event: 'message.handler-failed', accountId: id })
         })
@@ -270,6 +301,9 @@ export function createAccountRuntime({
     session.reconnectTimer = null
     const currentSocket = session.socket
     session.socket = null
+    try { await session.auth?.saveCreds?.() } catch {
+      logger.warn?.({ event: 'auth.save-on-stop-failed', accountId: session.id })
+    }
     if (currentSocket) {
       try { currentSocket.end?.(undefined) } catch {}
     }
@@ -295,8 +329,10 @@ export function createAccountRuntime({
     if (session.pairRequestActive || session.startPromise) {
       throw Object.assign(new Error('This account is busy. Retry after its current operation finishes.'), { status: 409 })
     }
-    const root = resolve(String(backupRoot || ''))
-    if (!root || root === session.authDir || root.startsWith(session.authDir + sep) || session.authDir.startsWith(root + sep)) {
+    const rawBackupRoot = String(backupRoot || '').trim()
+    if (!rawBackupRoot) throw new Error('A protected authentication backup directory is required.')
+    const root = resolve(rawBackupRoot)
+    if (root === session.authDir || root.startsWith(session.authDir + sep) || session.authDir.startsWith(root + sep)) {
       throw new Error('Authentication backup must use a separate protected directory.')
     }
     await mkdir(root, { recursive: true, mode: 0o700 })
@@ -339,6 +375,9 @@ export function createAccountRuntime({
       session.reconnectTimer = null
       const currentSocket = session.socket
       session.socket = null
+      try { await session.auth?.saveCreds?.() } catch {
+        logger.warn?.({ event: 'auth.save-on-shutdown-failed', accountId: session.id })
+      }
       if (currentSocket) {
         try { currentSocket.end?.(undefined) } catch {}
       }

@@ -259,7 +259,7 @@ function applyAccountStatus(accountId, account = {}) {
   }
   const card = $('[data-account-card="'+accountId+'"]')
   if (card) card.dataset.state = String(account.state || 'unknown')
-  $('[data-account-action][data-account-id="'+accountId+'"]').forEach(button => {
+  $$('[data-account-action][data-account-id="'+accountId+'"]').forEach(button => {
     const action = button.dataset.accountAction
     button.disabled = action === 'repair'
       ? account.state !== 'needs-pairing'
@@ -1394,7 +1394,7 @@ document.addEventListener('click', event => {
   if (target instanceof HTMLAnchorElement) event.preventDefault()
   setView(target.dataset.view)
 })
-$('[data-pair-account]').forEach(button => {
+$$('[data-pair-account]').forEach(button => {
   button.addEventListener('click', async () => {
     const accountId = button.dataset.pairAccount
     const phoneInput = $('#'+accountId+'-phone-number')
@@ -1440,7 +1440,7 @@ $('#save-owner-settings')?.addEventListener('click', async () => {
   }
 })
 
-$('[data-account-action]').forEach(button => {
+$$('[data-account-action]').forEach(button => {
   button.addEventListener('click', async () => {
     const action = button.dataset.accountAction
     const accountId = button.dataset.accountId

@@ -1407,7 +1407,6 @@ $('#chat-video-more')?.addEventListener('click', () => {
   const duration = Number.isFinite(video.duration) ? Math.round(video.duration) + ' seconds' : 'Duration unavailable'
   window.alert(`${$('#chat-video-title').textContent}\n${video.videoWidth} × ${video.videoHeight}\n${duration}`)
 })
-$('#image-viewer-stage')?.addEventListener('click', event => event.stopPropagation())
 $('#chat-image-viewer .image-viewer-stage')?.addEventListener('touchstart', event => {
   imageViewerTouchStart = event.changedTouches[0]?.clientX ?? null
 }, { passive: true })

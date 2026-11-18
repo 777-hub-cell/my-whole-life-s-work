@@ -24,7 +24,7 @@ import { loadOwnerConfig, normalizeOwnerConfig, saveOwnerConfig } from './owner-
 import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_ARCHIVE_BYTES } from './update-manager.js'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { createChatStore } from './chat-store.js'
-import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, envView } from './studio-settings.js'
+import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, normalizeChatVisibility, isChatVisible, envView } from './studio-settings.js'
 import { createActivityStore } from './activity-store.js'
 
 const APP_NAME = 'Aharane'
@@ -1273,7 +1273,7 @@ app.post('/api/chats/:accountId/:jid/media', requireAdmin, express.raw({ type: '
   try {
     const accountId = chatAccount(req.params.accountId)
     const jid = decodeURIComponent(String(req.params.jid || ''))
-    if (!authorizedChat(accountId, jid) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found or not authorized.' })
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found or not authorized.' })
     const session = accountRuntime.get(accountId), socket = session.socket
     if (!socket || session.state !== 'connected') return res.status(503).json({ ok: false, error: 'This WhatsApp account is not connected.' })
     if (!Buffer.isBuffer(req.body) || !req.body.length || req.body.length > 24 * 1024 * 1024) return res.status(400).json({ ok: false, error: 'Choose a file up to 24 MB.' })

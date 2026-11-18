@@ -9,9 +9,9 @@ const DEFAULT_PROFILE = Object.freeze({
 const booleanKeys = ['autoRead', 'showTyping', 'rejectCalls', 'alwaysOnline']
 const DEFAULT_CHAT_FILTER = Object.freeze({ mode: 'all', overrides: [] })
 const CHAT_JID_PATTERNS = [
-  /^\\d{7,15}@s\\.whatsapp\\.net$/,
-  /^\\d{5,25}-\\d{5,25}@g\\.us$/,
-  /^\\d{5,25}@lid$/,
+  /^\d{7,15}@s\.whatsapp\.net$/,
+  /^\d{5,25}-\d{5,25}@g\.us$/,
+  /^\d{5,25}@lid$/,
 ]
 function normalizeChatFilter(value = {}, kind) {
   const mode = value.mode === 'selected' ? 'selected' : 'all'

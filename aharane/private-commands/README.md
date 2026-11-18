@@ -2,7 +2,7 @@
 
 Place private-owner commands in this directory. This registry is loaded separately
 from `commands/` and is only dispatched from the private WhatsApp session's
-verified self-chat (`fromMe`, exact phone-number self-chat, and configured
+verified self-chat (for example, `.status`) (`fromMe`, exact phone-number self-chat, and configured
 Private Owner identity).
 
 Private commands never fall through to the public registry. Public `ownerOnly`

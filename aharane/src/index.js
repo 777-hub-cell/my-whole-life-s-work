@@ -618,6 +618,11 @@ async function recoverStaleManualEditWorkspace() {
     }
 
     const ignored = new Set()
+    // A deleted directory supersedes every earlier edit below that path.
+    // Do not try to replay children that no longer exist in the saved workspace.
+    for (const folder of entries.filter(item => item.action === 'deleted-folder')) {
+      for (const entry of entries) if (entry.path.startsWith(folder.path + '/')) ignored.add(entry.path)
+    }
     const movePairs = []
     const fromEntries = entries.filter(item => ['renamed-from', 'moved-from'].includes(item.action))
     const toEntries = entries.filter(item => ['renamed-to', 'moved-to'].includes(item.action))

@@ -10,6 +10,7 @@ let sourceFile = null
 let sourceOriginal = ''
 let sourceHash = ''
 let sourceDirty = false
+let sourceFolderFiles = []
 
 let localOnly = false
 let remoteSession = false
@@ -385,6 +386,7 @@ async function loadSourceFolder(folder) {
     list.append(empty)
   }
   const orderedChildren = [...(result.children || [])].sort((a, b) => (a.type === b.type ? 0 : a.type === 'folder' ? -1 : 1) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  sourceFolderFiles = orderedChildren.filter(item => item.type === 'file')
   for (const item of orderedChildren) {
     const row = document.createElement('div')
     row.className = 'source-file-row'
@@ -482,6 +484,15 @@ async function loadSourceFolder(folder) {
   await refreshDraftStatus()
 }
 
+function updateSourceEditorLines() {
+  const editor = $('#source-editor')
+  const gutter = $('#source-editor-lines')
+  if (!editor || !gutter) return
+  const lineCount = Math.max(1, editor.value.split('\\n').length)
+  gutter.textContent = Array.from({ length: lineCount }, (_, index) => String(index + 1)).join('\\n')
+  gutter.scrollTop = editor.scrollTop
+}
+
 async function openSourceFile(path) {
   if (sourceDirty && !window.confirm('Discard unsaved editor typing and open another file?')) return
   try {
@@ -492,6 +503,18 @@ async function openSourceFile(path) {
     sourceDirty = false
     $('#source-editor-name').textContent = result.path
     $('#source-editor').value = result.content
+    const switcher = $('#source-editor-file-switcher')
+    if (switcher) {
+      switcher.replaceChildren()
+      for (const item of sourceFolderFiles) {
+        const option = document.createElement('option')
+        option.value = item.path
+        option.textContent = item.name
+        switcher.append(option)
+      }
+      switcher.value = result.path
+    }
+    updateSourceEditorLines()
     $('#source-save').disabled = true
     $('#source-editor-meta').textContent = `${result.language.toUpperCase() || 'TEXT'} · ${formatBytes(result.size)} · 512 KB limit`
     $('#source-editor-panel').hidden = false
@@ -1050,9 +1073,18 @@ $('#file-search')?.addEventListener('input', () => {
   $('.source-file-row').forEach(row => { row.hidden = query && !row.dataset.name.includes(query) })
 })
 $('#source-save-bottom')?.addEventListener('click', () => { void saveSourceFile() })
+$('#source-editor-file-switcher')?.addEventListener('change', event => {
+  const path = event.target.value
+  if (path) void openSourceFile(path)
+})
+$('#source-editor')?.addEventListener('scroll', () => {
+  const gutter = $('#source-editor-lines')
+  if (gutter) gutter.scrollTop = $('#source-editor').scrollTop
+})
 $('#open-password-settings')?.addEventListener('click', () => $('#change-password-button').click())
 let sourceAutosaveTimer = null
 $('#source-editor').addEventListener('input', () => {
+  updateSourceEditorLines()
   sourceDirty = $('#source-editor').value !== sourceOriginal
   $('#source-save').disabled = !sourceDirty
   if (sourceAutosaveTimer) clearTimeout(sourceAutosaveTimer)
@@ -1062,6 +1094,18 @@ $('#source-editor').addEventListener('input', () => {
   }, 900)
 })
 
+
+
+// Close anchored menus when the user taps outside them.
+document.addEventListener('click', event => {
+  if (!event.target.closest('.source-item-actions')) {
+    $$('.source-item-menu').forEach(menu => { menu.hidden = true })
+    $$('.source-menu-button').forEach(button => button.setAttribute('aria-expanded', 'false'))
+  }
+  if (!event.target.closest('.package-actions')) {
+    $$('.package-menu').forEach(menu => { menu.hidden = true })
+  }
+})
 
 function openStudioDatabase() {
   if (studioDbPromise) return studioDbPromise

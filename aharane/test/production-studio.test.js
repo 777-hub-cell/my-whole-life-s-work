@@ -185,7 +185,7 @@ test('pairing refreshes the selected account state before navigation and after f
 
 test('the Files editor verifies server content before showing a successful autosave', async () => {
  const bridge=await read('../control-centre/production-bridge.js')
- const start=bridge.indexOf('async function flushFileAutosaveP()')
+ const start=bridge.indexOf('async function flushFileAutosavePathP(path)')
  const end=bridge.indexOf('async function saveLiveFileP()',start)
  const save=bridge.slice(start,end)
  const immediate=bridge.slice(end,bridge.indexOf('function createLiveFileP',end))
@@ -278,7 +278,7 @@ test('stale Files drafts remain writable and can be rebased onto the current rel
  const backup=runtime.slice(runtime.indexOf('async function ensureManualEditBackup()'),runtime.indexOf('async function recoverStaleManualEditWorkspace()'))
  assert.ok(backup.includes('The older source draft is missing or cannot be safely opened.'))
  assert.ok(backup.includes('return existing'), 'A valid stale workspace must remain editable instead of blocking autosave and deletion.')
- const recovery=runtime.slice(runtime.indexOf('async function recoverStaleManualEditWorkspace()'),runtime.indexOf('async function recordManualEdit'))
+ const recovery=runtime.slice(runtime.indexOf('async function recoverStaleManualEditWorkspace()'),runtime.indexOf('async function recordManualEdits'))
  assert.ok(recovery.includes('await cp(currentRelease, newWorkspace'))
  assert.ok(recovery.includes('manual.modifiedPaths'), 'Recovery must carry forward the saved file operations.')
  assert.ok(recovery.includes('await writeJsonAtomic(MANUAL_EDIT_STATE_FILE, recovered)'))
@@ -287,7 +287,7 @@ test('stale Files drafts remain writable and can be rebased onto the current rel
  assert.ok(bridge.includes('function staleDraftBannerP()'))
  assert.ok(bridge.includes('id="prod-recover-files"'), 'Recovery must be visible from nested folders and the editor.')
  assert.ok(bridge.includes("apiP('files/recover'"), 'The visible recovery control must call the recovery API.')
- assert.ok(bridge.includes('const editorContent=editor?editor.value:null'), 'Recovery must preserve any text still open in the editor.')
+ assert.ok(bridge.includes('editorContent=editor?editor.value:null'), 'Recovery must preserve any text still open in the editor.')
 })
 
 test('autosave keeps independent per-file queues and a device-side draft through app suspension', async () => {
@@ -305,7 +305,7 @@ test('autosave keeps independent per-file queues and a device-side draft through
 test('empty-file autosaves require explicit confirmation and failed responses are checked against server read-back', async () => {
  const bridge=await read('../control-centre/production-bridge.js')
  const start=bridge.indexOf('async function flushFileAutosavePathP')
- const end=bridge.indexOf('async function flushFileAutosaveP',start)
+ const end=bridge.indexOf('async function flushFileAutosaveP(path)',start)
  const save=bridge.slice(start,end)
  assert.ok(save.includes("job.content===''&&data.content!==''&&!job.allowEmpty"))
  assert.ok(save.includes('Autosaved to server (staged)'))

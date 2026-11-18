@@ -2002,7 +2002,7 @@ server.on('error', error => {
 // prevent the other account from connecting or accepting commands.
 await Promise.all(['private', 'public'].map(async accountId => {
   try {
-    await accountRuntime.start(accountId)
+    await accountRuntime.start(accountId, { deferUnregistered: true })
   } catch (error) {
     logger.error({ event: 'whatsapp.initial-start-failed', accountId, error: String(error?.message || error) })
   }

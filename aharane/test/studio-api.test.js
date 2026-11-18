@@ -168,3 +168,13 @@ test('the source editor view and account identity settings are reachable', async
  assert.ok(bridge.includes("onclick=\"openAcc()\""))
  assert.ok(bridge.includes("const localSource=Q('#offline-open-source')"))
 })
+
+
+test('source path validation imports the shared ZIP path normalizer', async () => {
+ const runtime = await read('../src/index.js')
+ const updates = await read('../src/update-manager.js')
+ const updateImport = runtime.split('\\n').find(line => line.includes("from './update-manager.js'")) || ''
+ assert.ok(updateImport.includes('normalizeUpdatePath'), 'The source path helper must be imported from update-manager.js.')
+ assert.ok(updates.includes('export function normalizeUpdatePath'))
+ assert.ok(runtime.includes('const normalized = normalizeUpdatePath(relativePath)'))
+})

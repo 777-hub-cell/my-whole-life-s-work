@@ -92,3 +92,7 @@ See [UPDATE-PACKAGE.md](UPDATE-PACKAGE.md) for the required root-level `aharane-
 The PWA submits the admin token only to Aharane over HTTPS at the isolated same-origin `/aharane/api/` route. Aharane issues a short-lived HMAC-signed HttpOnly, Secure, SameSite=Strict cookie; browser JavaScript cannot read it. API requests and WebSocket upgrades use that same-origin cookie. The permanent admin token stays in `/etc/aharane.env`.
 
 The old Vercel proxy and ngrok-router path are not used by the PWA. Do not change NIGHT/MSCC's existing public routing when enabling the Aharane HTTPS hostname.
+
+### Inbox visibility
+
+Each WhatsApp account has independent visibility settings for individual chats and group chats. Each category can show all conversations except explicitly hidden ones, or show only selected conversations. Per-chat overrides are preserved as new messages arrive. Visibility affects the Chats tab only; it does not change WhatsApp receipt, and it never expands command permissions. Private commands remain self-chat-only, while public bot commands remain limited to the configured allowed direct senders. Broadcast/status/newsletter feeds are excluded.

@@ -66,3 +66,10 @@ test('private inbox supports new messages from direct, group and LID chats only'
   assert.equal(isPrivateVisibleChatJid('1234567890@newsletter'), false)
   assert.equal(isPrivateVisibleChatJid('opaque@lid'), false)
 })
+
+test('supported inbox JIDs include individual, group and numeric LID identities', () => {
+  assert.equal(isPrivateVisibleChatJid('2348012345678@s.whatsapp.net'), true)
+  assert.equal(isPrivateVisibleChatJid('120363000000000000-1234567890@g.us'), true)
+  assert.equal(isPrivateVisibleChatJid('123456789012345@lid'), true)
+  assert.equal(isPrivateVisibleChatJid('status@broadcast'), false)
+})

@@ -693,23 +693,17 @@ async function handleMessages(sessionId, currentSocket, event) {
     let privateControl = false
 
     if (sessionId === 'private') {
-      // The Private account's Chats inbox is a normal new-message inbox:
-      // retain live inbound messages from its direct, group and LID chats.
-      // This is deliberately separate from private command authorization.
-      if (message.key.fromMe !== true) {
-        if (!isPrivateVisibleChatJid(remoteJid)) continue
-        await chatStore.recordMessage({ sessionId, message, socket: currentSocket, downloadMedia: (msg, socket) => downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: socket.updateMediaMessage }) })
-        if (studioSettings.private.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
-        continue
-      }
-
-      // Private commands remain restricted to the Private Owner's exact
-      // verified self-chat; other messages are never dispatched as commands.
-      if (!isPrivateSelfChat({
+      // Record new live messages from supported direct, group and LID chats.
+      // Inbox visibility is a separate user setting; command execution is
+      // still restricted to the exact verified Private Owner self-chat.
+      if (!isPrivateVisibleChatJid(remoteJid)) continue
+      const privateSelfChat = isPrivateSelfChat({
         sessionId, remoteJid, ownJid: currentSocket.user?.id || '',
         privateOwnerNumber: ownerConfig.privateOwnerNumber,
-      })) continue
+      })
       await chatStore.recordMessage({ sessionId, message, socket: currentSocket, downloadMedia: (msg, socket) => downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: socket.updateMediaMessage }) })
+      if (message.key.fromMe !== true && studioSettings.private.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
+      if (message.key.fromMe !== true || !privateSelfChat) continue
       privateControl = isPrivateSelfCommand({
         sessionId,
         message,
@@ -723,17 +717,18 @@ async function handleMessages(sessionId, currentSocket, event) {
       if (!privateControl) continue
       registry = privateCommandRegistry
     } else if (sessionId === 'public') {
-      // Every fromMe event on the public account is inert. Public commands
-      // come only from an allowlisted direct WhatsApp phone-number identity.
-      if (message.key.fromMe === true) continue
-      if (!isAllowedInbound({
+      // Capture supported new direct/group/LID conversations for the inbox.
+      // The sender allowlist remains a separate gate for bot command handling.
+      if (message.key.fromMe === true || !isPrivateVisibleChatJid(remoteJid)) continue
+      const allowedToUseCommands = isAllowedInbound({
         remoteJid,
         fromMe: false,
         allowedSenders: publicAllowedSenders(),
-      })) continue
-      const firstConversationMessage = !await chatStore.hasConversation(sessionId, remoteJid)
+      })
+      const firstConversationMessage = allowedToUseCommands && !await chatStore.hasConversation(sessionId, remoteJid)
       await chatStore.recordMessage({ sessionId, message, socket: currentSocket, downloadMedia: (msg, socket) => downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: socket.updateMediaMessage }) })
       if (studioSettings.public.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
+      if (!allowedToUseCommands) continue
       if (firstConversationMessage && studioSettings.public.welcomeMessage) {
         const welcome = await currentSocket.sendMessage(remoteJid, { text: studioSettings.public.welcomeMessage })
         await chatStore.recordMessage({ sessionId, message: welcome, socket: currentSocket })
@@ -1148,18 +1143,14 @@ function chatAccount(value) {
   return accountId
 }
 function authorizedChat(accountId, jid) {
+  if (!isPrivateVisibleChatJid(jid)) return false
   if (accountId === 'private') {
     const session = accountRuntime.get('private')
     const ownJid = session.socket?.user?.id || session.auth?.state?.creds?.me?.id || ''
     const own = senderNumberFromJid(ownJid)
-    return Boolean(
-      ownerConfig.privateOwnerNumber && own === ownerConfig.privateOwnerNumber &&
-      isPrivateVisibleChatJid(jid)
-    )
+    return Boolean(ownerConfig.privateOwnerNumber && own === ownerConfig.privateOwnerNumber)
   }
-  const target = senderNumberFromJid(jid)
-  if (!target || String(jid).endsWith('@g.us') || String(jid).endsWith('@broadcast')) return false
-  return publicAllowedSenders().has(target)
+  return true
 }
 app.get('/api/env', requireAdmin, (_req, res) => {
   res.json({ ok: true, env: envView(studioSettings), owners: {
@@ -1212,11 +1203,39 @@ app.put('/api/settings', requireAdmin, async (req, res) => {
     res.status(400).json({ ok: false, error: String(error?.message || 'Could not save settings.') })
   }
 })
+app.get('/api/chats/:accountId/visibility', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const chats = await chatStore.listChats(accountId, { limit: 500 })
+    res.json({
+      ok: true,
+      visibility: studioSettings[accountId].chatVisibility,
+      chats: chats.filter(chat => authorizedChat(accountId, chat.jid)).map(chat => ({
+        ...chat, kind: String(chat.jid).endsWith('@g.us') ? 'groups' : 'individuals',
+        visible: isChatVisible(studioSettings[accountId], chat.jid),
+      })),
+    })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not read inbox visibility.') })
+  }
+})
+app.put('/api/chats/:accountId/visibility', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const next = structuredClone(studioSettings)
+    next[accountId].chatVisibility = normalizeChatVisibility(req.body?.visibility || {})
+    studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings(next))
+    publishStudioEvent('settings.updated', { [accountId]: true })
+    res.json({ ok: true, visibility: studioSettings[accountId].chatVisibility })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not save inbox visibility.') })
+  }
+})
 app.get('/api/chats/:accountId', requireAdmin, async (req, res) => {
   try {
     const accountId = chatAccount(req.params.accountId)
     const chats = await chatStore.listChats(accountId, { limit: req.query.limit, query: req.query.q })
-    res.json({ ok: true, chats: chats.filter(chat => authorizedChat(accountId, chat.jid)) })
+    res.json({ ok: true, chats: chats.filter(chat => authorizedChat(accountId, chat.jid) && isChatVisible(studioSettings[accountId], chat.jid)) })
   } catch (error) {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not read conversations.') })
   }
@@ -1225,7 +1244,7 @@ app.get('/api/chats/:accountId/:jid/messages', requireAdmin, async (req, res) =>
   try {
     const accountId = chatAccount(req.params.accountId)
     const jid = decodeURIComponent(String(req.params.jid || ''))
-    if (!authorizedChat(accountId, jid) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    if ((!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid)) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found.' })
     const messages = await chatStore.getMessages(accountId, jid, { limit: req.query.limit, before: req.query.before })
     await chatStore.markRead(accountId, jid)
     res.json({ ok: true, messages })
@@ -1239,7 +1258,7 @@ app.post('/api/chats/:accountId/:jid/send', requireAdmin, async (req, res) => {
     const jid = decodeURIComponent(String(req.params.jid || ''))
     const text = String(req.body?.text || '').trim()
     if (!text || Buffer.byteLength(text, 'utf8') > 12000) return res.status(400).json({ ok: false, error: 'Enter a message up to 12 KB.' })
-    if (!authorizedChat(accountId, jid) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found or not authorized.' })
+    if ((!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid)) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found or not authorized.' })
     const session = accountRuntime.get(accountId), socket = session.socket
     if (!socket || session.state !== 'connected') return res.status(503).json({ ok: false, error: 'This WhatsApp account is not connected.' })
     const sent = await socket.sendMessage(jid, { text })

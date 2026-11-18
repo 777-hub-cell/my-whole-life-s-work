@@ -7,6 +7,40 @@ const DEFAULT_PROFILE = Object.freeze({
   rejectCalls: false, alwaysOnline: false, commandCooldown: 3, welcomeMessage: '',
 })
 const booleanKeys = ['autoRead', 'showTyping', 'rejectCalls', 'alwaysOnline']
+const DEFAULT_CHAT_FILTER = Object.freeze({ mode: 'all', overrides: [] })
+const CHAT_JID_PATTERNS = [
+  /^\\d{7,15}@s\\.whatsapp\\.net$/,
+  /^\\d{5,25}-\\d{5,25}@g\\.us$/,
+  /^\\d{5,25}@lid$/,
+]
+function normalizeChatFilter(value = {}, kind) {
+  const mode = value.mode === 'selected' ? 'selected' : 'all'
+  const overrides = []
+  const seen = new Set()
+  for (const entry of Array.isArray(value.overrides) ? value.overrides.slice(0, 1000) : []) {
+    const jid = String(entry?.jid || '').trim()
+    const valid = CHAT_JID_PATTERNS.some(pattern => pattern.test(jid))
+    const isGroup = jid.endsWith('@g.us')
+    if (!valid || (kind === 'groups') !== isGroup) throw new Error('Inbox visibility contains an invalid chat identifier.')
+    if (seen.has(jid)) continue
+    seen.add(jid)
+    overrides.push({ jid, visible: entry?.visible === true })
+  }
+  return { mode, overrides }
+}
+export function normalizeChatVisibility(value = {}) {
+  return {
+    individuals: normalizeChatFilter(value.individuals, 'individuals'),
+    groups: normalizeChatFilter(value.groups, 'groups'),
+  }
+}
+export function isChatVisible(profile, jid) {
+  const value = String(jid || '').trim()
+  const kind = value.endsWith('@g.us') ? 'groups' : 'individuals'
+  const filter = profile?.chatVisibility?.[kind] || DEFAULT_CHAT_FILTER
+  const override = filter.overrides?.find(entry => entry.jid === value)
+  return override ? override.visible === true : filter.mode !== 'selected'
+}
 function normalizeProfile(value = {}, scope) {
   const name = String(value.botName ?? DEFAULT_PROFILE.botName).trim().slice(0, 48) || 'Aharane'
   const cooldown = Number(value.commandCooldown ?? DEFAULT_PROFILE.commandCooldown)

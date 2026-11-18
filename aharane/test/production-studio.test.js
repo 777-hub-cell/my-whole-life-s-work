@@ -25,7 +25,30 @@ test('the uploaded Local Studio preview is the served production UI', async () =
 
 test('the offline service worker caches the bridge and invalidates the previous shell', async () => {
   const sw = await read('../control-centre/sw.js')
-  assert.ok(sw.includes('aharane-local-studio-shell-v9'))
+  assert.ok(sw.includes('aharane-local-studio-shell-v10'))
   assert.ok(sw.includes('/aharane/studio/production-bridge.js'))
   assert.ok(sw.includes("['/aharane/studio/production-bridge.js','production-bridge.js']"))
+})
+
+test('individual and group chat visibility is configurable per account', async () => {
+  const bridge = await read('../control-centre/production-bridge.js')
+  const runtime = await read('../src/index.js')
+  const settings = await read('../src/studio-settings.js')
+  for (const marker of [
+    'function openChatVisibilityP',
+    'Individual chats',
+    'Group conversations',
+    'Show all',
+    'Only selected',
+    'data-vis-jid',
+    "apiP('chats/'+account+'/visibility'",
+    'id="chat-visibility"',
+  ]) assert.ok(bridge.includes(marker), 'Missing inbox visibility UI: ' + marker)
+  for (const marker of [
+    "app.get('/api/chats/:accountId/visibility'",
+    "app.put('/api/chats/:accountId/visibility'",
+    'isChatVisible(studioSettings[accountId]',
+  ]) assert.ok(runtime.includes(marker), 'Missing inbox visibility API: ' + marker)
+  assert.ok(settings.includes('export function normalizeChatVisibility'))
+  assert.ok(settings.includes('export function isChatVisible'))
 })

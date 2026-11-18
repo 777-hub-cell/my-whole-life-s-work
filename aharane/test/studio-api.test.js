@@ -87,7 +87,7 @@ test('Files menus remain compact floating overlays and staged changes require ex
  assert.ok(css.includes('.pop{'))
  assert.ok(bridge.includes('function fileMenuP'))
  assert.ok(bridge.includes('files/apply'))
- assert.ok(bridge.includes('confirm(\\'Apply staged source changes and restart Aharane?\\')')||bridge.includes('Apply staged source changes and restart Aharane?'))
+ assert.ok(bridge.includes('Apply staged source changes and restart Aharane?'))
 })
 
 test('browser navigation remains driven by the supplied five-tab preview', async () => {

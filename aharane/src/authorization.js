@@ -14,7 +14,7 @@ export function isPrivateSelfCommand({
   privateOwnerNumber,
   text,
   privateRegistry,
-  prefix = '!',
+  prefix = '.',
 } = {}) {
   if (sessionId !== 'private' || message?.key?.fromMe !== true ||
       !message?.key?.id || !message?.message) return false

@@ -801,7 +801,7 @@ accountRuntime = createAccountRuntime({
   makeSocket: ({ auth }) => makeWASocket({
     auth,
     logger,
-    browser: Browsers.macOS(APP_NAME),
+    browser: Browsers.macOS('Chrome'),
     markOnlineOnConnect: false,
     syncFullHistory: false,
     shouldSyncHistoryMessage: () => false,

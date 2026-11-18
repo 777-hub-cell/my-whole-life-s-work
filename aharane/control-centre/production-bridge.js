@@ -265,9 +265,17 @@ function packagePageP(){
 }
 window.openPackagePageP=()=>{S.path=['updates'];S.ed=false;render()};
 async function applyFilesP(){
+ const editor=Q('#ed');
+ if(editor)scheduleFileAutosaveP(S.cur,editor.value,0);
  if(!confirm('Apply staged source changes and restart Aharane?'))return;
- try{await apiP('files/apply',{method:'POST',body:pack({confirm:true})});notifyP('Applying staged changes…');await pollUpdateP();await refreshRuntimeP();render()}
- catch(error){notifyP(error.message)}
+ try{
+  const flushed=await flushAllFileAutosavesP();
+  if(!flushed||fileLocalDraftsP.size||fileAutosaveConflictsP.size){
+   throw new Error('Some edits are still saved only on this phone or need conflict review. Resolve them before applying.');
+  }
+  await apiP('files/apply',{method:'POST',body:pack({confirm:true})});
+  notifyP('Applying staged changes…');await pollUpdateP();await refreshRuntimeP();render();
+ }catch(error){notifyP(error.message)}
 }
 async function recoverFilesP(){
  const editor=Q('#ed'),editorPath=editor?S.cur:'',editorContent=editor?editor.value:null;
@@ -292,11 +300,15 @@ async function recoverFilesP(){
  }catch(error){notifyP(error.message)}
 }
 async function discardFilesP(){
- if(!confirm('Discard all staged source changes? This cannot be undone. The running Aharane version will not be changed.'))return;
+ if(!confirm('Discard all staged server changes and unsent device drafts? This cannot be undone. The running Aharane version will not be changed.'))return;
  try{
+  for(const timer of fileAutosaveTimersP.values())clearTimeout(timer);
+  fileAutosaveTimersP.clear();
+  while(fileAutosaveBusyP.size)await new Promise(resolve=>setTimeout(resolve,25));
   await apiP('files/discard',{method:'POST',body:pack({confirm:true})});
+  fileAutosaveQueuedP.clear();fileAutosaveConflictsP.clear();fileLocalDraftsP.clear();persistFileLocalDraftsP();P.fileData.clear();
   P.pending=false;P.stale=false;P.changedCount=0;
-  await loadTreeP(currentPathP());render();notifyP('Staged source changes discarded');
+  await loadTreeP(currentPathP());render();notifyP('Staged server and device drafts discarded');
  }catch(error){notifyP(error.message)}
 }
 function localDraftBannerP(){
@@ -476,11 +488,10 @@ async function restoreDeviceDraftP(){
  if(!draft||!editor||!data)return;
  if(!confirm('Restore the copy saved on this phone over the current staged server file? The draft on this phone will be kept until the new save is verified.'))return;
  if(draft.content===''&&data.content!==''&&!confirm('This will replace the server file with an empty file. Continue?'))return;
- fileAutosaveConflictsP.delete(path);
  editor.value=draft.content;updateSourceMemoryP(path,draft.content);
  scheduleFileAutosaveP(path,draft.content,0,{allowEmpty:true});
  const ok=await flushFileAutosaveP(path);
- if(ok)render();
+ if(ok){fileAutosaveConflictsP.delete(path);render()}else render();
 }
 function keepServerFileP(){
  const path=S.cur;

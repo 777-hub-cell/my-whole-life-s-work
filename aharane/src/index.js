@@ -916,6 +916,10 @@ app.post('/api/accounts/:accountId/pair-code', requireAdmin, async (req, res) =>
     if (accountId === 'private' && ownerConfig.privateOwnerNumber !== phoneNumber) {
       return res.status(400).json({ ok: false, error: 'The Private Owner number must match the number you are pairing to the private session.' })
     }
+    if (accountId === 'public' &&
+        [ownerConfig.privateOwnerNumber, ownerConfig.publicOwnerNumber].includes(phoneNumber)) {
+      return res.status(400).json({ ok: false, error: 'The public bot must use its own WhatsApp number, separate from both owner identities.' })
+    }
     const pairingCode = await accountRuntime.requestPairingCode(accountId, phoneNumber)
     res.json({ ok: true, accountId, pairingCode })
   } catch (error) {
@@ -960,8 +964,16 @@ app.post('/api/accounts/:accountId/repair', requireAdmin, async (req, res) => {
 // Backwards-compatible pairing endpoint defaults to the existing public session.
 app.post('/api/pair-code', requireAdmin, async (req, res) => {
   try {
+    const ip = String(req.ip || 'local') + ':public'
+    if (!allowPairAttempt(ip)) return res.status(429).json({ ok: false, error: 'Pairing rate limit reached for the public account; try again later.' })
     const phoneNumber = normalizePhone(req.body?.phoneNumber)
     if (!phoneNumber) return res.status(400).json({ ok: false, error: 'Enter a valid international phone number using 7 to 15 digits.' })
+    if (!ownerConfig.privateOwnerNumber || !ownerConfig.publicOwnerNumber) {
+      return res.status(409).json({ ok: false, error: 'Save two different owner numbers before pairing the WhatsApp accounts.' })
+    }
+    if ([ownerConfig.privateOwnerNumber, ownerConfig.publicOwnerNumber].includes(phoneNumber)) {
+      return res.status(400).json({ ok: false, error: 'The public bot must use its own WhatsApp number, separate from both owner identities.' })
+    }
     const pairingCode = await accountRuntime.requestPairingCode('public', phoneNumber)
     res.json({ ok: true, accountId: 'public', pairingCode })
   } catch (error) {

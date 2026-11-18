@@ -30,16 +30,37 @@ test('HttpOnly session cookies authenticate same-origin GETs and WebSocket upgra
 })
 
 
-test('private pairing only needs its matching Private Owner; public pairing still needs two distinct owners', async () => {
+test('both accounts pair from their saved configuration number without a duplicate phone input', async () => {
  const s=await read('../src/index.js')
  const start=s.indexOf("app.post('/api/accounts/:accountId/pair-code'")
  const end=s.indexOf("app.get('/api/accounts/:accountId/qr'",start)
  const route=s.slice(start,end)
- assert.ok(route.includes("if (accountId === 'private')"))
- assert.ok(route.includes('if (!ownerConfig.privateOwnerNumber)'))
- assert.ok(route.includes("error: 'Save the Private Owner number in Configuration before pairing this account.'"))
- assert.ok(route.includes("error: 'Save two different owner numbers in Configuration before pairing the Public account.'"))
- assert.ok(route.includes("[ownerConfig.privateOwnerNumber, ownerConfig.publicOwnerNumber].includes(phoneNumber)"))
+ assert.ok(route.includes("accountId === 'private' ? ownerConfig.privateOwnerNumber : ownerConfig.publicBotNumber"))
+ assert.ok(route.includes("session.registered || session.state === 'connected'"))
+ assert.ok(route.includes('accountRuntime.requestPairingCode(accountId, phoneNumber)'))
+ assert.ok(!route.includes('req.body?.phoneNumber'))
+ assert.ok(!route.includes('ownerConfig.publicOwnerNumber'))
+})
+
+test('QR reads are passive and a QR socket starts only after an explicit POST request', async () => {
+ const s=await read('../src/index.js')
+ const start=s.indexOf("app.get('/api/accounts/:accountId/qr'")
+ const end=s.indexOf("app.post('/api/accounts/:accountId/reconnect'",start)
+ const routes=s.slice(start,end)
+ const getRoute=routes.slice(0,routes.indexOf("app.post('/api/accounts/:accountId/qr'"))
+ const postRoute=routes.slice(routes.indexOf("app.post('/api/accounts/:accountId/qr'"))
+ assert.ok(!getRoute.includes('accountRuntime.start('), 'GET must never start a pairing socket.')
+ assert.ok(postRoute.includes('await accountRuntime.start(accountId)'), 'Only explicit POST starts a QR session.')
+ assert.ok(getRoute.includes("session.registered || session.state === 'connected'"))
+})
+
+test('the backend exposes protected full-history chat search and browser file downloads', async () => {
+ const s=await read('../src/index.js')
+ assert.ok(s.includes("app.get('/api/chats/:accountId/search'"))
+ assert.ok(s.includes('chatStore.searchMessages(accountId'))
+ assert.ok(s.includes("app.get('/api/files/download'"))
+ assert.ok(s.includes("app.post('/api/files/export-selection'"))
+ assert.ok(s.includes("Content-Disposition', `attachment; filename*=UTF-8''"))
 })
 
 test('Files root enumerates the deployed release and exposes only allowlisted source entries', async () => {

@@ -29,6 +29,46 @@ test('HttpOnly session cookies authenticate same-origin GETs and WebSocket upgra
  assert.ok(s.includes("async (req, transport, head)"))
 })
 
+
+test('private pairing only needs its matching Private Owner; public pairing still needs two distinct owners', async () => {
+ const s=await read('../src/index.js')
+ const start=s.indexOf("app.post('/api/accounts/:accountId/pair-code'")
+ const end=s.indexOf("app.get('/api/accounts/:accountId/qr'",start)
+ const route=s.slice(start,end)
+ assert.ok(route.includes("if (accountId === 'private')"))
+ assert.ok(route.includes('if (!ownerConfig.privateOwnerNumber)'))
+ assert.ok(route.includes("error: 'Save the Private Owner number in Configuration before pairing this account.'"))
+ assert.ok(route.includes("error: 'Save two different owner numbers in Configuration before pairing the Public account.'"))
+ assert.ok(route.includes("[ownerConfig.privateOwnerNumber, ownerConfig.publicOwnerNumber].includes(phoneNumber)"))
+})
+
+test('Files root enumerates the deployed release and exposes only allowlisted source entries', async () => {
+ const s=await read('../src/index.js')
+ const start=s.indexOf("async function listSourceFiles(relativePath = '')")
+ const end=s.indexOf("\nasync function ensureManualEditBackup()",start)
+ const fn=s.slice(start,end)
+ assert.ok(fn.includes('const base = await sourceWorkspaceDirectory()'))
+ assert.ok(fn.includes('readdir(base, { withFileTypes: true })'))
+ assert.ok(fn.includes('SOURCE_DIRS.has(row.name)'))
+ assert.ok(fn.includes('SOURCE_ROOT_FILES.has(row.name)'))
+ assert.ok(fn.includes('row.isSymbolicLink()'))
+})
+
+test('source ZIP export is protected and only includes allowlisted source files', async () => {
+ const s=await read('../src/index.js')
+ const module=await read('../src/source-export.js')
+ const route=s.slice(s.indexOf("app.get('/api/files/export'"),s.indexOf("app.get('/api/files/tree'"))
+ assert.ok(route.includes('requireAdmin'))
+ assert.ok(route.includes('listSourceFiles(directory)'))
+ assert.ok(route.includes('safeSourceTarget(path)'))
+ assert.ok(route.includes("Content-Type', 'application/zip'"))
+ assert.ok(route.includes(String.raw`Content-Disposition', 'attachment; filename="aharane-source.zip"'`))
+ assert.ok(route.includes('createSourceZip(files)'))
+ assert.ok(module.includes('0x04034b50'))
+ assert.ok(module.includes('0x02014b50'))
+ assert.ok(module.includes('0x06054b50'))
+})
+
 test('the supplied Studio preview uses protected same-origin APIs', async () => {
  const html=await read('../control-centre/index.html')
  const bridge=await read('../control-centre/production-bridge.js')

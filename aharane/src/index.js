@@ -1,6 +1,7 @@
 import { appendFile, cp, lstat, mkdir, open, readFile, realpath, readdir, rename, rm, stat, statfs, symlink, writeFile } from 'node:fs/promises'
 import { constants as fsConstants, createReadStream } from 'node:fs'
 import { createHash, createHmac, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto'
+import { createSourceZip } from './source-export.js'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { resolve, join, dirname, sep, relative, isAbsolute, extname } from 'node:path'
@@ -406,16 +407,25 @@ async function safeSourceTarget(value, { allowMissing = false } = {}) {
 
 async function listSourceFiles(relativePath = '') {
   if (!relativePath) {
+    // Enumerate the real release root first, then apply the explicit allowlist.
+    // The old per-name safeSourceTarget loop silently converted every path error
+    // into an empty result, making a healthy release look like an empty Files root.
+    const base = await sourceWorkspaceDirectory()
+    const rows = await readdir(base, { withFileTypes: true })
     const rootEntries = []
-    for (const name of [...SOURCE_DIRS, ...SOURCE_ROOT_FILES]) {
-      const target = await safeSourceTarget(name).catch(() => null)
-      if (!target?.info) continue
+    for (const row of rows) {
+      if (row.isSymbolicLink()) continue
+      const isFolder = row.isDirectory() && SOURCE_DIRS.has(row.name)
+      const isFile = row.isFile() && SOURCE_ROOT_FILES.has(row.name)
+      if (!isFolder && !isFile) continue
+      const info = await lstat(join(base, row.name)).catch(() => null)
+      if (!info || info.isSymbolicLink() || (isFolder && !info.isDirectory()) || (isFile && !info.isFile())) continue
       rootEntries.push({
-        name,
-        path: name,
-        type: target.info.isDirectory() ? 'folder' : 'file',
-        size: target.info.isFile() ? target.info.size : null,
-        modified: target.info.mtime.toISOString(),
+        name: row.name,
+        path: row.name,
+        type: isFolder ? 'folder' : 'file',
+        size: isFile ? info.size : null,
+        modified: info.mtime.toISOString(),
         readOnly: false,
       })
     }
@@ -965,15 +975,20 @@ app.post('/api/accounts/:accountId/pair-code', requireAdmin, async (req, res) =>
     if (!allowPairAttempt(ip)) return res.status(429).json({ ok: false, error: 'Pairing rate limit reached for this account; try again later.' })
     const phoneNumber = normalizePhone(req.body?.phoneNumber)
     if (!phoneNumber) return res.status(400).json({ ok: false, error: 'Enter a valid international phone number using 7 to 15 digits.' })
-    if (!ownerConfig.privateOwnerNumber || !ownerConfig.publicOwnerNumber) {
-      return res.status(409).json({ ok: false, error: 'Save two different owner numbers before pairing the WhatsApp accounts.' })
-    }
-    if (accountId === 'private' && ownerConfig.privateOwnerNumber !== phoneNumber) {
-      return res.status(400).json({ ok: false, error: 'The Private Owner number must match the number you are pairing to the private session.' })
-    }
-    if (accountId === 'public' &&
-        [ownerConfig.privateOwnerNumber, ownerConfig.publicOwnerNumber].includes(phoneNumber)) {
-      return res.status(400).json({ ok: false, error: 'The public bot must use its own WhatsApp number, separate from both owner identities.' })
+    if (accountId === 'private') {
+      if (!ownerConfig.privateOwnerNumber) {
+        return res.status(409).json({ ok: false, error: 'Save the Private Owner number in Configuration before pairing this account.' })
+      }
+      if (ownerConfig.privateOwnerNumber !== phoneNumber) {
+        return res.status(400).json({ ok: false, error: 'The Private Owner number must match the number you are pairing to the private session.' })
+      }
+    } else {
+      if (!ownerConfig.privateOwnerNumber || !ownerConfig.publicOwnerNumber) {
+        return res.status(409).json({ ok: false, error: 'Save two different owner numbers in Configuration before pairing the Public account.' })
+      }
+      if ([ownerConfig.privateOwnerNumber, ownerConfig.publicOwnerNumber].includes(phoneNumber)) {
+        return res.status(400).json({ ok: false, error: 'The public bot must use its own WhatsApp number, separate from both owner identities.' })
+      }
     }
     const pairingCode = await accountRuntime.requestPairingCode(accountId, phoneNumber)
     res.json({ ok: true, accountId, pairingCode })
@@ -1357,6 +1372,54 @@ app.get('/api/storage', requireAdmin, async (_req, res) => {
     res.json({ ok: true, disk: { totalBytes: diskTotal, freeBytes: diskFree, usedBytes: Math.max(0, diskTotal - diskFree) }, media })
   } catch {
     res.status(500).json({ ok: false, error: 'Could not read server storage usage.' })
+  }
+})
+
+app.get('/api/files/export', requireAdmin, async (_req, res) => {
+  try {
+    const files = []
+    let totalBytes = 0
+    async function walk(directory = '') {
+      const listing = await listSourceFiles(directory)
+      for (const child of listing.children) {
+        const path = child.path
+        if (child.type === 'folder') {
+          await walk(path)
+          continue
+        }
+        const target = await safeSourceTarget(path)
+        if (!target.info?.isFile() || target.info.isSymbolicLink()) continue
+        if (target.info.size > 8 * 1024 * 1024) {
+          sourcePathError(413, 'EXPORT_FILE_TOO_LARGE', 'A source file is too large to include in the ZIP: ' + path)
+        }
+        const handle = await open(target.full, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0))
+        try {
+          const info = await handle.stat()
+          if (!info.isFile() || info.size > 8 * 1024 * 1024) continue
+          const content = await handle.readFile()
+          totalBytes += content.length
+          if (totalBytes > 45 * 1024 * 1024 || files.length >= 2000) {
+            sourcePathError(413, 'EXPORT_TOO_LARGE', 'The source export exceeds the safe 45 MB or 2,000-file limit.')
+          }
+          files.push({ path, content })
+        } finally {
+          await handle.close().catch(() => {})
+        }
+      }
+    }
+    await walk('')
+    if (!files.length) return res.status(404).json({ ok: false, error: 'No source files were found to export.' })
+    const archive = createSourceZip(files)
+    res.status(200)
+      .set('Content-Type', 'application/zip')
+      .set('Content-Disposition', 'attachment; filename="aharane-source.zip"')
+      .set('Cache-Control', 'private, no-store, no-cache, must-revalidate')
+      .set('Pragma', 'no-cache')
+      .set('X-Content-Type-Options', 'nosniff')
+      .set('Content-Length', String(archive.length))
+      .send(archive)
+  } catch (error) {
+    res.status(error?.status || 500).json({ ok: false, error: String(error?.message || 'Could not export the Aharane source code.') })
   }
 })
 

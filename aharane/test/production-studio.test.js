@@ -25,11 +25,31 @@ test('the uploaded Local Studio preview is the served production UI', async () =
   assert.ok(!bridge.includes('Math.random'), 'The production bridge must not fabricate runtime data.')
 })
 
+test('Export Bot Source uses a real browser download instead of the preview-only host API', async () => {
+ const app=await read('../control-centre/app.js')
+ const bridge=await read('../control-centre/production-bridge.js')
+ assert.ok(app.includes('id="export-bot-source"'))
+ assert.ok(bridge.includes("fetch(API+'/files/export'"))
+ assert.ok(bridge.includes("downloadP('aharane-source.zip',blob)"))
+ assert.ok(!bridge.includes("claude.use('downloads')"))
+})
+
 test('the offline service worker caches the bridge and invalidates the previous shell', async () => {
   const sw = await read('../control-centre/sw.js')
   assert.ok(sw.includes('aharane-local-studio-shell-v10'))
   assert.ok(sw.includes('/aharane/studio/production-bridge.js'))
   assert.ok(sw.includes("['/aharane/studio/production-bridge.js','production-bridge.js']"))
+})
+
+test('Configuration and ENV remain separate production screens', async () => {
+  const app = await read('../control-centre/app.js')
+  const bridge = await read('../control-centre/production-bridge.js')
+  assert.ok(app.includes("S.sub==='cfg'?cfgV()"), 'Home must retain its dedicated Configuration view.')
+  assert.ok(app.includes("files:filesV,env:envV,chats:chatsV"), 'ENV must remain its own bottom-navigation tab.')
+  assert.ok(bridge.includes('async function saveConfigP()'), 'Configuration must save through the account settings APIs.')
+  assert.ok(bridge.includes('function envViewP()'), 'ENV must keep its own environment-values view.')
+  assert.ok(!bridge.includes("openCfg=function(){go('env')}"), 'Configuration must not redirect to ENV.')
+  assert.ok(!bridge.includes("cfgFor=function(){go('env')}"), 'Account-specific Configuration must not redirect to ENV.')
 })
 
 test('individual and group chat visibility is configurable per account', async () => {

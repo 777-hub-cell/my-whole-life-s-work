@@ -36,7 +36,7 @@ test('Export Bot Source uses a real browser download instead of the preview-only
 
 test('the offline service worker caches the bridge and invalidates the previous shell', async () => {
   const sw = await read('../control-centre/sw.js')
-  assert.ok(sw.includes('aharane-local-studio-shell-v11'))
+  assert.ok(sw.includes('aharane-local-studio-shell-v12'))
   assert.ok(sw.includes('/aharane/studio/production-bridge.js'))
   assert.ok(sw.includes("['/aharane/studio/production-bridge.js','production-bridge.js']"))
 })
@@ -191,6 +191,6 @@ test('the Files editor verifies server content before showing a successful save'
  assert.ok(save.includes("apiP('files/content'"))
  assert.ok(save.includes("apiP('files/preview?item='"))
  assert.ok(save.includes('verified.content!==content||verified.sha256!==r.sha256'))
- assert.ok(save.includes('Saved and verified on the server'))
+ assert.ok(save.includes('File saved and verified on the server'))
  assert.ok(save.includes('This will replace the existing file with an empty file. Continue?'))
 })

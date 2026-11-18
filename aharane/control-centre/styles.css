@@ -794,3 +794,4 @@ body[data-theme="dark"] .chat-message-row.outgoing .chat-bubble { background:#34
   .chat-row-bottom small { font-size:11px; }
 }
 
+.editor-back-button,.chat-back-button,.media-viewer-header button { width:auto; min-width:38px; padding:0 5px; font-size:11px; font-weight:600; }

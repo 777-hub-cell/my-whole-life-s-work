@@ -1463,6 +1463,61 @@ app.get('/api/files/export', requireAdmin, async (_req, res) => {
   }
 })
 
+app.post('/api/files/export-selection', requireAdmin, async (req, res) => {
+  try {
+    const paths = Array.isArray(req.body?.paths) ? req.body.paths : []
+    if (!paths.length || paths.length > 100) {
+      return res.status(400).json({ ok: false, error: 'Select between 1 and 100 files or folders to export.' })
+    }
+    const files = [], seen = new Set()
+    let totalBytes = 0
+    async function addFile(path) {
+      if (seen.has(path)) return
+      const target = await safeSourceTarget(path)
+      if (!target.info?.isFile() || target.info.isSymbolicLink()) return
+      if (!SOURCE_EXTENSIONS.has(extname(path).toLowerCase()) && !SOURCE_ROOT_FILES.has(target.parts[0])) {
+        sourcePathError(403, 'EXPORT_TYPE_BLOCKED', 'This file type is not available for export: ' + path)
+      }
+      if (target.info.size > 8 * 1024 * 1024) sourcePathError(413, 'EXPORT_FILE_TOO_LARGE', 'A selected file is too large: ' + path)
+      const handle = await open(target.full, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0))
+      try {
+        const info = await handle.stat()
+        if (!info.isFile() || info.size > 8 * 1024 * 1024) return
+        const content = await handle.readFile()
+        totalBytes += content.length
+        if (totalBytes > 45 * 1024 * 1024 || files.length >= 2000) {
+          sourcePathError(413, 'EXPORT_TOO_LARGE', 'The selected source exceeds the safe 45 MB or 2,000-file limit.')
+        }
+        seen.add(path);files.push({ path, content })
+      } finally { await handle.close().catch(() => {}) }
+    }
+    async function walk(path) {
+      const listing = await listSourceFiles(path)
+      for (const child of listing.children) {
+        if (child.type === 'folder') await walk(child.path)
+        else await addFile(child.path)
+      }
+    }
+    for (const raw of paths) {
+      const path = String(raw || '')
+      const target = await safeSourceTarget(path)
+      if (target.info?.isDirectory()) await walk(path)
+      else if (target.info?.isFile()) await addFile(path)
+    }
+    if (!files.length) return res.status(404).json({ ok: false, error: 'No eligible source files were found in that selection.' })
+    const archive = createSourceZip(files)
+    res.status(200)
+      .set('Content-Type', 'application/zip')
+      .set('Content-Disposition', 'attachment; filename="aharane-selection.zip"')
+      .set('Cache-Control', 'private, no-store, no-cache, must-revalidate')
+      .set('X-Content-Type-Options', 'nosniff')
+      .set('Content-Length', String(archive.length))
+      .send(archive)
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not export the selected source files.') })
+  }
+})
+
 app.get('/api/files/tree', requireAdmin, async (req, res) => {
   try {
     const result = await listSourceFiles(String(req.query.item || ''))

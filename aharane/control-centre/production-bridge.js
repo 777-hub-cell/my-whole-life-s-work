@@ -264,7 +264,7 @@ async function resetAppSourceP(){
  }catch(error){notifyP(error.message)}finally{db?.close()}
 }
 function moreViewP(){
- if(P.offline)return '<h1>More</h1><p class="sub">On-device Studio source tools.</p><div class="card list"><button class="row" onclick="openAppSourceP(\\'index.html\\')"><span class="grow"><div class="t">Studio source</div><div class="d">Edit HTML, CSS and JavaScript saved on this phone</div></span><span class="d">›</span></button></div>';
+ if(P.offline)return '<h1>More</h1><p class="sub">On-device Studio source tools.</p><div class="card list"><button class="row" onclick="openAppSourceP(\'index.html\')"><span class="grow"><div class="t">Studio source</div><div class="d">Edit HTML, CSS and JavaScript saved on this phone</div></span><span class="d">›</span></button></div>';
  return moreBase()+'<h2>Development</h2><div class="card list"><button class="row" id="open-app-source"><span class="grow"><div class="t">Studio source</div><div class="d">Edit the app HTML, CSS and JavaScript on this phone</div></span><span class="d">›</span></button></div><div class="btns" style="margin-top:18px"><button class="btn" id="change-password">Change password</button><button class="btn d" id="sign-out">Sign out</button></div>';
 }
 function changePasswordP(){

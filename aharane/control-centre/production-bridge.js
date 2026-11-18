@@ -654,10 +654,10 @@ function bindProductionP(){
  const env=Q('#prod-save-env');if(env)env.onclick=saveEnvP;
  const saveConfig=Q('#csv');if(saveConfig)saveConfig.onclick=saveConfigP;
  document.querySelectorAll('[data-e]').forEach(input=>input.oninput=()=>{const row=envs[Number(input.dataset.e)];if(row&&!row.readOnly){row.v=input.value;envDirty=true}});
- const editor=Q('#ed');if(editor)editor.oninput=()=>{
-  const [directory,name]=getFile(S.cur);directory[name]=editor.value;
+ const fileEditor=Q('#ed');if(fileEditor)fileEditor.oninput=()=>{
+  const [directory,name]=getFile(S.cur);directory[name]=fileEditor.value;
   const status=Q('#es');if(status)status.textContent='Unsaved changes';
-  const count=Q('#ec');if(count)count.textContent=editor.value.split('\\n').length+' lines';
+  const count=Q('#ec');if(count)count.textContent=fileEditor.value.split('\\n').length+' lines';
  };
  const save=Q('#prod-file-save');if(save)save.onclick=saveLiveFileP;
  const down=Q('#prod-file-download');if(down)down.onclick=()=>downloadSourceFileP(S.cur,S.cur.split('/').pop()).catch(e=>notifyP(e.message));

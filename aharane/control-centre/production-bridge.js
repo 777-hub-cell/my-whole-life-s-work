@@ -7,12 +7,12 @@ const pack=JSON.stringify;
 // Shared preview callbacks replaced by the live production bridge. Keep these
 // bindings declared inside this strict-mode closure before installBridgeP assigns them.
 let filesBase, openFileBase, actBase, moreBase, homeBase, bubBase, openChatBase, bindBase;
-const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],fileData:new Map(),pending:false,chatTimer:null,qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false,visibility:null,visibilityChats:[]};
+const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],packageError:'',filesError:'',fileMeta:new Map(),fileData:new Map(),pending:false,uploadProgress:null,chatTimer:null,chatRefreshBusy:false,chatSearchTimer:null,chatSearchQuery:'',chatSearchResults:[],chatSearchLoading:false,chatSearchError:'',messageFingerprints:new Map(),qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false,visibility:null,visibilityChats:[]};
 function notifyP(s){if(typeof toast==='function')toast(s);else console.info(s)}
 async function apiP(path,options={}){
  const response=await fetch(API+'/'+String(path).replace(/^\/+/,''),{credentials:'same-origin',cache:'no-store',...options,headers:{...(options.body&&!(options.body instanceof ArrayBuffer)&&!(options.body instanceof Blob)?{'Content-Type':'application/json'}:{}),...(options.headers||{})}});
  const type=response.headers.get('content-type')||'',data=type.includes('application/json')?await response.json():null;
- if(!response.ok||data?.ok===false)throw new Error(data?.error||'Request failed ('+response.status+').');
+ if(!response.ok||data?.ok===false){const error=new Error(data?.error||'Request failed ('+response.status+').');error.status=response.status;throw error}
  return data||{};
 }
 function stopTimersP(){['chatTimer','qrTimer','statusTimer'].forEach(k=>{if(P[k])clearInterval(P[k]);P[k]=null})}
@@ -55,12 +55,27 @@ async function showLoginP(){
 }
 async function connectLiveP(){
  try{
-  const r=await Promise.all([apiP('status'),apiP('studio/snapshot'),apiP('owners'),apiP('env'),apiP('metrics'),apiP('activity?limit=300'),apiP('update/status')]);
-  P.runtime=r[0];P.snapshot=r[1];P.owners=r[2].owners||{};P.env=r[3].env||[];P.metrics=r[4];P.activity=r[5].entries||[];P.pending=Boolean(r[6].manualEdits?.pending);
-  P.packages=await loadPackagesP();await loadTreeP('');applyRuntimeP();applyEnvP();P.offline=false;document.body.classList.remove('aharane-booting');document.body.classList.add('aharane-authenticated');render();
-  P.statusTimer=setInterval(()=>refreshRuntimeP().catch(()=>{}),7000);
+  const core=await Promise.all([apiP('status'),apiP('studio/snapshot'),apiP('owners'),apiP('env')]);
+  P.runtime=core[0];P.snapshot=core[1];P.owners=core[2].owners||{};P.env=core[3].env||[];
+  const optional=await Promise.allSettled([apiP('metrics'),apiP('activity?limit=300'),apiP('update/status')]);
+  P.metrics=optional[0].status==='fulfilled'?optional[0].value:{};
+  P.activity=optional[1].status==='fulfilled'?(optional[1].value.entries||[]):[];
+  P.pending=optional[2].status==='fulfilled'?Boolean(optional[2].value.manualEdits?.pending):false;
+  try{P.packages=await loadPackagesP()}catch{P.packages=[]}
+  try{await loadTreeP('');P.filesError=''}catch(error){P.filesError=error.message}
+  applyRuntimeP();applyEnvP();P.offline=false;
+  document.body.classList.remove('aharane-booting');document.body.classList.add('aharane-authenticated');
+  render();
+  P.statusTimer=setInterval(()=>{if(!document.hidden)refreshRuntimeP().catch(()=>{})},20000);
   if(navigator.serviceWorker)navigator.serviceWorker.register('/aharane/studio/sw.js',{scope:'/aharane/studio/'}).catch(()=>{});
- }catch(error){await showLoginP();Q('#prod-auth-message').textContent=error.message}
+ }catch(error){
+  if(error.status===401){await showLoginP();return}
+  P.offline=true;
+  document.body.classList.remove('aharane-booting');document.body.classList.add('aharane-authenticated');
+  Q('#view').innerHTML='<div class="card" style="padding:20px;margin-top:24px"><h1>Studio temporarily unavailable</h1><p class="sub" id="studio-connect-error"></p><button class="btn p" id="studio-retry">Retry connection</button></div>';
+  Q('#studio-connect-error').textContent=error.message||'Could not connect to the Aharane service.';
+  Q('#studio-retry').onclick=()=>connectLiveP();
+ }
 }
 function applyRuntimeP(){
  const a=P.runtime?.accounts||{};
@@ -73,9 +88,19 @@ function applyRuntimeP(){
  const series=P.metrics?.hourlyMessages||[];bars=series.length?series.map(n=>Math.max(6,Math.min(100,Number(n)*12+6))):Array(24).fill(6);
 }
 async function refreshRuntimeP(){
- const r=await Promise.all([apiP('status'),apiP('studio/snapshot'),apiP('metrics'),apiP('update/status')]);
- P.runtime=r[0];P.snapshot=r[1];P.metrics=r[2];P.pending=Boolean(r[3].manualEdits?.pending);applyRuntimeP();
- if(S.tab==='home')render();refreshActivityP().catch(()=>{});return P.runtime;
+ const [runtime,snapshot]=await Promise.all([apiP('status'),apiP('studio/snapshot')]);
+ const previous=P.runtime?.accounts||{};
+ P.runtime=runtime;P.snapshot=snapshot;applyRuntimeP();
+ if(S.tab==='home'&&!S.sub){render()}
+ else if(S.tab==='home'&&S.sub==='pair'){
+  const id=accts[S.pi]?.slot==='public'?'public':'private',current=P.runtime?.accounts?.[id]||{};
+  if(current.connected||current.registered&&previous[id]?.registered!==current.registered){
+   S.pin=null;S.qrRequested=false;
+   if(P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}
+   render();
+  }
+ }
+ return P.runtime;
 }
 async function refreshActivityP(){
  const r=await apiP('activity?limit=500');P.activity=r.entries||[];
@@ -84,22 +109,27 @@ async function refreshActivityP(){
 }
 function applyEnvP(){
  envs=P.env.map(x=>({k:x.key,v:x.value,s:0,readOnly:Boolean(x.readOnly),scope:x.scope,type:x.type||'text'}));
- // Compatibility aliases feed the original Configuration form without
- // exposing or duplicating them in the separate ENV screen.
  const value=key=>String(P.env.find(x=>x.key===key)?.value??'');
  envs.push(
   {k:'PRIVATE_PREFIX',v:value('PRIVATE_COMMAND_PREFIX')||'.',readOnly:true},
   {k:'OWNER_NUMBER',v:P.owners.privateOwnerNumber||''},
   {k:'PUBLIC_PREFIX',v:value('PUBLIC_COMMAND_PREFIX')||'!',readOnly:true},
-  {k:'PUBLIC_NUMBER',v:P.owners.publicOwnerNumber||''}
+  {k:'PUBLIC_NUMBER',v:P.owners.publicOwnerNumber||''},
+  {k:'PUBLIC_BOT_NUMBER',v:P.owners.publicBotNumber||''}
  );
  envDirty=false;show={}
 }
 function currentPathP(){return S.path.join('/')}
 function updateFileTreeP(path,children){
  let obj=fs;for(const part of path.split('/').filter(Boolean)){if(!obj[part]||typeof obj[part]!=='object')obj[part]={};obj=obj[part]}
- Object.keys(obj).forEach(k=>delete obj[k]);(children||[]).forEach(x=>obj[x.name]=x.type==='folder'?{}:'');
+ Object.keys(obj).forEach(k=>delete obj[k]);
+ for(const item of children||[]){
+  const full=String(item.path||[path,item.name].filter(Boolean).join('/'));
+  P.fileMeta.set(full,item);
+  obj[item.name]=item.type==='folder'?{}:'';
+ }
 }
+window.AharaneFileMeta=path=>P.fileMeta.get(String(path||''))||null;
 async function loadTreeP(path=''){const r=await apiP('files/tree?item='+encodeURIComponent(path));updateFileTreeP(path,r.children||[]);P.pending=Boolean(r.pending);return r}
 async function loadSourceFileP(path){
  const r=await apiP('files/preview?item='+encodeURIComponent(path));P.fileData.set(path,r);
@@ -123,7 +153,10 @@ async function exportBotSourceP(button){
  }catch(error){notifyP(error.message)}
  finally{if(button)button.disabled=false}
 }
-async function loadPackagesP(){try{const r=await apiP('files/packages');return r.packages||[]}catch{return []}}
+async function loadPackagesP(){
+ try{const r=await apiP('files/packages');P.packageError='';return r.packages||[]}
+ catch(error){P.packageError=error.message||'Saved ZIP packages could not be loaded.';throw error}
+}
 async function uploadZipP(file){
  if(file.size<22||file.size>50*1024*1024)throw new Error('ZIP files must be no larger than 50 MB.');
  const digest=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());

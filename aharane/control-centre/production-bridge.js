@@ -179,16 +179,29 @@ async function loadPackagesP(){
  catch(error){P.packageError=error.message||'Saved ZIP packages could not be loaded.';throw error}
 }
 function updateUploadProgressP(){
- const label=Q('#prod-upload-label'),bar=Q('#prod-upload-bar');
- if(label&&P.uploadProgress)label.textContent='Uploading '+P.uploadProgress.filename+' · '+P.uploadProgress.completed+' of '+P.uploadProgress.total+' parts';
- if(bar&&P.uploadProgress)bar.style.width=Math.round(P.uploadProgress.completed/P.uploadProgress.total*100)+'%';
+ let holder=Q('#prod-upload-progress'),label=Q('#prod-upload-label'),bar=Q('#prod-upload-bar');
+ if(P.uploadProgress&&!holder&&S.tab==='files'){
+  holder=document.createElement('div');holder.id='prod-upload-progress';holder.className='card';
+  holder.style.cssText='padding:12px;margin:12px 0';
+  holder.innerHTML='<div class="d" id="prod-upload-label"></div><div class="pbar" style="margin-top:8px"><i id="prod-upload-bar" style="width:0"></i></div>';
+  const host=Q('#view'),list=host?.querySelector('.card.list');
+  if(list)host.insertBefore(holder,list);else host?.appendChild(holder);
+  label=Q('#prod-upload-label');bar=Q('#prod-upload-bar');
+ }
+ if(label&&P.uploadProgress){
+  label.textContent=(P.uploadProgress.stage==='preparing'?'Preparing ':'Uploading ')+P.uploadProgress.filename+' · '+P.uploadProgress.completed+' of '+P.uploadProgress.total+' parts';
+  if(bar)bar.style.width=Math.round(P.uploadProgress.completed/P.uploadProgress.total*100)+'%';
+ }
+ if(!P.uploadProgress)holder?.remove();
 }
 async function uploadZipP(file){
  if(file.size<22||file.size>50*1024*1024)throw new Error('ZIP files must be no larger than 50 MB.');
- const digest=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());
- const sum=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join(''),id=crypto.randomUUID(),count=Math.ceil(file.size/1048576);
- P.uploadProgress={filename:file.name,completed:0,total:count};updateUploadProgressP();
+ const count=Math.ceil(file.size/1048576);
+ P.uploadProgress={filename:file.name,completed:0,total:count,stage:'preparing'};updateUploadProgressP();
  try{
+  const digest=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());
+  const sum=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join(''),id=crypto.randomUUID();
+  P.uploadProgress.stage='uploading';updateUploadProgressP();
   await apiP('update/upload/start',{method:'POST',body:pack({updateId:id,filename:file.name,size:file.size,totalChunks:count,sha256:sum})});
   for(let i=0;i<count;i++){
    const bytes=new Uint8Array(await file.slice(i*1048576,(i+1)*1048576).arrayBuffer());let binary='';
@@ -196,9 +209,10 @@ async function uploadZipP(file){
    await apiP('update/upload/chunk',{method:'POST',body:pack({updateId:id,index:i,data:btoa(binary)})});
    P.uploadProgress.completed=i+1;updateUploadProgressP();
   }
+  P.uploadProgress.stage='validating';updateUploadProgressP();
   const result=await apiP('update/validate',{method:'POST',body:pack({updateId:id})});
   P.packages=await loadPackagesP();return result;
- }finally{P.uploadProgress=null}
+ }finally{P.uploadProgress=null;updateUploadProgressP()}
 }
 async function pollUpdateP(){
  for(let i=0;i<90;i++){await new Promise(r=>setTimeout(r,2000));const s=await apiP('update/status');if(['succeeded','failed','rolled_back','rollback_failed'].includes(s.update?.status))return s.update}
@@ -254,7 +268,7 @@ function createLiveFileP(type){
  });
 }
 function fileMenuP(name,button){
- closePop();const path=filePathP(name),folder=typeof node(S.path)[name]==='object',actions=['Rename','Move','Download'];if(!folder)actions.push('Delete');
+ closePop();const path=filePathP(name),folder=typeof node(S.path)[name]==='object',actions=folder?['Rename','Move','Download as ZIP']:['Rename','Move','Download','Delete'];
  const popup=document.createElement('div');popup.id='pop';popup.className='pop';popup.setAttribute('role','menu');
  popup.innerHTML=actions.map(a=>'<button role="menuitem" data-file-action="'+a+'"'+(a==='Delete'?' class="del"':'')+'>'+a+'</button>').join('');
  document.body.appendChild(popup);const r=button.getBoundingClientRect(),h=popup.offsetHeight,w=popup.offsetWidth;
@@ -264,6 +278,7 @@ function fileMenuP(name,button){
   try{
    if(a==='Rename')ask('Rename',name,'Save',async value=>{try{await apiP('files/rename',{method:'POST',body:pack({path,name:value})});await loadTreeP(currentPathP());render()}catch(error){notifyP(error.message)}});
    else if(a==='Move')ask('Move to folder (for example commands or private-commands)','commands','Move',async value=>{try{await apiP('files/move',{method:'POST',body:pack({path,destination:value==='root'?'':value})});await loadTreeP(currentPathP());render()}catch(error){notifyP(error.message)}});
+   else if(a==='Download as ZIP'){await exportSelectionZipP([path],name+'.zip')}
    else if(a==='Download'){await downloadSourceFileP(path,name);notifyP('Download started')}
    else if(a==='Delete'){if(!confirm('Delete '+name+'? The change will be staged.'))return;await apiP('files/delete',{method:'POST',body:pack({paths:[path]})});await loadTreeP(currentPathP());render()}
   }catch(error){notifyP(error.message)}

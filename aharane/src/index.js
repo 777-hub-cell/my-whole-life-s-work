@@ -10,25 +10,35 @@ import { WebSocket, WebSocketServer } from 'ws'
 import pino from 'pino'
 import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys'
 import {
-  commandResponse,
   isAllowedInbound,
   isSafeMessageUpsert,
   normalizePhone,
   parseAllowedSenders,
+  senderNumberFromJid,
 } from './policy.js'
+import { createAccountRuntime } from './account-runtime.js'
+import { loadCommandRegistry, dispatchCommand } from './command-registry.js'
+import { isPrivateSelfCommand, isPublicOwnerSender } from './authorization.js'
+import { loadOwnerConfig, normalizeOwnerConfig, saveOwnerConfig } from './owner-config.js'
 import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_ARCHIVE_BYTES } from './update-manager.js'
 
 const APP_NAME = 'Aharane'
+const PRIVATE_COMMAND_PREFIX = '.'
+const PUBLIC_COMMAND_PREFIX = '!'
 const HOST = process.env.AHARANE_HOST || '127.0.0.1'
 const PORT = Number(process.env.AHARANE_PORT || 8790)
 const DATA_DIR = resolve(process.env.AHARANE_DATA_DIR || '/var/lib/aharane')
+// The existing auth directory remains the public session so upgrades do not
+// require moving or re-pairing the current linked device.
 const AUTH_DIR = join(DATA_DIR, 'whatsapp-auth')
+const PRIVATE_AUTH_DIR = join(DATA_DIR, 'whatsapp-auth-private')
+const OWNER_CONFIG_FILE = join(DATA_DIR, 'owner-config.json')
 const ADMIN_AUTH_FILE = join(DATA_DIR, 'admin-auth.json')
 const ADMIN_SETUP_CODE_FILE = join(DATA_DIR, 'admin-setup-code')
 const ADMIN_TOKEN = String(process.env.AHARANE_ADMIN_TOKEN || '')
-const OWNER_NUMBER = String(process.env.AHARANE_OWNER_NUMBER || '')
-const EXTRA_ALLOWED_SENDERS = String(process.env.AHARANE_ALLOWED_SENDERS || '')
-const ALLOWED_SENDERS = parseAllowedSenders([OWNER_NUMBER, EXTRA_ALLOWED_SENDERS].filter(Boolean).join(','))
+const LEGACY_PRIVATE_OWNER_NUMBER = String(process.env.AHARANE_PRIVATE_OWNER_NUMBER || '')
+const LEGACY_PUBLIC_OWNER_NUMBER = String(process.env.AHARANE_PUBLIC_OWNER_NUMBER || process.env.AHARANE_OWNER_NUMBER || '')
+const LEGACY_PUBLIC_ALLOWED_SENDERS = String(process.env.AHARANE_ALLOWED_PUBLIC_SENDERS || process.env.AHARANE_ALLOWED_SENDERS || '')
 const APP_BASE = resolve('/opt/aharane')
 const CURRENT_RELEASE = join(APP_BASE, 'current')
 const RELEASES_DIR = join(APP_BASE, 'releases')
@@ -38,7 +48,7 @@ const UPDATE_STATE_FILE = join(UPDATE_DIR, 'state.json')
 const MANUAL_EDIT_STATE_FILE = join(UPDATE_DIR, 'manual-edit-state.json')
 const UPDATE_CHUNK_BYTES = 1024 * 1024
 const MAX_SOURCE_FILE_BYTES = 512 * 1024
-const SOURCE_DIRS = new Set(['src', 'public', 'scripts', 'test', 'examples'])
+const SOURCE_DIRS = new Set(['src', 'public', 'scripts', 'test', 'examples', 'commands', 'private-commands', 'plugins', 'lib'])
 const SOURCE_ROOT_FILES = new Set(['README.md', 'UPDATE-PACKAGE.md', 'LICENSE', 'AGENTS.md', 'package.json'])
 const SOURCE_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.json', '.md', '.html', '.css', '.txt', '.yml', '.yaml'])
 const execFileAsync = promisify(execFile)
@@ -57,18 +67,18 @@ if (ADMIN_TOKEN.length < 32) {
 
 await mkdir(DATA_DIR, { recursive: true, mode: 0o700 })
 await mkdir(AUTH_DIR, { recursive: true, mode: 0o700 })
+await mkdir(PRIVATE_AUTH_DIR, { recursive: true, mode: 0o700 })
 await mkdir(UPDATE_DIR, { recursive: true, mode: 0o700 })
 await mkdir(UPLOADS_DIR, { recursive: true, mode: 0o700 })
 
-let socket = null
-let socketReady = Promise.resolve()
-let state = 'starting'
-let registered = false
-let reconnectAttempts = 0
-let lastConnectedAt = 0
-let reconnectTimer = null
-let startPromise = null
-let pairRequestActive = false
+let ownerConfig = await loadOwnerConfig(OWNER_CONFIG_FILE, {
+  privateOwnerNumber: LEGACY_PRIVATE_OWNER_NUMBER,
+  publicOwnerNumber: LEGACY_PUBLIC_OWNER_NUMBER,
+  allowedPublicSenders: LEGACY_PUBLIC_ALLOWED_SENDERS,
+})
+let accountRuntime = null
+let publicCommandRegistry = null
+let privateCommandRegistry = null
 let updateInProgress = false
 let shuttingDown = false
 
@@ -78,15 +88,30 @@ const pairAttempts = new Map()
 const studioClients = new Set()
 let studioEventSequence = 0
 
+function publicAllowedSenders() {
+  return parseAllowedSenders([
+    ...(ownerConfig?.allowedPublicSenders || []),
+    ownerConfig?.publicOwnerNumber || '',
+  ].filter(Boolean).join(','))
+}
+
 function studioRuntimeSnapshot() {
+  const runtime = accountRuntime?.snapshot() || {
+    state: 'starting',
+    connected: false,
+    registered: false,
+    reconnectAttempts: 0,
+    lastConnectedAt: null,
+    accounts: {},
+  }
   return {
-    state,
-    connected: state === 'connected',
-    registered,
-    reconnectAttempts,
-    lastConnectedAt: lastConnectedAt || null,
-    allowlistedSenderCount: ALLOWED_SENDERS.size,
+    ...runtime,
+    allowlistedSenderCount: publicAllowedSenders().size,
     groupsEnabled: false,
+    ownerIdentities: {
+      privateOwnerConfigured: Boolean(ownerConfig?.privateOwnerNumber),
+      publicOwnerConfigured: Boolean(ownerConfig?.publicOwnerNumber),
+    },
   }
 }
 
@@ -634,136 +659,105 @@ function markMessageSeen(id) {
   if (!id) return false
   if (seenMessageIds.has(id)) return true
   seenMessageIds.set(id, Date.now())
-  if (seenMessageIds.size > 1500) {
+  if (seenMessageIds.size > 3000) {
     const first = seenMessageIds.keys().next().value
     seenMessageIds.delete(first)
   }
   return false
 }
 
-async function handleMessages(currentSocket, event) {
+async function handleMessages(sessionId, currentSocket, event) {
   if (!isSafeMessageUpsert(event)) return
   for (const message of event.messages) {
-    if (!message?.message || message.key?.fromMe) continue
-    if (markMessageSeen(message.key?.id)) continue
+    if (!message?.message || !message.key?.id) continue
+    if (markMessageSeen(sessionId + ':' + message.key.id)) continue
 
     const remoteJid = String(message.key?.remoteJid || '')
-    if (!isAllowedInbound({ remoteJid, fromMe: false, allowedSenders: ALLOWED_SENDERS })) continue
-
     const text = textFromMessage(message)
-    const reply = commandResponse(text)
-    if (!reply) continue
+    let registry
+    let isPublicOwner = false
+    let privateControl = false
 
-    const sender = remoteJid.slice(0, remoteJid.indexOf('@'))
-    if (!allowCommand(sender)) continue
+    if (sessionId === 'private') {
+      // Private Account A is an owner console, never a public responder.
+      // Only registered commands in its exact self-chat may run.
+      privateControl = isPrivateSelfCommand({
+        sessionId,
+        message,
+        remoteJid,
+        ownJid: currentSocket.user?.id || '',
+        privateOwnerNumber: ownerConfig.privateOwnerNumber,
+        text,
+        privateRegistry: privateCommandRegistry,
+        prefix: PRIVATE_COMMAND_PREFIX,
+      })
+      if (!privateControl) continue
+      registry = privateCommandRegistry
+    } else {
+      // Every fromMe event on the public account is inert. Public commands
+      // come only from an allowlisted direct WhatsApp phone-number identity.
+      if (message.key.fromMe === true) continue
+      if (!isAllowedInbound({
+        remoteJid,
+        fromMe: false,
+        allowedSenders: publicAllowedSenders(),
+      })) continue
+      registry = publicCommandRegistry
+      isPublicOwner = isPublicOwnerSender({
+        sessionId,
+        remoteJid,
+        publicOwnerNumber: ownerConfig.publicOwnerNumber,
+      })
+    }
 
-    publishStudioEvent('whatsapp.command.received', { command: text.split(/\s+/, 1)[0].slice(0, 40) })
+    if (!text || !allowCommand(sessionId + ':' + (sessionId === 'private'
+      ? ownerConfig.privateOwnerNumber
+      : senderNumberFromJid(remoteJid)))) continue
+
+    const command = text.split(/\s+/, 1)[0].slice(0, 40)
     try {
-      await currentSocket.sendMessage(remoteJid, { text: reply }, { quoted: message })
-      publishStudioEvent('whatsapp.command.replied', { command: text.split(/\s+/, 1)[0].slice(0, 40) })
+      const handled = await dispatchCommand({
+        registry,
+        rawText: text,
+        prefix: sessionId === 'private' ? PRIVATE_COMMAND_PREFIX : PUBLIC_COMMAND_PREFIX,
+        context: {
+          sessionId,
+          privateControl,
+          isPrivateOwner: privateControl,
+          isPublicOwner,
+          reply: value => currentSocket.sendMessage(remoteJid, { text: String(value) }, { quoted: message }),
+        },
+      })
+      if (!handled) continue
+      publishStudioEvent('whatsapp.command.received', { sessionId, scope: sessionId, command })
+      publishStudioEvent('whatsapp.command.replied', { sessionId, scope: sessionId, command })
     } catch {
-      logger.warn({ event: 'message.reply-failed' })
+      logger.warn({ event: 'message.command-failed', sessionId, command })
     }
   }
 }
 
-function scheduleReconnect() {
-  if (shuttingDown || reconnectTimer || state === 'needs-pairing') return
-  reconnectAttempts += 1
-  if (reconnectAttempts > 12) {
-    state = 'degraded'
-    logger.error({ event: 'whatsapp.reconnect-limit-reached' })
-    return
-  }
-  const delayMs = Math.min(60_000, 2_000 * (2 ** Math.min(5, reconnectAttempts - 1)))
-  state = 'reconnecting'
-  publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
-  logger.warn({ event: 'whatsapp.reconnect-scheduled', attempt: reconnectAttempts, delayMs })
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null
-    void startSocket().catch(() => {
-      state = 'degraded'
-      scheduleReconnect()
-    })
-  }, delayMs)
-  reconnectTimer.unref?.()
-}
+publicCommandRegistry = await loadCommandRegistry(new URL('../commands/', import.meta.url), { scope: 'public' })
+privateCommandRegistry = await loadCommandRegistry(new URL('../private-commands/', import.meta.url), { scope: 'private' })
 
-async function startSocket() {
-  if (shuttingDown) return null
-  if (socket) return socket
-  if (startPromise) return startPromise
-
-  startPromise = (async () => {
-    const auth = await useMultiFileAuthState(AUTH_DIR)
-    registered = auth.state.creds.registered === true
-    let signalReady
-    socketReady = new Promise(resolveReady => { signalReady = resolveReady })
-
-    const currentSocket = makeWASocket({
-      auth: auth.state,
-      logger,
-      browser: Browsers.macOS(APP_NAME),
-      markOnlineOnConnect: false,
-      syncFullHistory: false,
-      shouldSyncHistoryMessage: () => false,
-      generateHighQualityLinkPreview: false,
-    })
-    socket = currentSocket
-    state = registered ? 'connecting' : 'pairing'
-    publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
-
-    currentSocket.ev.on('creds.update', () => {
-      registered = auth.state.creds.registered === true
-      void auth.saveCreds().catch(() => logger.warn({ event: 'auth.save-failed' }))
-    })
-
-    currentSocket.ev.on('connection.update', update => {
-      if (update?.qr || update?.connection === 'connecting' || update?.connection === 'open') {
-        signalReady?.()
-        signalReady = null
-      }
-      if (update?.connection === 'open') {
-        registered = true
-        state = 'connected'
-        publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
-        reconnectAttempts = 0
-        lastConnectedAt = Date.now()
-        logger.info({ event: 'whatsapp.connected' })
-      }
-      if (update?.connection === 'close') {
-        const code = update.lastDisconnect?.error?.output?.statusCode
-        socket = null
-        if (code === DisconnectReason.loggedOut || code === 401) {
-          registered = false
-          state = 'needs-pairing'
-          publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
-          logger.error({ event: 'whatsapp.auth-rejected' })
-          return
-        }
-        state = 'disconnected'
-        publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
-        logger.warn({ event: 'whatsapp.connection-closed', code: Number.isFinite(code) ? code : null })
-        scheduleReconnect()
-      }
-    })
-
-    currentSocket.ev.on('messages.upsert', event => {
-      void handleMessages(currentSocket, event).catch(() => {
-        logger.warn({ event: 'message.handler-failed' })
-      })
-    })
-
-    logger.info({ event: 'whatsapp.socket-started', registered })
-    return currentSocket
-  })()
-
-  try {
-    return await startPromise
-  } finally {
-    startPromise = null
-  }
-}
+accountRuntime = createAccountRuntime({
+  authDirs: { public: AUTH_DIR, private: PRIVATE_AUTH_DIR },
+  loadAuthState: useMultiFileAuthState,
+  makeSocket: ({ auth }) => makeWASocket({
+    auth,
+    logger,
+    browser: Browsers.macOS(APP_NAME),
+    markOnlineOnConnect: false,
+    syncFullHistory: false,
+    shouldSyncHistoryMessage: () => false,
+    generateHighQualityLinkPreview: false,
+  }),
+  loggedOutCode: DisconnectReason.loggedOut,
+  onMessages: ({ sessionId, socket: currentSocket, event }) =>
+    handleMessages(sessionId, currentSocket, event),
+  publish: () => publishStudioEvent('whatsapp.status', studioRuntimeSnapshot()),
+  logger,
+})
 
 const app = express()
 app.disable('x-powered-by')
@@ -868,43 +862,122 @@ app.get('/api/studio/snapshot', requireAdmin, async (_req, res) => {
     serverTime: new Date().toISOString(),
   })
 })
-app.post('/api/pair-code', requireAdmin, async (req, res) => {
-  if (pairRequestActive) {
-    res.status(409).json({ ok: false, error: 'A pairing request is already in progress' })
-    return
-  }
-  const ip = String(req.ip || 'local')
-  if (!allowPairAttempt(ip)) {
-    res.status(429).json({ ok: false, error: 'Pairing rate limit reached; try again later' })
-    return
-  }
-  const phoneNumber = normalizePhone(req.body?.phoneNumber)
-  if (!phoneNumber) {
-    res.status(400).json({ ok: false, error: 'Enter a valid international phone number using 7 to 15 digits' })
-    return
-  }
-  if (registered) {
-    res.status(409).json({ ok: false, error: 'Aharane is already paired; disconnect the existing linked device before pairing another number' })
-    return
-  }
-  if (state === 'needs-pairing') {
-    res.status(409).json({ ok: false, error: 'WhatsApp rejected this saved session. Back up and repair only Aharane authentication before pairing again.' })
-    return
-  }
-
-  pairRequestActive = true
+app.get('/api/accounts', requireAdmin, (_req, res) => {
+  res.json({ ok: true, ...studioRuntimeSnapshot() })
+})
+app.get('/api/owners', requireAdmin, (_req, res) => {
+  res.json({ ok: true, owners: ownerConfig })
+})
+app.put('/api/owners', requireAdmin, async (req, res) => {
   try {
-    const currentSocket = socket || await startSocket()
-    if (!currentSocket) throw new Error('WhatsApp socket is unavailable')
-    await waitWithTimeout(socketReady, 12_000, 'WhatsApp connection is not ready; retry shortly')
-    const pairingCode = await currentSocket.requestPairingCode(phoneNumber)
-    state = 'pairing'
-    publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
-    res.json({ ok: true, pairingCode: String(pairingCode).replace(/\s/g, '') })
-  } catch {
-    res.status(503).json({ ok: false, error: 'Pairing code could not be generated. Check the server connection and retry shortly.' })
-  } finally {
-    pairRequestActive = false
+    const next = normalizeOwnerConfig({
+      privateOwnerNumber: req.body?.privateOwnerNumber,
+      publicOwnerNumber: req.body?.publicOwnerNumber,
+      allowedPublicSenders: req.body?.allowedPublicSenders,
+    })
+    // A configured private owner must match the WhatsApp identity paired to
+    // the private session. Never silently change either role during pairing.
+    const privateSession = accountRuntime.get('private')
+    const publicSession = accountRuntime.get('public')
+    const privateOwnNumber = senderNumberFromJid(
+      privateSession.socket?.user?.id || privateSession.auth?.state?.creds?.me?.id || ''
+    )
+    const publicBotNumber = senderNumberFromJid(
+      publicSession.socket?.user?.id || publicSession.auth?.state?.creds?.me?.id || ''
+    )
+    if (next.privateOwnerNumber && privateOwnNumber && next.privateOwnerNumber !== privateOwnNumber) {
+      return res.status(409).json({ ok: false, error: 'Private Owner must match the phone number paired to the private WhatsApp session.' })
+    }
+    if (next.publicOwnerNumber && publicBotNumber && next.publicOwnerNumber === publicBotNumber) {
+      return res.status(409).json({ ok: false, error: 'Public Owner must be the sender number you use to message the public bot, not the public bot account itself.' })
+    }
+    ownerConfig = await saveOwnerConfig(OWNER_CONFIG_FILE, next)
+    publishStudioEvent('owners.updated', {
+      privateOwnerConfigured: Boolean(ownerConfig.privateOwnerNumber),
+      publicOwnerConfigured: Boolean(ownerConfig.publicOwnerNumber),
+    })
+    res.json({ ok: true, owners: ownerConfig })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || 'Could not save owner settings.') })
+  }
+})
+
+app.post('/api/accounts/:accountId/pair-code', requireAdmin, async (req, res) => {
+  try {
+    const accountId = String(req.params.accountId || '').toLowerCase()
+    if (!['private', 'public'].includes(accountId)) return res.status(404).json({ ok: false, error: 'Unknown WhatsApp account.' })
+    const ip = String(req.ip || 'local') + ':' + accountId
+    if (!allowPairAttempt(ip)) return res.status(429).json({ ok: false, error: 'Pairing rate limit reached for this account; try again later.' })
+    const phoneNumber = normalizePhone(req.body?.phoneNumber)
+    if (!phoneNumber) return res.status(400).json({ ok: false, error: 'Enter a valid international phone number using 7 to 15 digits.' })
+    if (!ownerConfig.privateOwnerNumber || !ownerConfig.publicOwnerNumber) {
+      return res.status(409).json({ ok: false, error: 'Save two different owner numbers before pairing the WhatsApp accounts.' })
+    }
+    if (accountId === 'private' && ownerConfig.privateOwnerNumber !== phoneNumber) {
+      return res.status(400).json({ ok: false, error: 'The Private Owner number must match the number you are pairing to the private session.' })
+    }
+    if (accountId === 'public' &&
+        [ownerConfig.privateOwnerNumber, ownerConfig.publicOwnerNumber].includes(phoneNumber)) {
+      return res.status(400).json({ ok: false, error: 'The public bot must use its own WhatsApp number, separate from both owner identities.' })
+    }
+    const pairingCode = await accountRuntime.requestPairingCode(accountId, phoneNumber)
+    res.json({ ok: true, accountId, pairingCode })
+  } catch (error) {
+    res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Pairing code could not be generated. Check the server connection and retry shortly.') })
+  }
+})
+app.post('/api/accounts/:accountId/reconnect', requireAdmin, async (req, res) => {
+  try {
+    const result = await accountRuntime.reconnect(req.params.accountId)
+    res.json({ ok: true, account: result, accounts: accountRuntime.snapshot().accounts })
+  } catch (error) {
+    res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not reconnect this WhatsApp account.') })
+  }
+})
+app.post('/api/accounts/:accountId/restart', requireAdmin, async (req, res) => {
+  try {
+    const result = await accountRuntime.restart(req.params.accountId)
+    res.json({ ok: true, account: result, accounts: accountRuntime.snapshot().accounts })
+  } catch (error) {
+    res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not restart this WhatsApp account.') })
+  }
+})
+app.post('/api/accounts/:accountId/stop', requireAdmin, async (req, res) => {
+  try {
+    const result = await accountRuntime.stop(req.params.accountId)
+    res.json({ ok: true, account: result, accounts: accountRuntime.snapshot().accounts })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not stop this WhatsApp account.') })
+  }
+})
+app.post('/api/accounts/:accountId/repair', requireAdmin, async (req, res) => {
+  try {
+    const result = await accountRuntime.repair(
+      req.params.accountId,
+      join(DATA_DIR, 'whatsapp-auth-backups'),
+    )
+    res.json({ ok: true, account: result, accounts: accountRuntime.snapshot().accounts })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not safely prepare this account for re-pairing.') })
+  }
+})
+// Backwards-compatible pairing endpoint defaults to the existing public session.
+app.post('/api/pair-code', requireAdmin, async (req, res) => {
+  try {
+    const ip = String(req.ip || 'local') + ':public'
+    if (!allowPairAttempt(ip)) return res.status(429).json({ ok: false, error: 'Pairing rate limit reached for the public account; try again later.' })
+    const phoneNumber = normalizePhone(req.body?.phoneNumber)
+    if (!phoneNumber) return res.status(400).json({ ok: false, error: 'Enter a valid international phone number using 7 to 15 digits.' })
+    if (!ownerConfig.privateOwnerNumber || !ownerConfig.publicOwnerNumber) {
+      return res.status(409).json({ ok: false, error: 'Save two different owner numbers before pairing the WhatsApp accounts.' })
+    }
+    if ([ownerConfig.privateOwnerNumber, ownerConfig.publicOwnerNumber].includes(phoneNumber)) {
+      return res.status(400).json({ ok: false, error: 'The public bot must use its own WhatsApp number, separate from both owner identities.' })
+    }
+    const pairingCode = await accountRuntime.requestPairingCode('public', phoneNumber)
+    res.json({ ok: true, accountId: 'public', pairingCode })
+  } catch (error) {
+    res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Pairing code could not be generated.') })
   }
 })
 app.get('/api/update/status', requireAdmin, async (_req, res) => {
@@ -1444,21 +1517,21 @@ server.on('error', error => {
   process.exitCode = 1
 })
 
-await startSocket().catch(() => {
-  state = 'degraded'
-  publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
-  logger.error({ event: 'whatsapp.initial-start-failed' })
-  scheduleReconnect()
-})
+// Start both sessions independently. A problem with one account must not
+// prevent the other account from connecting or accepting commands.
+await Promise.all(['private', 'public'].map(async accountId => {
+  try {
+    await accountRuntime.start(accountId)
+  } catch (error) {
+    logger.error({ event: 'whatsapp.initial-start-failed', accountId, error: String(error?.message || error) })
+  }
+}))
 
 async function shutdown(signal) {
   if (shuttingDown) return
   shuttingDown = true
-  state = 'stopping'
-  publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
   for (const client of studioClients) client.close(1001, 'Aharane is shutting down')
-  if (reconnectTimer) clearTimeout(reconnectTimer)
-  try { socket?.end?.(undefined) } catch {}
+  await accountRuntime.shutdown()
   await new Promise(resolveClose => server.close(() => resolveClose()))
   logger.info({ event: 'process.stopped', signal })
 }
@@ -1466,6 +1539,12 @@ async function shutdown(signal) {
 process.once('SIGTERM', () => { void shutdown('SIGTERM') })
 process.once('SIGINT', () => { void shutdown('SIGINT') })
 
-if (ALLOWED_SENDERS.size === 0) {
-  logger.warn({ event: 'security.inbound-deny-all', reason: 'No WhatsApp sender allowlist is configured' })
+if (publicAllowedSenders().size === 0) {
+  logger.warn({ event: 'security.inbound-deny-all', reason: 'No public WhatsApp sender allowlist is configured' })
+}
+if (!ownerConfig.privateOwnerNumber) {
+  logger.warn({ event: 'security.private-owner-unconfigured', reason: 'Private self-chat commands remain disabled until the Private Owner number is configured' })
+}
+if (!ownerConfig.publicOwnerNumber) {
+  logger.warn({ event: 'security.public-owner-unconfigured', reason: 'Public owner-only commands remain disabled until the Public Owner number is configured' })
 }

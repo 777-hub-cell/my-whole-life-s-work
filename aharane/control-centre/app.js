@@ -33,7 +33,7 @@ let studioAppSourcePath = 'index.html'
 let studioAppSourceOriginal = ''
 
 function showMessage(target, message, kind = '') {
-  const element = typeof target === 'string' ? $$(target) : target
+  const element = typeof target === 'string' ? $(target) : target
   if (!element) return
   element.textContent = message || ''
   element.className = 'message' + (kind ? ' ' + kind : '')
@@ -93,6 +93,10 @@ function setView(name) {
   $$('.bottom-nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === name))
   $('#page-name').textContent = titles[name] || 'Overview'
   if (name === 'studio') loadStudioFiles().catch(error => showMessage('#studio-message', error.message, 'error'))
+  if (!localOnly && name === 'pairing') {
+    refreshStatus().catch(error => showMessage('#owner-settings-message', error.message, 'error'))
+    refreshOwnerSettings().catch(error => showMessage('#owner-settings-message', error.message, 'error'))
+  }
   if (!localOnly && name === 'overview') { refreshStatus().catch(error => showMessage('#overview-message', error.message, 'error')); refreshUpdateStatus().catch(() => {}); }
   if (!localOnly && name === 'deploy') refreshUpdateStatus().catch(error => showMessage('#deploy-message', error.message, 'error'))
   if (name === 'storage') void refreshStorageUsage()
@@ -160,19 +164,18 @@ function applyLiveRuntime(snapshot) {
   $('#service-pill')?.classList.toggle('bad', ['degraded', 'needs-pairing', 'disconnected'].includes(snapshot.state))
   if ($('#service-pill-label')) $('#service-pill-label').textContent = online ? 'Connected' : 'Aharane ' + String(snapshot.state || 'unknown')
   if ($('#whatsapp-state')) $('#whatsapp-state').textContent = snapshot.connected ? 'Connected' : snapshot.state || 'Unknown'
-  if ($('#whatsapp-dot')) {
-    $('#whatsapp-dot').classList.toggle('connected', Boolean(snapshot.connected))
-    $('#whatsapp-dot').classList.toggle('offline', !snapshot.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(snapshot.state))
-  }
+  $('#whatsapp-dot')?.classList.toggle('connected', Boolean(snapshot.connected))
+  $('#whatsapp-dot')?.classList.toggle('offline', !snapshot.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(snapshot.state))
   if ($('#allowed-senders')) $('#allowed-senders').textContent = String(snapshot.allowlistedSenderCount ?? '—')
   if ($('#account-status-text')) $('#account-status-text').textContent = snapshot.connected ? 'Connected' : (snapshot.state || 'Not connected')
-  if ($('#home-account-dot')) $('#home-account-dot').classList.toggle('connected', Boolean(snapshot.connected))
-  if ($('#account-status-dot')) $('#account-status-dot').classList.toggle('connected', Boolean(snapshot.connected))
+  $('#home-account-dot')?.classList.toggle('connected', Boolean(snapshot.connected))
+  $('#account-status-dot')?.classList.toggle('connected', Boolean(snapshot.connected))
   if ($('#connection-detail')) {
     $('#connection-detail').textContent = snapshot.connected
       ? ''
-      : snapshot.registered ? 'The saved WhatsApp session is not currently connected.' : 'This Aharane instance has not completed WhatsApp pairing.'
+      : snapshot.registered ? 'The saved public WhatsApp session is not currently connected.' : 'The public WhatsApp account has not completed pairing.'
   }
+  applyAccountsSnapshot(snapshot)
 }
 
 function handleStudioEvent(event) {
@@ -180,8 +183,11 @@ function handleStudioEvent(event) {
   if (['studio.connected', 'studio.snapshot', 'whatsapp.status'].includes(event.type)) {
     applyLiveRuntime(event.data)
     if (event.type === 'whatsapp.status') {
-      const state = event.data?.state || 'unknown'
-      addLiveActivity('WhatsApp connection: ' + state, state === 'connected' ? 'good' : 'neutral')
+      const accounts = event.data?.accounts || {}
+      for (const accountId of ['private', 'public']) {
+        const state = accounts[accountId]?.state || 'unknown'
+        addLiveActivity(accountId + ' WhatsApp: ' + state, state === 'connected' ? 'good' : 'neutral')
+      }
     }
     return
   }
@@ -242,24 +248,72 @@ function connectStudioSocket() {
   })
 }
 
+function applyAccountStatus(accountId, account = {}) {
+  const label = account.connected ? 'Connected' : String(account.state || 'Not connected')
+  const statusText = $('#'+accountId+'-status-text')
+  const statusDot = $('#'+accountId+'-status-dot')
+  if (statusText) statusText.textContent = label
+  if (statusDot) {
+    statusDot.classList.toggle('connected', Boolean(account.connected))
+    statusDot.classList.toggle('offline', !account.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(account.state))
+  }
+  const card = $('[data-account-card="'+accountId+'"]')
+  if (card) card.dataset.state = String(account.state || 'unknown')
+  $('#home-'+accountId+'-account-dot')?.classList.toggle('connected', Boolean(account.connected))
+  $('#home-'+accountId+'-account-dot')?.classList.toggle('offline', !account.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(account.state))
+  $$('[data-account-action][data-account-id="'+accountId+'"]').forEach(button => {
+    const action = button.dataset.accountAction
+    button.disabled = action === 'repair'
+      ? account.state !== 'needs-pairing'
+      : action === 'stop'
+        ? account.state === 'stopped'
+        : action === 'reconnect'
+          ? account.state === 'connected'
+          : action === 'restart'
+            ? ['starting', 'stopped'].includes(account.state)
+            : false
+  })
+}
+
+function applyAccountsSnapshot(snapshot = {}) {
+  const accounts = snapshot.accounts || {}
+  applyAccountStatus('private', accounts.private || {})
+  applyAccountStatus('public', accounts.public || {})
+}
+
 async function refreshStatus() {
   const status = await api('status')
   const pill = $('#service-pill')
   const online = status.state === 'connected'
-  pill.classList.toggle('ok', online)
-  pill.classList.toggle('bad', ['degraded', 'needs-pairing', 'disconnected'].includes(status.state))
-  $('#service-pill-label').textContent = online ? 'Connected' : 'Aharane ' + String(status.state || 'unknown')
-  $('#whatsapp-state').textContent = status.connected ? 'Connected' : status.state || 'Unknown'
-  $('#whatsapp-dot').classList.toggle('connected', status.connected)
-  $('#whatsapp-dot').classList.toggle('offline', !status.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(status.state))
-  $('#connection-detail').textContent = status.connected
+  pill?.classList.toggle('ok', online)
+  pill?.classList.toggle('bad', ['degraded', 'needs-pairing', 'disconnected'].includes(status.state))
+  if ($('#service-pill-label')) $('#service-pill-label').textContent = online ? 'Connected' : 'Aharane ' + String(status.state || 'unknown')
+  if ($('#whatsapp-state')) $('#whatsapp-state').textContent = status.connected ? 'Connected' : status.state || 'Unknown'
+  $('#whatsapp-dot')?.classList.toggle('connected', status.connected)
+  $('#whatsapp-dot')?.classList.toggle('offline', !status.connected && ['degraded', 'needs-pairing', 'disconnected'].includes(status.state))
+  if ($('#connection-detail')) $('#connection-detail').textContent = status.connected
     ? ''
-    : status.registered ? 'The saved WhatsApp session is not currently connected.' : 'This Aharane instance has not completed WhatsApp pairing.'
-  $('#allowed-senders').textContent = String(status.allowlistedSenderCount ?? '—')
+    : status.registered ? 'The saved public WhatsApp session is not currently connected.' : 'The public WhatsApp account has not completed pairing.'
+  if ($('#allowed-senders')) $('#allowed-senders').textContent = String(status.allowlistedSenderCount ?? '—')
   if ($('#account-status-text')) $('#account-status-text').textContent = status.connected ? 'Connected' : (status.state || 'Not connected')
-  if ($('#home-account-dot')) $('#home-account-dot').classList.toggle('connected', Boolean(status.connected))
-  if ($('#account-status-dot')) $('#account-status-dot').classList.toggle('connected', Boolean(status.connected))
+  $('#home-account-dot')?.classList.toggle('connected', Boolean(status.connected))
+  $('#account-status-dot')?.classList.toggle('connected', Boolean(status.connected))
+  applyAccountsSnapshot(status)
   return status
+}
+
+async function refreshOwnerSettings() {
+  const result = await api('owners')
+  const owners = result.owners || {}
+  if ($('#private-owner-number')) $('#private-owner-number').value = owners.privateOwnerNumber || ''
+  if ($('#public-owner-number')) $('#public-owner-number').value = owners.publicOwnerNumber || ''
+  if ($('#allowed-public-senders')) $('#allowed-public-senders').value = (owners.allowedPublicSenders || []).filter(number =>
+    number !== owners.publicOwnerNumber
+  ).join(', ')
+  if ($('#private-phone-number') && !$('#private-phone-number').value) {
+    $('#private-phone-number').value = owners.privateOwnerNumber || ''
+  }
+  return owners
 }
 
 async function refreshUpdateStatus() {
@@ -1342,21 +1396,74 @@ document.addEventListener('click', event => {
   if (target instanceof HTMLAnchorElement) event.preventDefault()
   setView(target.dataset.view)
 })
-$('#pair-button').addEventListener('click', async () => {
-  $('#pair-button').disabled = true
-  $('#pair-code').textContent = ''
+$$('[data-pair-account]').forEach(button => {
+  button.addEventListener('click', async () => {
+    const accountId = button.dataset.pairAccount
+    const phoneInput = $('#'+accountId+'-phone-number')
+    const codeOutput = $('#'+accountId+'-pair-code')
+    const messageTarget = '#'+accountId+'-pair-message'
+    button.disabled = true
+    if (codeOutput) codeOutput.textContent = ''
+    try {
+      const result = await api('accounts/'+accountId+'/pair-code', {
+        method: 'POST',
+        body: JSON.stringify({ phoneNumber: phoneInput?.value || '' }),
+      })
+      if (codeOutput) codeOutput.textContent = result.pairingCode
+      showMessage(messageTarget, 'On this account, open WhatsApp → Linked devices → Link with phone number and enter this code.', 'success')
+      await refreshStatus()
+    } catch (error) {
+      showMessage(messageTarget, error.message, 'error')
+    } finally {
+      button.disabled = false
+    }
+  })
+})
+
+$('#save-owner-settings')?.addEventListener('click', async () => {
+  const button = $('#save-owner-settings')
+  button.disabled = true
   try {
-    const result = await api('pair-code', {
-      method: 'POST',
-      body: JSON.stringify({ phoneNumber: $('#phone-number').value }),
+    const result = await api('owners', {
+      method: 'PUT',
+      body: JSON.stringify({
+        privateOwnerNumber: $('#private-owner-number')?.value || '',
+        publicOwnerNumber: $('#public-owner-number')?.value || '',
+        allowedPublicSenders: $('#allowed-public-senders')?.value || '',
+      }),
     })
-    $('#pair-code').textContent = result.pairingCode
-    showMessage('#pair-message', 'On the Aharane phone, open WhatsApp → Linked devices → Link with phone number and enter this code.', 'success')
+    showMessage('#owner-settings-message', 'Owner identities saved separately.', 'success')
+    $('#private-phone-number').value = result.owners.privateOwnerNumber || ''
+    await refreshStatus()
   } catch (error) {
-    showMessage('#pair-message', error.message, 'error')
+    showMessage('#owner-settings-message', error.message, 'error')
   } finally {
-    $('#pair-button').disabled = false
+    button.disabled = false
   }
+})
+
+$$('[data-account-action]').forEach(button => {
+  button.addEventListener('click', async () => {
+    const action = button.dataset.accountAction
+    const accountId = button.dataset.accountId
+    const messageTarget = '#'+accountId+'-pair-message'
+    button.disabled = true
+    try {
+      const result = await api('accounts/'+accountId+'/'+action, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
+      const extra = action === 'repair' && result.account?.backupCreated
+        ? ' The old authentication was backed up before a fresh pairing session was created.'
+        : ''
+      showMessage(messageTarget, 'Account action completed.'+extra, 'success')
+      await refreshStatus()
+    } catch (error) {
+      showMessage(messageTarget, error.message, 'error')
+    } finally {
+      button.disabled = false
+    }
+  })
 })
 $('#choose-zip').addEventListener('click', event => {
   event.stopPropagation()

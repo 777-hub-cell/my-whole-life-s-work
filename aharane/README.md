@@ -10,7 +10,7 @@ Aharane is deployed beside NIGHT/MSCC on the same Azure host, but it is a separa
 | Application | `/opt/mscc/current` | `/opt/aharane/current` |
 | Persistent state | `/var/lib/mscc` | `/var/lib/aharane` |
 | Environment | `/etc/mscc.env` | `/etc/aharane.env` |
-| WhatsApp auth | MSCC account auth root | `/var/lib/aharane/whatsapp-auth` |
+| WhatsApp auth | MSCC account auth root | `/var/lib/aharane/whatsapp-auth` (public) and `/var/lib/aharane/whatsapp-auth-private` (private) |
 | HTTP listener | MSCC's existing port | `127.0.0.1:8790` |
 | Node dependencies | MSCC package install | Aharane's own package install |
 
@@ -20,55 +20,35 @@ Aharane has its own Node process, Baileys socket, auth state, allowlist and rele
 
 Aharane uses the official `@whiskeysockets/baileys` package, pinned to `7.0.0-rc14`. The upstream maintainer's advisory for CVE-2026-48063 identifies `7.0.0-rc12` as the first patched v7 release; Aharane is pinned beyond that threshold. Aharane also disables history-message sync and rejects `messages.upsert` events containing `requestId` as defense in depth. Do not replace this pin with a third-party fork without reviewing its published source and package contents.
 
-## Initial behavior
+## Private and public WhatsApp identities
 
-- One independent WhatsApp identity.
-- Pairing-code API and a small mobile-friendly pairing page.
-- `!ping` and `!help` are the only initial commands.
-- Direct messages are denied unless the sender is explicitly allowlisted in Aharane's environment.
-- Group messages, LID-only identities, broadcasts and unknown senders are rejected.
-- The admin API is protected by a server-generated bearer token.
-- Auth files are stored outside the public directory with restrictive filesystem permissions.
-- No shared MSCC database, accounts, commands, environment variables or credentials.
+Aharane runs one bot engine with two independently authenticated WhatsApp sessions:
 
-This is the independent runtime foundation. Additional Aharane commands and AI features can be developed inside this directory without changing NIGHT.
+- **Private session:** the Private Owner's own WhatsApp account. It accepts only registered private commands sent from that account's verified self-chat, using the narrow Account A pattern from MSCC.
+- **Public session:** the public-facing Aharane WhatsApp bot account. The Public Owner is the separate sender number you use to message this account; it must not be the bot account's own paired number. The session accepts direct messages only from that owner or explicitly allowlisted public senders.
+- **Owner identities:** Private Owner and Public Owner are separate phone-number identities and must be different. Public `ownerOnly` commands check only the Public Owner. A Private Owner does not inherit public owner privileges.
+- **Commands:** `commands/` and `private-commands/` are separate registries. Public and private commands cannot fall through into one another.
+- **Shared code:** `plugins/`, `lib/`, the bot engine and common configuration remain shared. A shared plugin must still enforce authorization if it registers its own message, event, HTTP or scheduled entry point.
+- **Sessions:** `/var/lib/aharane/whatsapp-auth` is retained as the existing public session. `/var/lib/aharane/whatsapp-auth-private` is the new private session. They are never allowed to share or nest auth directories.
+- **Recovery:** the Studio can stop, reconnect, restart and separately back up/re-pair either account. A rejected session is backed up before fresh authentication is created.
 
-## Pairing after installation
+Group messages, LID-only senders, broadcasts and unknown public senders remain rejected. Admin APIs require the existing authenticated Local Studio session. Aharane remains completely separate from NIGHT/MSCC services, databases, auth and deployment.
 
-The service binds to loopback at `127.0.0.1:8790`. Do not expose this port directly to the public internet.
+## Pairing and owner setup
 
-From the server shell (for example, through ConnectBot), request a pairing code without exposing the local API publicly:
+Open Local Studio → **More / Pairing** (or the account-management screen) through the existing HTTPS site.
 
-```bash
-TOKEN="$(sudo sed -n 's/^AHARANE_ADMIN_TOKEN=//p' /etc/aharane.env | tail -1)"
-curl --fail-with-body -fsS -X POST http://127.0.0.1:8790/api/pair-code \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"phoneNumber":"2348012345678"}'
-unset TOKEN
-```
+1. Set the Private Owner number and the different Public Owner number.
+2. Save owner settings.
+3. Pair the **Private account** using the Private Owner number. Its private command console is that WhatsApp account's own chat.
+4. Pair the **Public account** using the phone number that will operate the public-facing Aharane bot. The existing session at `/var/lib/aharane/whatsapp-auth` is retained as Public; do not delete it.
+5. Add any other direct-message senders to the optional public allowlist. They do not become Public Owner.
 
-Replace the sample number with the number that will become Aharane. Enter the returned code in WhatsApp → Linked devices → Link with phone number. The linked identity is Aharane's own; it is not an MSCC linked account.
+The API also provides account-scoped routes under `/api/accounts/private/*` and `/api/accounts/public/*` for pairing, reconnect, restart, stop and safe re-pair. The older `/api/pair-code` endpoint remains a public-session alias for compatibility.
 
-The page at `http://127.0.0.1:8790/` can also be opened through a trusted authenticated reverse proxy to this local port. Do not put the token in a URL, shell history, a chat, or source control.
+The service binds to loopback at `127.0.0.1:8790`. Do not expose this port directly to the public internet. The owner settings are stored in `/var/lib/aharane/owner-config.json` with restrictive permissions; they are not source files or environment secrets.
 
-## Configure inbound access
-
-Edit only Aharane's environment file:
-
-```dotenv
-AHARANE_OWNER_NUMBER=2348012345678
-AHARANE_ALLOWED_SENDERS=2348012345678,14155550123
-```
-
-Both settings accept comma-separated international digits. Leave the allowlist empty to deny all incoming commands. The initial release does not support group messages.
-
-After changing the environment file:
-
-```bash
-sudo systemctl restart aharane.service
-sudo systemctl status aharane.service --no-pager
-```
+For existing installations, `AHARANE_OWNER_NUMBER` and `AHARANE_ALLOWED_SENDERS` are read as migration aliases for the new public settings. New deployments should use `AHARANE_PRIVATE_OWNER_NUMBER`, `AHARANE_PUBLIC_OWNER_NUMBER` and `AHARANE_ALLOWED_PUBLIC_SENDERS`, or configure the identities in Local Studio.
 
 ## Development
 

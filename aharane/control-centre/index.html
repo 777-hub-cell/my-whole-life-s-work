@@ -99,19 +99,25 @@
           <button class="button button-outline compact-button" data-view="configuration" type="button">Configuration</button>
         </div>
         <section class="home-connection" aria-label="WhatsApp connection">
-          <div class="connection-topline"><span class="field-label">WHATSAPP CONNECTION</span><span class="connection-status-word"><i id="whatsapp-dot" class="connection-dot" aria-label="WhatsApp connection status"></i><strong id="whatsapp-state" class="visually-hidden">Checking…</strong></span></div>
+          <div class="connection-topline"><span class="field-label">PUBLIC WHATSAPP CONNECTION</span><span class="connection-status-word"><i id="whatsapp-dot" class="connection-dot" aria-label="WhatsApp connection status"></i><strong id="whatsapp-state" class="visually-hidden">Checking…</strong></span></div>
           <p id="connection-detail" class="muted">Retrieving Aharane status.</p>
           <div class="home-connection-footer">
             <div class="home-stat"><span>BOT VERSION</span><strong id="bot-version">—</strong></div>
             <div class="home-stat"><span>ALLOWED SENDERS</span><strong id="allowed-senders">—</strong></div>
           </div>
         </section>
-        <div class="section-heading"><h2>WhatsApp account</h2></div>
-        <button class="account-summary-row" type="button" data-view="pairing" aria-label="Manage Aharane WhatsApp pairing">
+        <div class="section-heading"><h2>WhatsApp accounts</h2></div>
+        <button class="account-summary-row" type="button" data-view="pairing" aria-label="Manage private WhatsApp account">
+          <span class="account-avatar">P</span>
+          <span class="account-summary-info"><strong>Private account</strong><small>Private Owner control session</small></span>
+          <span class="account-state-dot" id="home-private-account-dot" aria-label="Private account connection status"></span>
+          <span class="row-action-label">Manage</span>
+        </button>
+        <button class="account-summary-row" type="button" data-view="pairing" aria-label="Manage public WhatsApp account">
           <span class="account-avatar">A</span>
-          <span class="account-summary-info"><strong>Aharane</strong><small>Primary WhatsApp account</small></span>
-          <span class="account-state-dot" id="home-account-dot" aria-label="Connection status"></span>
-          <span class="row-action-label">Manage pairing</span>
+          <span class="account-summary-info"><strong>Public account</strong><small>Public-facing Aharane session</small></span>
+          <span class="account-state-dot" id="home-public-account-dot" aria-label="Public account connection status"></span>
+          <span class="row-action-label">Manage</span>
         </button>
         <div class="section-heading"><h2>Latest deployment</h2><span class="muted">Bot release</span></div>
         <div class="deployment-summary compact-deployment">
@@ -281,11 +287,63 @@
       </section>
 
       <section class="view-section" id="view-pairing" hidden>
-        <div class="page-heading"><div><p class="eyebrow">WHATSAPP ACCOUNT</p><h1>Pairing</h1><p class="muted">Connect or reconnect your single Aharane WhatsApp account.</p></div></div>
-        <div class="account-detail-card"><div class="account-avatar large">A</div><div class="account-detail-copy"><strong>Aharane</strong><span>Primary WhatsApp account</span><div class="account-live-status"><i id="account-status-dot" class="connection-dot"></i><span id="account-status-text">Checking connection…</span></div></div><span class="account-role">PRIMARY</span></div>
-        <div class="section-heading"><h2>Pair or reconnect</h2></div>
-        <div class="pairing-panel"><p class="muted">Link this WhatsApp account to Aharane with a phone-number pairing code.</p><label for="phone-number">WhatsApp phone number</label><input id="phone-number" type="tel" inputmode="numeric" autocomplete="tel" placeholder="2348012345678"><p class="help-text">Include the country code. Enter digits only, without spaces or punctuation.</p><button class="button button-dark button-wide" id="pair-button" type="button">Generate pairing code</button><div id="pair-code" class="pair-code" aria-live="polite"></div><p id="pair-message" class="message" role="status">On the phone you want to connect, open WhatsApp → Linked devices → Link with phone number.</p></div>
-        <p class="feature-note">This server currently supports phone-number pairing for one session. QR pairing is not available in its API yet.</p>
+        <div class="page-heading"><div><p class="eyebrow">WHATSAPP ACCOUNTS</p><h1>Accounts</h1><p class="muted">Two independently paired identities, managed by one Aharane bot.</p></div></div>
+
+        <div class="section-heading"><h2>Owner identities</h2></div>
+        <div class="pairing-panel account-owner-settings">
+          <p class="muted">These identities have separate permissions even though both accounts belong to you. Private self-chat commands use <code>.</code>; public commands keep <code>!</code>.</p>
+          <label for="private-owner-number">Private Owner number</label>
+          <input id="private-owner-number" type="tel" inputmode="numeric" autocomplete="tel" placeholder="2348012345678">
+          <p class="help-text">Must be the same number paired to the private account. Private commands run only from that account's verified self-chat.</p>
+          <label for="public-owner-number">Public Owner number</label>
+          <input id="public-owner-number" type="tel" inputmode="numeric" autocomplete="tel" placeholder="2348098765432">
+          <p class="help-text">This is the number you use to message the public bot. It alone can run public owner-only commands; do not enter the public bot's own paired number.</p>
+          <label for="allowed-public-senders">Other allowed public senders</label>
+          <input id="allowed-public-senders" type="text" inputmode="text" placeholder="2348000000000,14155550123">
+          <p class="help-text">Optional comma-separated numbers. These users can access public commands, but do not become Public Owner.</p>
+          <button class="button button-dark button-wide" id="save-owner-settings" type="button">Save owner settings</button>
+          <p id="owner-settings-message" class="message" role="status"></p>
+        </div>
+
+        <div class="section-heading"><h2>WhatsApp sessions</h2></div>
+        <div class="account-detail-card" data-account-card="private">
+          <div class="account-avatar large">P</div>
+          <div class="account-detail-copy"><strong>Private account</strong><span>Private Owner control session</span><div class="account-live-status"><i id="private-status-dot" class="connection-dot"></i><span id="private-status-text">Checking connection…</span></div></div>
+          <span class="account-role">PRIVATE</span>
+        </div>
+        <div class="pairing-panel">
+          <label for="private-phone-number">Private WhatsApp number</label>
+          <input id="private-phone-number" type="tel" inputmode="numeric" autocomplete="tel" placeholder="2348012345678">
+          <button class="button button-dark button-wide" data-pair-account="private" type="button">Generate private pairing code</button>
+          <div id="private-pair-code" class="pair-code" aria-live="polite"></div>
+          <p id="private-pair-message" class="message" role="status">On the private account, open WhatsApp → Linked devices → Link with phone number.</p>
+          <div class="account-session-actions">
+            <button class="button button-outline" data-account-action="reconnect" data-account-id="private" type="button">Reconnect</button>
+            <button class="button button-outline" data-account-action="restart" data-account-id="private" type="button">Restart</button>
+            <button class="button button-outline" data-account-action="stop" data-account-id="private" type="button">Stop</button>
+            <button class="button button-outline" data-account-action="repair" data-account-id="private" type="button">Back up and re-pair</button>
+          </div>
+        </div>
+
+        <div class="account-detail-card" data-account-card="public">
+          <div class="account-avatar large">A</div>
+          <div class="account-detail-copy"><strong>Public account</strong><span>Public-facing WhatsApp session</span><div class="account-live-status"><i id="public-status-dot" class="connection-dot"></i><span id="public-status-text">Checking connection…</span></div></div>
+          <span class="account-role">PUBLIC</span>
+        </div>
+        <div class="pairing-panel">
+          <label for="public-phone-number">Public WhatsApp number</label>
+          <input id="public-phone-number" type="tel" inputmode="numeric" autocomplete="tel" placeholder="2348098765432">
+          <button class="button button-dark button-wide" data-pair-account="public" type="button">Generate public pairing code</button>
+          <div id="public-pair-code" class="pair-code" aria-live="polite"></div>
+          <p id="public-pair-message" class="message" role="status">On the public account, open WhatsApp → Linked devices → Link with phone number.</p>
+          <div class="account-session-actions">
+            <button class="button button-outline" data-account-action="reconnect" data-account-id="public" type="button">Reconnect</button>
+            <button class="button button-outline" data-account-action="restart" data-account-id="public" type="button">Restart</button>
+            <button class="button button-outline" data-account-action="stop" data-account-id="public" type="button">Stop</button>
+            <button class="button button-outline" data-account-action="repair" data-account-id="public" type="button">Back up and re-pair</button>
+          </div>
+        </div>
+        <p class="feature-note">The existing Aharane WhatsApp session is preserved as the public session. The private session receives its own new authentication directory. Re-pairing always backs up only the selected account.</p>
       </section>
 
       <section class="view-section" id="view-more" hidden>

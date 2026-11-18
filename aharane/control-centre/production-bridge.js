@@ -410,7 +410,12 @@ async function flushFileAutosavePathP(path){
    try{
     const observed=await apiP('files/preview?item='+encodeURIComponent(path));
     if(observed.content===job.content)verified=observed;
-    else throw lastError;
+    else{
+     P.fileData.set(path,observed);
+     updateSourceMemoryP(path,observed.content);
+     fileAutosaveConflictsP.add(path);
+     throw lastError;
+    }
    }catch{throw lastError}
   }
   P.fileData.set(path,verified);
@@ -431,9 +436,10 @@ async function flushFileAutosavePathP(path){
   const newer=fileAutosaveQueuedP.get(path);
   if(!newer||newer.content===job.content)fileAutosaveQueuedP.set(path,job);
   const message=String(error?.message||error).slice(0,110);
-  setFileEditorStatusP(path,/changed after you opened|version check/i.test(message)
-   ?'Save conflict · reload the server version before retrying'
+  setFileEditorStatusP(path,fileAutosaveConflictsP.has(path)||/changed after you opened|version check/i.test(message)
+   ?'Save conflict · device draft preserved for review'
    :'Autosave failed · draft kept on this device: '+message);
+  if(fileAutosaveConflictsP.has(path)&&S.cur===path)render();
   return false;
  }finally{
   fileAutosaveBusyP.delete(path);
@@ -445,21 +451,21 @@ async function flushFileAutosavePathP(path){
  }
 }
 async function flushFileAutosaveP(path){
- const targets=path?[path]:[...fileAutosaveQueuedP.keys()];
- const results=await Promise.all(targets.map(flushFileAutosavePathP));
+ const targets=Array.isArray(path)?path:(path?[path]:[...fileAutosaveQueuedP.keys()]);
+ const results=await Promise.all([...new Set(targets)].map(flushFileAutosavePathP));
  return results.every(Boolean);
 }
 async function flushFilePathsP(paths){
  const roots=[...new Set(paths||[])].filter(Boolean);
- const affected=new Set();
- for(const path of fileAutosaveQueuedP.keys()){
-  if(roots.some(root=>path===root||path.startsWith(root+'/')))affected.add(path);
- }
- for(const path of P.fileData.keys()){
-  if(roots.some(root=>path===root||path.startsWith(root+'/'))&&fileAutosaveQueuedP.has(path))affected.add(path);
- }
- const ok=await flushFileAutosaveP();
- return ok&&[...affected].every(path=>!fileAutosaveQueuedP.has(path)&&!fileAutosaveBusyP.has(path));
+ const affected=[...fileAutosaveQueuedP.keys()].filter(path=>roots.some(root=>path===root||path.startsWith(root+'/')));
+ const ok=await flushFileAutosaveP(affected);
+ return ok&&affected.every(path=>!fileAutosaveQueuedP.has(path)&&!fileAutosaveBusyP.has(path));
+}
+function clearFileDraftSubtreeP(path){
+ for(const key of [...fileLocalDraftsP.keys()])if(key===path||key.startsWith(path+'/'))removeFileLocalDraftP(key);
+ for(const key of [...P.fileData.keys()])if(key===path||key.startsWith(path+'/'))P.fileData.delete(key);
+ for(const key of [...fileAutosaveQueuedP.keys()])if(key===path||key.startsWith(path+'/'))fileAutosaveQueuedP.delete(key);
+ for(const key of [...fileAutosaveConflictsP])if(key===path||key.startsWith(path+'/'))fileAutosaveConflictsP.delete(key);
 }
 async function flushAllFileAutosavesP(){
  const ok=await flushFileAutosaveP();
@@ -517,7 +523,7 @@ function bindLiveSelectionP(){
    try{
     if(!await flushFilePathsP(paths))throw new Error('Save pending edits before deleting the selected items.');
     await apiP('files/delete',{method:'POST',body:pack({paths})});
-    for(const path of paths){removeFileLocalDraftP(path);P.fileData.delete(path);fileAutosaveConflictsP.delete(path)}
+    for(const path of paths)clearFileDraftSubtreeP(path)
     S.sel={};await loadTreeP(currentPathP());render();notifyP('Selected items deleted and staged');
    }catch(error){notifyP(error.message)}
   })();
@@ -527,7 +533,7 @@ function bindLiveSelectionP(){
   try{
    if(!await flushFilePathsP(paths))throw new Error('Save pending edits before moving the selected items.');
    await apiP('files/move',{method:'POST',body:pack({paths,destination:value==='root'||value==='/'?'':value})});
-   for(const path of paths){P.fileData.delete(path);fileAutosaveConflictsP.delete(path)}
+   for(const path of paths)clearFileDraftSubtreeP(path)
    S.sel={};await loadTreeP(currentPathP());render();notifyP('Selected items moved and staged');
   }catch(error){notifyP(error.message)}
  });
@@ -546,7 +552,7 @@ function fileMenuP(name,button){
    else if(a==='Move')ask('Move to folder (for example commands or private-commands)','commands','Move',async value=>{try{if(!await flushFilePathsP([path]))throw new Error('Save the pending edits before moving this item.');await apiP('files/move',{method:'POST',body:pack({path,destination:value==='root'?'':value})});await loadTreeP(currentPathP());render()}catch(error){notifyP(error.message)}});
    else if(a==='Download as ZIP'){await exportSelectionZipP([path],name+'.zip')}
    else if(a==='Download'){await downloadSourceFileP(path,name);notifyP('Download started')}
-   else if(a==='Delete'){if(!confirm('Delete '+name+'? The change will be staged.'))return;if(!await flushFilePathsP([path]))throw new Error('Save the pending edits before deleting this item.');await apiP('files/delete',{method:'POST',body:pack({paths:[path]})});removeFileLocalDraftP(path);P.fileData.delete(path);await loadTreeP(currentPathP());render()}
+   else if(a==='Delete'){if(!confirm('Delete '+name+'? The change will be staged.'))return;if(!await flushFilePathsP([path]))throw new Error('Save the pending edits before deleting this item.');await apiP('files/delete',{method:'POST',body:pack({paths:[path]})});clearFileDraftSubtreeP(path);await loadTreeP(currentPathP());render()}
   }catch(error){notifyP(error.message)}
  };
 }
@@ -1014,7 +1020,18 @@ function homeViewP(){
  const publicBot=P.owners.publicBotNumber?'Configured':'Needs configuration';
  return '<h1>Welcome back</h1><p class="sub">Your Aharane workspace.</p><div class="card" style="padding:16px"><div class="row" style="padding:4px 0"><span class="grow"><div class="t">Aharane service</div><div class="d">'+service+'</div></span><span class="pill"><span class="dot"></span>Online</span></div><div class="d" style="white-space:normal;margin-top:8px">Each WhatsApp account has its own connection and controls. An offline account does not stop the other one.</div></div><h2>WhatsApp accounts</h2><div class="card list">'+accounts+'</div><h2>Setup</h2><div class="card list"><button class="row" onclick="openCfg()"><span class="ic">'+ico('cfg')+'</span><span class="grow"><div class="t">Configuration</div><div class="d">Private Owner · '+ownerPrivate+' · Public Owner · '+ownerPublic+' · Public bot number · '+publicBot+'</div></span><span class="d">›</span></button></div><h2>Recent activity</h2><div class="card log" id="log">'+logs.map(l=>'<div><b>'+escP(l[1]||'now')+'</b>  '+escP(l[0])+'</div>').join('')+'</div>';
 }
+function installFileSaveLifecycleP(){
+ if(window.__aharaneFileSaveLifecycle)return;
+ window.__aharaneFileSaveLifecycle=true;
+ window.addEventListener('online',()=>{void flushAllFileAutosavesP()});
+ window.addEventListener('pagehide',()=>{void flushAllFileAutosavesP()});
+ document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')void flushAllFileAutosavesP()});
+ window.addEventListener('offline',()=>{
+  for(const path of fileAutosaveQueuedP.keys())setFileEditorStatusP(path,'Offline · draft saved on this device');
+ });
+}
 function installBridgeP(){
+ installFileSaveLifecycleP();
  const configViewBaseP=cfgV;
  switchProf=function(){
   DS[S.cprof]=cfgD;C0S[S.cprof]=C0;

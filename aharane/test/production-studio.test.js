@@ -224,3 +224,16 @@ test('server file saves use valid exclusive-write options and nested folders rem
  assert.ok(pathGuard.includes('if (info?.isFile() && parts.length > 1'), 'Approved-extension checks must not reject nested folders.')
  assert.ok(runtime.includes("['.json', '.webmanifest'].includes(extension)"), 'Web app manifests must be validated as JSON before saving.')
 })
+
+
+test('stale empty Files drafts are safely cleared and stale non-empty drafts can be discarded', async () => {
+ const runtime=await read('../src/index.js')
+ const bridge=await read('../control-centre/production-bridge.js')
+ assert.ok(runtime.includes('async function clearEmptyStaleManualEdits(currentRelease, manual)'))
+ assert.ok(runtime.includes('if (await clearEmptyStaleManualEdits(current, manual)) return current'))
+ const discard=runtime.slice(runtime.indexOf("app.post('/api/files/discard'"),runtime.indexOf("app.get('/api/files/packages'"))
+ assert.ok(discard.includes('actualWorkspace === current'), 'Discard must never remove the active release.')
+ assert.ok(!discard.includes('current !== manual.currentRelease'), 'A safely contained stale draft must still be discardable.')
+ assert.ok(bridge.includes("apiP('files/discard'"), 'The Files screen must expose a discard action for stale drafts.')
+ assert.ok(bridge.includes('id="prod-discard-files"'))
+})

@@ -363,3 +363,10 @@ test('ZIP activation shares the source-mutation lock so it cannot race an editor
  const middleware=runtime.slice(runtime.indexOf('function serializeSourceMutations'),runtime.indexOf("app.get('/api/files/export'"))
  assert.ok(middleware.includes('if (updateInProgress)'))
 })
+
+test('Files help explains autosave, Save now and separate staged activation', async () => {
+ const app=await read('../control-centre/app.js')
+ assert.ok(app.includes('Changes autosave to staging after you pause typing.'))
+ assert.ok(app.includes('Use Save now for an immediate save'))
+ assert.ok(app.includes('Apply staged changes validates and activates the edits.'))
+})

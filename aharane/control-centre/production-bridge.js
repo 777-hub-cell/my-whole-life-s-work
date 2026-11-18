@@ -241,8 +241,8 @@ async function saveConfigP(){
  const button=Q('#csv');if(button)button.disabled=true;
  try{
   const profile=S.cprof==='public'?'public':'private';
-  const ownerValue=String(C.owner||'').replace(/\\D/g,'');
-  if(ownerValue&&!/^\\d{7,15}$/.test(ownerValue))throw new Error('Owner number must contain 7–15 digits, including the country code.');
+  const ownerValue=String(C.owner||'').replace(/\D/g,'');
+  if(ownerValue&&!/^\d{7,15}$/.test(ownerValue))throw new Error('Owner number must contain 7–15 digits, including the country code.');
   const owners={
    privateOwnerNumber:profile==='private'?ownerValue:(P.owners.privateOwnerNumber||''),
    publicOwnerNumber:profile==='public'?ownerValue:(P.owners.publicOwnerNumber||''),

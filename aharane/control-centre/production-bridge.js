@@ -114,8 +114,7 @@ function applyEnvP(){
   {k:'PRIVATE_PREFIX',v:value('PRIVATE_COMMAND_PREFIX')||'.',readOnly:true},
   {k:'OWNER_NUMBER',v:P.owners.privateOwnerNumber||''},
   {k:'PUBLIC_PREFIX',v:value('PUBLIC_COMMAND_PREFIX')||'!',readOnly:true},
-  {k:'PUBLIC_NUMBER',v:P.owners.publicOwnerNumber||''},
-  {k:'PUBLIC_BOT_NUMBER',v:P.owners.publicBotNumber||''}
+  {k:'PUBLIC_NUMBER',v:P.owners.publicBotNumber||''}
  );
  envDirty=false;show={}
 }
@@ -350,13 +349,12 @@ async function saveConfigP(){
  try{
   const profile=S.cprof==='public'?'public':'private';
   const clean=value=>String(value||'').replace(/\D/g,'');
-  const ownerValue=clean(C.owner),pairingNumber=clean(C.pairingNumber);
-  if(ownerValue&&!/^\d{7,15}$/.test(ownerValue))throw new Error('Owner number must contain 7–15 digits, including the country code.');
-  if(profile==='public'&&pairingNumber&&!/^\d{7,15}$/.test(pairingNumber))throw new Error('Public bot WhatsApp number must contain 7–15 digits, including the country code.');
+  const ownerValue=clean(C.owner);
+  if(ownerValue&&!/^\d{7,15}$/.test(ownerValue))throw new Error((profile==='private'?'Owner number':'Public account number')+' must contain 7–15 digits, including the country code.');
   const owners={
    privateOwnerNumber:profile==='private'?ownerValue:(P.owners.privateOwnerNumber||''),
-   publicOwnerNumber:profile==='public'?ownerValue:(P.owners.publicOwnerNumber||''),
-   publicBotNumber:profile==='public'?pairingNumber:(P.owners.publicBotNumber||''),
+   publicOwnerNumber:P.owners.publicOwnerNumber||'',
+   publicBotNumber:profile==='public'?ownerValue:(P.owners.publicBotNumber||''),
    allowedPublicSenders:P.owners.allowedPublicSenders||[]
   };
   const ownerResult=await apiP('owners',{method:'PUT',body:pack(owners)});
@@ -367,8 +365,7 @@ async function saveConfigP(){
   applyEnvP();
   loadP(profile);
   C=CS[profile];
-  C.owner=profile==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicOwnerNumber||'');
-  C.pairingNumber=P.owners.publicBotNumber||'';
+  C.owner=profile==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');
   C.prefix=profile==='private'?'.':'!';
   C0=JSON.stringify(C);C0S[profile]=C0;
   cfgDirty(false);
@@ -633,8 +630,7 @@ function bindProductionP(){
  const reconnect=Q('#prod-pair-reconnect');if(reconnect)reconnect.onclick=reconnectPairP;
  const openConfig=Q('#pair-open-config');if(openConfig)openConfig.onclick=()=>{
   S.cprof=S.pi===1?'public':'private';C=CS[S.cprof];
-  C.owner=S.cprof==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicOwnerNumber||'');
-  C.pairingNumber=P.owners.publicBotNumber||'';C.prefix=S.cprof==='private'?'.':'!';
+  C.owner=S.cprof==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');C.prefix=S.cprof==='private'?'.':'!';
   C0=JSON.stringify(C);C0S[S.cprof]=C0;cfgD=false;DS[S.cprof]=false;openCfg();
  };
  const copy=Q('#prod-copy-code');if(copy)copy.onclick=()=>navigator.clipboard?.writeText(S.pin||'').then(()=>notifyP('Pairing code copied')).catch(()=>notifyP('Select and copy the code'));
@@ -704,8 +700,7 @@ function installBridgeP(){
   const next=S.cprof==='public'?'private':'public';
   S.cprof=next;C=CS[next];
   if(!DS[next])loadP(next);
-  C.owner=next==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicOwnerNumber||'');
-  C.pairingNumber=P.owners.publicBotNumber||'';
+  C.owner=next==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');
   C.prefix=next==='private'?'.':'!';
   C0=JSON.stringify(C);C0S[next]=C0;cfgD=Boolean(DS[next]);
   render();toast((next==='public'?'Public':'Private')+' configuration');
@@ -718,8 +713,7 @@ function installBridgeP(){
  openCfg=function(){
   if(!cfgD)cfgLoad();
   C=CS[S.cprof];
-  C.owner=S.cprof==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicOwnerNumber||'');
-  C.pairingNumber=P.owners.publicBotNumber||'';
+  C.owner=S.cprof==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');
   C.prefix=S.cprof==='private'?'.':'!';
   C0=JSON.stringify(C);C0S[S.cprof]=C0;
   S.sub='cfg';render();scrollTo(0,0);

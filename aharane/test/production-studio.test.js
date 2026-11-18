@@ -25,6 +25,15 @@ test('the uploaded Local Studio preview is the served production UI', async () =
   assert.ok(!bridge.includes('Math.random'), 'The production bridge must not fabricate runtime data.')
 })
 
+test('Export Bot Source uses a real browser download instead of the preview-only host API', async () => {
+ const app=await read('../control-centre/app.js')
+ const bridge=await read('../control-centre/production-bridge.js')
+ assert.ok(app.includes('id="export-bot-source"'))
+ assert.ok(bridge.includes("fetch(API+'/files/export'"))
+ assert.ok(bridge.includes("downloadP('aharane-source.zip',blob)"))
+ assert.ok(!bridge.includes("claude.use('downloads')"))
+})
+
 test('the offline service worker caches the bridge and invalidates the previous shell', async () => {
   const sw = await read('../control-centre/sw.js')
   assert.ok(sw.includes('aharane-local-studio-shell-v10'))

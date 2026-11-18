@@ -264,7 +264,7 @@ async function resetAppSourceP(){
  }catch(error){notifyP(error.message)}finally{db?.close()}
 }
 function moreViewP(){
- if(P.offline)return '<h1>More</h1><p class="sub">On-device Studio source tools.</p><div class="card list"><button class="row" onclick="openAppSourceP(\'index.html\')"><span class="grow"><div class="t">Studio source</div><div class="d">Edit HTML, CSS and JavaScript saved on this phone</div></span><span class="d">›</span></button></div>';
+ if(P.offline)return '<h1>More</h1><p class="sub">On-device Studio source tools.</p><div class="card list"><button class="row" id="offline-open-source"><span class="grow"><div class="t">Studio source</div><div class="d">Edit HTML, CSS and JavaScript saved on this phone</div></span><span class="d">›</span></button></div>';
  return moreBase()+'<h2>Development</h2><div class="card list"><button class="row" id="open-app-source"><span class="grow"><div class="t">Studio source</div><div class="d">Edit the app HTML, CSS and JavaScript on this phone</div></span><span class="d">›</span></button></div><div class="btns" style="margin-top:18px"><button class="btn" id="change-password">Change password</button><button class="btn d" id="sign-out">Sign out</button></div>';
 }
 function changePasswordP(){
@@ -280,7 +280,7 @@ function mapMessageP(row){
  else if(row.type==='document'){m.f=row.fileName||'Attachment';m.z=fsz(row.size||0);m.dl=row.mediaUrl||''}
  if(row.pushName)m.s=row.pushName;return m;
 }
-async let visibilityDraftP=null, visibilityChatsDraftP=[];
+let visibilityDraftP=null, visibilityChatsDraftP=[];
 function visibilityModeP(filter){return filter?.mode==='selected'?'selected':'all'}
 function visibilityValueP(filter,jid){const override=(filter?.overrides||[]).find(x=>x.jid===jid);return override?override.visible===true:visibilityModeP(filter)==='all'}
 function setVisibilityValueP(filter,jid,visible){filter.overrides=Array.isArray(filter.overrides)?filter.overrides.filter(x=>x.jid!==jid):[];const base=visibilityModeP(filter)==='all';if(visible!==base)filter.overrides.push({jid,visible})}
@@ -311,7 +311,7 @@ function drawChatVisibilityP(account,search){
  const save=Q('#vis-save');if(save)save.onclick=async()=>{save.disabled=true;save.textContent='Saving…';try{const response=await apiP('chats/'+account+'/visibility',{method:'PUT',body:pack({visibility:visibilityDraftP})});P.visibility=response.visibility||visibilityDraftP;visibilityDraftP=null;visibilityChatsDraftP=[];closeSheet();await refreshChatsP();render();notifyP('Chat visibility saved')}catch(error){save.disabled=false;save.textContent='Save visibility';notifyP(error.message)}};
 }
 
-function refreshChatsP(){
+async function refreshChatsP(){
  const account=S.cacc==='private'?'private':'public',r=await apiP('chats/'+account+'?limit=500'),current=P.chatJid;
  CH.splice(0,CH.length,...(r.chats||[]).map(c=>({jid:c.jid,n:c.name||c.jid.split('@')[0],g:c.group===true||String(c.jid).endsWith('@g.us'),un:c.unreadCount||0,m:[{d:c.fromMe?'o':'i',t:c.lastMessage||'',ts:c.timestamp||Date.now()}]})));
  if(current&&S.chat!==null){const i=CH.findIndex(c=>c.jid===current);if(i>=0)S.chat=i;else S.chat=null}
@@ -354,6 +354,7 @@ function bindProductionP(){
  document.querySelectorAll('[data-pm]').forEach(b=>b.onclick=()=>{S.pm=b.dataset.pm;S.pin=null;render()});
  const clear=Q('#lcl');if(clear)clear.onclick=clearActivityP;
  const source=Q('#open-app-source');if(source)source.onclick=()=>openAppSourceP('index.html');
+ const localSource=Q('#offline-open-source');if(localSource)localSource.onclick=()=>openAppSourceP('index.html');
  const backSource=Q('#back-from-app-source');if(backSource)backSource.onclick=()=>{S.sub=null;render()};
  document.querySelectorAll('[data-app-source]').forEach(b=>b.onclick=()=>openAppSourceP(b.dataset.appSource));
  const editor=Q('#app-source-editor');if(editor)editor.oninput=()=>{P.appSourceDirty=true;const status=Q('#app-source-status');if(status)status.textContent='Unsaved changes'};

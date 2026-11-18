@@ -1280,3 +1280,22 @@ body[data-theme="dark"] .chat-message-row.outgoing .chat-bubble { background:#34
 .source-editor-tab.is-active .source-editor-tab-close,.source-editor-tab:hover .source-editor-tab-close,.source-editor-tab:focus-within .source-editor-tab-close { opacity:1; }
 .source-editor-breadcrumb .editor-crumb:focus-visible,.source-editor-tab button:focus-visible,.source-explorer-toolbar button:focus-visible,.source-problems-toggle:focus-visible { outline:2px solid #79b8ff; outline-offset:2px; }
 .source-editor-code-surface #source-editor:focus { box-shadow:none; }
+
+
+.account-owner-settings { margin-bottom:26px; }
+.account-session-actions {
+  display:flex; flex-wrap:wrap; gap:7px; margin-top:14px;
+}
+.account-session-actions .button {
+  min-height:35px; padding:0 10px; font-size:10px; font-weight:600;
+}
+.account-detail-card[data-state="connected"] .connection-dot { background:#27834e; }
+.account-detail-card[data-state="needs-pairing"] .connection-dot,
+.account-detail-card[data-state="degraded"] .connection-dot,
+.account-detail-card[data-state="disconnected"] .connection-dot { background:#b34a4a; }
+.account-session-actions .button:disabled { opacity:.35; }
+@media(max-width:760px) {
+  .account-owner-settings { max-width:none; }
+  .account-session-actions { gap:6px; }
+  .account-session-actions .button { flex:1 1 calc(50% - 6px); }
+}

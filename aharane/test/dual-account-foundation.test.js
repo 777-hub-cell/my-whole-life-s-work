@@ -15,10 +15,11 @@ test('Aharane uses two scoped command registries and independent WhatsApp auth s
     "dispatchCommand({",
     "sessionId === 'private'",
     "sessionId === 'public'",
-    "accountRuntime.start(accountId)",
+    "accountRuntime.start(accountId, { deferUnregistered: true })",
     'await accountRuntime.shutdown()',
   ]) assert.ok(runtime.includes(marker), 'Missing runtime integration: ' + marker)
   assert.ok(accounts.includes("SESSION_IDS = Object.freeze(['private', 'public'])"))
+  assert.ok(config.includes('publicBotNumber'))
   assert.ok(accounts.includes('verifyAuthDirectories()'))
   assert.ok(accounts.includes('session.socket !== currentSocket'))
   assert.ok(!runtime.includes('let socket = null'), 'The old single-socket runtime must be removed')
@@ -31,7 +32,7 @@ test('Private Owner and Public Owner are separate, persisted identities', async 
   assert.ok(runtime.includes("OWNER_CONFIG_FILE = join(DATA_DIR, 'owner-config.json')"))
   assert.ok(runtime.includes("app.get('/api/owners'"))
   assert.ok(runtime.includes("app.put('/api/owners'"))
-  assert.ok(config.includes('Private Owner and Public Owner must be two different WhatsApp numbers.'))
+  assert.ok(config.includes('Private Owner, Public Owner, and Public bot WhatsApp numbers must be different.'))
   assert.ok(auth.includes('Private Owner never inherits this role.'))
   assert.ok(runtime.includes('isPublicOwnerSender'))
   assert.ok(runtime.includes('isPrivateSelfCommand'))
@@ -47,7 +48,7 @@ test('private and public account management is wired into the supplied Studio pr
     'data-pair-account',
     'data-account',
     'data-action="reconnect"',
-    'data-action="repair"',
+    'id="prod-pair-repair"',
   ]) assert.ok(bridge.includes(marker), 'Missing production account control: ' + marker)
   for (const marker of [
     "apiP('owners'",

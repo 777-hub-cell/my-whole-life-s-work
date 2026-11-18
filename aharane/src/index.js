@@ -860,44 +860,94 @@ app.get('/api/studio/snapshot', requireAdmin, async (_req, res) => {
     serverTime: new Date().toISOString(),
   })
 })
-app.post('/api/pair-code', requireAdmin, async (req, res) => {
-  if (pairRequestActive) {
-    res.status(409).json({ ok: false, error: 'A pairing request is already in progress' })
-    return
-  }
-  const ip = String(req.ip || 'local')
-  if (!allowPairAttempt(ip)) {
-    res.status(429).json({ ok: false, error: 'Pairing rate limit reached; try again later' })
-    return
-  }
-  const phoneNumber = normalizePhone(req.body?.phoneNumber)
-  if (!phoneNumber) {
-    res.status(400).json({ ok: false, error: 'Enter a valid international phone number using 7 to 15 digits' })
-    return
-  }
-  if (registered) {
-    res.status(409).json({ ok: false, error: 'Aharane is already paired; disconnect the existing linked device before pairing another number' })
-    return
-  }
-  if (state === 'needs-pairing') {
-    res.status(409).json({ ok: false, error: 'WhatsApp rejected this saved session. Back up and repair only Aharane authentication before pairing again.' })
-    return
-  }
-
-  pairRequestActive = true
+app.get('/api/accounts', requireAdmin, (_req, res) => {
+  res.json({ ok: true, ...studioRuntimeSnapshot() })
+})
+app.get('/api/owners', requireAdmin, (_req, res) => {
+  res.json({ ok: true, owners: ownerConfig })
+})
+app.put('/api/owners', requireAdmin, async (req, res) => {
   try {
-    const currentSocket = socket || await startSocket()
-    if (!currentSocket) throw new Error('WhatsApp socket is unavailable')
-    await waitWithTimeout(socketReady, 12_000, 'WhatsApp connection is not ready; retry shortly')
-    const pairingCode = await currentSocket.requestPairingCode(phoneNumber)
-    state = 'pairing'
-    publishStudioEvent('whatsapp.status', studioRuntimeSnapshot())
-    res.json({ ok: true, pairingCode: String(pairingCode).replace(/\s/g, '') })
-  } catch {
-    res.status(503).json({ ok: false, error: 'Pairing code could not be generated. Check the server connection and retry shortly.' })
-  } finally {
-    pairRequestActive = false
+    const next = normalizeOwnerConfig({
+      privateOwnerNumber: req.body?.privateOwnerNumber,
+      publicOwnerNumber: req.body?.publicOwnerNumber,
+      allowedPublicSenders: req.body?.allowedPublicSenders,
+    })
+    // A configured private owner must match the WhatsApp identity paired to
+    // the private session. Never silently change either role during pairing.
+    const privateSession = accountRuntime.get('private')
+    const privateOwnNumber = senderNumberFromJid(privateSession.socket?.user?.id || '')
+    if (next.privateOwnerNumber && privateOwnNumber && next.privateOwnerNumber !== privateOwnNumber) {
+      return res.status(409).json({ ok: false, error: 'Private Owner must match the phone number paired to the private WhatsApp session.' })
+    }
+    ownerConfig = await saveOwnerConfig(OWNER_CONFIG_FILE, next)
+    publishStudioEvent('owners.updated', {
+      privateOwnerConfigured: Boolean(ownerConfig.privateOwnerNumber),
+      publicOwnerConfigured: Boolean(ownerConfig.publicOwnerNumber),
+    })
+    res.json({ ok: true, owners: ownerConfig })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || 'Could not save owner settings.') })
   }
+})
+
+app.post('/api/accounts/:accountId/pair-code', requireAdmin, async (req, res) => {
+  try {
+    const accountId = String(req.params.accountId || '').toLowerCase()
+    if (!['private', 'public'].includes(accountId)) return res.status(404).json({ ok: false, error: 'Unknown WhatsApp account.' })
+    const ip = String(req.ip || 'local') + ':' + accountId
+    if (!allowPairAttempt(ip)) return res.status(429).json({ ok: false, error: 'Pairing rate limit reached for this account; try again later.' })
+    const phoneNumber = normalizePhone(req.body?.phoneNumber)
+    if (!phoneNumber) return res.status(400).json({ ok: false, error: 'Enter a valid international phone number using 7 to 15 digits.' })
+    if (accountId === 'private' && ownerConfig.privateOwnerNumber &&
+        ownerConfig.privateOwnerNumber !== phoneNumber) {
+      return res.status(400).json({ ok: false, error: 'The Private Owner number must match the number you are pairing to the private session.' })
+    }
+    const pairingCode = await accountRuntime.requestPairingCode(accountId, phoneNumber)
+    res.json({ ok: true, accountId, pairingCode })
+  } catch (error) {
+    res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Pairing code could not be generated. Check the server connection and retry shortly.') })
+  }
+})
+app.post('/api/accounts/:accountId/reconnect', requireAdmin, async (req, res) => {
+  try {
+    const result = await accountRuntime.reconnect(req.params.accountId)
+    res.json({ ok: true, account: result, accounts: accountRuntime.snapshot().accounts })
+  } catch (error) {
+    res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not reconnect this WhatsApp account.') })
+  }
+})
+app.post('/api/accounts/:accountId/restart', requireAdmin, async (req, res) => {
+  try {
+    const result = await accountRuntime.restart(req.params.accountId)
+    res.json({ ok: true, account: result, accounts: accountRuntime.snapshot().accounts })
+  } catch (error) {
+    res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not restart this WhatsApp account.') })
+  }
+})
+app.post('/api/accounts/:accountId/stop', requireAdmin, async (req, res) => {
+  try {
+    const result = await accountRuntime.stop(req.params.accountId)
+    res.json({ ok: true, account: result, accounts: accountRuntime.snapshot().accounts })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not stop this WhatsApp account.') })
+  }
+})
+app.post('/api/accounts/:accountId/repair', requireAdmin, async (req, res) => {
+  try {
+    const result = await accountRuntime.repair(
+      req.params.accountId,
+      join(DATA_DIR, 'whatsapp-auth-backups'),
+    )
+    res.json({ ok: true, account: result, accounts: accountRuntime.snapshot().accounts })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not safely prepare this account for re-pairing.') })
+  }
+})
+// Backwards-compatible pairing endpoint defaults to the existing public session.
+app.post('/api/pair-code', requireAdmin, (req, res) => {
+  req.params.accountId = String(req.body?.accountId || 'public')
+  return app.handle(req, res)
 })
 app.get('/api/update/status', requireAdmin, async (_req, res) => {
   const manual = await readJsonFile(MANUAL_EDIT_STATE_FILE)

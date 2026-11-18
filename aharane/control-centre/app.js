@@ -183,8 +183,11 @@ function handleStudioEvent(event) {
   if (['studio.connected', 'studio.snapshot', 'whatsapp.status'].includes(event.type)) {
     applyLiveRuntime(event.data)
     if (event.type === 'whatsapp.status') {
-      const state = event.data?.state || 'unknown'
-      addLiveActivity('WhatsApp connection: ' + state, state === 'connected' ? 'good' : 'neutral')
+      const accounts = event.data?.accounts || {}
+      for (const accountId of ['private', 'public']) {
+        const state = accounts[accountId]?.state || 'unknown'
+        addLiveActivity(accountId + ' WhatsApp: ' + state, state === 'connected' ? 'good' : 'neutral')
+      }
     }
     return
   }
@@ -258,11 +261,15 @@ function applyAccountStatus(accountId, account = {}) {
   if (card) card.dataset.state = String(account.state || 'unknown')
   $('[data-account-action][data-account-id="'+accountId+'"]').forEach(button => {
     const action = button.dataset.accountAction
-    button.disabled = action === 'repair' ? account.state !== 'needs-pairing' : (
-      action === 'stop' ? account.state === 'stopped' : (
-        ['reconnect', 'restart'].includes(action) && account.state === 'connected'
-      )
-    )
+    button.disabled = action === 'repair'
+      ? account.state !== 'needs-pairing'
+      : action === 'stop'
+        ? account.state === 'stopped'
+        : action === 'reconnect'
+          ? account.state === 'connected'
+          : action === 'restart'
+            ? ['starting', 'stopped'].includes(account.state)
+            : false
   })
 }
 

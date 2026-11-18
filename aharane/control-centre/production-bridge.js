@@ -436,6 +436,12 @@ async function flushFileAutosavePathP(path){
   P.changedCount=Math.max(P.changedCount,Number(saveResult?.changedCount)||1);
   const currentDraft=fileLocalDraftsP.get(path);
   if(currentDraft?.content===job.content)removeFileLocalDraftP(path);
+  else if(currentDraft){
+   fileLocalDraftsP.set(path,{...currentDraft,baseSha256:verified.sha256,updatedAt:Date.now()});
+   persistFileLocalDraftsP();
+   const newer=fileAutosaveQueuedP.get(path);
+   if(newer)fileAutosaveQueuedP.set(path,{...newer,baseSha256:verified.sha256});
+  }
   if(fileAutosaveQueuedP.has(path)){
    setFileEditorStatusP(path,'Newer edits · autosaving…');
   }else{
@@ -463,13 +469,13 @@ async function flushFileAutosavePathP(path){
  }
 }
 async function flushFileAutosaveP(path){
- const targets=Array.isArray(path)?path:(path?[path]:[...fileAutosaveQueuedP.keys()]);
+ const targets=Array.isArray(path)?path:(path?[path]:[...new Set([...fileAutosaveQueuedP.keys(),...fileAutosaveBusyP])]);
  const results=await Promise.all([...new Set(targets)].map(flushFileAutosavePathP));
  return results.every(Boolean);
 }
 async function flushFilePathsP(paths){
  const roots=[...new Set(paths||[])].filter(Boolean);
- const affected=[...fileAutosaveQueuedP.keys()].filter(path=>roots.some(root=>path===root||path.startsWith(root+'/')));
+ const affected=[...new Set([...fileAutosaveQueuedP.keys(),...fileAutosaveBusyP])].filter(path=>roots.some(root=>path===root||path.startsWith(root+'/')));
  const ok=await flushFileAutosaveP(affected);
  return ok&&affected.every(path=>!fileAutosaveQueuedP.has(path)&&!fileAutosaveBusyP.has(path));
 }

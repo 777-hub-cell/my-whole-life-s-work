@@ -35,12 +35,16 @@ export function createAccountRuntime({
     throw new TypeError('Account runtime requires auth-state and socket factories.')
   }
 
-  const directories = {
-    private: resolve(String(authDirs?.private || '')),
-    public: resolve(String(authDirs?.public || '')),
+  const privatePath = String(authDirs?.private || '').trim()
+  const publicPath = String(authDirs?.public || '').trim()
+  if (!privatePath || !publicPath) {
+    throw new Error('Private and public WhatsApp account authentication directories are required.')
   }
-  if (!directories.private || !directories.public ||
-      directories.private === directories.public ||
+  const directories = {
+    private: resolve(privatePath),
+    public: resolve(publicPath),
+  }
+  if (directories.private === directories.public ||
       directories.private.startsWith(directories.public + sep) ||
       directories.public.startsWith(directories.private + sep)) {
     throw new Error('Private and public WhatsApp accounts must use separate authentication directories.')
@@ -297,6 +301,16 @@ export function createAccountRuntime({
     }
     await mkdir(root, { recursive: true, mode: 0o700 })
     await chmod(root, 0o700)
+    // The rejected connection has already closed. Flush the latest credentials
+    // before moving its directory so a repair never overwrites the only copy.
+    if (session.auth?.saveCreds) await session.auth.saveCreds()
+    if (session.socket) {
+      const staleSocket = session.socket
+      session.socket = null
+      try { staleSocket.end?.(undefined) } catch {}
+    }
+    if (session.reconnectTimer) clearTimeout(session.reconnectTimer)
+    session.reconnectTimer = null
     const existing = await stat(session.authDir).catch(error => {
       if (error.code === 'ENOENT') return null
       throw error

@@ -301,15 +301,23 @@ async function recoverFilesP(){
 }
 async function discardFilesP(){
  if(!confirm('Discard all staged server changes and unsent device drafts? This cannot be undone. The running Aharane version will not be changed.'))return;
+ for(const timer of fileAutosaveTimersP.values())clearTimeout(timer);
+ fileAutosaveTimersP.clear();
+ while(fileAutosaveBusyP.size)await new Promise(resolve=>setTimeout(resolve,25));
+ for(const timer of fileAutosaveTimersP.values())clearTimeout(timer);
+ fileAutosaveTimersP.clear();
+ fileAutosaveQueuedP.clear();
  try{
-  for(const timer of fileAutosaveTimersP.values())clearTimeout(timer);
-  fileAutosaveTimersP.clear();
-  while(fileAutosaveBusyP.size)await new Promise(resolve=>setTimeout(resolve,25));
   await apiP('files/discard',{method:'POST',body:pack({confirm:true})});
-  fileAutosaveQueuedP.clear();fileAutosaveConflictsP.clear();fileLocalDraftsP.clear();persistFileLocalDraftsP();P.fileData.clear();
+  fileAutosaveConflictsP.clear();fileLocalDraftsP.clear();persistFileLocalDraftsP();P.fileData.clear();
   P.pending=false;P.stale=false;P.changedCount=0;
   await loadTreeP(currentPathP());render();notifyP('Staged server and device drafts discarded');
- }catch(error){notifyP(error.message)}
+ }catch(error){
+  // The server may be unreachable. Restore the retry queue from the still-kept
+  // device copies so a failed discard never strands the user's edits.
+  for(const [path,draft] of fileLocalDraftsP)scheduleFileAutosaveP(path,draft.content,1000);
+  notifyP(error.message);
+ }
 }
 function localDraftBannerP(){
  if(!fileAutosaveConflictsP.has(S.cur))return '';
@@ -501,6 +509,8 @@ async function restoreDeviceDraftP(){
 }
 function keepServerFileP(){
  const path=S.cur;
+ clearFileAutosaveTimerP(path);
+ fileAutosaveQueuedP.delete(path);
  fileAutosaveConflictsP.delete(path);
  removeFileLocalDraftP(path);
  notifyP('Kept the server version; the device draft was removed.');

@@ -50,7 +50,7 @@ test('user can edit, apply, back up and recover app source',async()=>{
  const a=await read('../control-centre/app.js'),w=await read('../control-centre/sw.js'),h=await read('../control-centre/index.html'),r=await read('../control-centre/recover.html')
  for(const f of ['index.html','styles.css','app.js','manifest.webmanifest'])assert.ok(a.includes("'"+f+"'"))
  assert.ok(h.includes('studio-edit-app-source'));assert.ok(a.includes('appOverrides'));assert.ok(h.includes('Apply to this phone'))
- assert.ok(w.includes('SOURCE_PATHS'));assert.ok(w.includes('aharane-local-studio-shell-v7'));assert.ok(w.includes('readOverride'));assert.ok(r.includes("objectStore('appOverrides').clear()"))
+ assert.ok(w.includes('SOURCE_PATHS'));assert.ok(w.includes('aharane-local-studio-shell-v8'));assert.ok(w.includes('readOverride'));assert.ok(r.includes("objectStore('appOverrides').clear()"))
  assert.ok(w.includes("u.pathname.startsWith('/aharane/api/')"))
  assert.ok(a.includes("$('#open-local-studio')?.addEventListener('click', () => localStudioMode('studio'))"))
  assert.ok(a.includes("$('#login-form')?.addEventListener('submit', event =>"))
@@ -81,4 +81,11 @@ test('Files mobile screen matches the supplied file-manager layout',async()=>{
  assert.ok(a.includes("$$('.source-item-menu').forEach"))
  assert.ok(c.includes('#view-files .source-file-row.menu-open'))
  assert.ok(c.includes('#view-files .source-item-menu'))
+})
+
+test('source editor matches the VS Code-inspired mobile reference',async()=>{
+ const h=await read('../control-centre/index.html'),a=await read('../control-centre/app.js'),c=await read('../control-centre/styles.css')
+ for(const id of ['source-editor-panel','source-editor-save-status','source-editor-explorer-toggle','source-editor-new-file','source-editor-new-folder','source-editor-explorer','source-editor-tabs','source-editor-lines','source-editor-highlight','source-editor','source-problems-toggle','source-problems-console-panel']) assert.ok(h.includes('id="'+id+'"'),id)
+ for(const x of ['function highlightEditorLine','function renderSourceEditorTabs','function renderSourceEditorExplorer','updateEditorSaveStatus','source-editor-file-switcher','source-problems-toggle']) assert.ok(a.includes(x),x)
+ for(const x of ['.source-editor-crumb-bar','.source-explorer-toolbar','.source-editor-tabs','.source-editor-tab.is-active','.source-editor-highlight','#source-editor','.source-problems-toggle','.editor-token-keyword','.editor-token-string']) assert.ok(c.includes(x),x)
 })

@@ -2336,6 +2336,7 @@ app.post('/api/update/validate', requireAdmin, async (req, res) => {
   }
 })
 
+app.use('/api/update/deploy', serializeSourceMutations)
 app.post('/api/update/deploy', requireAdmin, async (req, res) => {
   const updateId = String(req.body?.updateId || '')
   if (!validUpdateId(updateId) || req.body?.confirm !== true) {

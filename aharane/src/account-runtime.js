@@ -96,6 +96,7 @@ export function createAccountRuntime({
     startPromise: null,
     readyPromise: Promise.resolve(),
     resolveReady: null,
+    rejectReady: null,
     pairRequestActive: false,
     qr: '',
     manuallyStopped: false,
@@ -182,7 +183,12 @@ export function createAccountRuntime({
         emit()
         return null
       }
-      session.readyPromise = new Promise(resolveReady => { session.resolveReady = resolveReady })
+      session.readyPromise = new Promise((resolveReady, rejectReady) => {
+        session.resolveReady = resolveReady
+        session.rejectReady = rejectReady
+      })
+      // Keep a handler attached for sessions that close before a pairing request awaits readiness.
+      void session.readyPromise.catch(() => {})
 
       const currentSocket = makeSocket({ sessionId: id, auth: auth.state })
       if (!currentSocket?.ev?.on) throw new Error('WhatsApp socket factory returned an invalid socket.')
@@ -201,9 +207,12 @@ export function createAccountRuntime({
         Promise.resolve(onConnection({ sessionId: id, socket: currentSocket, update })).catch(error => logger.warn?.({ event: 'whatsapp.connection-hook-failed', accountId: id, error: String(error?.message || error) }))
         if (update?.qr) session.qr = String(update.qr)
         if (update?.connection === 'open' || update?.connection === 'close') session.qr = ''
-        if (update?.qr || update?.connection === 'connecting' || update?.connection === 'open') {
+        // Phone-number pairing must wait for WhatsApp's initial pair-device/QR
+        // event, not merely the earlier transport-level "connecting" update.
+        if (update?.qr || update?.connection === 'open') {
           session.resolveReady?.()
           session.resolveReady = null
+          session.rejectReady = null
         }
         if (update?.connection === 'open') {
           session.registered = true
@@ -217,6 +226,11 @@ export function createAccountRuntime({
         if (update?.connection === 'close') {
           // A stale socket's close event must never mutate a newer session.
           if (session.socket !== currentSocket) return
+          session.rejectReady?.(
+            update.lastDisconnect?.error || new Error('WhatsApp closed before the pairing session became ready.')
+          )
+          session.resolveReady = null
+          session.rejectReady = null
           const code = update.lastDisconnect?.error?.output?.statusCode
           session.socket = null
           if (code === loggedOutCode || code === 401 || code === 403) {
@@ -266,7 +280,7 @@ export function createAccountRuntime({
     }
   }
 
-  async function waitUntilReady(id, timeoutMs = 12000) {
+  async function waitUntilReady(id, timeoutMs = 20000) {
     const session = get(id)
     let timer
     try {
@@ -299,6 +313,14 @@ export function createAccountRuntime({
       session.state = 'pairing'
       emit()
       return String(code).replace(/\s/g, '')
+    } catch (error) {
+      logger.error?.({
+        event: 'whatsapp.pairing-code-request-failed',
+        accountId: id,
+        statusCode: error?.output?.statusCode ?? error?.status ?? null,
+        error: String(error?.message || error),
+      })
+      throw error
     } finally {
       session.pairRequestActive = false
       emit()
@@ -326,6 +348,9 @@ export function createAccountRuntime({
     if (session.reconnectTimer) clearTimeout(session.reconnectTimer)
     session.reconnectTimer = null
     const currentSocket = session.socket
+    session.rejectReady?.(new Error('WhatsApp session was stopped before pairing became ready.'))
+    session.resolveReady = null
+    session.rejectReady = null
     session.socket = null
     try { await session.auth?.saveCreds?.() } catch {
       logger.warn?.({ event: 'auth.save-on-stop-failed', accountId: session.id })

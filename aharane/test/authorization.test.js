@@ -59,3 +59,19 @@ test('the private Chats tab is restricted to the exact private self-chat only', 
   assert.equal(isPrivateSelfChat({ ...args, ownJid: '2348099999999@s.whatsapp.net' }), false)
   assert.equal(isPrivateSelfChat({ ...args, privateOwnerNumber: '2348099999999' }), false)
 })
+
+
+test('private message visibility is broader than private command authorization', async () => {
+  const policy = await import('../src/policy.js')
+  assert.equal(policy.isPrivateVisibleChatJid('2348099999999@s.whatsapp.net'), true)
+  assert.equal(policy.isPrivateVisibleChatJid('120363000000000000-1234567890@g.us'), true)
+  assert.equal(isPrivateSelfCommand({
+    sessionId: 'private',
+    message: { key: { id: 'incoming-1', fromMe: false, remoteJid: '2348099999999@s.whatsapp.net' }, message: { conversation: '.status' } },
+    remoteJid: '2348099999999@s.whatsapp.net',
+    ownJid: self,
+    privateOwnerNumber: '2348012345678',
+    text: '.status',
+    privateRegistry: registry,
+  }), false)
+})

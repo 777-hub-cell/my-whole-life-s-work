@@ -23,6 +23,16 @@ export function senderNumberFromJid(jid) {
   return normalizePhone(local)
 }
 
+export function isPrivateVisibleChatJid(value) {
+  const jid = String(value ?? '').trim()
+  // The signed-in Private WhatsApp account may display its own newly received
+  // direct, group, and LID-addressed chats. Broadcast/status/newsletter feeds
+  // are intentionally excluded.
+  return /^\\d{7,15}@s\\.whatsapp\\.net$/.test(jid)
+    || /^\\d{5,25}-\\d{5,25}@g\\.us$/.test(jid)
+    || /^\\d{5,25}@lid$/.test(jid)
+}
+
 export function isAllowedInbound({ remoteJid, fromMe = false, allowedSenders = new Set() } = {}) {
   if (fromMe === true) return false
   const jid = String(remoteJid ?? '')

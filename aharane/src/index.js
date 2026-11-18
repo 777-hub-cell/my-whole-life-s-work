@@ -11,6 +11,7 @@ import pino from 'pino'
 import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys'
 import {
   isAllowedInbound,
+  isPrivateVisibleChatJid,
   isSafeMessageUpsert,
   normalizePhone,
   parseAllowedSenders,
@@ -692,14 +693,23 @@ async function handleMessages(sessionId, currentSocket, event) {
     let privateControl = false
 
     if (sessionId === 'private') {
-      // Private Account A is an owner console, never a public responder.
-      // Only registered commands in its exact self-chat may run.
-      if (message.key.fromMe !== true || !isPrivateSelfChat({
+      // The Private account's Chats inbox is a normal new-message inbox:
+      // retain live inbound messages from its direct, group and LID chats.
+      // This is deliberately separate from private command authorization.
+      if (message.key.fromMe !== true) {
+        if (!isPrivateVisibleChatJid(remoteJid)) continue
+        await chatStore.recordMessage({ sessionId, message, socket: currentSocket, downloadMedia: (msg, socket) => downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: socket.updateMediaMessage }) })
+        if (studioSettings.private.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
+        continue
+      }
+
+      // Private commands remain restricted to the Private Owner's exact
+      // verified self-chat; other messages are never dispatched as commands.
+      if (!isPrivateSelfChat({
         sessionId, remoteJid, ownJid: currentSocket.user?.id || '',
         privateOwnerNumber: ownerConfig.privateOwnerNumber,
       })) continue
       await chatStore.recordMessage({ sessionId, message, socket: currentSocket, downloadMedia: (msg, socket) => downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: socket.updateMediaMessage }) })
-      if (studioSettings.private.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
       privateControl = isPrivateSelfCommand({
         sessionId,
         message,
@@ -1138,13 +1148,17 @@ function chatAccount(value) {
   return accountId
 }
 function authorizedChat(accountId, jid) {
-  const target = senderNumberFromJid(jid)
-  if (!target || String(jid).endsWith('@g.us') || String(jid).endsWith('@broadcast')) return false
   if (accountId === 'private') {
     const session = accountRuntime.get('private')
-    const own = senderNumberFromJid(session.socket?.user?.id || session.auth?.state?.creds?.me?.id || '')
-    return isPrivateSelfChat({ sessionId: accountId, remoteJid: jid, ownJid: session.socket?.user?.id || session.auth?.state?.creds?.me?.id || '', privateOwnerNumber: ownerConfig.privateOwnerNumber })
+    const ownJid = session.socket?.user?.id || session.auth?.state?.creds?.me?.id || ''
+    const own = senderNumberFromJid(ownJid)
+    return Boolean(
+      ownerConfig.privateOwnerNumber && own === ownerConfig.privateOwnerNumber &&
+      isPrivateVisibleChatJid(jid)
+    )
   }
+  const target = senderNumberFromJid(jid)
+  if (!target || String(jid).endsWith('@g.us') || String(jid).endsWith('@broadcast')) return false
   return publicAllowedSenders().has(target)
 }
 app.get('/api/env', requireAdmin, (_req, res) => {

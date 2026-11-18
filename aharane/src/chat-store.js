@@ -22,6 +22,7 @@ function safeJid(value) {
   const jid = String(value || '').trim()
   if (/^\d{7,15}@s\.whatsapp\.net$/.test(jid)) return jid
   if (/^\d{5,25}-\d{5,25}@g\.us$/.test(jid)) return jid
+  if (/^\d{5,25}@lid$/.test(jid)) return jid
   return ''
 }
 function unwrap(content) {

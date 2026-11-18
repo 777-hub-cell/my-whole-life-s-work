@@ -29,6 +29,14 @@ test('browser uses same-origin API and WebSocket, not Vercel relay',async()=>{
  for(const x of ["fetch('/aharane/api/' + path.replace","location.host + '/aharane/ws'","navigator.serviceWorker.register('/aharane/studio/sw.js'","api('auth/login'","api('auth/setup'","api('auth/change-password'"])assert.ok(s.includes(x),x)
  assert.ok(!s.includes('/api/aharane/'));assert.ok(!s.includes('/api/studio/socket'))
 })
+test('single-element Studio controls use querySelector rather than querySelectorAll',async()=>{
+ const a=await read('../control-centre/app.js')
+ assert.ok(a.includes("const $ = selector => document.querySelector(selector)"))
+ assert.doesNotMatch(a,/\$\$\(\s*['"]#/,'unique ID selectors must not use the multi-element helper')
+ for(const id of ['login-form','setup-form','open-local-studio','login-button','setup-button']) {
+   assert.ok(a.includes("$('" + '#' + id + "')"),'single-element selector for ' + id)
+ }
+})
 test('remote navigation iterates over every view and nav item',async()=>{
  const s=await read('../control-centre/app.js')
  const start=s.indexOf('function setView(name) {')

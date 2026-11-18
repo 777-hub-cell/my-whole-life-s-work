@@ -690,19 +690,22 @@ function homeViewP(){
  const ownerPrivate=P.owners.privateOwnerNumber?'Configured':'Needs configuration';
  const ownerPublic=P.owners.publicOwnerNumber?'Configured':'Needs configuration';
  const publicBot=P.owners.publicBotNumber?'Configured':'Needs configuration';
- return '<h1>Welcome back</h1><p class="sub">Your Aharane workspace.</p><div class="card" style="padding:16px"><div class="row" style="padding:4px 0"><span class="grow"><div class="t">Aharane service</div><div class="d">'+service+'</div></span><badge class="pill"><span class="dot"></span>Online</badge></div><div class="d" style="white-space:normal;margin-top:8px">Each WhatsApp account has its own connection and controls. An offline account does not stop the other one.</div></div><h2>WhatsApp accounts</h2><div class="card list">'+accounts+'</div><h2>Setup</h2><div class="card list"><button class="row" onclick="openCfg()"><span class="ic">'+ico('cfg')+'</span><span class="grow"><div class="t">Configuration</div><div class="d">Private Owner · '+ownerPrivate+' · Public Owner · '+ownerPublic+' · Public bot number · '+publicBot+'</div></span><span class="d">›</span></button></div><h2>Recent activity</h2><div class="card log" id="log">'+logs.map(l=>'<div><b>'+escP(l[1]||'now')+'</b>  '+escP(l[0])+'</div>').join('')+'</div>';
+ return '<h1>Welcome back</h1><p class="sub">Your Aharane workspace.</p><div class="card" style="padding:16px"><div class="row" style="padding:4px 0"><span class="grow"><div class="t">Aharane service</div><div class="d">'+service+'</div></span><span class="pill"><span class="dot"></span>Online</span></div><div class="d" style="white-space:normal;margin-top:8px">Each WhatsApp account has its own connection and controls. An offline account does not stop the other one.</div></div><h2>WhatsApp accounts</h2><div class="card list">'+accounts+'</div><h2>Setup</h2><div class="card list"><button class="row" onclick="openCfg()"><span class="ic">'+ico('cfg')+'</span><span class="grow"><div class="t">Configuration</div><div class="d">Private Owner · '+ownerPrivate+' · Public Owner · '+ownerPublic+' · Public bot number · '+publicBot+'</div></span><span class="d">›</span></button></div><h2>Recent activity</h2><div class="card log" id="log">'+logs.map(l=>'<div><b>'+escP(l[1]||'now')+'</b>  '+escP(l[0])+'</div>').join('')+'</div>';
 }
 function installBridgeP(){
  const configViewBaseP=cfgV;
- const switchProfileBaseP=switchProf;
  switchProf=function(){
   DS[S.cprof]=cfgD;C0S[S.cprof]=C0;
   const next=S.cprof==='public'?'private':'public';
   S.cprof=next;C=CS[next];
-  if(!DS[next])loadP(next);
-  C.owner=next==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');
-  C.prefix=next==='private'?'.':'!';
-  C0=JSON.stringify(C);C0S[next]=C0;cfgD=Boolean(DS[next]);
+  if(!DS[next]){
+   loadP(next);
+   C=CS[next];
+   C.owner=next==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');
+   C.prefix=next==='private'?'.':'!';
+   C0=JSON.stringify(C);C0S[next]=C0;
+  }else C0=C0S[next];
+  cfgD=Boolean(DS[next]);
   render();toast((next==='public'?'Public':'Private')+' configuration');
  };
  cfgV=function(){
@@ -711,11 +714,12 @@ function installBridgeP(){
   return configViewBaseP().replace('data-cf="prefix"','data-cf="prefix" readonly aria-readonly="true"');
  };
  openCfg=function(){
-  if(!cfgD)cfgLoad();
-  C=CS[S.cprof];
-  C.owner=S.cprof==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');
-  C.prefix=S.cprof==='private'?'.':'!';
-  C0=JSON.stringify(C);C0S[S.cprof]=C0;
+  if(!cfgD){
+   cfgLoad();C=CS[S.cprof];
+   C.owner=S.cprof==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');
+   C.prefix=S.cprof==='private'?'.':'!';
+   C0=JSON.stringify(C);C0S[S.cprof]=C0;
+  }
   S.sub='cfg';render();scrollTo(0,0);
  };
  filesBase=filesV;openFileBase=openF;actBase=actV;moreBase=moreV;homeBase=home;bubBase=bub;

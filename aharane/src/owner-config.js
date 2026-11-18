@@ -11,15 +11,18 @@ function allowedList(value) {
 export function normalizeOwnerConfig(value = {}) {
   const privateOwnerNumber = normalizePhone(value.privateOwnerNumber)
   const publicOwnerNumber = normalizePhone(value.publicOwnerNumber)
-  if (privateOwnerNumber && publicOwnerNumber && privateOwnerNumber === publicOwnerNumber) {
-    throw new Error('Private Owner and Public Owner must be two different WhatsApp numbers.')
+  const publicBotNumber = normalizePhone(value.publicBotNumber)
+  const configuredNumbers = [privateOwnerNumber, publicOwnerNumber, publicBotNumber].filter(Boolean)
+  if (new Set(configuredNumbers).size !== configuredNumbers.length) {
+    throw new Error('Private Owner, Public Owner, and Public bot WhatsApp numbers must be different.')
   }
   const allowedPublicSenders = new Set(allowedList(value.allowedPublicSenders))
   if (publicOwnerNumber) allowedPublicSenders.add(publicOwnerNumber)
   return {
-    version: 1,
+    version: 2,
     privateOwnerNumber,
     publicOwnerNumber,
+    publicBotNumber,
     allowedPublicSenders: [...allowedPublicSenders].sort(),
     updatedAt: String(value.updatedAt || ''),
   }
@@ -29,6 +32,7 @@ export async function loadOwnerConfig(file, legacy = {}) {
   const fallback = normalizeOwnerConfig({
     privateOwnerNumber: legacy.privateOwnerNumber || '',
     publicOwnerNumber: legacy.publicOwnerNumber || '',
+    publicBotNumber: legacy.publicBotNumber || '',
     allowedPublicSenders: legacy.allowedPublicSenders || '',
   })
   let raw
@@ -41,6 +45,7 @@ export async function loadOwnerConfig(file, legacy = {}) {
   return normalizeOwnerConfig({
     privateOwnerNumber: raw?.privateOwnerNumber ?? fallback.privateOwnerNumber,
     publicOwnerNumber: raw?.publicOwnerNumber ?? fallback.publicOwnerNumber,
+    publicBotNumber: raw?.publicBotNumber ?? fallback.publicBotNumber,
     allowedPublicSenders: raw?.allowedPublicSenders ?? fallback.allowedPublicSenders,
     updatedAt: raw?.updatedAt,
   })

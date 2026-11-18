@@ -1342,11 +1342,11 @@ $$('#files-zip-input').addEventListener('change', event => {
 $$('#refresh-packages').addEventListener('click', () => {
   refreshPackages().catch(error => showMessage('#files-upload-message', error.message, 'error'))
 })
-$$('#source-up').addEventListener('click', () => {
+$('#source-up')?.addEventListener('click', () => {
   const parts = sourceFolder.split('/').filter(Boolean)
   void loadSourceFolder(parts.slice(0, -1).join('/'))
 })
-$$('#source-refresh').addEventListener('click', () => {
+$('#source-refresh')?.addEventListener('click', () => {
   loadSourceFolder(sourceFolder).catch(error => setSourceMessage(error.message, 'error'))
 })
 $$('#source-new-file').addEventListener('click', () => { void createSourceItem('file') })

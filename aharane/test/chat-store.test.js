@@ -159,3 +159,25 @@ test('legacy view-once wrappers are identified without changing ordinary image m
     assert.ok(await store.getMedia('public', 'normal-image-1'))
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
+
+test('message search finds older messages, names and filenames in a single account only', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-search-'))
+  try {
+    const store = createChatStore({ dataDir: dir })
+    await store.init()
+    const jid = '2348012345678@s.whatsapp.net'
+    await store.recordMessage({
+      sessionId: 'private',
+      message: { key: { id: 'search-old', remoteJid: jid, fromMe: false }, pushName: 'Older Contact', messageTimestamp: 1760000000, message: { conversation: 'Needle hidden in old history' } },
+    })
+    await store.recordMessage({
+      sessionId: 'private',
+      message: { key: { id: 'search-new', remoteJid: jid, fromMe: false }, pushName: 'Older Contact', messageTimestamp: 1760001000, message: { conversation: 'A newer unrelated message' } },
+    })
+    const results = await store.searchMessages('private', { query: 'needle', limit: 20 })
+    assert.equal(results.length, 1)
+    assert.equal(results[0].id, 'search-old')
+    assert.equal((await store.searchMessages('public', { query: 'needle' })).length, 0)
+    assert.deepEqual(await store.searchMessages('private', { query: 'x' }), [])
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})

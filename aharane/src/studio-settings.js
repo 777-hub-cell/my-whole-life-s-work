@@ -55,11 +55,8 @@ function normalizeProfile(value = {}, scope) {
     chatVisibility: normalizeChatVisibility(value.chatVisibility || {}),
   }
   for (const key of booleanKeys) profile[key] = value[key] === true
-  if (scope === 'private') {
-    profile.showTyping = false
-    profile.rejectCalls = false
-    profile.alwaysOnline = false
-  }
+  // Private and Public profiles share the same supported behavior controls.
+  // Command authorization remains account-specific in the message dispatcher.
   return profile
 }
 export function normalizeStudioSettings(value = {}) {

@@ -9,7 +9,7 @@ test('the uploaded Local Studio preview is the served production UI', async () =
   const bridge = await read('../control-centre/production-bridge.js')
   assert.ok(html.includes('<title>Aharane Local Studio</title>'))
   assert.ok(html.includes('/aharane/studio/production-bridge.js'))
-  assert.ok(bridge.includes('let filesBase, openFileBase, actBase, moreBase, homeBase, bubBase, openChatBase, bindBase;'), 'The strict-mode bridge must declare its shared preview callbacks before installBridgeP runs.')
+  assert.ok(bridge.includes('let filesBase, openFileBase, actBase, moreBase, homeBase, bubBase, openChatBase, bindBase, openPairBaseP, drawMsgsBaseP;'), 'The strict-mode bridge must declare its shared preview callbacks before installBridgeP runs.')
   assert.ok(bridge.includes("Studio startup failed:"), 'A bridge startup error must be visible instead of leaving a blank screen.')
   for (const marker of [
     "apiP('chats/",
@@ -41,6 +41,28 @@ test('the offline service worker caches the bridge and invalidates the previous 
   assert.ok(sw.includes("['/aharane/studio/production-bridge.js','production-bridge.js']"))
 })
 
+test('Files toolbar groups Export Bot Source with the creation and upload actions', async () => {
+  const app = await read('../control-centre/app.js')
+  const start = app.indexOf('<div class="btns" style="margin:12px 0 0')
+  const end = app.indexOf('<div class="crumbs"', start)
+  const toolbar = app.slice(start, end)
+  assert.ok(toolbar.includes('New file'))
+  assert.ok(toolbar.includes('Upload'))
+  assert.ok(toolbar.includes('New folder'))
+  assert.ok(toolbar.includes('id="export-bot-source"'))
+  assert.ok(toolbar.includes('flex-wrap:wrap'))
+  const crumbStart = app.indexOf('<div class="crumbs"', end)
+  const crumbEnd = app.indexOf('${selBar(d,ks)}', crumbStart)
+  assert.ok(!app.slice(crumbStart, crumbEnd).includes('export-bot-source'))
+  assert.ok(app.includes("dir?'Open folder':"), 'Unopened folders should not be labelled as empty.')
+})
+
+test('Configuration owner-number validation strips formatting before checking 7–15 digits', async () => {
+  const bridge = await read('../control-centre/production-bridge.js')
+  const slash = String.fromCharCode(92)
+  assert.ok(bridge.includes("replace(/" + slash + "D/g,'' )") || bridge.includes("replace(/" + slash + "D/g,'')"))
+  assert.ok(bridge.includes("!/^" + slash + "d{7,15}$/.test(ownerValue)"))
+})
 test('Configuration and ENV remain separate production screens', async () => {
   const app = await read('../control-centre/app.js')
   const bridge = await read('../control-centre/production-bridge.js')
@@ -74,3 +96,71 @@ test('individual and group chat visibility is configurable per account', async (
   assert.ok(settings.includes('export function normalizeChatVisibility'))
   assert.ok(settings.includes('export function isChatVisible'))
 })
+
+test('pairing uses saved Private and Public numbers and is always user-requested', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const pair=bridge.slice(bridge.indexOf('function pairViewP(){'),bridge.indexOf('async function getPairCodeP(){'))
+ const bind=bridge.slice(bridge.indexOf('function bindProductionP(){'),bridge.indexOf('function homeViewP(){'))
+ assert.ok(pair.includes('P.owners.privateOwnerNumber'))
+ assert.ok(pair.includes('P.owners.publicBotNumber'))
+ assert.ok(!pair.includes('id="pair-phone"'))
+ assert.ok(pair.includes('id="prod-pair-code"'))
+ assert.ok(pair.includes('id="prod-qr-request"'))
+ assert.ok(pair.includes('id="prod-pair-repair"'))
+ assert.ok(bind.includes('requestQrP'))
+ assert.ok(bind.includes('repairPairP'))
+ assert.ok(bind.includes('reconnectPairP'))
+ assert.ok(!bind.includes('startQrP()'), 'Entering or rendering the Pair screen must not start QR polling.')
+ assert.ok(bridge.includes("C.owner=profile==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'')"))
+})
+
+test('Configuration drafts are not redrawn by background status polling', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const refresh=bridge.slice(bridge.indexOf('async function refreshRuntimeP(){'),bridge.indexOf('async function refreshActivityP(){'))
+ assert.ok(refresh.includes("if(S.tab==='home'&&!S.sub){render()}"))
+ assert.ok(!refresh.includes("if(S.tab==='home'){render()}"))
+ assert.ok(bridge.includes("P.statusTimer=setInterval(()=>{if(!document.hidden)refreshRuntimeP().catch(()=>{})},20000)"))
+})
+
+test('Home exposes service health and separate Private/Public WhatsApp status', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const home=bridge.slice(bridge.indexOf('function homeViewP(){'),bridge.indexOf('function installBridgeP(){'))
+ assert.ok(home.includes('Aharane service'))
+ assert.ok(home.includes('Private WhatsApp'))
+ assert.ok(home.includes('Public WhatsApp'))
+ assert.ok(home.includes('data-action="stop"'))
+ assert.ok(!home.includes("svc('stop')"))
+})
+
+test('Chats search updates in place and preserves message reading position', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ assert.ok(bridge.includes("apiP('chats/'+account+'/search?q='"))
+ assert.ok(bridge.includes("id=\"chat-search-results\"") || bridge.includes("'<div id=\"chat-search-results\">'"))
+ assert.ok(bridge.includes('function updateChatSearchPanelP()'))
+ assert.ok(bridge.includes('drawMsgsBaseP();'))
+ assert.ok(bridge.includes('el.scrollTop=top'))
+ assert.ok(bridge.includes('},15000);'))
+ assert.ok(!bridge.includes("setInterval(()=>refreshChatsP().then(()=>{if(S.chat!==null)loadMessagesP()}).catch(()=>{}),6000)"))
+})
+
+test('folder downloads create a ZIP and ZIP uploads display in-place progress', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const menu=bridge.slice(bridge.indexOf('function fileMenuP(name,button){'),bridge.indexOf('function packageMenuP'))
+ assert.ok(menu.includes("['Rename','Move','Download as ZIP']"))
+ assert.ok(menu.includes("exportSelectionZipP([path],name+'.zip')"))
+ const upload=bridge.slice(bridge.indexOf('function updateUploadProgressP(){'),bridge.indexOf('async function pollUpdateP(){'))
+ assert.ok(upload.includes("id='prod-upload-progress'"))
+ assert.ok(upload.includes("stage:'preparing'"))
+ assert.ok(upload.includes("stage='validating'"))
+ assert.ok(upload.includes("holder?.remove()"))
+})
+
+test('account and source downloads do not depend on the Claude preview host', async () => {
+ const app=await read('../control-centre/app.js')
+ const bridge=await read('../control-centre/production-bridge.js')
+ assert.ok(!app.includes("claude.use('downloads')"))
+ assert.ok(!bridge.includes("claude.use('downloads')"))
+ assert.ok(bridge.includes("fetch(API+'/files/export-selection'"))
+ assert.ok(bridge.includes("files/download?item="))
+})
+

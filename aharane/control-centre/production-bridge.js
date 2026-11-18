@@ -6,13 +6,13 @@ const escP=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'
 const pack=JSON.stringify;
 // Shared preview callbacks replaced by the live production bridge. Keep these
 // bindings declared inside this strict-mode closure before installBridgeP assigns them.
-let filesBase, openFileBase, actBase, moreBase, homeBase, bubBase, openChatBase, bindBase;
-const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],fileData:new Map(),pending:false,chatTimer:null,qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false,visibility:null,visibilityChats:[]};
+let filesBase, openFileBase, actBase, moreBase, homeBase, bubBase, openChatBase, bindBase, openPairBaseP, drawMsgsBaseP;
+const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],packageError:'',filesError:'',fileMeta:new Map(),fileData:new Map(),pending:false,uploadProgress:null,chatTimer:null,chatRefreshBusy:false,chatSearchTimer:null,chatSearchQuery:'',chatSearchResults:[],chatSearchLoading:false,chatSearchError:'',messageFingerprints:new Map(),qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false,visibility:null,visibilityChats:[]};
 function notifyP(s){if(typeof toast==='function')toast(s);else console.info(s)}
 async function apiP(path,options={}){
  const response=await fetch(API+'/'+String(path).replace(/^\/+/,''),{credentials:'same-origin',cache:'no-store',...options,headers:{...(options.body&&!(options.body instanceof ArrayBuffer)&&!(options.body instanceof Blob)?{'Content-Type':'application/json'}:{}),...(options.headers||{})}});
  const type=response.headers.get('content-type')||'',data=type.includes('application/json')?await response.json():null;
- if(!response.ok||data?.ok===false)throw new Error(data?.error||'Request failed ('+response.status+').');
+ if(!response.ok||data?.ok===false){const error=new Error(data?.error||'Request failed ('+response.status+').');error.status=response.status;throw error}
  return data||{};
 }
 function stopTimersP(){['chatTimer','qrTimer','statusTimer'].forEach(k=>{if(P[k])clearInterval(P[k]);P[k]=null})}
@@ -55,12 +55,36 @@ async function showLoginP(){
 }
 async function connectLiveP(){
  try{
-  const r=await Promise.all([apiP('status'),apiP('studio/snapshot'),apiP('owners'),apiP('env'),apiP('metrics'),apiP('activity?limit=300'),apiP('update/status')]);
-  P.runtime=r[0];P.snapshot=r[1];P.owners=r[2].owners||{};P.env=r[3].env||[];P.metrics=r[4];P.activity=r[5].entries||[];P.pending=Boolean(r[6].manualEdits?.pending);
-  P.packages=await loadPackagesP();await loadTreeP('');applyRuntimeP();applyEnvP();P.offline=false;document.body.classList.remove('aharane-booting');document.body.classList.add('aharane-authenticated');render();
-  P.statusTimer=setInterval(()=>refreshRuntimeP().catch(()=>{}),7000);
+  // Fetch independent dashboard resources together to reduce mobile startup latency.
+  const initial=await Promise.allSettled([
+   apiP('status'),apiP('studio/snapshot'),apiP('owners'),apiP('env'),
+   apiP('metrics'),apiP('activity?limit=300'),apiP('update/status'),
+   loadPackagesP(),loadTreeP('')
+  ]);
+  const required=initial.slice(0,4);
+  const requiredFailure=required.find(result=>result.status==='rejected');
+  if(requiredFailure)throw requiredFailure.reason;
+  P.runtime=initial[0].value;P.snapshot=initial[1].value;P.owners=initial[2].value.owners||{};P.env=initial[3].value.env||[];
+  P.metrics=initial[4].status==='fulfilled'?initial[4].value:{};
+  P.activity=initial[5].status==='fulfilled'?(initial[5].value.entries||[]):[];
+  P.pending=initial[6].status==='fulfilled'?Boolean(initial[6].value.manualEdits?.pending):false;
+  if(initial[7].status==='fulfilled'){P.packages=initial[7].value;P.packageError=''}
+  else{P.packages=[];P.packageError=initial[7].reason?.message||'Saved packages could not be loaded.'}
+  if(initial[8].status==='fulfilled')P.filesError=''
+  else P.filesError=initial[8].reason?.message||'Source files could not be loaded.'
+  applyRuntimeP();applyEnvP();P.offline=false;
+  document.body.classList.remove('aharane-booting');document.body.classList.add('aharane-authenticated');
+  render();
+  P.statusTimer=setInterval(()=>{if(!document.hidden)refreshRuntimeP().catch(()=>{})},20000);
   if(navigator.serviceWorker)navigator.serviceWorker.register('/aharane/studio/sw.js',{scope:'/aharane/studio/'}).catch(()=>{});
- }catch(error){await showLoginP();Q('#prod-auth-message').textContent=error.message}
+ }catch(error){
+  if(error.status===401){await showLoginP();return}
+  P.offline=true;
+  document.body.classList.remove('aharane-booting');document.body.classList.add('aharane-authenticated');
+  Q('#view').innerHTML='<div class="card" style="padding:20px;margin-top:24px"><h1>Studio temporarily unavailable</h1><p class="sub" id="studio-connect-error"></p><button class="btn p" id="studio-retry">Retry connection</button></div>';
+  Q('#studio-connect-error').textContent=error.message||'Could not connect to the Aharane service.';
+  Q('#studio-retry').onclick=()=>connectLiveP();
+ }
 }
 function applyRuntimeP(){
  const a=P.runtime?.accounts||{};
@@ -73,9 +97,19 @@ function applyRuntimeP(){
  const series=P.metrics?.hourlyMessages||[];bars=series.length?series.map(n=>Math.max(6,Math.min(100,Number(n)*12+6))):Array(24).fill(6);
 }
 async function refreshRuntimeP(){
- const r=await Promise.all([apiP('status'),apiP('studio/snapshot'),apiP('metrics'),apiP('update/status')]);
- P.runtime=r[0];P.snapshot=r[1];P.metrics=r[2];P.pending=Boolean(r[3].manualEdits?.pending);applyRuntimeP();
- if(S.tab==='home')render();refreshActivityP().catch(()=>{});return P.runtime;
+ const [runtime,snapshot]=await Promise.all([apiP('status'),apiP('studio/snapshot')]);
+ const previous=P.runtime?.accounts||{};
+ P.runtime=runtime;P.snapshot=snapshot;applyRuntimeP();
+ if(S.tab==='home'&&!S.sub){render()}
+ else if(S.tab==='home'&&S.sub==='pair'){
+  const id=accts[S.pi]?.slot==='public'?'public':'private',current=P.runtime?.accounts?.[id]||{};
+  if((current.connected&&!previous[id]?.connected)||(current.registered&&!previous[id]?.registered)){
+   S.pin=null;S.qrRequested=false;
+   if(P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}
+   render();
+  }
+ }
+ return P.runtime;
 }
 async function refreshActivityP(){
  const r=await apiP('activity?limit=500');P.activity=r.entries||[];
@@ -84,28 +118,45 @@ async function refreshActivityP(){
 }
 function applyEnvP(){
  envs=P.env.map(x=>({k:x.key,v:x.value,s:0,readOnly:Boolean(x.readOnly),scope:x.scope,type:x.type||'text'}));
- // Compatibility aliases feed the original Configuration form without
- // exposing or duplicating them in the separate ENV screen.
  const value=key=>String(P.env.find(x=>x.key===key)?.value??'');
  envs.push(
   {k:'PRIVATE_PREFIX',v:value('PRIVATE_COMMAND_PREFIX')||'.',readOnly:true},
   {k:'OWNER_NUMBER',v:P.owners.privateOwnerNumber||''},
   {k:'PUBLIC_PREFIX',v:value('PUBLIC_COMMAND_PREFIX')||'!',readOnly:true},
-  {k:'PUBLIC_NUMBER',v:P.owners.publicOwnerNumber||''}
+  {k:'PUBLIC_NUMBER',v:P.owners.publicBotNumber||''}
  );
  envDirty=false;show={}
 }
 function currentPathP(){return S.path.join('/')}
 function updateFileTreeP(path,children){
  let obj=fs;for(const part of path.split('/').filter(Boolean)){if(!obj[part]||typeof obj[part]!=='object')obj[part]={};obj=obj[part]}
- Object.keys(obj).forEach(k=>delete obj[k]);(children||[]).forEach(x=>obj[x.name]=x.type==='folder'?{}:'');
+ Object.keys(obj).forEach(k=>delete obj[k]);
+ for(const item of children||[]){
+  const full=String(item.path||[path,item.name].filter(Boolean).join('/'));
+  P.fileMeta.set(full,item);
+  obj[item.name]=item.type==='folder'?{}:'';
+ }
 }
+window.AharaneFileMeta=path=>P.fileMeta.get(String(path||''))||null;
 async function loadTreeP(path=''){const r=await apiP('files/tree?item='+encodeURIComponent(path));updateFileTreeP(path,r.children||[]);P.pending=Boolean(r.pending);return r}
 async function loadSourceFileP(path){
  const r=await apiP('files/preview?item='+encodeURIComponent(path));P.fileData.set(path,r);
  const parts=path.split('/'),name=parts.pop();let dir=fs;for(const part of parts)dir=dir[part];dir[name]=r.content;return r;
 }
 function downloadP(name,blob){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000)}
+async function downloadSourceFileP(path,name){
+ const response=await fetch(API+'/files/download?item='+encodeURIComponent(path),{credentials:'same-origin',cache:'no-store'});
+ if(!response.ok){const error=await response.json().catch(()=>({}));throw new Error(error.error||'File download failed ('+response.status+').')}
+ const blob=await response.blob();if(!blob.size)throw new Error('The selected file is empty.');
+ downloadP(name||path.split('/').pop(),blob);
+}
+async function exportSelectionZipP(paths,filename='aharane-selection.zip'){
+ if(!Array.isArray(paths)||!paths.length)return notifyP('Select files or folders to export.');
+ const response=await fetch(API+'/files/export-selection',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','Accept':'application/zip'},body:pack({paths})});
+ if(!response.ok){const error=await response.json().catch(()=>({}));throw new Error(error.error||'The selected ZIP could not be created ('+response.status+').')}
+ const blob=await response.blob();if(!blob.size||!(response.headers.get('content-type')||'').includes('application/zip'))throw new Error('The server did not return a valid ZIP archive.');
+ downloadP(filename,blob);notifyP('Selected files are ready to download.');
+}
 async function exportBotSourceP(button){
  if(button?.disabled)return;
  if(button)button.disabled=true;
@@ -123,18 +174,45 @@ async function exportBotSourceP(button){
  }catch(error){notifyP(error.message)}
  finally{if(button)button.disabled=false}
 }
-async function loadPackagesP(){try{const r=await apiP('files/packages');return r.packages||[]}catch{return []}}
+async function loadPackagesP(){
+ try{const r=await apiP('files/packages');P.packageError='';return r.packages||[]}
+ catch(error){P.packageError=error.message||'Saved ZIP packages could not be loaded.';throw error}
+}
+function updateUploadProgressP(){
+ let holder=Q('#prod-upload-progress'),label=Q('#prod-upload-label'),bar=Q('#prod-upload-bar');
+ if(P.uploadProgress&&!holder&&S.tab==='files'){
+  holder=document.createElement('div');holder.id='prod-upload-progress';holder.className='card';
+  holder.style.cssText='padding:12px;margin:12px 0';
+  holder.innerHTML='<div class="d" id="prod-upload-label"></div><div class="pbar" style="margin-top:8px"><i id="prod-upload-bar" style="width:0"></i></div>';
+  const host=Q('#view'),list=host?.querySelector('.card.list');
+  if(list)host.insertBefore(holder,list);else host?.appendChild(holder);
+  label=Q('#prod-upload-label');bar=Q('#prod-upload-bar');
+ }
+ if(label&&P.uploadProgress){
+  label.textContent=(P.uploadProgress.stage==='preparing'?'Preparing ':'Uploading ')+P.uploadProgress.filename+' · '+P.uploadProgress.completed+' of '+P.uploadProgress.total+' parts';
+  if(bar)bar.style.width=Math.round(P.uploadProgress.completed/P.uploadProgress.total*100)+'%';
+ }
+ if(!P.uploadProgress)holder?.remove();
+}
 async function uploadZipP(file){
  if(file.size<22||file.size>50*1024*1024)throw new Error('ZIP files must be no larger than 50 MB.');
- const digest=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());
- const sum=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join(''),id=crypto.randomUUID(),count=Math.ceil(file.size/1048576);
- await apiP('update/upload/start',{method:'POST',body:pack({updateId:id,filename:file.name,size:file.size,totalChunks:count,sha256:sum})});
- for(let i=0;i<count;i++){
-  const bytes=new Uint8Array(await file.slice(i*1048576,(i+1)*1048576).arrayBuffer());let binary='';
-  for(let j=0;j<bytes.length;j+=0x8000)binary+=String.fromCharCode(...bytes.subarray(j,j+0x8000));
-  await apiP('update/upload/chunk',{method:'POST',body:pack({updateId:id,index:i,data:btoa(binary)})});
- }
- const result=await apiP('update/validate',{method:'POST',body:pack({updateId:id})});P.packages=await loadPackagesP();return result;
+ const count=Math.ceil(file.size/1048576);
+ P.uploadProgress={filename:file.name,completed:0,total:count,stage:'preparing'};updateUploadProgressP();
+ try{
+  const digest=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());
+  const sum=[...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join(''),id=crypto.randomUUID();
+  P.uploadProgress.stage='uploading';updateUploadProgressP();
+  await apiP('update/upload/start',{method:'POST',body:pack({updateId:id,filename:file.name,size:file.size,totalChunks:count,sha256:sum})});
+  for(let i=0;i<count;i++){
+   const bytes=new Uint8Array(await file.slice(i*1048576,(i+1)*1048576).arrayBuffer());let binary='';
+   for(let j=0;j<bytes.length;j+=0x8000)binary+=String.fromCharCode(...bytes.subarray(j,j+0x8000));
+   await apiP('update/upload/chunk',{method:'POST',body:pack({updateId:id,index:i,data:btoa(binary)})});
+   P.uploadProgress.completed=i+1;updateUploadProgressP();
+  }
+  P.uploadProgress.stage='validating';updateUploadProgressP();
+  const result=await apiP('update/validate',{method:'POST',body:pack({updateId:id})});
+  P.packages=await loadPackagesP();return result;
+ }finally{P.uploadProgress=null;updateUploadProgressP()}
 }
 async function pollUpdateP(){
  for(let i=0;i<90;i++){await new Promise(r=>setTimeout(r,2000));const s=await apiP('update/status');if(['succeeded','failed','rolled_back','rollback_failed'].includes(s.update?.status))return s.update}
@@ -148,7 +226,8 @@ async function deployPackageP(id){
 }
 function packagePageP(){
  const rows=P.packages.map(p=>'<div class="row"><span class="ic">'+ico('file')+'</span><span class="grow"><div class="t">'+escP(p.filename)+'</div><div class="d">v'+escP(p.version)+' · '+Number(p.fileCount||0)+' files</div></span><button class="more" data-package="'+escP(p.updateId)+'">⋮</button></div>').join('');
- return '<button class="btn sm" onclick="S.path=[];render()">Back to files</button><h1 style="margin-top:14px">Update packages</h1><p class="sub">Validated Aharane ZIP packages. Use the three-dot menu to update the bot.</p><div class="card list">'+(rows||'<div class="empty">No ZIP update packages saved.</div>')+'</div>';
+ const body=P.packageError?'<div class="empty">Saved packages could not be loaded: '+escP(P.packageError)+'<div class="btns"><button class="btn sm" id="prod-retry-packages">Retry</button></div></div>':(rows||'<div class="empty">No ZIP update packages saved.</div>');
+ return '<button class="btn sm" onclick="S.path=[];render()">Back to files</button><h1 style="margin-top:14px">Update packages</h1><p class="sub">Validated Aharane ZIP packages. Use the three-dot menu to update the bot.</p><div class="card list">'+body+'</div>';
 }
 window.openPackagePageP=()=>{S.path=['updates'];S.ed=false;render()};
 async function applyFilesP(){
@@ -160,7 +239,14 @@ function filesScreenP(){
  if(S.path[0]==='updates')return packagePageP();
  let html=filesBase();
  if(S.ed){const end=html.lastIndexOf('</div>');html=html.slice(0,end+6)+'<div class="btns"><button class="btn p" id="prod-file-save">Save changes</button><button class="btn" id="prod-file-download">Download</button></div>'+html.slice(end+6)}
- else if(!S.path.length){html+='<h2>Update packages <button class="btn sm" onclick="openPackagePageP()">View all</button></h2><p class="sub">'+P.packages.length+' saved ZIP package(s)</p>'+(P.pending?'<div class="btns"><button class="btn p" id="prod-apply-files">Apply staged changes</button></div>':'')}
+ else if(!S.path.length){
+  const packages=P.packageError
+   ?'<p class="sub" id="package-load-error">Saved ZIP packages unavailable: '+escP(P.packageError)+'</p><div class="btns"><button class="btn sm" id="prod-retry-packages">Retry package list</button></div>'
+   :'<p class="sub">'+P.packages.length+' saved ZIP package(s)</p>';
+  html+='<h2>Update packages <button class="btn sm" onclick="openPackagePageP()">View all</button></h2>'+packages+(P.pending?'<div class="btns"><button class="btn p" id="prod-apply-files">Apply staged changes</button></div>':'');
+  if(P.filesError)html+='<div class="note">Could not load this folder: '+escP(P.filesError)+' <button class="btn sm" id="prod-retry-files">Retry</button></div>';
+  if(P.uploadProgress)html+='<div class="card" style="padding:12px;margin-top:14px"><div class="d" id="prod-upload-label"></div><div class="pbar" style="margin-top:8px"><i id="prod-upload-bar" style="width:0"></i></div></div>';
+ }
  return html;
 }
 function filePathP(name){return [currentPathP(),name].filter(Boolean).join('/')}
@@ -182,7 +268,7 @@ function createLiveFileP(type){
  });
 }
 function fileMenuP(name,button){
- closePop();const path=filePathP(name),folder=typeof node(S.path)[name]==='object',actions=['Rename','Move','Download'];if(!folder)actions.push('Delete');
+ closePop();const path=filePathP(name),folder=typeof node(S.path)[name]==='object',actions=folder?['Rename','Move','Download as ZIP']:['Rename','Move','Download','Delete'];
  const popup=document.createElement('div');popup.id='pop';popup.className='pop';popup.setAttribute('role','menu');
  popup.innerHTML=actions.map(a=>'<button role="menuitem" data-file-action="'+a+'"'+(a==='Delete'?' class="del"':'')+'>'+a+'</button>').join('');
  document.body.appendChild(popup);const r=button.getBoundingClientRect(),h=popup.offsetHeight,w=popup.offsetWidth;
@@ -192,7 +278,8 @@ function fileMenuP(name,button){
   try{
    if(a==='Rename')ask('Rename',name,'Save',async value=>{try{await apiP('files/rename',{method:'POST',body:pack({path,name:value})});await loadTreeP(currentPathP());render()}catch(error){notifyP(error.message)}});
    else if(a==='Move')ask('Move to folder (for example commands or private-commands)','commands','Move',async value=>{try{await apiP('files/move',{method:'POST',body:pack({path,destination:value==='root'?'':value})});await loadTreeP(currentPathP());render()}catch(error){notifyP(error.message)}});
-   else if(a==='Download'){const d=await apiP('files/preview?item='+encodeURIComponent(path));downloadP(name,new Blob([d.content],{type:'text/plain'}))}
+   else if(a==='Download as ZIP'){await exportSelectionZipP([path],name+'.zip')}
+   else if(a==='Download'){await downloadSourceFileP(path,name);notifyP('Download started')}
    else if(a==='Delete'){if(!confirm('Delete '+name+'? The change will be staged.'))return;await apiP('files/delete',{method:'POST',body:pack({paths:[path]})});await loadTreeP(currentPathP());render()}
   }catch(error){notifyP(error.message)}
  };
@@ -205,32 +292,76 @@ function packageMenuP(id,button){
 function accountViewP(){
  const rows=['private','public'].map(id=>{
   const a=P.runtime?.accounts?.[id]||{},state=a.connected?'Connected':a.state||'Offline';
-  return '<div class="row"><span class="av">'+(id==='private'?'P':'A')+'<i class="st av-dot '+(a.connected?'':'off')+'"></i></span><span class="grow"><div class="t">'+(id==='private'?'Private account':'Public account')+'</div><div class="d">'+escP(state)+' · '+(a.registered?'Paired':'Not paired')+'</div></span><button class="btn sm p" data-pair-account="'+id+'">'+(a.connected?'Manage':'Pair')+'</button></div><div class="row" style="padding-left:64px;flex-wrap:wrap"><button class="btn sm" data-account="'+id+'" data-action="reconnect">Reconnect</button><button class="btn sm" data-account="'+id+'" data-action="restart">Restart</button><button class="btn sm" data-account="'+id+'" data-action="stop">Stop</button>'+(a.state==='needs-pairing'?'<button class="btn sm d" data-account="'+id+'" data-action="repair">Re-pair</button>':'')+'</div>';
+  const pairButton=a.connected
+   ?'<button class="btn sm" data-pair-account="'+id+'">Details</button>'
+   :a.state==='needs-pairing'
+    ?'<button class="btn sm d" data-pair-account="'+id+'">Repair</button>'
+    :a.registered
+     ?'<button class="btn sm p" data-account="'+id+'" data-action="reconnect">Reconnect</button>'
+     :'<button class="btn sm p" data-pair-account="'+id+'">Link account</button>';
+  const actions=a.connected
+   ?'<button class="btn sm" data-account="'+id+'" data-action="restart">Restart session</button><button class="btn sm d" data-account="'+id+'" data-action="stop">Stop session</button>'
+   :a.state==='needs-pairing'?'':'';
+  return '<div class="row"><span class="av">'+(id==='private'?'P':'A')+'<i class="st av-dot '+(a.connected?'':'off')+'"></i></span><span class="grow"><div class="t">'+(id==='private'?'Private account':'Public account')+'</div><div class="d">'+escP(state)+' · '+(a.registered?'Paired':'Not paired')+'</div></span>'+pairButton+'</div>'+(actions?'<div class="row" style="padding-left:64px;flex-wrap:wrap">'+actions+'</div>':'');
  }).join('');
- return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Accounts</h1><p class="sub">Two independent WhatsApp sessions. Owner identities are separate.</p><div class="card list">'+rows+'</div><h2>Owner identities</h2><p class="sub">Private Owner controls the private self-chat. Public Owner is a separate sender identity for public owner-only commands.</p><div class="card list" style="padding:14px"><label class="d" for="owner-private">Private Owner number</label><input class="field" id="owner-private" value="'+escP(P.owners.privateOwnerNumber||'')+'" inputmode="numeric"><label class="d" for="owner-public" style="display:block;margin-top:12px">Public Owner number</label><input class="field" id="owner-public" value="'+escP(P.owners.publicOwnerNumber||'')+'" inputmode="numeric"><label class="d" for="owner-allow" style="display:block;margin-top:12px">Allowed public senders</label><input class="field" id="owner-allow" value="'+escP((P.owners.allowedPublicSenders||[]).join(', '))+'"><div class="btns"><button class="btn p" id="save-owners">Save owner settings</button></div></div>';
+ return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Accounts</h1><p class="sub">Two independent WhatsApp sessions. Pairing numbers are saved in Configuration.</p><div class="card list">'+rows+'</div><h2>Owner identities</h2><p class="sub">Private Owner controls the Private self-chat. Public Owner controls owner-only commands on the Public bot. The Public bot number is configured separately.</p><div class="card list" style="padding:14px"><label class="d" for="owner-private">Private Owner number</label><input class="field" id="owner-private" value="'+escP(P.owners.privateOwnerNumber||'')+'" inputmode="numeric"><label class="d" for="owner-public" style="display:block;margin-top:12px">Public Owner number</label><input class="field" id="owner-public" value="'+escP(P.owners.publicOwnerNumber||'')+'" inputmode="numeric"><div class="env"><label class="d" for="owner-public-bot">Public bot WhatsApp number</label><input class="field" id="owner-public-bot" value="'+escP(P.owners.publicBotNumber||'')+'" disabled><p class="d" style="white-space:normal;margin-top:6px">Change this under Home → Configuration → Public account.</p></div><label class="d" for="owner-allow" style="display:block;margin-top:12px">Allowed public senders</label><input class="field" id="owner-allow" value="'+escP((P.owners.allowedPublicSenders||[]).join(', '))+'"><div class="btns"><button class="btn p" id="save-owners">Save owner settings</button></div></div>';
 }
 function pairViewP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private',a=P.runtime?.accounts?.[id]||{};
- return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Link '+id+' account</h1><p class="sub">'+escP(a.connected?'Connected':a.state||'Offline')+'</p><div class="seg" style="margin-bottom:16px"><button class="'+(S.pm==='pin'?'on':'')+'" data-pm="pin">Pairing code</button><button class="'+(S.pm==='qr'?'on':'')+'" data-pm="qr">QR code</button></div><div class="card" style="padding:16px">'+(S.pm==='qr'?'<div class="empty" id="prod-qr-panel">Waiting for WhatsApp pairing QR…</div><p class="d">Open WhatsApp → Linked devices → Link a device.</p><button class="btn sm" id="prod-qr-refresh">Refresh QR</button>':'<label class="t" for="pair-phone" style="display:block;margin-bottom:8px">'+(id==='private'?'Private Owner number':'Public bot WhatsApp number')+'</label><input class="field" id="pair-phone" inputmode="numeric" value="'+escP(id==='private'?(P.owners.privateOwnerNumber||''):'')+'" placeholder="Country code + number"><button class="btn p" id="prod-pair-code" style="margin-top:12px;width:100%">Get pairing code</button>'+(S.pin?'<div class="pin" style="text-align:center;margin:18px 0"><b>'+escP(S.pin)+'</b></div><button class="btn" id="prod-copy-code">Copy code</button>':'')+'</div>');
+ const number=id==='private'?P.owners.privateOwnerNumber:P.owners.publicBotNumber;
+ const label=id==='private'?'Private Owner number':'Public bot WhatsApp number';
+ let panel='';
+ if(a.connected){
+  panel='<div class="empty" style="padding:10px 0 18px"><strong>Already connected</strong><p class="d" style="white-space:normal">This WhatsApp account is linked. You do not need another pairing code.</p></div>';
+ }else if(a.state==='needs-pairing'){
+  panel='<div class="note">WhatsApp rejected this saved session. Before linking again, Aharane will back up its existing authentication data.</div><button class="btn p" id="prod-pair-repair" style="width:100%">Back up session and prepare re-pairing</button>';
+ }else if(a.registered){
+  panel='<div class="note">This account is already paired, but currently offline. It does not need a new pairing code.</div><button class="btn p" id="prod-pair-reconnect" style="width:100%">Reconnect existing account</button>';
+ }else if(!number){
+  panel='<div class="empty" style="padding:8px 0 16px">Add the '+label+' in Configuration first. The pairing screen will use that saved number automatically.</div><button class="btn p" id="pair-open-config" style="width:100%">Open Configuration</button>';
+ }else if(S.pm==='qr'){
+  panel='<div class="d" style="text-align:center;margin-bottom:12px">Account number · +'+escP(number)+'</div>'+(S.qrRequested?'<div class="empty" id="prod-qr-panel">Requesting QR code…</div>':'<div class="empty" style="padding:14px 0">No QR code requested. Aharane will only request one when you tap the button.</div>')+'<p class="d" style="white-space:normal">Open WhatsApp on the phone you want to link → Linked devices → Link a device.</p><button class="btn p" id="prod-qr-request" style="width:100%">'+(S.qrRequested?'Request fresh QR code':'Get QR code')+'</button>';
+ }else{
+  panel='<div class="d" style="text-align:center;margin-bottom:12px">'+label+' · +'+escP(number)+'</div>'+(S.pin?'<div class="pin" style="text-align:center;margin:18px 0"><b>'+escP(S.pin)+'</b></div><p class="d" style="text-align:center;white-space:normal">Enter this code in WhatsApp → Linked devices → Link with phone number.</p><div class="btns" style="justify-content:center"><button class="btn" id="prod-copy-code">Copy code</button><button class="btn" id="prod-pair-code">Request new code</button></div>':'<p class="d" style="text-align:center;white-space:normal">A pairing code will only be requested when you tap below.</p><button class="btn p" id="prod-pair-code" style="width:100%">Get pairing code</button>');
+ }
+ return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Link '+(id==='public'?'Public':'Private')+' account</h1><p class="sub">'+escP(a.connected?'Connected':a.registered?'Paired · '+(a.state||'Offline'):a.state||'Not paired')+'</p><div class="seg" style="margin-bottom:16px"><button type="button" class="'+(S.pm==='pin'?'on':'')+'" data-pm="pin">Pairing code</button><button type="button" class="'+(S.pm==='qr'?'on':'')+'" data-pm="qr">QR code</button></div><div class="card" style="padding:16px">'+panel+'</div>';
 }
 async function getPairCodeP(){
- const id=accts[S.pi]?.slot==='public'?'public':'private',phone=String(Q('#pair-phone')?.value||'').replace(/\D/g,'');
- if(!phone)return notifyP('Enter the WhatsApp number to pair.');
- try{const r=await apiP('accounts/'+id+'/pair-code',{method:'POST',body:pack({phoneNumber:phone})});S.pin=r.pairingCode;render()}
- catch(error){notifyP(error.message)}
+ const id=accts[S.pi]?.slot==='public'?'public':'private';
+ const button=Q('#prod-pair-code');if(button)button.disabled=true;
+ try{const r=await apiP('accounts/'+id+'/pair-code',{method:'POST',body:pack({})});S.pin=r.pairingCode;S.qrRequested=false;render()}
+ catch(error){notifyP(error.message);if(button)button.disabled=false}
 }
 let qrSeenP='';
 async function readQrP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private';
- try{const r=await apiP('accounts/'+id+'/qr'),el=Q('#prod-qr-panel');if(!el)return;
+ try{
+  const r=await apiP('accounts/'+id+'/qr'),el=Q('#prod-qr-panel');if(!el)return;
   if(r.qr&&r.qr!==qrSeenP){qrSeenP=r.qr;el.innerHTML=qrSvg(r.qr)}
-  else if(!r.qr&&!qrSeenP)el.textContent='Waiting for WhatsApp to generate the pairing QR…';
+  else if(!r.qr&&!qrSeenP)el.textContent='Waiting for WhatsApp to generate the QR you requested…';
   if(P.runtime?.accounts?.[id]?.connected){el.textContent='Account connected.';clearInterval(P.qrTimer);P.qrTimer=null}
- }catch(error){if(Q('#prod-qr-panel'))Q('#prod-qr-panel').textContent=error.message}
+ }catch(error){if(Q('#prod-qr-panel'))Q('#prod-qr-panel').textContent=error.message;clearInterval(P.qrTimer);P.qrTimer=null}
 }
-function startQrP(){if(P.qrTimer)clearInterval(P.qrTimer);qrSeenP='';readQrP();P.qrTimer=setInterval(readQrP,1800)}
+function startQrP(){if(P.qrTimer)clearInterval(P.qrTimer);qrSeenP='';readQrP();P.qrTimer=setInterval(()=>{if(!document.hidden)readQrP()},1800)}
+async function requestQrP(){
+ const id=accts[S.pi]?.slot==='public'?'public':'private',button=Q('#prod-qr-request');
+ if(button)button.disabled=true;
+ try{await apiP('accounts/'+id+'/qr',{method:'POST',body:pack({})});S.pin=null;S.qrRequested=true;render();startQrP()}
+ catch(error){notifyP(error.message);if(button)button.disabled=false}
+}
+async function repairPairP(){
+ const id=accts[S.pi]?.slot==='public'?'public':'private';
+ if(!confirm('Back up the existing '+id+' WhatsApp authentication before preparing a new pairing?'))return;
+ try{await apiP('accounts/'+id+'/repair',{method:'POST',body:pack({})});S.pin=null;S.qrRequested=false;await refreshRuntimeP();render();notifyP('Session backed up. Nothing was paired yet. Request a pairing code or QR when you are ready.')}
+ catch(error){notifyP(error.message)}
+}
+async function reconnectPairP(){
+ const id=accts[S.pi]?.slot==='public'?'public':'private';
+ try{await apiP('accounts/'+id+'/reconnect',{method:'POST',body:pack({})});await refreshRuntimeP();render();notifyP('Reconnect requested')}
+ catch(error){notifyP(error.message)}
+}
 async function saveOwnersP(){
- try{const r=await apiP('owners',{method:'PUT',body:pack({privateOwnerNumber:Q('#owner-private').value,publicOwnerNumber:Q('#owner-public').value,allowedPublicSenders:Q('#owner-allow').value.split(/[,\s]+/).filter(Boolean)})});P.owners=r.owners;notifyP('Owner identities saved');render()}
+ try{const r=await apiP('owners',{method:'PUT',body:pack({privateOwnerNumber:Q('#owner-private').value,publicOwnerNumber:Q('#owner-public').value,publicBotNumber:P.owners.publicBotNumber||'',allowedPublicSenders:Q('#owner-allow').value.split(/[,\s]+/).filter(Boolean)})});P.owners=r.owners;notifyP('Owner identities saved');render()}
  catch(error){notifyP(error.message)}
 }
 function envViewP(){
@@ -241,11 +372,13 @@ async function saveConfigP(){
  const button=Q('#csv');if(button)button.disabled=true;
  try{
   const profile=S.cprof==='public'?'public':'private';
-  const ownerValue=String(C.owner||'').replace(/\\D/g,'');
-  if(ownerValue&&!/^\\d{7,15}$/.test(ownerValue))throw new Error('Owner number must contain 7–15 digits, including the country code.');
+  const clean=value=>String(value||'').replace(/\D/g,'');
+  const ownerValue=clean(C.owner);
+  if(ownerValue&&!/^\d{7,15}$/.test(ownerValue))throw new Error((profile==='private'?'Owner number':'Public account number')+' must contain 7–15 digits, including the country code.');
   const owners={
    privateOwnerNumber:profile==='private'?ownerValue:(P.owners.privateOwnerNumber||''),
-   publicOwnerNumber:profile==='public'?ownerValue:(P.owners.publicOwnerNumber||''),
+   publicOwnerNumber:P.owners.publicOwnerNumber||'',
+   publicBotNumber:profile==='public'?ownerValue:(P.owners.publicBotNumber||''),
    allowedPublicSenders:P.owners.allowedPublicSenders||[]
   };
   const ownerResult=await apiP('owners',{method:'PUT',body:pack(owners)});
@@ -256,7 +389,7 @@ async function saveConfigP(){
   applyEnvP();
   loadP(profile);
   C=CS[profile];
-  C.owner=profile==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicOwnerNumber||'');
+  C.owner=profile==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');
   C.prefix=profile==='private'?'.':'!';
   C0=JSON.stringify(C);C0S[profile]=C0;
   cfgDirty(false);
@@ -406,13 +539,17 @@ function drawChatVisibilityP(account,search){
 
 async function refreshChatsP(){
  const account=S.cacc==='private'?'private':'public',r=await apiP('chats/'+account+'?limit=500'),current=P.chatJid;
- CH.splice(0,CH.length,...(r.chats||[]).map(c=>({jid:c.jid,n:c.name||c.jid.split('@')[0],g:c.group===true||String(c.jid).endsWith('@g.us'),mem:[],un:c.unreadCount||0,m:[{d:c.fromMe?'o':'i',t:c.lastMessage||'',ts:c.timestamp||Date.now()}]})));
+ CH.splice(0,CH.length,...(r.chats||[]).map(c=>({jid:c.jid,n:c.name||c.jid.split('@')[0],g:c.group===true||String(c.jid).endsWith('@g.us'),mem:[],un:c.unreadCount||0,m:[{d:c.fromMe?'o':'i',t:c.lastMessage||'',ts:c.timestamp||Date.now()}]})));P.messageFingerprints.clear();
  if(current&&S.chat!==null){const i=CH.findIndex(c=>c.jid===current);if(i>=0)S.chat=i;else S.chat=null}
 }
-async function loadMessagesP(index=S.chat){
+async function loadMessagesP(index=S.chat,before=0){
  const c=CH[index];if(!c?.jid)return;P.chatJid=c.jid;
- const account=S.cacc==='private'?'private':'public',r=await apiP('chats/'+account+'/'+encodeURIComponent(c.jid)+'/messages?limit=500');
- c.m=(r.messages||[]).map(mapMessageP);if(S.chat===index)drawMsgs();
+ const account=S.cacc==='private'?'private':'public',url='chats/'+account+'/'+encodeURIComponent(c.jid)+'/messages?limit=500'+(before?'&before='+encodeURIComponent(before):'');
+ const r=await apiP(url),messages=r.messages||[],fingerprint=JSON.stringify(messages.map(m=>[m.id,m.timestamp,m.type,m.text,m.status,m.mediaUrl,m.viewOnceViewed]));
+ const key=account+'|'+c.jid+'|'+(before||'latest');
+ if(P.messageFingerprints.get(key)===fingerprint)return;
+ P.messageFingerprints.set(key,fingerprint);c.m=messages.map(mapMessageP);
+ if(S.chat===index)drawMsgs();
 }
 async function sendChatP(msg){
  const c=CH[S.chat];if(!c?.jid)throw new Error('Open a conversation first.');
@@ -420,10 +557,63 @@ async function sendChatP(msg){
  if(msg.t)await apiP(base+'/send',{method:'POST',body:pack({text:msg.t})});
  else if(msg.b instanceof Blob)await apiP(base+'/media',{method:'POST',body:await msg.b.arrayBuffer(),headers:{'Content-Type':'application/octet-stream','X-Media-Type':msg.b.type||'application/octet-stream','X-File-Name':encodeURIComponent(msg.f||'attachment')}});
  else return;
- await loadMessagesP();
+ P.messageFingerprints.delete(account+'|'+c.jid+'|latest');
+ await loadMessagesP(S.chat,0);
 }
-async function attachLiveP(file){try{await sendChatP({b:file,f:file.name});await loadMessagesP()}catch(error){notifyP(error.message)}}
-function switchChatsP(){S.cacc=S.cacc==='private'?'public':'private';S.chat=null;P.chatJid='';refreshChatsP().then(render).catch(e=>notifyP(e.message))}
+async function attachLiveP(file){try{await sendChatP({b:file,f:file.name})}catch(error){notifyP(error.message)}}
+function switchChatsP(){S.cacc=S.cacc==='private'?'public':'private';S.chat=null;P.chatJid='';P.chatSearchQuery='';P.chatSearchResults=[];P.chatSearchError='';P.messageFingerprints.clear();refreshChatsP().then(render).catch(e=>notifyP(e.message))}
+function preserveChatScrollDrawP(){
+ const el=Q('#msgs'),top=el?.scrollTop||0,wasNearBottom=el?el.scrollHeight-el.scrollTop-el.clientHeight<120:true;
+ drawMsgsBaseP();
+ if(el&&!wasNearBottom){el.scrollTop=top;Q('#jump')?.classList.add('on')}
+}
+function renderKeepingChatSearchP(){
+ const old=Q('#cq'),focused=old===document.activeElement,start=old?.selectionStart,end=old?.selectionEnd;
+ render();
+ if(focused){const next=Q('#cq');if(next){next.focus({preventScroll:true});try{next.setSelectionRange(start,end)}catch{}}}
+}
+function chatSearchPanelP(){
+ const query=P.chatSearchQuery;
+ if(!query)return '';
+ let body='';
+ if(query.length<2)body='<div class="empty">Type at least two characters to search saved messages.</div>';
+ else if(P.chatSearchLoading)body='<div class="empty">Searching message history…</div>';
+ else if(P.chatSearchError)body='<div class="empty">Search unavailable: '+escP(P.chatSearchError)+'</div>';
+ else if(!P.chatSearchResults.length)body='<div class="empty">No stored messages match “'+escP(query)+'”. Search includes older saved messages, not only the latest preview.</div>';
+ else body=P.chatSearchResults.map(hit=>'<button class="row" data-search-jid="'+escP(hit.jid)+'" data-search-before="'+escP(String(Number(hit.timestamp||0)+1))+'"><span class="av '+(String(hit.jid).endsWith('@g.us')?'grp':'')+'">'+(String(hit.jid).endsWith('@g.us')?ico('grp'):escP(String(hit.pushName||hit.jid).charAt(0).toUpperCase()))+'</span><span class="grow"><span class="t" style="display:block">'+escP(hit.pushName||hit.jid)+'</span><span class="d" style="display:block;white-space:normal">'+escP(hit.text||hit.fileName||('Attachment · '+hit.type))+'</span></span><span class="d">'+rel(hit.timestamp)+'</span></button>').join('');
+ return '<div style="margin:0 0 14px"><div class="d" style="margin:0 2px 6px">Message matches</div><div class="card list">'+body+'</div></div>';
+}
+function updateChatSearchPanelP(){
+ const target=Q('#chat-search-results');if(!target)return;
+ target.innerHTML=chatSearchPanelP();
+ target.querySelectorAll('[data-search-jid]').forEach(button=>button.onclick=()=>openChatSearchHitP(button.dataset.searchJid,button.dataset.searchBefore).catch(error=>notifyP(error.message)));
+}
+function scheduleChatSearchP(value){
+ const query=String(value||'').trim();P.chatSearchQuery=query;P.chatSearchResults=[];P.chatSearchError='';P.chatSearchLoading=query.length>=2;
+ if(P.chatSearchTimer)clearTimeout(P.chatSearchTimer);
+ updateChatSearchPanelP();
+ if(query.length<2)return;
+ P.chatSearchTimer=setTimeout(async()=>{
+  const account=S.cacc==='private'?'private':'public';
+  try{
+   const result=await apiP('chats/'+account+'/search?q='+encodeURIComponent(query)+'&limit=60');
+   if(P.chatSearchQuery!==query||S.cacc!==account)return;
+   P.chatSearchResults=result.results||[];P.chatSearchLoading=false;updateChatSearchPanelP();
+  }catch(error){
+   if(P.chatSearchQuery!==query)return;
+   P.chatSearchError=error.message;P.chatSearchLoading=false;updateChatSearchPanelP();
+  }
+ },400);
+}
+async function openChatSearchHitP(jid,before){
+ let index=CH.findIndex(c=>c.jid===jid);
+ if(index<0){await refreshChatsP();index=CH.findIndex(c=>c.jid===jid)}
+ if(index<0)return notifyP('That conversation is no longer visible.');
+ openChatBase(index);
+ const account=S.cacc==='private'?'private':'public';
+ P.messageFingerprints.delete(account+'|'+jid+'|'+(Number(before)||'latest'));
+ await loadMessagesP(index,Number(before)||0);
+}
 async function accountActionP(id,action){try{await apiP('accounts/'+id+'/'+action,{method:'POST',body:pack({})});await refreshRuntimeP();render();notifyP('Account '+action+' requested')}catch(error){notifyP(error.message)}}
 function bindProductionP(){
  const exportSource=Q('#export-bot-source');if(exportSource)exportSource.onclick=()=>exportBotSourceP(exportSource);
@@ -438,15 +628,40 @@ function bindProductionP(){
  const saveConfig=Q('#csv');if(saveConfig)saveConfig.onclick=saveConfigP;
  document.querySelectorAll('[data-e]').forEach(input=>input.oninput=()=>{const row=envs[Number(input.dataset.e)];if(row&&!row.readOnly){row.v=input.value;envDirty=true}});
  const save=Q('#prod-file-save');if(save)save.onclick=saveLiveFileP;
- const down=Q('#prod-file-download');if(down)down.onclick=()=>{const data=P.fileData.get(S.cur);if(data)downloadP(S.cur.split('/').pop(),new Blob([data.content],{type:'text/plain'}))};
- const upload=Q('#upl');if(upload)upload.onchange=async e=>{const files=[...e.target.files];e.target.value='';for(const file of files){try{if(/\.zip$/i.test(file.name)){const r=await uploadZipP(file);notifyP('Validated '+file.name+' ('+r.fileCount+' files)')}else{if(!/\.(js|mjs|cjs|json|md|html|css|txt|yml|yaml)$/i.test(file.name))throw new Error('Only approved source and text files can be uploaded.');await apiP('files',{method:'POST',body:pack({parentPath:currentPathP(),name:file.name,type:'file',content:await file.text()})});notifyP('Uploaded '+file.name)}}catch(error){notifyP(error.message)}}await loadTreeP(currentPathP());P.packages=await loadPackagesP();render()};
- const search=Q('#cq');if(search)search.oninput=()=>{S.cq=search.value;const p=search.selectionStart;refreshChatsP().then(()=>{render();const x=Q('#cq');if(x){x.focus();x.setSelectionRange(p,p)}}).catch(e=>notifyP(e.message))};
+ const down=Q('#prod-file-download');if(down)down.onclick=()=>downloadSourceFileP(S.cur,S.cur.split('/').pop()).catch(e=>notifyP(e.message));
+ const upload=Q('#upl');if(upload)upload.onchange=async e=>{
+  const files=[...e.target.files];e.target.value='';
+  for(const file of files){
+   try{
+    if(/\.zip$/i.test(file.name)){
+     const result=await uploadZipP(file);notifyP('Validated '+file.name+' ('+result.fileCount+' files)');
+    }else{
+     if(!/\.(js|mjs|cjs|json|md|html|css|txt|yml|yaml)$/i.test(file.name))throw new Error('Only approved source and text files can be uploaded.');
+     await apiP('files',{method:'POST',body:pack({parentPath:currentPathP(),name:file.name,type:'file',content:await file.text()})});
+     notifyP('Uploaded '+file.name);
+    }
+   }catch(error){notifyP(error.message)}
+  }
+  try{await loadTreeP(currentPathP());P.packages=await loadPackagesP();P.packageError='';P.filesError='';render()}
+  catch(error){P.packageError=error.message;notifyP(error.message)}
+ };
+ const search=Q('#cq');if(search)search.oninput=()=>{S.cq=search.value;scheduleChatSearchP(search.value)};
  const swap=Q('#chsw');if(swap)swap.onclick=switchChatsP;
  const visibility=Q('#chat-visibility');if(visibility)visibility.onclick=()=>openChatVisibilityP();
  const pair=Q('#prod-pair-code');if(pair)pair.onclick=getPairCodeP;
- const qr=Q('#prod-qr-refresh');if(qr)qr.onclick=readQrP;
+ const qr=Q('#prod-qr-request');if(qr)qr.onclick=requestQrP;
+ const repair=Q('#prod-pair-repair');if(repair)repair.onclick=repairPairP;
+ const reconnect=Q('#prod-pair-reconnect');if(reconnect)reconnect.onclick=reconnectPairP;
+ const openConfig=Q('#pair-open-config');if(openConfig)openConfig.onclick=()=>{
+  S.cprof=S.pi===1?'public':'private';C=CS[S.cprof];
+  C.owner=S.cprof==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');C.prefix=S.cprof==='private'?'.':'!';
+  C0=JSON.stringify(C);C0S[S.cprof]=C0;cfgD=false;DS[S.cprof]=false;openCfg();
+ };
  const copy=Q('#prod-copy-code');if(copy)copy.onclick=()=>navigator.clipboard?.writeText(S.pin||'').then(()=>notifyP('Pairing code copied')).catch(()=>notifyP('Select and copy the code'));
- document.querySelectorAll('[data-pm]').forEach(b=>b.onclick=()=>{S.pm=b.dataset.pm;S.pin=null;render()});
+ document.querySelectorAll('[data-pm]').forEach(b=>b.onclick=()=>{
+  if(P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}
+  S.pm=b.dataset.pm;S.pin=null;S.qrRequested=false;render();
+ });
  const clear=Q('#lcl');if(clear)clear.onclick=clearActivityP;
  const source=Q('#open-app-source');if(source)source.onclick=()=>openAppSourceP('index.html');
  const localSource=Q('#offline-open-source');if(localSource)localSource.onclick=()=>openAppSourceP('index.html');
@@ -459,32 +674,90 @@ function bindProductionP(){
  const change=Q('#change-password');if(change)change.onclick=changePasswordP;
  const logout=Q('#sign-out');if(logout)logout.onclick=signOutP;
  const apply=Q('#prod-apply-files');if(apply)apply.onclick=applyFilesP;
- if(Q('#prod-qr-panel')&&S.sub==='pair'&&S.pm==='qr'&&!P.qrTimer)startQrP();
+ const retryPackages=Q('#prod-retry-packages');if(retryPackages)retryPackages.onclick=async()=>{retryPackages.disabled=true;try{P.packages=await loadPackagesP();P.packageError='';render()}catch(error){P.packageError=error.message;notifyP(error.message)}finally{retryPackages.disabled=false}};
+ const retryFiles=Q('#prod-retry-files');if(retryFiles)retryFiles.onclick=async()=>{try{await loadTreeP(currentPathP());P.filesError='';render()}catch(error){P.filesError=error.message;notifyP(error.message)}};
  if(!(Q('#prod-qr-panel')&&S.sub==='pair')&&P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}
- if(S.tab==='files'&&S.path[0]==='updates')loadPackagesP().then(x=>{P.packages=x;render()});
- if(S.tab==='chats'&&!P.chatLoaded){P.chatLoaded=true;refreshChatsP().then(render).catch(e=>notifyP(e.message))}
- if(S.tab==='chats'&&!P.chatTimer)P.chatTimer=setInterval(()=>refreshChatsP().then(()=>{if(S.chat!==null)loadMessagesP()}).catch(()=>{}),6000);
+ if(S.tab==='files'&&S.path[0]==='updates'&&!P.packagesLoading){
+  P.packagesLoading=true;
+  loadPackagesP().then(x=>{P.packages=x;P.packageError='';if(S.tab==='files'&&S.path[0]==='updates')render()}).catch(()=>{}).finally(()=>{P.packagesLoading=false});
+ }
+ if(S.tab==='chats'&&!P.chatLoaded){
+  refreshChatsP().then(()=>{P.chatLoaded=true;if(S.tab==='chats')render()}).catch(error=>{P.chatLoaded=false;notifyP(error.message)});
+ }
+ if(S.tab==='chats'&&!P.chatTimer)P.chatTimer=setInterval(async()=>{
+  if(document.hidden||P.chatRefreshBusy)return;
+  P.chatRefreshBusy=true;
+  try{
+   if(S.chat!==null)await loadMessagesP(S.chat);
+   else if(!Q('#cq')||document.activeElement!==Q('#cq')){
+    await refreshChatsP();
+    if(S.tab==='chats'&&!P.chatSearchQuery)render();
+   }
+  }catch{}
+  finally{P.chatRefreshBusy=false}
+ },15000);
  if(S.tab!=='chats'&&P.chatTimer){clearInterval(P.chatTimer);P.chatTimer=null}
+}
+function homeViewP(){
+ const accounts=['private','public'].map(id=>{
+  const a=P.runtime?.accounts?.[id]||{},name=id==='private'?'Private WhatsApp':'Public WhatsApp';
+  const state=a.connected?'Connected':a.state==='needs-pairing'?'Needs re-pairing':a.registered?'Paired · offline':a.state==='not-paired'?'Not paired':a.state||'Starting';
+  const tone=a.connected?'':(a.state==='needs-pairing'?'off':'warn');
+  let action='';
+  if(a.connected)action='<button class="btn sm" data-pair-account="'+id+'">Manage</button><button class="btn sm" data-account="'+id+'" data-action="stop">Stop</button>';
+  else if(a.state==='needs-pairing')action='<button class="btn sm d" data-pair-account="'+id+'">Re-pair</button>';
+  else if(a.registered)action='<button class="btn sm p" data-account="'+id+'" data-action="reconnect">Reconnect</button>';
+  else action='<button class="btn sm p" data-pair-account="'+id+'">Link account</button>';
+  return '<div class="row"><span class="av">'+(id==='private'?'P':'A')+'<i class="st av-dot '+(a.connected?'':'off')+'"></i></span><span class="grow"><div class="t">'+name+'</div><div class="d">'+escP(state)+'</div></span><span class="btns" style="margin:0;gap:6px;flex-wrap:wrap">'+action+'</span></div>';
+ }).join('');
+ const service=P.runtime?'Connected to Aharane service':'Service unavailable';
+ const ownerPrivate=P.owners.privateOwnerNumber?'Configured':'Needs configuration';
+ const ownerPublic=P.owners.publicOwnerNumber?'Configured':'Needs configuration';
+ const publicBot=P.owners.publicBotNumber?'Configured':'Needs configuration';
+ return '<h1>Welcome back</h1><p class="sub">Your Aharane workspace.</p><div class="card" style="padding:16px"><div class="row" style="padding:4px 0"><span class="grow"><div class="t">Aharane service</div><div class="d">'+service+'</div></span><span class="pill"><span class="dot"></span>Online</span></div><div class="d" style="white-space:normal;margin-top:8px">Each WhatsApp account has its own connection and controls. An offline account does not stop the other one.</div></div><h2>WhatsApp accounts</h2><div class="card list">'+accounts+'</div><h2>Setup</h2><div class="card list"><button class="row" onclick="openCfg()"><span class="ic">'+ico('cfg')+'</span><span class="grow"><div class="t">Configuration</div><div class="d">Private Owner · '+ownerPrivate+' · Public Owner · '+ownerPublic+' · Public bot number · '+publicBot+'</div></span><span class="d">›</span></button></div><h2>Recent activity</h2><div class="card log" id="log">'+logs.map(l=>'<div><b>'+escP(l[1]||'now')+'</b>  '+escP(l[0])+'</div>').join('')+'</div>';
 }
 function installBridgeP(){
  const configViewBaseP=cfgV;
+ switchProf=function(){
+  DS[S.cprof]=cfgD;C0S[S.cprof]=C0;
+  const next=S.cprof==='public'?'private':'public';
+  S.cprof=next;C=CS[next];
+  if(!DS[next]){
+   loadP(next);
+   C=CS[next];
+   C.owner=next==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');
+   C.prefix=next==='private'?'.':'!';
+   C0=JSON.stringify(C);C0S[next]=C0;
+  }else C0=C0S[next];
+  cfgD=Boolean(DS[next]);
+  render();toast((next==='public'?'Public':'Private')+' configuration');
+ };
  cfgV=function(){
   // Preserve the original Configuration page. Prefixes are fixed in the
   // runtime (. for Private, ! for Public), so display them read-only.
   return configViewBaseP().replace('data-cf="prefix"','data-cf="prefix" readonly aria-readonly="true"');
  };
  openCfg=function(){
-  if(!cfgD)cfgLoad();
-  C=CS[S.cprof];
-  C.owner=S.cprof==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicOwnerNumber||'');
-  C.prefix=S.cprof==='private'?'.':'!';
-  C0=JSON.stringify(C);C0S[S.cprof]=C0;
+  if(!cfgD){
+   cfgLoad();C=CS[S.cprof];
+   C.owner=S.cprof==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');
+   C.prefix=S.cprof==='private'?'.':'!';
+   C0=JSON.stringify(C);C0S[S.cprof]=C0;
+  }
   S.sub='cfg';render();scrollTo(0,0);
  };
  filesBase=filesV;openFileBase=openF;actBase=actV;moreBase=moreV;homeBase=home;bubBase=bub;
- const chatsBaseP=chatsV;chatsV=function(){return chatsBaseP().replace('</button></div><p class="sub">','</button><button class="modeb" id="chat-visibility" aria-label="Configure chat visibility">'+ico('cfg')+'</button></div><p class="sub">')};
+ exportZip=function(source,filename){
+  const paths=Object.keys(source||{}).map(name=>[...S.path,name].filter(Boolean).join('/'));
+  exportSelectionZipP(paths,filename).catch(error=>notifyP(error.message));
+ };
+ openPairBaseP=openPair;openPair=function(i){if(P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}S.pin=null;S.qrRequested=false;openPairBaseP(i)};
+ const chatsBaseP=chatsV;chatsV=function(){
+  const html=chatsBaseP().replace('</button></div><p class="sub">','</button><button class="modeb" id="chat-visibility" aria-label="Configure chat visibility">'+ico('cfg')+'</button></div><p class="sub">');
+  return html.replace('<div class="card list">','<div id="chat-search-results">'+chatSearchPanelP()+'</div><div class="card list">');
+ };
  filesV=filesScreenP;envV=envViewP;accV=accountViewP;pairV=pairViewP;moreV=moreViewP;storV=storageViewP;
- home=function(){return homeBase().replace(/(<span>Messages handled, last 24 hours<\/span><b>)[\s\S]*?(<\/b>)/,'$1'+Number(P.metrics?.messagesLast24h||0).toLocaleString()+'$2')};
+ home=homeViewP;
  openAct=activityPageP;openStor=function(){S.sub='stor';render();loadStorageP()};
  newAcc=function(){notifyP('Aharane uses two separate accounts: Private and Public.')};
  finishPair=function(){refreshRuntimeP().then(render)};
@@ -498,6 +771,7 @@ function installBridgeP(){
   return bubBase(msg,first,last,index);
  };
  openF=openLiveFileP;mk=t=>createLiveFileP(t==='dir'?'folder':'file');menu=fileMenuP;
+ drawMsgsBaseP=drawMsgs;drawMsgs=preserveChatScrollDrawP;
  bindBase=bind;bind=function(){bindBase();bindProductionP()};
  LOGS.splice(0,LOGS.length);logs=[];CH.splice(0,CH.length);chats=[];fs={};S.path=[];envs=[];envDirty=false;
 }
@@ -509,22 +783,14 @@ function injectStyleP(){
 async function bootP(){
  if(navigator.serviceWorker)navigator.serviceWorker.register('/aharane/studio/sw.js',{scope:'/aharane/studio/'}).catch(()=>{});
  try{
-  injectStyleP();
-  installBridgeP();
+  injectStyleP();installBridgeP();
   const auth=await apiP('auth/status');
-  try{
-   await apiP('status');
-   document.body.classList.add('aharane-authenticated');
-   await connectLiveP();
-  }catch{
-   loginPanelP();
-   setLoginModeP(Boolean(auth.setupRequired));
-  }
+  if(auth.setupRequired){loginPanelP();setLoginModeP(true);return}
+  document.body.classList.add('aharane-authenticated');
+  await connectLiveP();
  }catch(error){
-  // Never leave the user with only the boot background if startup breaks.
   try{
-   loginPanelP();
-   setLoginModeP(false);
+   loginPanelP();setLoginModeP(false);
    Q('#prod-auth-message').textContent='Studio startup failed: '+String(error?.message||error);
   }catch{}
  }

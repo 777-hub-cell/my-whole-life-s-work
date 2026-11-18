@@ -537,10 +537,11 @@ async function recordManualEdit(sourcePath, action) {
   return state
 }
 
-async function validateSourceContent(sourcePath, content) {
+async function validateSourceContent(sourcePath, content, { syntax = true } = {}) {
   if (Buffer.byteLength(content, 'utf8') > MAX_SOURCE_FILE_BYTES) {
     sourcePathError(413, 'FILE_TOO_LARGE', 'Source files must be 512 KB or smaller in the editor.')
   }
+  if (!syntax) return
   const extension = extname(sourcePath).toLowerCase()
   if (['.json', '.webmanifest'].includes(extension)) {
     try { JSON.parse(content) }
@@ -557,6 +558,38 @@ async function validateSourceContent(sourcePath, content) {
       sourcePathError(400, 'INVALID_SOURCE_SYNTAX', message || 'JavaScript syntax validation failed.')
     } finally {
       await rm(temporary, { force: true }).catch(() => {})
+    }
+  }
+}
+
+async function validateManualEditWorkspaceFiles(workspace, modifiedPaths) {
+  const checked = new Set()
+  for (const item of modifiedPaths || []) {
+    if (!['modified-file', 'created-file', 'renamed-to', 'moved-to'].includes(item?.action)) continue
+    const normalized = normalizeUpdatePath(String(item?.path || '')).path
+    if (checked.has(normalized)) continue
+    checked.add(normalized)
+    const parts = normalized.split('/')
+    if (!SOURCE_DIRS.has(parts[0]) && !(parts.length === 1 && SOURCE_ROOT_FILES.has(parts[0]))) {
+      sourcePathError(403, 'PATH_NOT_ALLOWED', 'A staged file is outside the editable Aharane source workspace.')
+    }
+    const full = join(workspace, ...parts)
+    const info = await lstat(full).catch(error => error?.code === 'ENOENT' ? null : Promise.reject(error))
+    if (!info || !info.isFile()) continue
+    if (info.isSymbolicLink()) sourcePathError(403, 'SYMLINK_BLOCKED', 'A staged source file cannot be a symbolic link.')
+    const extension = extname(normalized).toLowerCase()
+    if (['.json', '.webmanifest'].includes(extension)) {
+      try { JSON.parse(await readFile(full, 'utf8')) }
+      catch { sourcePathError(400, 'INVALID_JSON', 'A staged JSON or web manifest file is not valid JSON: ' + normalized) }
+    }
+    if (['.js', '.mjs', '.cjs'].includes(extension)) {
+      try {
+        await execFileAsync(process.execPath, ['--check', full], { cwd: workspace, timeout: 10_000, maxBuffer: 32 * 1024 })
+      } catch (error) {
+        const message = String(error?.stderr || error?.message || 'JavaScript syntax validation failed.')
+          .replaceAll(full, normalized).split('\n').slice(0, 4).join(' ').slice(0, 360)
+        sourcePathError(400, 'INVALID_SOURCE_SYNTAX', message || ('JavaScript syntax validation failed: ' + normalized))
+      }
     }
   }
 }
@@ -1670,7 +1703,9 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
     let target = await safeSourceTarget(req.body?.path)
     if (!target.info?.isFile()) return res.status(400).json({ ok: false, error: 'Choose an existing source file.' })
     const content = String(req.body?.content ?? '')
-    await validateSourceContent(target.path, content)
+    // Autosave must preserve temporarily incomplete JS/JSON drafts while the user types.
+    // Full syntax checks run when staged changes are applied.
+    await validateSourceContent(target.path, content, { syntax: false })
     handle = await open(target.full, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0))
     const original = await handle.readFile()
     const currentHash = createHash('sha256').update(original).digest('hex')
@@ -1818,6 +1853,7 @@ app.post('/api/files/apply', requireAdmin, async (req, res) => {
     if (!actualWorkspace.startsWith(RELEASES_DIR + sep) || actualWorkspace === current) {
       return res.status(409).json({ ok: false, error: 'The saved edit workspace is not a separate Aharane release.' })
     }
+    await validateManualEditWorkspaceFiles(actualWorkspace, manual.modifiedPaths)
     await execFileAsync(process.execPath, ['--check', join(actualWorkspace, 'src/index.js')], { cwd: actualWorkspace, timeout: 15_000, maxBuffer: 1024 * 1024 })
     await execFileAsync('npm', ['run', 'check'], {
       cwd: actualWorkspace,

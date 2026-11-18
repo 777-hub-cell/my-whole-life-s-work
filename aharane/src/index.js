@@ -1,6 +1,7 @@
 import { appendFile, cp, lstat, mkdir, open, readFile, realpath, readdir, rename, rm, stat, statfs, symlink, writeFile } from 'node:fs/promises'
 import { constants as fsConstants, createReadStream } from 'node:fs'
 import { createHash, createHmac, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto'
+import { createSourceZip } from './source-export.js'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { resolve, join, dirname, sep, relative, isAbsolute, extname } from 'node:path'
@@ -1371,6 +1372,54 @@ app.get('/api/storage', requireAdmin, async (_req, res) => {
     res.json({ ok: true, disk: { totalBytes: diskTotal, freeBytes: diskFree, usedBytes: Math.max(0, diskTotal - diskFree) }, media })
   } catch {
     res.status(500).json({ ok: false, error: 'Could not read server storage usage.' })
+  }
+})
+
+app.get('/api/files/export', requireAdmin, async (_req, res) => {
+  try {
+    const files = []
+    let totalBytes = 0
+    async function walk(directory = '') {
+      const listing = await listSourceFiles(directory)
+      for (const child of listing.children) {
+        const path = child.path
+        if (child.type === 'folder') {
+          await walk(path)
+          continue
+        }
+        const target = await safeSourceTarget(path)
+        if (!target.info?.isFile() || target.info.isSymbolicLink()) continue
+        if (target.info.size > 8 * 1024 * 1024) {
+          sourcePathError(413, 'EXPORT_FILE_TOO_LARGE', 'A source file is too large to include in the ZIP: ' + path)
+        }
+        const handle = await open(target.full, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0))
+        try {
+          const info = await handle.stat()
+          if (!info.isFile() || info.size > 8 * 1024 * 1024) continue
+          const content = await handle.readFile()
+          totalBytes += content.length
+          if (totalBytes > 45 * 1024 * 1024 || files.length >= 2000) {
+            sourcePathError(413, 'EXPORT_TOO_LARGE', 'The source export exceeds the safe 45 MB or 2,000-file limit.')
+          }
+          files.push({ path, content })
+        } finally {
+          await handle.close().catch(() => {})
+        }
+      }
+    }
+    await walk('')
+    if (!files.length) return res.status(404).json({ ok: false, error: 'No source files were found to export.' })
+    const archive = createSourceZip(files)
+    res.status(200)
+      .set('Content-Type', 'application/zip')
+      .set('Content-Disposition', 'attachment; filename="aharane-source.zip"')
+      .set('Cache-Control', 'private, no-store, no-cache, must-revalidate')
+      .set('Pragma', 'no-cache')
+      .set('X-Content-Type-Options', 'nosniff')
+      .set('Content-Length', String(archive.length))
+      .send(archive)
+  } catch (error) {
+    res.status(error?.status || 500).json({ ok: false, error: String(error?.message || 'Could not export the Aharane source code.') })
   }
 })
 

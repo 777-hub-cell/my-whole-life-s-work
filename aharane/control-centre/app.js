@@ -2070,8 +2070,9 @@ applyLocalPreferences()
 
 document.addEventListener('click', event => {
   if (event.target instanceof Element && event.target.closest('.source-item-actions, .package-actions')) return
-  $$('.source-item-menu, .package-menu').forEach(menu => { menu.hidden = true })
-  $$('.source-menu-button').forEach(button => button.setAttribute('aria-expanded', 'false'))
+  $('.source-item-menu, .package-menu').forEach(menu => { menu.hidden = true })
+  $('.source-menu-button').forEach(button => button.setAttribute('aria-expanded', 'false'))
+  $('.source-file-row.menu-open').forEach(row => row.classList.remove('menu-open'))
 })
 window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
   if (localStorage.getItem(THEME_KEY) === 'system') applyThemePreference()

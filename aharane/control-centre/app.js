@@ -592,8 +592,14 @@ function updateSourceBreadcrumb() {
   const parts = sourceFolder ? sourceFolder.split('/') : []
   const root = document.createElement('button')
   root.type = 'button'
-  root.className = 'crumb-button'
-  root.textContent = 'Aharane'
+  root.className = 'crumb-button root-crumb'
+  const homeIcon = document.createElement('span')
+  homeIcon.className = 'breadcrumb-home-icon'
+  homeIcon.setAttribute('aria-hidden', 'true')
+  homeIcon.innerHTML = '<svg viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1V10Z"></path></svg>'
+  const homeLabel = document.createElement('span')
+  homeLabel.textContent = 'Home'
+  root.append(homeIcon, homeLabel)
   root.addEventListener('click', () => { void loadSourceFolder('') })
   const breadcrumb = $('#source-breadcrumb')
   breadcrumb.replaceChildren(root)
@@ -646,12 +652,22 @@ async function loadSourceFolder(folder) {
     row.className = 'source-file-row'
     row.dataset.name = item.name.toLowerCase()
     row.dataset.type = item.type
+
+    const select = document.createElement('input')
+    select.type = 'checkbox'
+    select.className = 'source-file-select'
+    select.setAttribute('aria-label', 'Select ' + item.name)
+    select.addEventListener('change', () => row.classList.toggle('selected', select.checked))
+
     const name = document.createElement('button')
     name.className = 'source-file-open'
     name.type = 'button'
     const icon = document.createElement('span')
     icon.className = 'source-file-icon'
-    icon.textContent = item.type === 'folder' ? '▰' : '▤'
+    icon.setAttribute('aria-hidden', 'true')
+    icon.innerHTML = item.type === 'folder'
+      ? '<svg viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H10l2 2h6.5A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11Z"></path><path d="M3.5 9h17"></path></svg>'
+      : '<svg viewBox="0 0 24 24"><path d="m8 7-4 5 4 5M16 7l4 5-4 5M14 5l-4 14"></path></svg>'
     const text = document.createElement('span')
     text.className = 'source-file-label'
     const title = document.createElement('strong')
@@ -664,34 +680,54 @@ async function loadSourceFolder(folder) {
       if (item.type === 'folder') void loadSourceFolder(item.path)
       else void openSourceFile(item.path)
     })
-    row.append(name)
+    row.append(select, name)
+
     const actionWrap = document.createElement('div')
     actionWrap.className = 'source-item-actions'
     const menuButton = document.createElement('button')
     menuButton.className = 'source-menu-button'
     menuButton.type = 'button'
-    menuButton.textContent = '⋮'
     menuButton.setAttribute('aria-label', 'Actions for ' + item.name)
     menuButton.setAttribute('aria-expanded', 'false')
+    menuButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.5"></circle><circle cx="12" cy="12" r="1.5"></circle><circle cx="12" cy="19" r="1.5"></circle></svg>'
+
     const menu = document.createElement('div')
     menu.className = 'source-item-menu'
     menu.hidden = true
-    const addMenuAction = (label, handler, disabled = false) => {
+    const menuIcons = {
+      preview: '<svg viewBox="0 0 24 24"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.5"></circle></svg>',
+      download: '<svg viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 19h16"></path></svg>',
+      rename: '<svg viewBox="0 0 24 24"><path d="m14 5 5 5M4 20l4.2-.8L19 8.4a2.1 2.1 0 0 0-3-3L5.2 16.2 4 20Z"></path></svg>',
+      duplicate: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg>',
+      move: '<svg viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"></path><path d="M7 14h10m-4-4 4 4-4 4"></path></svg>',
+      archive: '<svg viewBox="0 0 24 24"><path d="M4 7h16v13H4zM3 4h18v3H3zM9 11h6"></path></svg>',
+      delete: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"></path></svg>'
+    }
+    const addMenuAction = (label, iconName, handler, disabled = false, danger = false) => {
       const button = document.createElement('button')
       button.type = 'button'
-      button.textContent = label
+      button.className = danger ? 'source-menu-danger' : ''
       button.disabled = disabled
-      if (disabled) button.title = 'This action is not available in the current server API.'
+      if (disabled) button.title = 'This action is not available on the server yet.'
+      const iconNode = document.createElement('span')
+      iconNode.className = 'source-menu-icon'
+      iconNode.setAttribute('aria-hidden', 'true')
+      iconNode.innerHTML = menuIcons[iconName] || ''
+      const labelNode = document.createElement('span')
+      labelNode.textContent = label
+      button.append(iconNode, labelNode)
       button.addEventListener('click', () => {
         menu.hidden = true
         menuButton.setAttribute('aria-expanded', 'false')
+        row.classList.remove('menu-open')
         if (handler) void handler()
       })
       menu.append(button)
     }
+
     if (item.type === 'file') {
-      addMenuAction('Preview', () => openSourceFile(item.path))
-      addMenuAction('Download', async () => {
+      addMenuAction('Preview', 'preview', () => openSourceFile(item.path))
+      addMenuAction('Download', 'download', async () => {
         try {
           const result = await api('files/preview?item=' + encodeURIComponent(item.path))
           const blob = new Blob([result.content], { type: 'text/plain;charset=utf-8' })
@@ -705,31 +741,29 @@ async function loadSourceFolder(folder) {
           URL.revokeObjectURL(url)
         } catch (error) { setSourceMessage(error.message, 'error') }
       })
-      addMenuAction('Rename', null, true)
-      addMenuAction('Duplicate', null, true)
-      addMenuAction('Move', null, true)
-      const separator = document.createElement('div')
-      separator.className = 'menu-separator'
-      menu.append(separator)
-      addMenuAction('Delete', () => deleteSourceFile(item.path), ['README.md', 'UPDATE-PACKAGE.md', 'LICENSE', 'AGENTS.md'].includes(item.name))
+      addMenuAction('Rename', 'rename', null, true)
+      addMenuAction('Duplicate', 'duplicate', null, true)
+      addMenuAction('Move', 'move', null, true)
+      addMenuAction('Delete', 'delete', () => deleteSourceFile(item.path), ['README.md', 'UPDATE-PACKAGE.md', 'LICENSE', 'AGENTS.md'].includes(item.name), true)
     } else {
-      addMenuAction('Open folder', () => loadSourceFolder(item.path))
-      addMenuAction('Rename', null, true)
-      addMenuAction('Duplicate', null, true)
-      addMenuAction('Move', null, true)
-      addMenuAction('Download as ZIP', null, true)
-      const separator = document.createElement('div')
-      separator.className = 'menu-separator'
-      menu.append(separator)
-      addMenuAction('Delete', null, true)
+      addMenuAction('Rename', 'rename', null, true)
+      addMenuAction('Duplicate', 'duplicate', null, true)
+      addMenuAction('Move', 'move', null, true)
+      addMenuAction('Download as ZIP', 'archive', null, true)
+      addMenuAction('Delete', 'delete', null, true, true)
     }
+
     menuButton.addEventListener('click', event => {
       event.stopPropagation()
       const opening = menu.hidden
-      $('.source-item-menu').forEach(other => { other.hidden = true })
+      $('.source-item-menu').forEach(other => {
+        other.hidden = true
+        other.closest('.source-file-row')?.classList.remove('menu-open')
+      })
       $('.source-menu-button').forEach(other => other.setAttribute('aria-expanded', 'false'))
       menu.hidden = !opening
       menuButton.setAttribute('aria-expanded', String(opening))
+      row.classList.toggle('menu-open', opening)
     })
     actionWrap.append(menuButton, menu)
     row.append(actionWrap)

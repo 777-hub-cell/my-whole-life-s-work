@@ -177,3 +177,9 @@ test('source path validation imports the shared ZIP path normalizer', async () =
  assert.ok(updates.includes('export function normalizeUpdatePath'))
  assert.ok(runtime.includes('const normalized = normalizeUpdatePath(relativePath)'))
 })
+
+
+test('phone-number pairing uses a canonical browser identity for WhatsApp companion linking', async () => {
+ const s = await read('../src/index.js')
+ assert.ok(s.includes("browser: Browsers.macOS('Chrome')"), 'Pairing code companion display must use a recognized Chrome/Mac OS identity, not the custom Aharane label.')
+})

@@ -1483,17 +1483,29 @@ app.post('/api/files/move', requireAdmin, async (req, res) => {
     if (updateInProgress) return res.status(409).json({ ok: false, error: 'Aharane is currently deploying. File changes are disabled.' })
     const source = await safeSourceTarget(String(req.body?.path || ''))
     if (source.parts.length < 2) return res.status(403).json({ ok: false, error: 'Root project folders and protected root files cannot be moved.' })
-    const parent = await safeSourceTarget(String(req.body?.destination || ''))
+    const destinationValue = String(req.body?.destination || '').trim()
+    const rootDirectory = destinationValue ? null : await sourceWorkspaceDirectory()
+    const rootInfo = rootDirectory ? await stat(rootDirectory) : null
+    const parent = destinationValue
+      ? await safeSourceTarget(destinationValue)
+      : { path: '', full: rootDirectory, info: rootInfo }
     if (!parent.info?.isDirectory()) return res.status(400).json({ ok: false, error: 'Choose an existing destination folder.' })
     if (parent.full === source.full || parent.full.startsWith(source.full + sep)) return res.status(400).json({ ok: false, error: 'A folder cannot be moved inside itself.' })
-    const destinationPath = parent.path + '/' + source.parts.at(-1)
+    const itemName = source.parts.at(-1)
+    const destinationPath = parent.path ? parent.path + '/' + itemName : itemName
     const existing = await safeSourceTarget(destinationPath, { allowMissing: true })
     if (existing.info) return res.status(409).json({ ok: false, error: 'The destination already contains an item with that name.' })
     await ensureManualEditBackup()
     const currentSource = await safeSourceTarget(source.path)
-    const currentParent = await safeSourceTarget(parent.path)
+    const currentRoot = destinationValue ? null : await sourceWorkspaceDirectory()
+    const currentParent = destinationValue
+      ? await safeSourceTarget(destinationValue)
+      : { path: '', full: currentRoot, info: await stat(currentRoot) }
     const currentDestination = await safeSourceTarget(destinationPath, { allowMissing: true })
-    if (currentParent.full === currentSource.full || currentParent.full.startsWith(currentSource.full + sep)) return res.status(400).json({ ok: false, error: 'A folder cannot be moved inside itself.' })
+    if (!currentParent.info?.isDirectory() || currentParent.full === currentSource.full ||
+        currentParent.full.startsWith(currentSource.full + sep)) {
+      return res.status(400).json({ ok: false, error: 'The destination folder changed or is inside the selected item.' })
+    }
     await rename(currentSource.full, currentDestination.full)
     await recordManualEdit(currentSource.path, 'moved-from')
     await recordManualEdit(destinationPath, 'moved-to')

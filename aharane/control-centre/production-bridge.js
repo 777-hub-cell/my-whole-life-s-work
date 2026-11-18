@@ -279,12 +279,41 @@ function changePasswordP(){
 async function signOutP(){try{await apiP('auth/logout',{method:'POST',body:pack({})})}catch{}await showLoginP()}
 function mapMessageP(row){
  const m={d:row.fromMe?'o':'i',t:row.text||'',ts:Number(row.timestamp)||Date.now(),r:row.status==='read'};
- if(['image','sticker'].includes(row.type)){m.k='img';m.u=row.mediaUrl||'';m.f=row.fileName||'Image'}
+ if(row.viewOnce){
+  m.k='once';m.id=row.id;m.type=row.type;m.f=row.type==='video'?'View-once video':'View-once photo';
+  m.viewed=row.viewOnceViewed===true;m.unavailable=row.mediaUnavailable||'';
+ }else if(['image','sticker'].includes(row.type)){m.k='img';m.u=row.mediaUrl||'';m.f=row.fileName||'Image'}
  else if(row.type==='video'){m.k='vid';m.u=row.mediaUrl||'';m.f=row.fileName||'Video'}
  else if(row.type==='audio'){m.k='vn';m.u=row.mediaUrl||'';m.f=row.fileName||'Audio'}
  else if(row.type==='document'){m.f=row.fileName||'Attachment';m.z=fsz(row.size||0);m.dl=row.mediaUrl||''}
  if(row.pushName)m.s=row.pushName;return m;
 }
+window.openViewOnceP=async function(index){
+ const message=CH[S.chat]?.m?.[index];
+ if(!message||message.k!=='once'||message.viewed||message.loading||message.unavailable)return;
+ message.loading=true;drawMsgs();
+ const account=S.cacc==='private'?'private':'public';
+ const endpoint=API+'/chats/'+account+'/media/'+encodeURIComponent(message.id)+'/view-once';
+ try{
+  const response=await fetch(endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{Accept:'image/*,video/*'}});
+  if(!response.ok){
+   const error=await response.json().catch(()=>({}));
+   if(response.status===410)message.viewed=true;
+   throw new Error(error.error||'This view-once media could not be opened.');
+  }
+  // The server has now consumed its copy. Never retry or retain this item
+  // in the regular message attachment list.
+  message.viewed=true;message.loading=false;drawMsgs();
+  const blob=await response.blob();
+  if(!blob.size)throw new Error('The view-once media was empty.');
+  const url=URL.createObjectURL(blob);
+  if(typeof window.showViewOnceMedia==='function'){
+   window.showViewOnceMedia({name:message.f,k:message.type==='video'?'vid':'img',url,size:blob.size});
+  }else URL.revokeObjectURL(url);
+ }catch(error){
+  message.loading=false;drawMsgs();notifyP(error.message);
+ }
+};
 let visibilityDraftP=null, visibilityChatsDraftP=[];
 function visibilityModeP(filter){return filter?.mode==='selected'?'selected':'all'}
 function visibilityValueP(filter,jid){const override=(filter?.overrides||[]).find(x=>x.jid===jid);return override?override.visible===true:visibilityModeP(filter)==='all'}

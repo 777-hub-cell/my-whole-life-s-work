@@ -96,3 +96,7 @@ The old Vercel proxy and ngrok-router path are not used by the PWA. Do not chang
 ### Inbox visibility
 
 Each WhatsApp account has independent visibility settings for individual chats and group chats. Each category can show all conversations except explicitly hidden ones, or show only selected conversations. Per-chat overrides are preserved as new messages arrive. Visibility affects the Chats tab only; it does not change WhatsApp receipt, and it never expands command permissions. Private commands remain self-chat-only, while public bot commands remain limited to the configured allowed direct senders. Broadcast/status/newsletter feeds are excluded.
+
+### View-once media
+
+Incoming WhatsApp view-once photos and videos are labelled separately and are never exposed through the normal reusable attachment URL. Opening one uses an authenticated single-use endpoint: the server marks it consumed, removes its cached media file, and returns it with no-store headers. Local Studio opens it in a temporary in-memory viewer and revokes the object URL when the viewer closes; it does not offer a download action. This limits the Local Studio copy to one viewing session, but cannot prevent screenshots, screen recording or photography of the display.

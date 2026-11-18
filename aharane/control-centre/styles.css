@@ -192,3 +192,5 @@ h2{font:700 17px var(--disp);letter-spacing:-.01em;margin:26px 0 10px;display:fl
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
 body.aharane-booting .app,body.aharane-booting .nav{visibility:hidden}
+
+.once-open{display:block;min-width:142px;padding:9px 13px;border:1px solid currentColor;border-radius:14px;background:transparent;color:inherit;font:inherit;font-size:13px;font-weight:600;text-align:left;cursor:pointer}.once-open:disabled{opacity:.62;cursor:default}

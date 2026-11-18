@@ -74,3 +74,88 @@ test('chat store preserves LID-addressed inbox messages as distinct conversation
     assert.equal(messages[0].text, 'LID inbox message')
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
+
+
+test('view-once media is labelled, withheld from normal media URLs and consumed only once', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-once-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348012345678@s.whatsapp.net'
+    await store.recordMessage({
+      sessionId: 'private',
+      message: {
+        key: { id: 'once-video-1', remoteJid: jid, fromMe: false },
+        pushName: 'Contact',
+        messageTimestamp: 1760000020,
+        message: {
+          ephemeralMessage: {
+            message: {
+              viewOnceMessageV2Extension: {
+                message: {
+                  videoMessage: { mimetype: 'video/mp4', fileLength: 10, caption: 'Watch once' },
+                },
+              },
+            },
+          },
+        },
+      },
+      downloadMedia: async () => Buffer.from('once-video'),
+    })
+
+    const [message] = await store.getMessages('private', jid)
+    assert.equal(message.type, 'video')
+    assert.equal(message.viewOnce, true)
+    assert.equal(message.viewOnceViewed, false)
+    assert.equal(message.text, 'Watch once')
+    assert.equal(message.mediaUrl, '')
+    assert.equal(await store.getMedia('private', 'once-video-1'), null)
+
+    const info = await store.getViewOnceInfo('private', 'once-video-1')
+    assert.deepEqual(info, { jid, viewed: false, mimeType: 'video/mp4' })
+    const opened = await store.consumeViewOnceMedia('private', 'once-video-1')
+    assert.equal(opened.buffer.toString(), 'once-video')
+    assert.equal(opened.mimeType, 'video/mp4')
+
+    const [after] = await store.getMessages('private', jid)
+    assert.equal(after.viewOnce, true)
+    assert.equal(after.viewOnceViewed, true)
+    assert.equal(after.mediaUrl, '')
+    assert.equal(await store.consumeViewOnceMedia('private', 'once-video-1'), null)
+    assert.equal(await store.getMedia('private', 'once-video-1'), null)
+    assert.equal((await store.mediaUsage()).bytes, 0)
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
+test('legacy view-once wrappers are identified without changing ordinary image messages', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-once-v1-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348012345678@s.whatsapp.net'
+    await store.recordMessage({
+      sessionId: 'public',
+      message: {
+        key: { id: 'once-image-1', remoteJid: jid, fromMe: false },
+        message: { viewOnceMessage: { message: { imageMessage: { mimetype: 'image/jpeg', fileLength: 4 } } } },
+      },
+      downloadMedia: async () => Buffer.from('once'),
+    })
+    await store.recordMessage({
+      sessionId: 'public',
+      message: {
+        key: { id: 'normal-image-1', remoteJid: jid, fromMe: false },
+        message: { imageMessage: { mimetype: 'image/jpeg', fileLength: 4 } },
+      },
+      downloadMedia: async () => Buffer.from('norm'),
+    })
+    const messages = await store.getMessages('public', jid)
+    const once = messages.find(row => row.id === 'once-image-1')
+    const normal = messages.find(row => row.id === 'normal-image-1')
+    assert.equal(once.viewOnce, true)
+    assert.equal(once.mediaUrl, '')
+    assert.equal(normal.viewOnce, false)
+    assert.match(normal.mediaUrl, /\/aharane\/api\/chats\/public\/media\//)
+    assert.ok(await store.getMedia('public', 'normal-image-1'))
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})

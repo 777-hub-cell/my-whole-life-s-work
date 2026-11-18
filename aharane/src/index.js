@@ -1309,6 +1309,34 @@ app.get('/api/chats/:accountId/media/:messageId', requireAdmin, async (req, res)
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not open the attachment.') })
   }
 })
+app.post('/api/chats/:accountId/media/:messageId/view-once', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const info = await chatStore.getViewOnceInfo(accountId, req.params.messageId)
+    if (!info || !authorizedChat(accountId, info.jid) || !isChatVisible(studioSettings[accountId], info.jid)) {
+      return res.status(404).json({ ok: false, error: 'View-once media not found.' })
+    }
+    if (info.viewed) return res.status(410).json({ ok: false, error: 'This view-once media has already been opened.' })
+    if (!['image/', 'video/'].some(prefix => String(info.mimeType).startsWith(prefix))) {
+      return res.status(415).json({ ok: false, error: 'This view-once media type is not supported.' })
+    }
+    const media = await chatStore.consumeViewOnceMedia(accountId, req.params.messageId)
+    if (!media) return res.status(410).json({ ok: false, error: 'This view-once media is no longer available.' })
+    if (!authorizedChat(accountId, media.jid) || !isChatVisible(studioSettings[accountId], media.jid)) {
+      return res.status(404).json({ ok: false, error: 'View-once media not found.' })
+    }
+    res.set('Content-Type', media.mimeType)
+    res.set('Content-Length', String(media.size))
+    res.set('Content-Disposition', 'inline')
+    res.set('Cache-Control', 'private, no-store, no-cache, must-revalidate, max-age=0')
+    res.set('Pragma', 'no-cache')
+    res.set('Expires', '0')
+    res.set('X-Content-Type-Options', 'nosniff')
+    res.status(200).end(media.buffer)
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not open view-once media.') })
+  }
+})
 app.get('/api/metrics', requireAdmin, async (_req, res) => {
   res.json({ ok: true, ...(await chatStore.metrics()) })
 })

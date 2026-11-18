@@ -1,4 +1,4 @@
-import { appendFile, chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { appendFile, chmod, mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { basename, extname, join } from 'node:path'
 
@@ -6,6 +6,7 @@ const ACCOUNTS = new Set(['private', 'public'])
 const MAX_TEXT = 12000
 const MAX_MEDIA_BYTES = 24 * 1024 * 1024
 const MEDIA_TYPES = new Set(['image', 'video', 'audio', 'sticker', 'document'])
+const VIEW_ONCE_TYPES = new Set(['image', 'video'])
 const EXTENSIONS = new Map([
   ['image/jpeg', '.jpg'], ['image/png', '.png'], ['image/webp', '.webp'], ['image/gif', '.gif'],
   ['video/mp4', '.mp4'], ['video/3gpp', '.3gp'],
@@ -27,19 +28,24 @@ function safeJid(value) {
 }
 function unwrap(content) {
   let current = content || {}
+  let viewOnce = false
   for (let i = 0; i < 5; i += 1) {
+    const onceWrapper = current.viewOnceMessage
+      || current.viewOnceMessageV2
+      || current.viewOnceMessageV2Extension
+    if (onceWrapper) viewOnce = true
     const next = current.ephemeralMessage?.message
-      || current.viewOnceMessage?.message
-      || current.viewOnceMessageV2?.message
+      || onceWrapper?.message
       || current.documentWithCaptionMessage?.message
       || current.editedMessage?.message
+      || current.associatedChildMessage?.message
     if (!next) break
     current = next
   }
-  return current
+  return { body: current, viewOnce }
 }
 function messageContent(message) {
-  const body = unwrap(message?.message)
+  const { body, viewOnce } = unwrap(message?.message)
   const pairs = [
     ['conversation', 'conversation'], ['extendedTextMessage', 'extendedTextMessage'],
     ['imageMessage', 'image'], ['videoMessage', 'video'], ['audioMessage', 'audio'],
@@ -58,9 +64,9 @@ function messageContent(message) {
     const mimeType = String(value.mimetype || '')
     const fileName = String(value.fileName || '')
     const size = Number(value.fileLength?.toString?.() || value.fileLength || 0) || 0
-    return { type, text: text.slice(0, MAX_TEXT), mimeType, fileName, size, media: MEDIA_TYPES.has(type) }
+    return { type, text: text.slice(0, MAX_TEXT), mimeType, fileName, size, media: MEDIA_TYPES.has(type), viewOnce: viewOnce && VIEW_ONCE_TYPES.has(type) }
   }
-  return { type: 'unsupported', text: '', mimeType: '', fileName: '', size: 0, media: false }
+  return { type: 'unsupported', text: '', mimeType: '', fileName: '', size: 0, media: false, viewOnce: false }
 }
 function timestamp(value) {
   const n = Number(value?.toString?.() || value || 0)
@@ -172,7 +178,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       pushName: String(message.pushName || '').slice(0, 120),
       timestamp: ts, type: extracted.type, text: extracted.text,
       mimeType: extracted.mimeType, fileName: extracted.fileName ? safeName(extracted.fileName) : '',
-      size: extracted.size, mediaFile: '', mediaUrl: '', status: '',
+      size: extracted.size, mediaFile: '', mediaUrl: '', viewOnce: extracted.viewOnce, viewOnceViewed: false, status: '',
     }
 
     if (extracted.media && typeof downloadMedia === 'function' &&
@@ -190,7 +196,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
           await rename(temp, full)
           record.mediaFile = storedName
           record.size = buffer.length
-          record.mediaUrl = mediaUrl(account, id)
+          record.mediaUrl = extracted.viewOnce ? '' : mediaUrl(account, id)
           if (!record.fileName) record.fileName = 'WhatsApp ' + extracted.type + extension
         } else {
           record.mediaUnavailable = 'Media exceeded the supported size limit.'
@@ -234,7 +240,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         jid: row.jid,
         name: row.pushName || row.jid.replace(/@.*$/, ''),
         group: row.jid.endsWith('@g.us'),
-        lastMessage: row.text || (row.type === 'unsupported' ? 'Message' : 'Attachment · ' + row.type),
+        lastMessage: row.viewOnce ? 'View once · ' + (row.type === 'video' ? 'Video' : 'Photo') : row.text || (row.type === 'unsupported' ? 'Message' : 'Attachment · ' + row.type),
         lastMessageType: row.type, timestamp: row.timestamp,
         fromMe: row.fromMe, unreadCount: unread.get(row.jid) || 0,
       }))
@@ -253,7 +259,8 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         id: row.id, jid: row.jid, fromMe: row.fromMe, participant: row.participant,
         pushName: row.pushName, timestamp: row.timestamp, type: row.type, text: row.text,
         mimeType: row.mimeType, fileName: row.fileName, size: row.size,
-        mediaUrl: row.mediaFile ? row.mediaUrl || mediaUrl(account, row.id) : '',
+        mediaUrl: row.viewOnce ? '' : row.mediaFile ? row.mediaUrl || mediaUrl(account, row.id) : '',
+        viewOnce: row.viewOnce === true, viewOnceViewed: row.viewOnceViewed === true,
         mediaUnavailable: row.mediaUnavailable || '', status: row.status || '',
       }))
   }
@@ -270,12 +277,65 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     const key = String(messageId || '')
     if (!/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw Object.assign(new Error('Invalid media identifier.'), { status: 400 })
     const rows = await readRows(account)
-    const row = rows.find(item => item.id === key && item.mediaFile)
+    const row = rows.find(item => item.id === key && item.mediaFile && item.viewOnce !== true)
     if (!row || !/^[a-f0-9]{64}\.[a-z0-9]{1,8}$/.test(row.mediaFile)) return null
     const full = join(mediaRoot, account, row.mediaFile)
     const info = await stat(full).catch(() => null)
     if (!info?.isFile() || info.size > MAX_MEDIA_BYTES) return null
     return { path: full, jid: row.jid, mimeType: row.mimeType || 'application/octet-stream', fileName: row.fileName || 'attachment', size: info.size }
+  }
+
+  async function getViewOnceInfo(id, messageId) {
+    const account = accountId(id)
+    const key = String(messageId || '')
+    if (!/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw Object.assign(new Error('Invalid media identifier.'), { status: 400 })
+    const rows = await readRows(account)
+    const row = rows.find(item => item.id === key && item.viewOnce === true)
+    if (!row) return null
+    return { jid: row.jid, viewed: row.viewOnceViewed === true, mimeType: row.mimeType || '' }
+  }
+
+  async function rewriteRows(account, rows) {
+    const temporary = files[account] + '.' + randomUUID() + '.tmp'
+    try {
+      const content = rows.length ? rows.map(row => JSON.stringify(row)).join('\n') + '\n' : ''
+      await writeFile(temporary, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+      await rename(temporary, files[account])
+      await chmod(files[account], 0o600)
+    } finally {
+      await unlink(temporary).catch(() => {})
+    }
+  }
+
+  async function consumeViewOnceMedia(id, messageId) {
+    const account = accountId(id)
+    const key = String(messageId || '')
+    if (!/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw Object.assign(new Error('Invalid media identifier.'), { status: 400 })
+    return enqueue(account, async () => {
+      const rows = await readRows(account)
+      const row = rows.find(item => item.id === key && item.viewOnce === true)
+      if (!row || row.viewOnceViewed === true || !/^[a-f0-9]{64}\.[a-z0-9]{1,8}$/.test(String(row.mediaFile || ''))) return null
+      const full = join(mediaRoot, account, row.mediaFile)
+      const info = await stat(full).catch(() => null)
+      if (!info?.isFile() || info.size <= 0 || info.size > MAX_MEDIA_BYTES) return null
+      const buffer = await readFile(full).catch(() => null)
+      if (!buffer?.length || buffer.length > MAX_MEDIA_BYTES) return null
+
+      // Persist the consumed state before responding. All consumers are serialized
+      // per account, and the ordinary media endpoint refuses view-once records.
+      row.viewOnceViewed = true
+      row.mediaFile = ''
+      row.mediaUrl = ''
+      row.mediaUnavailable = 'This view-once media has already been opened.'
+      await rewriteRows(account, rows)
+      await unlink(full).catch(error => {
+        logger.warn?.({ event: 'chat-media.view-once-cleanup-failed', accountId: account, messageId: key, error: String(error?.message || error).slice(0, 160) })
+      })
+      return {
+        buffer, jid: row.jid, mimeType: row.mimeType || 'application/octet-stream',
+        fileName: row.fileName || 'view-once-media', size: buffer.length,
+      }
+    })
   }
 
   async function markRead(id, jidValue) {
@@ -354,5 +414,5 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return { bytes: total, files: count }
   }
 
-  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, hasConversation, getMedia, markRead, mediaUsage, metrics }
+  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
 }

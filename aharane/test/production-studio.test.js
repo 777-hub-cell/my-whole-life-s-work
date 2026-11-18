@@ -36,7 +36,7 @@ test('Export Bot Source uses a real browser download instead of the preview-only
 
 test('the offline service worker caches the bridge and invalidates the previous shell', async () => {
   const sw = await read('../control-centre/sw.js')
-  assert.ok(sw.includes('aharane-local-studio-shell-v11'))
+  assert.ok(sw.includes('aharane-local-studio-shell-v12'))
   assert.ok(sw.includes('/aharane/studio/production-bridge.js'))
   assert.ok(sw.includes("['/aharane/studio/production-bridge.js','production-bridge.js']"))
 })
@@ -180,4 +180,17 @@ test('pairing refreshes the selected account state before navigation and after f
  const qr = bridge.slice(bridge.indexOf('async function requestQrP(){'), bridge.indexOf('async function repairPairP(){'))
  assert.ok(qr.includes('refreshPairViewAfterFailureP()'))
  assert.ok(bridge.includes('WhatsApp closed the pairing connection.'))
+})
+
+
+test('the Files editor verifies server content before showing a successful save', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const start=bridge.indexOf('async function saveLiveFileP(){')
+ const end=bridge.indexOf('function createLiveFileP',start)
+ const save=bridge.slice(start,end)
+ assert.ok(save.includes("apiP('files/content'"))
+ assert.ok(save.includes("apiP('files/preview?item='"))
+ assert.ok(save.includes('verified.content!==content||verified.sha256!==r.sha256'))
+ assert.ok(save.includes('File saved and verified on the server'))
+ assert.ok(save.includes('This will replace the existing file with an empty file. Continue?'))
 })

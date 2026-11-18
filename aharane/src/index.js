@@ -57,9 +57,9 @@ const UPDATE_STATE_FILE = join(UPDATE_DIR, 'state.json')
 const MANUAL_EDIT_STATE_FILE = join(UPDATE_DIR, 'manual-edit-state.json')
 const UPDATE_CHUNK_BYTES = 1024 * 1024
 const MAX_SOURCE_FILE_BYTES = 512 * 1024
-const SOURCE_DIRS = new Set(['src', 'public', 'scripts', 'test', 'examples', 'commands', 'private-commands', 'plugins', 'lib'])
+const SOURCE_DIRS = new Set(['src', 'public', 'scripts', 'test', 'examples', 'commands', 'private-commands', 'plugins', 'lib', 'control-centre'])
 const SOURCE_ROOT_FILES = new Set(['README.md', 'UPDATE-PACKAGE.md', 'LICENSE', 'AGENTS.md', 'package.json'])
-const SOURCE_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.json', '.md', '.html', '.css', '.txt', '.yml', '.yaml'])
+const SOURCE_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.json', '.md', '.html', '.css', '.txt', '.yml', '.yaml', '.svg', '.webmanifest'])
 const execFileAsync = promisify(execFile)
 const scryptAsync = promisify(scrypt)
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' })
@@ -1632,6 +1632,8 @@ app.post('/api/files', requireAdmin, async (req, res) => {
     const content = String(req.body?.content ?? '')
     await validateSourceContent(target.path, content)
     await writeFile(target.full, content, { encoding: 'utf8', mode: 0o640, flag: 'wx' })
+    const savedContent = await readFile(target.full, 'utf8')
+    if (savedContent !== content) throw new Error('The new file did not pass its on-disk save check. Refresh Files and try again.')
     await recordManualEdit(target.path, 'created-file')
     res.status(201).json({ ok: true, path: target.path, type: 'file', size: Buffer.byteLength(content) })
   } catch (error) {
@@ -1663,6 +1665,8 @@ app.put('/api/files/content', requireAdmin, async (req, res) => {
     try {
       await writeFile(temporary, content, { encoding: 'utf8', mode: 'wx', flag: 'wx' })
       await rename(temporary, target.full)
+      const savedContent = await readFile(target.full, 'utf8')
+      if (savedContent !== content) throw new Error('The file did not pass its on-disk save check. Your previous file was preserved in the manual-edit backup.')
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => {})
       throw error

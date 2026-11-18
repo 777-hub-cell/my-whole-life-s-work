@@ -356,3 +356,10 @@ test('stale-draft recovery treats folder moves as complete recursive operations'
  assert.ok(recovery.includes("['deleted-file', 'deleted-folder', 'renamed-from', 'moved-from']"))
  assert.ok(recovery.includes("pair.isDirectory ? 'folder' : 'file'"))
 })
+
+test('ZIP activation shares the source-mutation lock so it cannot race an editor save', async () => {
+ const runtime=await read('../src/index.js')
+ assert.ok(runtime.includes("app.use('/api/update/deploy', serializeSourceMutations)"))
+ const middleware=runtime.slice(runtime.indexOf('function serializeSourceMutations'),runtime.indexOf("app.get('/api/files/export'"))
+ assert.ok(middleware.includes('if (updateInProgress)'))
+})

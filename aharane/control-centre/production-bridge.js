@@ -55,14 +55,23 @@ async function showLoginP(){
 }
 async function connectLiveP(){
  try{
-  const core=await Promise.all([apiP('status'),apiP('studio/snapshot'),apiP('owners'),apiP('env')]);
-  P.runtime=core[0];P.snapshot=core[1];P.owners=core[2].owners||{};P.env=core[3].env||[];
-  const optional=await Promise.allSettled([apiP('metrics'),apiP('activity?limit=300'),apiP('update/status')]);
-  P.metrics=optional[0].status==='fulfilled'?optional[0].value:{};
-  P.activity=optional[1].status==='fulfilled'?(optional[1].value.entries||[]):[];
-  P.pending=optional[2].status==='fulfilled'?Boolean(optional[2].value.manualEdits?.pending):false;
-  try{P.packages=await loadPackagesP()}catch{P.packages=[]}
-  try{await loadTreeP('');P.filesError=''}catch(error){P.filesError=error.message}
+  // Fetch independent dashboard resources together to reduce mobile startup latency.
+  const initial=await Promise.allSettled([
+   apiP('status'),apiP('studio/snapshot'),apiP('owners'),apiP('env'),
+   apiP('metrics'),apiP('activity?limit=300'),apiP('update/status'),
+   loadPackagesP(),loadTreeP('')
+  ]);
+  const required=initial.slice(0,4);
+  const requiredFailure=required.find(result=>result.status==='rejected');
+  if(requiredFailure)throw requiredFailure.reason;
+  P.runtime=initial[0].value;P.snapshot=initial[1].value;P.owners=initial[2].value.owners||{};P.env=initial[3].value.env||[];
+  P.metrics=initial[4].status==='fulfilled'?initial[4].value:{};
+  P.activity=initial[5].status==='fulfilled'?(initial[5].value.entries||[]):[];
+  P.pending=initial[6].status==='fulfilled'?Boolean(initial[6].value.manualEdits?.pending):false;
+  if(initial[7].status==='fulfilled'){P.packages=initial[7].value;P.packageError=''}
+  else{P.packages=[];P.packageError=initial[7].reason?.message||'Saved packages could not be loaded.'}
+  if(initial[8].status==='fulfilled')P.filesError=''
+  else P.filesError=initial[8].reason?.message||'Source files could not be loaded.'
   applyRuntimeP();applyEnvP();P.offline=false;
   document.body.classList.remove('aharane-booting');document.body.classList.add('aharane-authenticated');
   render();

@@ -21,7 +21,11 @@ async function fixture(t) {
       const socket = {
         sessionId,
         ev: new EventEmitter(),
-        requestPairingCode: async phone => sessionId + '-' + phone.slice(-4),
+        pairingRequests: [],
+        requestPairingCode: async function (phone) {
+          this.pairingRequests.push(phone)
+          return sessionId + '-' + phone.slice(-4)
+        },
         end() {},
       }
       sockets.push(socket)
@@ -51,8 +55,8 @@ test('pairing code is requested only from the selected account socket', async t 
   const { runtime, sockets } = await fixture(t)
   await runtime.start('private')
   await runtime.start('public')
-  sockets[0].ev.emit('connection.update', { connection: 'connecting' })
-  sockets[1].ev.emit('connection.update', { connection: 'connecting' })
+  sockets[0].ev.emit('connection.update', { qr: 'pair-device-ready' })
+  sockets[1].ev.emit('connection.update', { qr: 'pair-device-ready' })
   const code = await runtime.requestPairingCode('private', '2348012345678')
   assert.equal(code, 'private-5678')
   assert.equal(runtime.get('public').pairRequestActive, false)
@@ -163,8 +167,37 @@ test('never-paired accounts stay dormant at startup until an explicit pairing re
   await assert.rejects(runtime.reconnect('public'), /not been paired/i)
   const pending = runtime.requestPairingCode('public', '447700900123')
   await new Promise(resolveWait => setTimeout(resolveWait, 0))
-  runtime.get('public').socket.ev.emit('connection.update', { connection: 'connecting' })
+  runtime.get('public').socket.ev.emit('connection.update', { qr: 'pair-device-ready' })
   assert.equal(await pending, 'public-0123')
   assert.equal(sockets.length, 1)
+  await runtime.shutdown()
+})
+
+
+test('phone-number pairing waits for WhatsApp pair-device readiness, not only connecting', async t => {
+  const { runtime, sockets } = await fixture(t)
+  await runtime.start('private')
+  const pending = runtime.requestPairingCode('private', '2348012345678')
+  await new Promise(resolveWait => setTimeout(resolveWait, 0))
+  sockets[0].ev.emit('connection.update', { connection: 'connecting' })
+  await new Promise(resolveWait => setTimeout(resolveWait, 0))
+  assert.deepEqual(sockets[0].pairingRequests, [])
+  sockets[0].ev.emit('connection.update', { qr: 'pair-device-ready' })
+  assert.equal(await pending, 'private-5678')
+  assert.deepEqual(sockets[0].pairingRequests, ['2348012345678'])
+  await runtime.shutdown()
+})
+
+test('phone-number pairing fails promptly when WhatsApp closes before readiness', async t => {
+  const { runtime, sockets } = await fixture(t)
+  await runtime.start('private')
+  const pending = runtime.requestPairingCode('private', '2348012345678')
+  await new Promise(resolveWait => setTimeout(resolveWait, 0))
+  sockets[0].ev.emit('connection.update', {
+    connection: 'close',
+    lastDisconnect: { error: Object.assign(new Error('Connection Closed'), { output: { statusCode: 428 } }) },
+  })
+  await assert.rejects(pending, /Connection Closed/)
+  assert.deepEqual(sockets[0].pairingRequests, [])
   await runtime.shutdown()
 })

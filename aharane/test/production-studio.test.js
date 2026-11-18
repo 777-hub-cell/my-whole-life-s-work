@@ -111,7 +111,7 @@ test('pairing uses saved Private and Public numbers and is always user-requested
  assert.ok(bind.includes('repairPairP'))
  assert.ok(bind.includes('reconnectPairP'))
  assert.ok(!bind.includes('startQrP()'), 'Entering or rendering the Pair screen must not start QR polling.')
- assert.ok(bridge.includes("C.pairingNumber=P.owners.publicBotNumber||''"))
+ assert.ok(bridge.includes("C.owner=profile==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'')"))
 })
 
 test('Configuration drafts are not redrawn by background status polling', async () => {

@@ -51,6 +51,7 @@ fun FilesScreen(
     var currentPath by rememberSaveable { mutableStateOf("") }
     var menuPath by remember { mutableStateOf<String?>(null) }
     val selectedPaths = remember { mutableStateListOf<String>() }
+    var packagesOpen by rememberSaveable { mutableStateOf(false) }
 
     val visibleEntries = remember(entries, query, currentPath) {
         entries.asSequence()
@@ -79,31 +80,20 @@ fun FilesScreen(
             StudioSearchField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = "Search files and folders"
+                placeholder = "Search files and folders",
+                showIcon = false
             )
             Spacer(Modifier.height(12.dp))
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StudioActionButton(
-                    "New file", modifier = Modifier.weight(1f), compact = true,
-                    enabled = connected, onClick = onCreateFile
-                )
-                StudioActionButton(
-                    "Upload", modifier = Modifier.weight(1f), compact = true,
-                    enabled = connected, onClick = onUpload
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StudioActionButton(
-                    "New folder", modifier = Modifier.weight(1f), compact = true,
-                    enabled = connected, onClick = onCreateFolder
-                )
-                StudioActionButton(
-                    "Export Bot Source", modifier = Modifier.weight(1f), compact = true,
-                    enabled = connected, onClick = onExportSource
-                )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StudioActionButton("New file", compact = true, enabled = connected, onClick = onCreateFile)
+                StudioActionButton("Upload", compact = true, enabled = connected, onClick = onUpload)
+                StudioActionButton("New folder", compact = true, enabled = connected, onClick = onCreateFolder)
+                StudioActionButton("Export Bot Source", compact = true, enabled = connected, onClick = onExportSource)
             }
             Row(
                 Modifier.fillMaxWidth().padding(top = 13.dp, bottom = 10.dp),
@@ -202,23 +192,41 @@ fun FilesScreen(
         item {
             StudioCard {
                 if (visibleEntries.isEmpty()) {
-                    StudioEmpty(
-                        title = if (query.isBlank()) "This folder is empty." else "No files match.",
-                        description = if (connected) {
-                            if (query.isBlank()) "Create a file or folder to start working here."
-                            else "Try another file or folder name."
-                        } else {
-                            if (query.isBlank()) "Connect your Aharane server to browse, create, upload and edit bot source files here."
-                            else "No server files can be searched until this app is connected to your Aharane workspace."
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+                        Text(
+                            if (query.isBlank()) "This folder is empty. Create a file to start."
+                            else "No match for “$query”.",
+                            color = StudioPalette.Muted,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(top = 3.dp, bottom = 32.dp)
+                        )
+                        Text(
+                            "Folders A–Z first, then files A–Z.",
+                            color = StudioPalette.Muted,
+                            fontSize = 12.5.sp,
+                            lineHeight = 17.sp
+                        )
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 30.dp, bottom = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Code editor",
+                                color = StudioPalette.Ink,
+                                fontSize = 17.sp,
+                                lineHeight = 22.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.weight(1f))
+                            StudioActionButton(
+                                "Open editor",
+                                compact = true,
+                                onClick = { onEditorVisibility(true) }
+                            )
                         }
-                    )
-                    Text(
-                        "Folders A–Z first, then files A–Z.",
-                        color = StudioPalette.Muted,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 13.dp)
-                    )
+                    }
                 } else {
                     visibleEntries.forEachIndexed { index, entry ->
                         if (index > 0) StudioDivider()
@@ -256,26 +264,14 @@ fun FilesScreen(
             }
             Spacer(Modifier.height(10.dp))
         }
-        if (visibleEntries.isEmpty()) {
-            item {
-                StudioSectionHeading("Code editor")
-                StudioCard {
-                    StudioRow(
-                        title = "Source editor",
-                        subtitle = "Open the native full-screen workspace",
-                        icon = Icons.Outlined.Code,
-                        trailingContent = {
-                            StudioActionButton(
-                                "Open editor",
-                                compact = true,
-                                primary = true,
-                                onClick = { onEditorVisibility(true) }
-                            )
-                        }
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
-            }
+        item {
+            StudioSectionHeading("Update packages", action = "View all", onAction = { packagesOpen = true })
+            Text(
+                "0 saved ZIP package(s)",
+                color = StudioPalette.Muted,
+                fontSize = 12.5.sp,
+                modifier = Modifier.padding(top = 1.dp, bottom = 12.dp)
+            )
         }
     }
 }
@@ -359,4 +355,20 @@ private fun FileEntryRow(
             )
         }
     }
+    if (packagesOpen) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { packagesOpen = false }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(StudioPalette.Surface).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Update packages", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                StudioEmpty("No ZIP update packages saved.", "Upload and validate an Aharane update ZIP to make it available here.")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    StudioActionButton("Close", compact = true, primary = true, onClick = { packagesOpen = false })
+                }
+            }
+        }
+    }
+
 }

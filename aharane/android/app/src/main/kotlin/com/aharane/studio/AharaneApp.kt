@@ -151,7 +151,7 @@ fun AharaneApp(
                     onEditConfig = {
                         editorFromConfiguration = true
                         configurationOpen = false
-                        editorOpen = true
+                        if (previewMode) openPreviewDocument("config.js") else editorOpen = true
                     }
                 )
                 else -> when (destination) {

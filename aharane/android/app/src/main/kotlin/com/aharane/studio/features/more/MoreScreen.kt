@@ -328,7 +328,7 @@ fun MoreScreen(
                             fontSize = 12.5.sp,
                             lineHeight = 18.sp
                         )
-                        StudioActionButton("Add credentials in ENV", enabled = false, onClick = onOpenEnvironment)
+                        StudioActionButton("Add credentials in ENV", onClick = onOpenEnvironment)
                     }
                 }
             }

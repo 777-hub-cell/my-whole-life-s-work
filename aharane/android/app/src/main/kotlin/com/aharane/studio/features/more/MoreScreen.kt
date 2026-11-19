@@ -315,7 +315,6 @@ private fun PreferenceSwitch(
         Box(
             Modifier.width(42.dp).height(24.dp).clip(CircleShape)
                 .background(if (checked) StudioPalette.Accent else StudioPalette.Line)
-                .clickable { onCheckedChange(!checked) }
                 .padding(3.dp),
             contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
         ) {

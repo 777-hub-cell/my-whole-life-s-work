@@ -3,30 +3,22 @@ package com.aharane.studio.features.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aharane.studio.core.design.*
 
 @Composable
-fun HomeScreen(
-    onOpenChats: () -> Unit,
-    onOpenMore: () -> Unit,
-    onOpenConfiguration: () -> Unit
-) {
+fun HomeScreen(onOpenChats: () -> Unit, onOpenMore: () -> Unit) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
@@ -39,7 +31,7 @@ fun HomeScreen(
         item {
             StudioCard(padding = PaddingValues(20.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    StudioStatusDot(online = false, size = 11)
+                    StudioStatusDot(online = false, size = 9)
                     Spacer(Modifier.width(9.dp))
                     Text(
                         "Aharane bot",
@@ -47,51 +39,42 @@ fun HomeScreen(
                         fontSize = 26.sp,
                         lineHeight = 30.sp,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.55).sp,
-                        modifier = Modifier.weight(1f)
+                        letterSpacing = (-0.55).sp
                     )
+                    Spacer(Modifier.weight(1f))
                     StudioTag("Not connected")
                 }
                 Text(
-                    "Connect your server to control the bot and see live activity.",
+                    "Connect this app to your Aharane server to manage the bot.",
                     color = StudioPalette.Muted,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
-                    modifier = Modifier.padding(top = 5.dp)
+                    modifier = Modifier.padding(top = 4.dp)
                 )
                 Row(
                     Modifier.fillMaxWidth().height(64.dp).padding(top = 16.dp, bottom = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(3.dp),
                     verticalAlignment = Alignment.Bottom
                 ) {
-                    repeat(24) { index ->
+                    repeat(24) {
                         Box(
-                            Modifier.weight(1f)
-                                .height(if (index % 5 == 0) 8.dp else if (index % 3 == 0) 6.dp else 4.dp)
+                            Modifier.weight(1f).height(4.dp)
                                 .background(StudioPalette.Line, RoundedCornerShape(3.dp))
                         )
                     }
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Messages handled, last 24 hours",
-                        color = StudioPalette.Muted,
-                        fontSize = 12.5.sp,
-                        lineHeight = 17.sp
-                    )
+                    Text("Messages handled, last 24 hours", color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 17.sp)
                     Spacer(Modifier.weight(1f))
                     Text("—", color = StudioPalette.Muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
-                Row(
-                    Modifier.padding(top = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    StudioActionButton("Restart", enabled = false, onClick = {})
-                    StudioActionButton("Stop", destructive = true, enabled = false, onClick = {})
+                Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StudioActionButton("Start", modifier = Modifier.weight(1f), enabled = false, onClick = {})
+                    StudioActionButton("Stop", modifier = Modifier.weight(1f), enabled = false, onClick = {})
+                    StudioActionButton("Restart", modifier = Modifier.weight(1f), enabled = false, onClick = {})
                 }
             }
         }
-
         item { StudioSectionHeading("Accounts") }
         item {
             StudioCard {
@@ -100,10 +83,11 @@ fun HomeScreen(
                     subtitle = "Private WhatsApp account",
                     icon = Icons.Outlined.Lock,
                     trailingContent = {
-                        StudioTag("Not linked")
-                        Text("›", color = StudioPalette.Muted, fontSize = 21.sp)
-                    },
-                    onClick = onOpenChats
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            StudioStatusDot(online = false)
+                            Text("Not linked", color = StudioPalette.Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 )
                 StudioDivider()
                 StudioRow(
@@ -111,14 +95,14 @@ fun HomeScreen(
                     subtitle = "Public WhatsApp account",
                     icon = Icons.Outlined.Public,
                     trailingContent = {
-                        StudioTag("Not linked")
-                        Text("›", color = StudioPalette.Muted, fontSize = 21.sp)
-                    },
-                    onClick = onOpenChats
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            StudioStatusDot(online = false)
+                            Text("Not linked", color = StudioPalette.Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 )
             }
         }
-
         item { StudioSectionHeading("Setup") }
         item {
             StudioCard {
@@ -127,31 +111,19 @@ fun HomeScreen(
                     subtitle = "Prefix, access and bot behaviour",
                     icon = Icons.Outlined.Settings,
                     trailing = "›",
-                    onClick = onOpenConfiguration
+                    onClick = onOpenMore
                 )
             }
         }
-
         item { StudioSectionHeading("Recent activity", action = "View all", onAction = onOpenMore) }
         item {
             StudioCard {
-                Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 22.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("No activity available", color = StudioPalette.Muted,
-                        fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "Connect your Aharane server to see recent bot activity and diagnostics.",
-                        color = StudioPalette.Muted,
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 5.dp)
-                    )
-                }
+                StudioEmpty(
+                    title = "No activity available",
+                    description = "Connect your Aharane server to see recent bot activity and diagnostics."
+                )
             }
         }
-        item { Spacer(Modifier.height(12.dp)) }
+        item { Spacer(Modifier.height(10.dp)) }
     }
 }

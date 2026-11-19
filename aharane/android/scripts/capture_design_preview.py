@@ -44,8 +44,9 @@ def tap_label(
     required: bool = True,
     scroll_to_find: bool = False,
 ):
-    deadline = time.time() + 8
-    scrolled = False
+    deadline = time.time() + (18 if scroll_to_find else 8)
+    last_swipe = 0.0
+    swipe_count = 0
     while time.time() < deadline:
         matches = []
         for node in nodes():
@@ -59,14 +60,17 @@ def tap_label(
             run("adb", "shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
             time.sleep(0.7)
             return True
-        if scroll_to_find and not scrolled and time.time() > deadline - 4:
-            run("adb", "shell", "input", "swipe", "540", "1900", "540", "1050", "350")
-            scrolled = True
-        time.sleep(0.4)
+
+        now = time.time()
+        if scroll_to_find and swipe_count < 5 and now - last_swipe >= 2.2:
+            run("adb", "shell", "input", "swipe", "540", "2050", "540", "980", "350")
+            last_swipe = time.time()
+            swipe_count += 1
+        time.sleep(0.35)
+
     if required:
         raise RuntimeError(f"Could not locate tappable UI element: {label!r}")
     return False
-
 
 def back():
     run("adb", "shell", "input", "keyevent", "4")

@@ -118,7 +118,7 @@ fun CodeEditorScreen(
     CompositionLocalProvider(
         LocalEditorPalette provides if (editorTheme.equals("Light+", ignoreCase = true)) LightEditorPalette else DarkEditorPalette
     ) {
-    Column(modifier.fillMaxSize().background(EditorBackground).navigationBarsPadding()) {
+    Column(modifier.fillMaxSize().background(EditorBackground).navigationBarsPadding().imePadding()) {
         // Workbench toolbar: compact, dark, and visually separate from the Studio shell.
         Row(
             Modifier.fillMaxWidth().height(46.dp).background(EditorPanel),

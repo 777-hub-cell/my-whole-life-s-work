@@ -11,15 +11,10 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.Save
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -31,11 +26,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -87,44 +90,39 @@ fun CodeEditorScreen(
     editorTheme: String = "Dark+",
     onOpenFile: (String) -> Unit = {},
     onSelectDocument: (String) -> Unit = {},
+    onCloseDocument: (String) -> Unit = {},
     onContentChange: (String, String) -> Unit = { _, _ -> },
     onSave: (String, String) -> Unit = { _, _ -> }
 ) {
     var explorerOpen by rememberSaveable { mutableStateOf(false) }
     var panelOpen by rememberSaveable { mutableStateOf(false) }
     var panelTab by rememberSaveable { mutableStateOf("Problems") }
-    var moreOpen by rememberSaveable { mutableStateOf(false) }
     var editorFocused by remember { mutableStateOf(false) }
-    var activeSearch by rememberSaveable { mutableStateOf(false) }
-    var searchText by rememberSaveable { mutableStateOf("") }
 
     val activeDocument = openDocuments.firstOrNull { it.path == activeDocumentPath }
-    var editorText by remember(activeDocument?.path, activeDocument?.content) {
-        mutableStateOf(activeDocument?.content.orEmpty())
+    var editorValue by remember(activeDocument?.path) {
+        mutableStateOf(TextFieldValue(activeDocument?.content.orEmpty()))
     }
-    var dirty by remember(activeDocument?.path, activeDocument?.content) { mutableStateOf(false) }
+    var dirty by remember(activeDocument?.path) { mutableStateOf(false) }
+    LaunchedEffect(activeDocument?.path, activeDocument?.content) {
+        if (!dirty) editorValue = TextFieldValue(activeDocument?.content.orEmpty())
+    }
     val verticalScroll = rememberScrollState()
     val horizontalScroll = rememberScrollState()
 
-    BackHandler(explorerOpen || panelOpen || moreOpen || activeSearch) {
-        when {
-            moreOpen -> moreOpen = false
-            activeSearch -> activeSearch = false
-            explorerOpen -> explorerOpen = false
-            panelOpen -> panelOpen = false
-        }
+    BackHandler(explorerOpen || panelOpen) {
+        if (explorerOpen) explorerOpen = false else panelOpen = false
     }
 
     CompositionLocalProvider(
         LocalEditorPalette provides if (editorTheme.equals("Light+", ignoreCase = true)) LightEditorPalette else DarkEditorPalette
     ) {
     Column(modifier.fillMaxSize().background(EditorBackground).navigationBarsPadding().imePadding()) {
-        // Workbench toolbar: compact, dark, and visually separate from the Studio shell.
+        // Compact native translation of the web Studio workbench header.
         Row(
             Modifier.fillMaxWidth().height(46.dp).background(EditorPanel),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            EditorTool(Icons.Outlined.Close, "Close editor", onClick = onClose)
             EditorTool(
                 Icons.Outlined.FolderOpen,
                 if (explorerOpen) "Hide explorer" else "Show explorer",
@@ -134,97 +132,60 @@ fun CodeEditorScreen(
                 Modifier.weight(1f).padding(horizontal = 5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Aharane", color = EditorMuted, fontSize = 12.sp, maxLines = 1)
+                Text(
+                    "Home",
+                    color = EditorMuted,
+                    fontSize = 13.sp,
+                    modifier = Modifier.clickable(onClick = onClose)
+                )
                 Icon(Icons.Outlined.ChevronRight, null, tint = EditorMuted, modifier = Modifier.size(15.dp))
                 Text(
                     activeDocument?.path ?: "Files",
                     color = EditorText,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontSize = 13.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            EditorTool(
-                Icons.Outlined.Save,
-                "Save file",
-                enabled = editable && dirty && activeDocument != null,
-                onClick = {
-                    activeDocument?.let { onSave(it.path, editorText); dirty = false }
-                }
+            Text(
+                if (dirty) "Saving…" else "Saved",
+                color = Color(0xFF4EC9B0),
+                fontSize = 12.sp,
+                modifier = Modifier.padding(horizontal = 7.dp)
             )
-            EditorTool(
-                Icons.Outlined.BugReport,
-                if (panelOpen) "Hide bottom panel" else "Show bottom panel",
-                onClick = { panelOpen = !panelOpen }
-            )
-            Box {
-                EditorTool(Icons.Outlined.MoreVert, "More editor actions", onClick = { moreOpen = !moreOpen })
-                if (moreOpen) {
-                    EditorPopupMenu(
-                        actions = listOf(
-                            "Find in file" to { activeSearch = true; moreOpen = false },
-                            "Toggle explorer" to { explorerOpen = !explorerOpen; moreOpen = false },
-                            "Toggle problems" to { panelOpen = !panelOpen; moreOpen = false }
-                        ),
-                        onDismiss = { moreOpen = false }
-                    )
-                }
-            }
+            EditorTool(Icons.Outlined.Close, "Close editor", onClick = onClose)
         }
 
-        if (activeSearch) {
+        // The web workbench has no empty placeholder tab strip.
+        if (openDocuments.isNotEmpty()) {
             Row(
-                Modifier.fillMaxWidth().background(EditorPanel).padding(horizontal = 10.dp, vertical = 6.dp),
+                Modifier.fillMaxWidth().height(40.dp).background(EditorPanel)
+                    .horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Outlined.Search, null, tint = EditorMuted, modifier = Modifier.size(17.dp))
-                BasicTextField(
-                    value = searchText,
-                    onValueChange = { searchText = it },
-                    singleLine = true,
-                    textStyle = TextStyle(color = EditorText, fontSize = 12.sp, fontFamily = FontFamily.Monospace),
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                    decorationBox = { inner ->
-                        Box {
-                            if (searchText.isEmpty()) Text("Find", color = EditorMuted, fontSize = 12.sp)
-                            inner()
-                        }
-                    }
-                )
-                EditorTool(Icons.Outlined.Close, "Close search", onClick = { activeSearch = false })
-            }
-        }
-
-        // Open-file tabs mirror the web workbench's horizontally scrolling tab strip.
-        Row(
-            Modifier.fillMaxWidth().height(40.dp).background(EditorPanel)
-                .horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (openDocuments.isEmpty()) {
-                Box(Modifier.width(3.dp).fillMaxHeight().background(EditorBlue))
-                Text("No file open", color = EditorMuted, fontSize = 12.5.sp, modifier = Modifier.padding(horizontal = 12.dp))
-            } else {
                 openDocuments.forEach { document ->
                     val active = document.path == activeDocumentPath
                     Row(
                         Modifier.fillMaxHeight()
                             .background(if (active) EditorBackground else EditorTab)
-                            .clickable { onSelectDocument(document.path) }
-                            .then(if (active) Modifier else Modifier)
-                            .padding(start = 12.dp, end = 8.dp),
+                            .clickable { onSelectDocument(document.path) },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (active) Box(Modifier.width(3.dp).fillMaxHeight().background(EditorBlue))
                         Text(
                             document.path.substringAfterLast('/'),
                             color = if (active) Color.White else EditorMuted,
-                            fontSize = 12.sp,
+                            fontSize = 13.sp,
                             maxLines = 1,
-                            modifier = Modifier.padding(horizontal = 7.dp)
+                            modifier = Modifier.padding(start = 12.dp, end = 6.dp)
                         )
-                        Text("×", color = EditorMuted, fontSize = 16.sp, modifier = Modifier.padding(start = 5.dp))
+                        Text(
+                            "×",
+                            color = EditorMuted,
+                            fontSize = 17.sp,
+                            modifier = Modifier.clickable { onCloseDocument(document.path) }
+                                .padding(start = 4.dp, end = 10.dp, top = 7.dp, bottom = 7.dp)
+                        )
                     }
                     Box(Modifier.width(1.dp).fillMaxHeight().background(EditorBackground))
                 }
@@ -282,7 +243,7 @@ fun CodeEditorScreen(
             Box(Modifier.weight(1f).fillMaxWidth().background(EditorBackground)) {
                 Row(Modifier.fillMaxSize()) {
                     if (lineNumbers) {
-                    val lineCount = editorText.count { it == '\n' } + 1
+                    val lineCount = editorValue.text.count { it == '\n' } + 1
                     val numbers = (1..lineCount).joinToString("\n")
                     Text(
                         numbers,
@@ -298,12 +259,15 @@ fun CodeEditorScreen(
                     )
                 }
                 BasicTextField(
-                    value = editorText,
+                    value = editorValue,
                     onValueChange = { next ->
-                        editorText = next
+                        editorValue = next
                         dirty = true
-                        onContentChange(activeDocument.path, next)
+                        onContentChange(activeDocument.path, next.text)
                     },
+                    visualTransformation = if (activeDocument.path.endsWith(".js", true) ||
+                        activeDocument.path.endsWith(".json", true)) StudioCodeHighlight else VisualTransformation.None,
+                    cursorBrush = SolidColor(Color(0xFFAEAFAD)),
                     readOnly = !editable,
                     textStyle = TextStyle(
                         color = EditorText,
@@ -353,12 +317,14 @@ fun CodeEditorScreen(
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                listOf("TAB", "{", "}", "(", ")", "[", "]", ";", "=", ":", "\\").forEach { key ->
+                listOf("Tab", "{", "}", "(", ")", "[", "]", ";", "'", "\"",
+                    "=", ">", ".", "`").forEach { key ->
                     Box(
-                        Modifier.widthIn(min = 38.dp).height(36.dp).clip(RoundedCornerShape(6.dp))
+                        Modifier.widthIn(min = 40.dp).height(38.dp).clip(RoundedCornerShape(7.dp))
                             .background(EditorLine).clickable {
-                                editorText += if (key == "TAB") "  " else key
-                                activeDocument?.let { onContentChange(it.path, editorText) }
+                                val insertion = if (key == "Tab") "  " else key
+                                editorValue = insertEditorText(editorValue, insertion)
+                                activeDocument?.let { onContentChange(it.path, editorValue.text) }
                                 dirty = true
                             }.padding(horizontal = 9.dp),
                         contentAlignment = Alignment.Center
@@ -386,6 +352,41 @@ fun CodeEditorScreen(
             Text(activeDocument?.languageLabel ?: "Plain text", color = Color.White, fontSize = 10.5.sp)
         }
     }
+    }
+}
+
+private fun insertEditorText(value: TextFieldValue, insertion: String): TextFieldValue {
+    val start = minOf(value.selection.start, value.selection.end)
+    val end = maxOf(value.selection.start, value.selection.end)
+    val text = value.text.replaceRange(start, end, insertion)
+    val cursor = start + insertion.length
+    return TextFieldValue(text = text, selection = TextRange(cursor))
+}
+
+private object StudioCodeHighlight : VisualTransformation {
+    private val tokenRegex = Regex(
+        """//[^\\n]*|/\\*[\\s\\S]*?\\*/|'(?:\\\\.|[^'\\\\\\n])*'|"(?:\\\\.|[^"\\\\\\n])*"|`(?:\\\\.|[^`\\\\])*`|\\b(const|let|var|function|async|await|return|if|else|for|while|new|class|throw|try|catch|of|in|typeof)\\b|\\b(true|false|null|undefined)\\b|\\b\\d+(?:\\.\\d+)?\\b|\\b[A-Za-z_$][\\w$]*(?=\\()"""
+    )
+    private val keywords = setOf(
+        "const", "let", "var", "function", "async", "await", "return", "if", "else",
+        "for", "while", "new", "class", "throw", "try", "catch", "of", "in", "typeof"
+    )
+
+    override fun filter(text: AnnotatedString): TransformedText {
+        val builder = AnnotatedString.Builder(text.text)
+        tokenRegex.findAll(text.text).forEach { match ->
+            val token = match.value
+            val color = when {
+                token.startsWith("//") || token.startsWith("/*") -> Color(0xFF6A9955)
+                token.startsWith("'") || token.startsWith("\"") || token.startsWith("`") -> Color(0xFFCE9178)
+                token in keywords -> Color(0xFF569CD6)
+                token in setOf("true", "false", "null", "undefined") -> Color(0xFF569CD6)
+                token.firstOrNull()?.isDigit() == true -> Color(0xFFB5CEA8)
+                else -> Color(0xFFDCDCAA)
+            }
+            builder.addStyle(SpanStyle(color = color), match.range.first, match.range.last + 1)
+        }
+        return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
     }
 }
 
@@ -514,14 +515,14 @@ private fun EditorBottomPanel(
             Modifier.fillMaxWidth().height(39.dp).padding(start = 8.dp, end = 5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            listOf("Problems", "Output", "Terminal").forEach { label ->
+            listOf("Problems", "Console").forEach { label ->
                 EditorPanelTab(label, tab == label) { onTabSelected(label) }
             }
             Spacer(Modifier.weight(1f))
             EditorTool(Icons.Outlined.Close, "Close bottom panel", onClick = onClose)
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(EditorLine))
-        Text(message, color = EditorMuted, fontSize = 12.sp, modifier = Modifier.padding(14.dp))
+        Text(message, color = EditorMuted, fontSize = 12.5.sp, modifier = Modifier.padding(14.dp))
     }
 }
 

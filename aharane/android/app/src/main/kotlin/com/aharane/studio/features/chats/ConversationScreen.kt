@@ -94,7 +94,7 @@ fun ConversationScreen(
                 .border(width = 0.5.dp, color = StudioPalette.Line),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            ConversationTool(Icons.Outlined.ArrowBack, "Back to chats", onBack)
+            ConversationTool(Icons.Outlined.ArrowBack, "Back to chats", onClick = onBack)
             Box(
                 Modifier.padding(start = 2.dp, end = 10.dp).size(38.dp)
                     .clip(CircleShape).background(StudioPalette.Soft),

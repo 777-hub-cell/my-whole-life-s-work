@@ -114,7 +114,7 @@ if ! mkdir "$LOCK_DIR"; then
 fi
 LOCK_ACQUIRED=1
 chown "$SERVICE_USER:$SERVICE_USER" "$LOCK_DIR"
-printf '{"source":"git","pid":%s,"sha":"%s","startedAt":"%s"}\n' "$" "$SOURCE_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$LOCK_DIR/owner.json"
+printf '{"source":"git","pid":%s,"sha":"%s","startedAt":"%s"}\n' "$BASHPID" "$SOURCE_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$LOCK_DIR/owner.json"
 chown "$SERVICE_USER:$SERVICE_USER" "$LOCK_DIR/owner.json"
 chmod 0600 "$LOCK_DIR/owner.json"
 install -d -o root -g root -m 0755 /usr/local/lib/aharane

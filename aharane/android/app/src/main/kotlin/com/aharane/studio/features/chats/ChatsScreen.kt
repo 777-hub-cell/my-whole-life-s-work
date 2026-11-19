@@ -18,18 +18,15 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.consume
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.round
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aharane.studio.core.design.*
-import kotlin.math.roundToInt
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatFilter
 import com.aharane.studio.core.model.ChatSummary
@@ -229,7 +226,7 @@ private fun ChatListRow(
 
         Row(
             Modifier.fillMaxWidth().heightIn(min = 66.dp * rowScale)
-                .offset { IntOffset(offset.roundToPx(), 0) }
+                .offset(x = offset, y = 0.dp)
                 .background(StudioPalette.Surface)
                 .pointerInput(connected, swipeOpen) {
                     val threshold = with(density) { 38.dp.toPx() }

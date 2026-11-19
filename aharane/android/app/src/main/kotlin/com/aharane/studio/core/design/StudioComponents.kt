@@ -270,8 +270,13 @@ fun StudioActionButton(
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
-    val bg = if (primary) StudioPalette.Accent else StudioPalette.Surface
+    val bg = when {
+        !enabled -> StudioPalette.Background
+        primary -> StudioPalette.Accent
+        else -> StudioPalette.Surface
+    }
     val fg = when {
+        !enabled -> StudioPalette.Muted
         primary -> Color.White
         destructive -> StudioPalette.Bad
         else -> StudioPalette.Ink
@@ -281,7 +286,7 @@ fun StudioActionButton(
         modifier = modifier.defaultMinSize(minHeight = if (compact) 36.dp else 44.dp)
             .clip(shape)
             .background(bg)
-            .border(1.dp, if (primary) StudioPalette.Accent else StudioPalette.Line, shape)
+             .border(1.dp, if (primary && enabled) StudioPalette.Accent else StudioPalette.Line, shape)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = if (compact) 11.dp else 14.dp, vertical = if (compact) 6.dp else 10.dp),
         contentAlignment = Alignment.Center

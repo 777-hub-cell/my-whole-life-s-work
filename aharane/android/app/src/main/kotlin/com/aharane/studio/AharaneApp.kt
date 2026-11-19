@@ -181,7 +181,7 @@ fun AharaneApp(
                             }
                         }
                     )
-                    MainDestination.ENVIRONMENT -> EnvironmentScreen()
+                    MainDestination.ENVIRONMENT -> EnvironmentScreen(previewMode = previewMode)
                     MainDestination.MORE -> MoreScreen(
                         themeMode = themeMode,
                         onThemeModeChanged = onThemeModeChanged,

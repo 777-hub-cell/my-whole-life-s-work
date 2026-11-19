@@ -36,8 +36,16 @@ def nodes():
     return list(ET.fromstring(xml_text).iter("node"))
 
 
-def tap_label(label: str, *, content_desc: bool = False, occurrence: int = 0, required: bool = True):
+def tap_label(
+    label: str,
+    *,
+    content_desc: bool = False,
+    occurrence: int = 0,
+    required: bool = True,
+    scroll_to_find: bool = False,
+):
     deadline = time.time() + 8
+    scrolled = False
     while time.time() < deadline:
         matches = []
         for node in nodes():
@@ -51,6 +59,9 @@ def tap_label(label: str, *, content_desc: bool = False, occurrence: int = 0, re
             run("adb", "shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
             time.sleep(0.7)
             return True
+        if scroll_to_find and not scrolled and time.time() > deadline - 4:
+            run("adb", "shell", "input", "swipe", "540", "1900", "540", "1050", "350")
+            scrolled = True
         time.sleep(0.4)
     if required:
         raise RuntimeError(f"Could not locate tappable UI element: {label!r}")
@@ -100,10 +111,10 @@ def main():
     tap_label("Accounts & owners")
     capture("05a-accounts-owners.png")
     back()
-    tap_label("Studio source")
+    tap_label("Studio source", scroll_to_find=True)
     capture("05b-studio-source.png")
     back()
-    tap_label("Appearance")
+    tap_label("Appearance", scroll_to_find=True)
     capture("06-appearance.png")
     back()
 

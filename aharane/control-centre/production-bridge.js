@@ -249,8 +249,23 @@ async function uploadZipP(file){
  }finally{P.uploadProgress=null;updateUploadProgressP()}
 }
 async function pollUpdateP(){
- for(let i=0;i<90;i++){await new Promise(r=>setTimeout(r,2000));const s=await apiP('update/status');if(['succeeded','failed','rolled_back','rollback_failed'].includes(s.update?.status))return s.update}
- throw new Error('Update polling stopped. Check the update status in Studio.');
+ let lastError=null;
+ // Dependency installation can take six minutes; allow extra restart and
+ // health-check time. Temporary gateway errors are expected while systemd restarts.
+ for(let i=0;i<360;i++){
+  await new Promise(r=>setTimeout(r,2000));
+  try{
+   const status=await apiP('update/status');
+   lastError=null;
+   if(['succeeded','failed','rolled_back','rollback_failed'].includes(status.update?.status))return status.update;
+  }catch(error){
+   lastError=error;
+   if(error.status===401||error.status===403)throw error;
+   if(error.status&&error.status<500&&error.status!==429)throw error;
+  }
+ }
+ if(lastError)throw new Error('Update status is still unreachable after the restart window. Reopen Studio and check Update status before retrying; the deployment may still have completed.');
+ throw new Error('The update did not reach a final status within the 12-minute monitoring window. Check Update status before retrying.');
 }
 async function deployPackageP(id){
  const pkg=P.packages.find(x=>x.updateId===id);if(!pkg)return;

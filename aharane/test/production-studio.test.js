@@ -405,3 +405,15 @@ test('keeping the server version redraws the editor from the verified server con
  assert.ok(keep.includes('fileAutosaveQueuedP.delete(path)'))
  assert.ok(keep.includes('removeFileLocalDraftP(path)'))
 })
+
+
+test('update monitoring tolerates restart-time API failures for up to twelve minutes', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const start=bridge.indexOf('async function pollUpdateP()')
+ const end=bridge.indexOf('async function deployPackageP',start)
+ const poll=bridge.slice(start,end)
+ assert.ok(poll.includes('i<360'))
+ assert.ok(poll.includes('lastError=error'))
+ assert.ok(poll.includes('error.status===401||error.status===403'))
+ assert.ok(poll.includes('the deployment may still have completed'))
+})

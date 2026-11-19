@@ -19,7 +19,7 @@ import {
   senderNumberFromJid,
 } from './policy.js'
 import { createAccountRuntime } from './account-runtime.js'
-import { loadCommandRegistry, dispatchCommand } from './command-registry.js'
+import { loadCommandRegistry, dispatchCommand, parseCommand } from './command-registry.js'
 import { isPrivateSelfChat, isPrivateSelfCommand, isPublicOwnerSender } from './authorization.js'
 import { loadOwnerConfig, normalizeOwnerConfig, saveOwnerConfig } from './owner-config.js'
 import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_ARCHIVE_BYTES, normalizeUpdatePath } from './update-manager.js'
@@ -1002,11 +1002,15 @@ async function handleMessages(sessionId, currentSocket, event) {
       continue
     }
 
-    if (!text || !allowCommand(sessionId + ':' + (sessionId === 'private'
+    if (!text) continue
+    const prefix = sessionId === 'private' ? PRIVATE_COMMAND_PREFIX : PUBLIC_COMMAND_PREFIX
+    const parsedCommand = parseCommand(text, prefix)
+    if (!parsedCommand || !registry?.commands?.has(parsedCommand.name)) continue
+    if (!allowCommand(sessionId + ':' + (sessionId === 'private'
       ? ownerConfig.privateOwnerNumber
       : senderNumberFromJid(remoteJid)))) continue
 
-    const command = text.split(/\s+/, 1)[0].slice(0, 40)
+    const command = parsedCommand.name.slice(0, 40)
     try {
       const handled = await dispatchCommand({
         registry,
@@ -1072,6 +1076,9 @@ accountRuntime = createAccountRuntime({
 })
 
 const app = express()
+// Nginx is the only supported public entry point and proxies from loopback.
+// Trust only that proxy so req.ip uses the real forwarded client address.
+app.set('trust proxy', 'loopback')
 app.disable('x-powered-by')
 app.use(express.json({ limit: '2mb', strict: true }))
 app.use('/api', (req, res, next) => {
@@ -1323,13 +1330,16 @@ app.post('/api/pair-code', requireAdmin, async (req, res) => {
     if (!allowPairAttempt(ip)) return res.status(429).json({ ok: false, error: 'Pairing rate limit reached for the public account; try again later.' })
     const phoneNumber = normalizePhone(req.body?.phoneNumber)
     if (!phoneNumber) return res.status(400).json({ ok: false, error: 'Enter a valid international phone number using 7 to 15 digits.' })
-    if (!ownerConfig.privateOwnerNumber || !ownerConfig.publicOwnerNumber) {
-      return res.status(409).json({ ok: false, error: 'Save two different owner numbers before pairing the WhatsApp accounts.' })
+    if (!ownerConfig.privateOwnerNumber || !ownerConfig.publicOwnerNumber || !ownerConfig.publicBotNumber) {
+      return res.status(409).json({ ok: false, error: 'Save the Private Owner, Public Owner and Public bot numbers before pairing.' })
+    }
+    if (phoneNumber !== ownerConfig.publicBotNumber) {
+      return res.status(409).json({ ok: false, error: 'The supplied number does not match the saved Public bot WhatsApp number. Update Configuration first.' })
     }
     if ([ownerConfig.privateOwnerNumber, ownerConfig.publicOwnerNumber].includes(phoneNumber)) {
       return res.status(400).json({ ok: false, error: 'The public bot must use its own WhatsApp number, separate from both owner identities.' })
     }
-    const pairingCode = await accountRuntime.requestPairingCode('public', phoneNumber)
+    const pairingCode = await accountRuntime.requestPairingCode('public', ownerConfig.publicBotNumber)
     res.json({ ok: true, accountId: 'public', pairingCode })
   } catch (error) {
     res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Pairing code could not be generated.') })

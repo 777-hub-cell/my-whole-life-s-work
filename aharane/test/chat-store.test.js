@@ -216,3 +216,20 @@ test('text messages retain quote source, reactions attach to the target bubble, 
     assert.equal(await store.getMessage('private', jid, 'target-1'), null)
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
+
+
+test('replayed message IDs are deduplicated by a bounded in-memory key index', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-dedupe-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    const message = {
+      key: { remoteJid: '2348012345678@s.whatsapp.net', id: 'duplicate-message-id', fromMe: false },
+      message: { conversation: 'same message' },
+      messageTimestamp: 1760000000,
+    }
+    await store.recordMessage({ sessionId: 'public', message })
+    await store.recordMessage({ sessionId: 'public', message })
+    const rows = await store.getMessages('public', message.key.remoteJid)
+    assert.equal(rows.length, 1)
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})

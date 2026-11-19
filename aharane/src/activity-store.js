@@ -5,8 +5,46 @@ import { randomUUID } from 'node:crypto'
 export function createActivityStore({ dataDir, maxEntries = 20000 } = {}) {
   if (!dataDir) throw new TypeError('Activity store requires a persistent data directory.')
   const file = join(dataDir, 'activity.jsonl')
+  const limit = Math.max(1, Math.floor(Number(maxEntries) || 20000))
+  const compactAt = limit + Math.max(1, Math.min(1000, Math.ceil(limit * 0.1)))
   let queue = Promise.resolve()
-  async function init() { await mkdir(dataDir, { recursive: true, mode: 0o700 }) }
+  let entryCount = 0
+  let initPromise = null
+
+  async function compact(rows) {
+    const retained = rows.slice(-limit)
+    const temporary = file + '.' + randomUUID() + '.tmp'
+    const content = retained.length ? retained.map(row => JSON.stringify(row)).join('\n') + '\n' : ''
+    await writeFile(temporary, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+    try {
+      await rename(temporary, file)
+      entryCount = retained.length
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => {})
+      throw error
+    }
+  }
+
+  async function init() {
+    if (!initPromise) {
+      initPromise = (async () => {
+        await mkdir(dataDir, { recursive: true, mode: 0o700 })
+        const text = await readFile(file, 'utf8').catch(error =>
+          error?.code === 'ENOENT' ? '' : Promise.reject(error)
+        )
+        const rows = text.split('\n').filter(Boolean).flatMap(line => {
+          try { return [JSON.parse(line)] } catch { return [] }
+        })
+        entryCount = rows.length
+        if (entryCount > limit) await compact(rows)
+      })().catch(error => {
+        initPromise = null
+        throw error
+      })
+    }
+    return initPromise
+  }
+
   async function append(entry = {}) {
     await init()
     const record = {
@@ -17,24 +55,49 @@ export function createActivityStore({ dataDir, maxEntries = 20000 } = {}) {
       details: entry.details && typeof entry.details === 'object' ? entry.details : {},
     }
     const line = JSON.stringify(record) + '\n'
-    const next = queue.catch(() => {}).then(async () => { await appendFile(file, line, { encoding: 'utf8', mode: 0o600 }) })
+    const next = queue.catch(() => {}).then(async () => {
+      await appendFile(file, line, { encoding: 'utf8', mode: 0o600 })
+      entryCount += 1
+      if (entryCount > compactAt) {
+        const text = await readFile(file, 'utf8')
+        const rows = text.split('\n').filter(Boolean).flatMap(value => {
+          try { return [JSON.parse(value)] } catch { return [] }
+        })
+        await compact(rows)
+      }
+    })
     queue = next
     return next.then(() => record)
   }
-  async function list({ limit = 200, level = 'all', query = '' } = {}) {
+
+  async function list({ limit: requestedLimit = 200, level = 'all', query = '' } = {}) {
     await queue.catch(() => {})
-    const text = await readFile(file, 'utf8').catch(error => error?.code === 'ENOENT' ? '' : Promise.reject(error))
-    const rows = text.split('\n').filter(Boolean).slice(-maxEntries).flatMap(line => { try { return [JSON.parse(line)] } catch { return [] } })
+    await init()
+    const text = await readFile(file, 'utf8').catch(error =>
+      error?.code === 'ENOENT' ? '' : Promise.reject(error)
+    )
+    const rows = text.split('\n').filter(Boolean).flatMap(line => {
+      try { return [JSON.parse(line)] } catch { return [] }
+    })
     const q = String(query || '').toLowerCase()
-    return rows.filter(row => (level === 'all' || row.level === level) && (!q || (row.message + ' ' + row.source).toLowerCase().includes(q)))
-      .slice(-Math.max(1, Math.min(1000, Number(limit) || 200))).reverse()
+    return rows.filter(row =>
+      (level === 'all' || row.level === level) &&
+      (!q || (row.message + ' ' + row.source).toLowerCase().includes(q))
+    ).slice(-Math.max(1, Math.min(1000, Number(requestedLimit) || 200))).reverse()
   }
+
   async function clear() {
     await queue.catch(() => {})
+    await init()
     const tmp = file + '.' + randomUUID() + '.tmp'
     await writeFile(tmp, '', { encoding: 'utf8', mode: 0o600, flag: 'wx' })
-    await rename(tmp, file).catch(async error => { await rm(tmp, { force: true }); throw error })
+    await rename(tmp, file).catch(async error => {
+      await rm(tmp, { force: true })
+      throw error
+    })
+    entryCount = 0
     queue = Promise.resolve()
   }
+
   return { init, append, list, clear }
 }

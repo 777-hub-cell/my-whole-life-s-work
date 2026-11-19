@@ -223,3 +223,21 @@ test('Web Chat supports persistent chat preferences, per-conversation search, qu
  for(const marker of ['chatPreferences','chat-searchbar','openMessageMenuP','downloadChatMediaP','toggleChatPreferenceP','switchChats=switchChatsP','X-Voice-Note'])assert.ok(bridge.includes(marker),marker)
  for(const marker of ['rec-waveform','MediaRecorder','analyser.getByteFrequencyData','openMessageMenuP','data-chat-pref','reaction-chips'])assert.ok(app.includes(marker),marker)
 })
+
+
+test('rate limits use only the trusted loopback reverse proxy and command cooldown is command-only', async () => {
+ const source=await read('../src/index.js')
+ assert.ok(source.includes("app.set('trust proxy', 'loopback')"))
+ const handler=source.slice(source.indexOf('async function handleMessages'),source.indexOf("publicCommandRegistry = await loadCommandRegistry"))
+ assert.ok(handler.indexOf('parseCommand(text, prefix)')<handler.indexOf('allowCommand(sessionId +'))
+ assert.ok(handler.includes('!registry?.commands?.has(parsedCommand.name)'))
+})
+
+test('legacy public pairing cannot override the configured Public bot number', async () => {
+ const source=await read('../src/index.js')
+ const start=source.indexOf("app.post('/api/pair-code'")
+ const end=source.indexOf("app.get('/api/update/status'",start)
+ const route=source.slice(start,end)
+ assert.ok(route.includes('phoneNumber !== ownerConfig.publicBotNumber'))
+ assert.ok(route.includes("requestPairingCode('public', ownerConfig.publicBotNumber)"))
+})

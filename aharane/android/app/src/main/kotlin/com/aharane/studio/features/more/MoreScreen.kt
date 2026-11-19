@@ -29,8 +29,7 @@ import androidx.compose.ui.window.Dialog
 import com.aharane.studio.core.design.*
 
 private val AccentChoices = listOf(
-    Color(0xFF0E7A5C), Color(0xFF3867D6), Color(0xFF8752C7),
-    Color(0xFFB34D76), Color(0xFFB56C22), Color(0xFF4D7779)
+    "#0E7A5C", "#3867D6", "#8752C7", "#B34D76", "#B56C22", "#4D7779"
 )
 
 @Composable
@@ -279,6 +278,48 @@ fun MoreScreen(
                 }
                 StudioActionButton("Close", primary = true, modifier = Modifier.align(Alignment.End), onClick = { dialog = "" })
             }
+        }
+    }
+}
+
+@Composable
+private fun PreferenceChoice(
+    title: String,
+    options: List<String>,
+    selected: String,
+    onSelected: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text(title, color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+        StudioSegmented(options = options, selected = selected, onSelect = onSelected)
+    }
+}
+
+@Composable
+private fun PreferenceSwitch(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onCheckedChange(!checked) }
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+            Text(description, color = StudioPalette.Muted, fontSize = 12.sp, lineHeight = 16.sp)
+        }
+        Box(
+            Modifier.width(42.dp).height(24.dp).clip(CircleShape)
+                .background(if (checked) StudioPalette.Accent else StudioPalette.Line)
+                .clickable { onCheckedChange(!checked) }
+                .padding(3.dp),
+            contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
+        ) {
+            Box(Modifier.size(18.dp).clip(CircleShape).background(Color.White))
         }
     }
 }

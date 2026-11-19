@@ -107,8 +107,7 @@ fun StudioBottomNavigation(
                         MainDestination.MORE -> Icons.Outlined.MoreHoriz
                     }
                     Box(
-                        Modifier.height(26.dp).width(52.dp).clip(RoundedCornerShape(99.dp))
-                            .background(if (active) StudioPalette.Soft else Color.Transparent),
+                        Modifier.height(26.dp).width(52.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(21.dp))
@@ -215,9 +214,10 @@ fun StudioRow(
     onClick: (() -> Unit)? = null
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 60.dp)
+        modifier = Modifier.fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+            .heightIn(min = 36.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -250,21 +250,23 @@ fun StudioActionButton(
     label: String,
     modifier: Modifier = Modifier,
     primary: Boolean = false,
+    compact: Boolean = false,
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     val background = if (primary) StudioPalette.Accent else StudioPalette.Surface
     val foreground = if (primary) Color.White else StudioPalette.Ink
     Box(
-        modifier = modifier.defaultMinSize(minHeight = 44.dp).clip(RoundedCornerShape(12.dp))
+        modifier = modifier.defaultMinSize(minHeight = if (compact) 36.dp else 44.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(background)
             .border(1.dp, if (primary) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(12.dp))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = if (compact) 11.dp else 14.dp, vertical = if (compact) 6.dp else 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(label, color = foreground.copy(alpha = if (enabled) 1f else .45f),
-            fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
+            fontSize = if (compact) 13.sp else 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

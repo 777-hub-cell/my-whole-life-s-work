@@ -86,7 +86,7 @@ def main():
     back()
     tap_label("Configuration")
     capture("01b-configuration.png")
-    tap_label("Edit config.js")
+    tap_label("Edit config.js", scroll_to_find=True)
     capture("01c-config-editor.png", 2)
     back()
     capture("01d-configuration-return.png")

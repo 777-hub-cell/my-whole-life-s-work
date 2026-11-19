@@ -107,7 +107,7 @@ def main():
     capture("03b-admin-folder.png")
     tap_label("File actions", content_desc=True)
     capture("03c-file-menu.png")
-    tap_label("Open")
+    tap_label("auth.js")
     capture("03a-editor.png", 2)
     tap_label("Show explorer", content_desc=True)
     capture("03d-editor-explorer.png")

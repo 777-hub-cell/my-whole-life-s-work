@@ -272,7 +272,7 @@ fun FilesScreen(
                                     currentPath = entry.path
                                     query = ""
                                     selectedPaths.clear()
-                                } else if (connected || (previewOnly && action == "open")) {
+                                } else if (connected) {
                                     onEntryAction(entry, action)
                                 } else {
                                     Toast.makeText(context, "Connect to your Aharane server to manage files.", Toast.LENGTH_SHORT).show()

@@ -80,33 +80,7 @@ jobs:
             set -eu
             mkdir -p screenshots
             adb install artifacts/app-debug.apk
-            adb shell am start -n com.aharane.studio/.MainActivity
-            sleep 8
-            adb exec-out screencap -p > screenshots/01-home.png
-
-            adb shell input tap 324 2232
-            sleep 2
-            adb exec-out screencap -p > screenshots/02-chats.png
-
-            adb shell input tap 540 2232
-            sleep 2
-            adb exec-out screencap -p > screenshots/03-files.png
-
-            python3 aharane/android/scripts/capture_editor_screenshot.py
-
-            adb shell input tap 756 2232
-            sleep 2
-            adb exec-out screencap -p > screenshots/04-env.png
-            adb shell input tap 972 2232
-            sleep 2
-            adb exec-out screencap -p > screenshots/05-more.png
-
-            # Capture the actual Appearance preferences page as a separate screen.
-            adb shell input tap 540 1160
-            sleep 2
-            adb exec-out screencap -p > screenshots/06-appearance.png
-            adb shell input keyevent 4
-            sleep 1
+            python3 aharane/android/scripts/capture_design_preview.py
 
       - name: Upload real app screenshots
         uses: actions/upload-artifact@v4

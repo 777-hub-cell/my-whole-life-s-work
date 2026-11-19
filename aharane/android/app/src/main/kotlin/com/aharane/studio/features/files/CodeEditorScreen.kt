@@ -165,12 +165,12 @@ fun CodeEditorScreen(
                 )
             }
             Text(
-                when (saveState) {
+                if (activeDocument == null) "No file" else when (saveState) {
                     "saving" -> "Saving…"
                     "unsaved" -> "Unsaved"
                     else -> "Saved"
                 },
-                color = if (saveState == "unsaved") Color(0xFFE5B567) else Color(0xFF4EC9B0),
+                color = if (activeDocument == null) EditorMuted else if (saveState == "unsaved") Color(0xFFE5B567) else Color(0xFF4EC9B0),
                 fontSize = 12.sp,
                 modifier = Modifier.padding(horizontal = 7.dp)
             )
@@ -375,7 +375,7 @@ fun CodeEditorScreen(
             )
             Spacer(Modifier.weight(1f))
             Text(
-                "${activeDocument?.languageLabel ?: "Plain text"} · Auto-save on",
+                if (activeDocument == null) "Connect to open source files" else "${activeDocument.languageLabel} · Auto-save on",
                 color = Color.White,
                 fontSize = 12.5.sp
             )

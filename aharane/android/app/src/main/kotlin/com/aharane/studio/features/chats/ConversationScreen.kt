@@ -1,0 +1,606 @@
+package com.aharane.studio.features.chats
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Poll
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Send
+import androidx.compose.material.icons.outlined.Videocam
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.aharane.studio.core.design.StudioPalette
+import com.aharane.studio.core.model.ChatMessage
+import com.aharane.studio.core.model.ChatSummary
+import com.aharane.studio.core.model.MessageDirection
+import com.aharane.studio.core.model.MessageKind
+import com.aharane.studio.core.model.MessageStatus
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+/**
+ * Full-screen native conversation surface. The screen consumes only server-backed
+ * summaries/messages supplied by its caller; it never creates sample chat content.
+ *
+ * The composer remains editable while offline so the user can prepare a draft, but
+ * sending and server-dependent attachment actions stay unavailable until connected.
+ */
+@Composable
+fun ConversationScreen(
+    conversation: ChatSummary,
+    messages: List<ChatMessage>,
+    connected: Boolean,
+    onBack: () -> Unit,
+    onSend: (String, ChatMessage?) -> Unit,
+    onAttach: () -> Unit = {},
+    onOpenMedia: (ChatMessage) -> Unit = {},
+    onViewOnce: (ChatMessage) -> Unit = {}
+) {
+    var draft by rememberSaveable(conversation.key.jid) { mutableStateOf("") }
+    var replyTo by remember { mutableStateOf<ChatMessage?>(null) }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var search by rememberSaveable { mutableStateOf("") }
+    var moreOpen by remember { mutableStateOf(false) }
+
+    val listState = rememberLazyListState()
+    val visible = remember(messages, search) {
+        if (search.isBlank()) messages else messages.filter {
+            it.text.contains(search, ignoreCase = true) ||
+                (it.mediaFileName?.contains(search, ignoreCase = true) == true)
+        }
+    }
+
+    LaunchedEffect(messages.size, search) {
+        if (visible.isNotEmpty() && search.isBlank()) {
+            listState.animateScrollToItem(visible.lastIndex)
+        }
+    }
+
+    Column(
+        Modifier.fillMaxSize().background(StudioPalette.Background)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().height(58.dp)
+                .background(StudioPalette.Surface)
+                .border(width = 0.5.dp, color = StudioPalette.Line),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ConversationTool(Icons.Outlined.ArrowBack, "Back to chats", onBack)
+            Box(
+                Modifier.padding(start = 2.dp, end = 10.dp).size(38.dp)
+                    .clip(CircleShape).background(StudioPalette.Soft),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    conversation.title.trim().take(1).uppercase(),
+                    color = StudioPalette.Accent,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(
+                    conversation.title,
+                    color = StudioPalette.Ink,
+                    fontSize = 15.sp,
+                    lineHeight = 19.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    if (conversation.isGroup) "Group conversation" else conversation.key.account.label + " account",
+                    color = StudioPalette.Muted,
+                    fontSize = 11.5.sp,
+                    lineHeight = 15.sp,
+                    maxLines = 1
+                )
+            }
+            ConversationTool(
+                Icons.Outlined.Search,
+                if (searchOpen) "Close conversation search" else "Search in conversation"
+            ) {
+                searchOpen = !searchOpen
+                if (!searchOpen) search = ""
+            }
+            ConversationTool(Icons.Outlined.MoreVert, "Conversation options") {
+                moreOpen = !moreOpen
+            }
+        }
+
+        if (searchOpen) {
+            Row(
+                Modifier.fillMaxWidth().background(StudioPalette.Surface)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                BasicTextField(
+                    value = search,
+                    onValueChange = { search = it },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = StudioPalette.Ink),
+                    modifier = Modifier.weight(1f),
+                    decorationBox = { inner ->
+                        Box {
+                            if (search.isEmpty()) Text(
+                                "Search this conversation",
+                                color = StudioPalette.Muted,
+                                fontSize = 14.sp
+                            )
+                            inner()
+                        }
+                    }
+                )
+                Text(
+                    if (search.isBlank()) "${messages.size} messages" else "${visible.size} matches",
+                    color = StudioPalette.Muted,
+                    fontSize = 11.5.sp,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+                ConversationTool(Icons.Outlined.Close, "Clear search") { search = "" }
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(StudioPalette.Line))
+        }
+
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (visible.isEmpty()) {
+                Column(
+                    Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    Text(
+                        if (search.isBlank()) "No messages yet" else "No matching messages",
+                        color = StudioPalette.Ink,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        if (search.isBlank()) "Messages from this conversation will appear here."
+                        else "Try another word or clear the search.",
+                        color = StudioPalette.Muted,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp
+                    )
+                }
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    itemsIndexed(visible, key = { _, item -> item.messageId }) { index, message ->
+                        val previous = visible.getOrNull(index - 1)
+                        if (previous == null || !sameDay(previous.timestampMillis, message.timestampMillis)) {
+                            ConversationDayDivider(message.timestampMillis)
+                        }
+                        MessageBubble(
+                            message = message,
+                            reply = message.replyToMessageId?.let { id -> messages.firstOrNull { it.messageId == id } },
+                            onReply = { replyTo = message },
+                            onOpenMedia = { onOpenMedia(message) },
+                            onViewOnce = { onViewOnce(message) },
+                            connected = connected
+                        )
+                    }
+                }
+            }
+        }
+
+        if (!connected) {
+            Text(
+                "Offline · Your draft stays here until Aharane reconnects.",
+                color = StudioPalette.Muted,
+                fontSize = 11.5.sp,
+                lineHeight = 15.sp,
+                modifier = Modifier.fillMaxWidth().background(StudioPalette.Surface)
+                    .padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 0.dp)
+            )
+        }
+
+        if (replyTo != null) {
+            Row(
+                Modifier.fillMaxWidth().background(StudioPalette.Surface)
+                    .padding(start = 12.dp, end = 8.dp, top = 7.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.width(3.dp).height(34.dp).clip(RoundedCornerShape(2.dp)).background(StudioPalette.Accent))
+                Column(Modifier.weight(1f).padding(start = 9.dp)) {
+                    Text(
+                        if (replyTo!!.direction == MessageDirection.OUTGOING) "You" else conversation.title,
+                        color = StudioPalette.Accent,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        replyTo!!.text.ifBlank { messageAttachmentLabel(replyTo!!.kind) },
+                        color = StudioPalette.Muted,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                ConversationTool(Icons.Outlined.Close, "Cancel reply") { replyTo = null }
+            }
+        }
+
+        Row(
+            Modifier.fillMaxWidth().background(StudioPalette.Surface)
+                .border(width = 0.5.dp, color = StudioPalette.Line)
+                .padding(horizontal = 9.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            ConversationTool(
+                Icons.Outlined.AttachFile,
+                "Attach image, video, audio or document",
+                enabled = connected,
+                onClick = onAttach
+            )
+            Box(
+                Modifier.weight(1f).defaultMinSize(minHeight = 44.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(StudioPalette.Background)
+                    .border(1.dp, StudioPalette.Line, RoundedCornerShape(22.dp))
+                    .padding(horizontal = 15.dp, vertical = 11.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                BasicTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 1,
+                    maxLines = 4,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        color = StudioPalette.Ink,
+                        lineHeight = 19.sp
+                    ),
+                    decorationBox = { inner ->
+                        Box {
+                            if (draft.isEmpty()) Text(
+                                "Message",
+                                color = StudioPalette.Muted,
+                                fontSize = 14.sp
+                            )
+                            inner()
+                        }
+                    }
+                )
+            }
+            val hasDraft = draft.isNotBlank()
+            Box(
+                Modifier.size(44.dp).clip(CircleShape)
+                    .background(
+                        if (hasDraft && connected) StudioPalette.Accent
+                        else StudioPalette.Background
+                    )
+                    .border(
+                        1.dp,
+                        if (hasDraft && connected) StudioPalette.Accent else StudioPalette.Line,
+                        CircleShape
+                    )
+                    .clickable(enabled = hasDraft && connected) {
+                        val messageText = draft.trim()
+                        if (messageText.isNotEmpty()) {
+                            onSend(messageText, replyTo)
+                            draft = ""
+                            replyTo = null
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (hasDraft) Icons.Outlined.Send else Icons.Outlined.Mic,
+                    contentDescription = if (hasDraft) "Send message" else "Voice note",
+                    tint = if (hasDraft && connected) Color.White else StudioPalette.Muted,
+                    modifier = Modifier.size(19.dp)
+                )
+            }
+        }
+    }
+
+    if (moreOpen) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { moreOpen = false }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(StudioPalette.Surface).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Conversation", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    conversation.key.jid,
+                    color = StudioPalette.Muted,
+                    fontSize = 12.sp
+                )
+                Text(
+                    conversation.key.account.label + " WhatsApp inbox",
+                    color = StudioPalette.Muted,
+                    fontSize = 12.sp
+                )
+                StudioPaletteAction("Close", onClick = { moreOpen = false })
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConversationTool(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Box(
+        Modifier.size(42.dp).clip(CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon,
+            contentDescription = description,
+            tint = if (enabled) StudioPalette.Muted else StudioPalette.Muted.copy(alpha = .35f),
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+@Composable
+private fun ConversationDayDivider(timestamp: Long) {
+    val label = remember(timestamp) {
+        val now = System.currentTimeMillis()
+        val date = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
+        val today = date.format(Date(now))
+        val yesterday = date.format(Date(now - 86_400_000L))
+        when (date.format(Date(timestamp))) {
+            today -> "Today"
+            yesterday -> "Yesterday"
+            else -> SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(timestamp))
+        }
+    }
+    Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+        Text(
+            label,
+            color = StudioPalette.Muted,
+            fontSize = 11.5.sp,
+            modifier = Modifier.clip(RoundedCornerShape(30.dp))
+                .background(StudioPalette.Surface)
+                .border(1.dp, StudioPalette.Line, RoundedCornerShape(30.dp))
+                .padding(horizontal = 11.dp, vertical = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun MessageBubble(
+    message: ChatMessage,
+    reply: ChatMessage?,
+    onReply: () -> Unit,
+    onOpenMedia: () -> Unit,
+    onViewOnce: () -> Unit,
+    connected: Boolean
+) {
+    val outgoing = message.direction == MessageDirection.OUTGOING
+    val bubble = if (outgoing) StudioPalette.Accent else StudioPalette.Surface
+    val foreground = if (outgoing) Color.White else StudioPalette.Ink
+    val timestamp = remember(message.timestampMillis) {
+        SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(message.timestampMillis))
+    }
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start
+    ) {
+        Column(
+            Modifier.widthIn(max = 310.dp)
+                .clip(
+                    RoundedCornerShape(
+                        topStart = 15.dp,
+                        topEnd = 15.dp,
+                        bottomEnd = if (outgoing) 5.dp else 15.dp,
+                        bottomStart = if (outgoing) 15.dp else 5.dp
+                    )
+                )
+                .background(bubble)
+                .border(
+                    1.dp,
+                    if (outgoing) StudioPalette.Accent else StudioPalette.Line,
+                    RoundedCornerShape(
+                        topStart = 15.dp,
+                        topEnd = 15.dp,
+                        bottomEnd = if (outgoing) 5.dp else 15.dp,
+                        bottomStart = if (outgoing) 15.dp else 5.dp
+                    )
+                )
+                .clickable(onClick = onReply)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            if (reply != null) {
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                        .background(if (outgoing) Color.White.copy(alpha = .13f) else StudioPalette.Background)
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        if (reply.direction == MessageDirection.OUTGOING) "You" else "Reply",
+                        color = if (outgoing) Color.White.copy(alpha = .9f) else StudioPalette.Accent,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        reply.text.ifBlank { messageAttachmentLabel(reply.kind) },
+                        color = foreground.copy(alpha = .78f),
+                        fontSize = 11.5.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+            if (message.isViewOnce) {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+                        .background(if (outgoing) Color.White.copy(alpha = .13f) else StudioPalette.Background)
+                        .clickable(enabled = connected, onClick = onViewOnce)
+                        .padding(11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(9.dp)
+                ) {
+                    Icon(
+                        if (message.kind == MessageKind.VIDEO) Icons.Outlined.Videocam else Icons.Outlined.Image,
+                        contentDescription = null,
+                        tint = foreground,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text("View once", color = foreground, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Open this media once", color = foreground.copy(alpha = .72f), fontSize = 11.sp)
+                    }
+                }
+            } else {
+                MessageContent(
+                    message = message,
+                    foreground = foreground,
+                    outgoing = outgoing,
+                    onOpenMedia = onOpenMedia
+                )
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(timestamp, color = foreground.copy(alpha = if (outgoing) .72f else .55f), fontSize = 9.5.sp)
+                if (outgoing) {
+                    Text(
+                        when (message.status) {
+                            MessageStatus.READ, MessageStatus.DELIVERED -> "  ✓✓"
+                            MessageStatus.SENT -> "  ✓"
+                            MessageStatus.PENDING -> "  ◷"
+                            MessageStatus.FAILED -> "  !"
+                            MessageStatus.UNKNOWN -> ""
+                        },
+                        color = if (message.status == MessageStatus.READ) Color(0xFFBDEBDA) else foreground.copy(alpha = .75f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageContent(
+    message: ChatMessage,
+    foreground: Color,
+    outgoing: Boolean,
+    onOpenMedia: () -> Unit
+) {
+    when (message.kind) {
+        MessageKind.TEXT, MessageKind.RESPONSE, MessageKind.REACTION ->
+            Text(message.text, color = foreground, fontSize = 14.sp, lineHeight = 19.sp)
+        MessageKind.IMAGE, MessageKind.VIDEO, MessageKind.AUDIO, MessageKind.STICKER, MessageKind.DOCUMENT ->
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+                    .background(if (outgoing) Color.White.copy(alpha = .13f) else StudioPalette.Background)
+                    .clickable(onClick = onOpenMedia)
+                    .padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                val icon = when (message.kind) {
+                    MessageKind.IMAGE, MessageKind.STICKER -> Icons.Outlined.Image
+                    MessageKind.VIDEO -> Icons.Outlined.Videocam
+                    MessageKind.AUDIO -> Icons.Outlined.Mic
+                    else -> Icons.Outlined.Description
+                }
+                Icon(icon, contentDescription = null, tint = foreground, modifier = Modifier.size(24.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        message.mediaFileName ?: messageAttachmentLabel(message.kind),
+                        color = foreground,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        message.mediaMimeType ?: "Tap to open",
+                        color = foreground.copy(alpha = .7f),
+                        fontSize = 10.5.sp
+                    )
+                }
+            }
+        MessageKind.CONTACT -> Text(message.text.ifBlank { "Contact card" }, color = foreground, fontSize = 14.sp)
+        MessageKind.LOCATION -> Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.LocationOn, null, tint = foreground, modifier = Modifier.size(18.dp))
+            Text(message.text.ifBlank { "Location" }, color = foreground, fontSize = 14.sp)
+        }
+        MessageKind.POLL -> Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Poll, null, tint = foreground, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(message.text.ifBlank { "Poll" }, color = foreground, fontSize = 14.sp)
+        }
+        MessageKind.UNSUPPORTED -> Text(
+            message.text.ifBlank { "This message type cannot be displayed." },
+            color = foreground.copy(alpha = .8f),
+            fontSize = 13.sp
+        )
+    }
+}
+
+private fun sameDay(a: Long, b: Long): Boolean =
+    SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date(a)) ==
+        SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date(b))
+
+private fun messageAttachmentLabel(kind: MessageKind): String = when (kind) {
+    MessageKind.IMAGE -> "Photo"
+    MessageKind.VIDEO -> "Video"
+    MessageKind.AUDIO -> "Audio message"
+    MessageKind.STICKER -> "Sticker"
+    MessageKind.DOCUMENT -> "Document"
+    MessageKind.CONTACT -> "Contact"
+    MessageKind.LOCATION -> "Location"
+    MessageKind.POLL -> "Poll"
+    MessageKind.REACTION -> "Reaction"
+    MessageKind.RESPONSE -> "Message"
+    MessageKind.UNSUPPORTED -> "Attachment"
+    MessageKind.TEXT -> "Message"
+}
+
+@Composable
+private fun StudioPaletteAction(label: String, onClick: () -> Unit) {
+    Text(
+        label,
+        color = StudioPalette.Accent,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp)
+    )
+}

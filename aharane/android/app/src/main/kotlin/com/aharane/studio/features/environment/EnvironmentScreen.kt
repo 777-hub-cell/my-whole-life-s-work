@@ -241,7 +241,7 @@ private fun EnvDraftInput(
             singleLine = true,
             textStyle = TextStyle(
                 color = StudioPalette.Ink, fontSize = 14.sp,
-                fontFamily = if (monospace) FontFamily.Monospace else MaterialTheme.typography.bodyLarge.fontFamily
+                fontFamily = if (monospace) FontFamily.Monospace else FontFamily.SansSerif
             )
         )
     }

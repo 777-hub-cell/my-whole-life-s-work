@@ -173,6 +173,7 @@ fun AharaneApp(
                     MainDestination.FILES -> FilesScreen(
                         entries = if (previewMode) DesignPreviewFixtures.files.map { StudioFileEntry(it.name, it.path, it.isDirectory, it.sizeLabel) } else emptyList(),
                         connected = false,
+                        previewOnly = previewMode,
                         onEditorVisibility = {
                             editorFromConfiguration = false
                             editorOpen = it

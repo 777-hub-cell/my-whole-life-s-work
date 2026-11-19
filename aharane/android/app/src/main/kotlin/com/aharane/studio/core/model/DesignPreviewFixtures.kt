@@ -1,11 +1,15 @@
 package com.aharane.studio.core.model
 
-
-data class PreviewFile(val name: String, val path: String, val isDirectory: Boolean, val sizeLabel: String? = null)
+data class PreviewFile(
+    val name: String,
+    val path: String,
+    val isDirectory: Boolean,
+    val sizeLabel: String? = null
+)
 
 /**
- * UI-only fixtures for emulator layout verification. They are never loaded during
- * normal app launches and never represent live server data.
+ * Explicit debug-only fixtures for emulator layout verification.
+ * They are never used in normal launches or release builds.
  */
 object DesignPreviewFixtures {
     private val now = System.currentTimeMillis()
@@ -93,14 +97,14 @@ object DesignPreviewFixtures {
     val files = listOf(
         PreviewFile("admin", "admin", isDirectory = true),
         PreviewFile("commands", "commands", isDirectory = true),
-        StudioFileEntry("media", "media", isDirectory = true),
-        StudioFileEntry("auth.js", "admin/auth.js", isDirectory = false, sizeLabel = "1.2 KB"),
-        StudioFileEntry("config.js", "config.js", isDirectory = false, sizeLabel = "864 B"),
-        StudioFileEntry("index.js", "index.js", isDirectory = false, sizeLabel = "2.4 KB"),
-        StudioFileEntry("menu.js", "commands/menu.js", isDirectory = false, sizeLabel = "1.1 KB"),
-        StudioFileEntry("package.json", "package.json", isDirectory = false, sizeLabel = "536 B"),
-        StudioFileEntry("ping.js", "commands/ping.js", isDirectory = false, sizeLabel = "743 B"),
-        StudioFileEntry("README.md", "README.md", isDirectory = false, sizeLabel = "2.1 KB")
+        PreviewFile("media", "media", isDirectory = true),
+        PreviewFile("auth.js", "admin/auth.js", isDirectory = false, sizeLabel = "1.2 KB"),
+        PreviewFile("config.js", "config.js", isDirectory = false, sizeLabel = "864 B"),
+        PreviewFile("index.js", "index.js", isDirectory = false, sizeLabel = "2.4 KB"),
+        PreviewFile("menu.js", "commands/menu.js", isDirectory = false, sizeLabel = "1.1 KB"),
+        PreviewFile("package.json", "package.json", isDirectory = false, sizeLabel = "536 B"),
+        PreviewFile("ping.js", "commands/ping.js", isDirectory = false, sizeLabel = "743 B"),
+        PreviewFile("README.md", "README.md", isDirectory = false, sizeLabel = "2.1 KB")
     )
 
     val sourceFiles = mapOf(
@@ -146,138 +150,4 @@ module.exports = { startStudioBot };
 A private WhatsApp companion bot.
 """
     )
-
-    fun messageTimestamp(offsetMinutes: Long): Long = now - offsetMinutes * 60_000L
-}
-}{config.name}`);
-  return { ready: true };
-}
-
-module.exports = { startStudioBot };
-""",
-        "commands/menu.js" to """module.exports = async function menu(client, message) {
-  await message.reply('Aharane commands');
-};
-""",
-        "commands/ping.js" to """module.exports = async function ping(client, message) {
-  const started = Date.now();
-  await message.reply('Pong · ' + (Date.now() - started) + 'ms');
-};
-""",
-        "package.json" to """{
-  "name": "aharane",
-  "version": "1.0.0",
-  "private": true
-}
-""",
-        "README.md" to """# Aharane
-A private WhatsApp companion bot.
-"""
-    )
-
-    fun messageTimestamp(offsetMinutes: Long): Long = now - offsetMinutes * 60_000L
-}
-}{Date.now() - started}ms`);
-};
-""",
-        "package.json" to """{
-  "name": "aharane",
-  "version": "1.0.0",
-  "private": true
-}
-""",
-        "README.md" to """# Aharane
-A private WhatsApp companion bot.
-"""
-    )
-
-    fun messageTimestamp(offsetMinutes: Long): Long = now - offsetMinutes * 60_000L
-}
-}{config.name}`);
-  return { ready: true };
-}
-
-module.exports = { startStudioBot };
-""",
-        "commands/menu.js" to """module.exports = async function menu(client, message) {
-  await message.reply('Aharane commands');
-};
-""",
-        "commands/ping.js" to """module.exports = async function ping(client, message) {
-  const started = Date.now();
-  await message.reply(`Pong · ${Date.now() - started}ms`);
-};
-""",
-        "package.json" to """{
-  "name": "aharane",
-  "version": "1.0.0",
-  "private": true
-}
-""",
-        "README.md" to """# Aharane
-A private WhatsApp companion bot.
-"""
-    )
-
-    fun messageTimestamp(offsetMinutes: Long): Long = now - offsetMinutes * 60_000L
-}
-}{Date.now() - started}ms`);
-};
-""",
-        "package.json" to """{
-  "name": "aharane",
-  "version": "1.0.0",
-  "private": true
-}
-""",
-        "README.md" to """# Aharane
-A private WhatsApp companion bot.
-"""
-    )
-
-    fun messageTimestamp(offsetMinutes: Long): Long = now - offsetMinutes * 60_000L
-}
-}{Date.now() - started}ms`);
-};
-""",
-        "package.json" to """{
-  "name": "aharane",
-  "version": "1.0.0",
-  "private": true
-}
-""",
-        "README.md" to """# Aharane
-A private WhatsApp companion bot.
-"""
-    )
-
-    fun messageTimestamp(offsetMinutes: Long): Long = now - offsetMinutes * 60_000L
-}
-}{config.name}`);
-  return { ready: true };
-}
-
-module.exports = { startStudioBot };
-""",
-        "commands/menu.js" to """module.exports = async function menu(client, message) {
-  await message.reply('Aharane commands');
-};
-""",
-        "commands/ping.js" to """module.exports = async function ping(client, message) {
-  const started = Date.now();
-  await message.reply(`Pong · ${Date.now() - started}ms`);
-};
-""",
-        "package.json" to """{
-  "name": "aharane",
-  "version": "1.0.0",
-  "private": true
-}
-""",
-        "README.md" to """# Aharane
-A private WhatsApp companion bot.
-"""
-    )
-
-    fun messageTimestamp(offsetMinutes: Long): Long = now - offsetMinutes * 60_000L
 }

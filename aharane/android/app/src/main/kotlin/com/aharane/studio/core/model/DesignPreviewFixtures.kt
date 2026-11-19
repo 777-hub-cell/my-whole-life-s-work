@@ -1,7 +1,7 @@
 package com.aharane.studio.core.model
 
-import com.aharane.studio.features.files.StudioFileEntry
-import com.aharane.studio.features.files.StudioEditorDocument
+
+data class PreviewFile(val name: String, val path: String, val isDirectory: Boolean, val sizeLabel: String? = null)
 
 /**
  * UI-only fixtures for emulator layout verification. They are never loaded during
@@ -91,8 +91,8 @@ object DesignPreviewFixtures {
     )
 
     val files = listOf(
-        StudioFileEntry("admin", "admin", isDirectory = true),
-        StudioFileEntry("commands", "commands", isDirectory = true),
+        PreviewFile("admin", "admin", isDirectory = true),
+        PreviewFile("commands", "commands", isDirectory = true),
         StudioFileEntry("media", "media", isDirectory = true),
         StudioFileEntry("auth.js", "admin/auth.js", isDirectory = false, sizeLabel = "1.2 KB"),
         StudioFileEntry("config.js", "config.js", isDirectory = false, sizeLabel = "864 B"),

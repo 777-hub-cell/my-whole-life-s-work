@@ -95,6 +95,9 @@ export function createChatStore({ dataDir, logger = console } = {}) {
   const readMarkers = Object.fromEntries(['private', 'public'].map(id => [id, join(root, id + '.read.json')]))
   const queues = new Map()
   const ready = new Set()
+  const initializing = new Map()
+  const knownMessageKeys = new Map([...ACCOUNTS].map(id => [id, new Set()]))
+  const MAX_KNOWN_MESSAGE_KEYS = 10000
 
   async function init() {
     await mkdir(root, { recursive: true, mode: 0o700 })
@@ -108,8 +111,31 @@ export function createChatStore({ dataDir, logger = console } = {}) {
   async function ensureReady(id) {
     const account = accountId(id)
     if (ready.has(account)) return
-    await init()
-    ready.add(account)
+    if (!initializing.has(account)) {
+      const task = (async () => {
+        await init()
+        const text = await readFile(files[account], 'utf8').catch(error => {
+          if (error?.code === 'ENOENT') return ''
+          throw error
+        })
+        const keys = knownMessageKeys.get(account)
+        const lines = text.split(String.fromCharCode(10)).filter(Boolean).slice(-MAX_KNOWN_MESSAGE_KEYS)
+        for (const line of lines) {
+          try {
+            const row = JSON.parse(line)
+            if (row && safeJid(row.jid) && typeof row.id === 'string') keys.add(row.jid + '|' + row.id)
+          } catch {}
+        }
+        ready.add(account)
+      })()
+      initializing.set(account, task)
+    }
+    const pending = initializing.get(account)
+    try {
+      await pending
+    } finally {
+      if (initializing.get(account) === pending) initializing.delete(account)
+    }
   }
 
   function enqueue(id, task) {
@@ -156,10 +182,13 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     const account = accountId(id)
     await ensureReady(account)
     return enqueue(account, async () => {
-      const rows = await readRows(account)
-      if (rows.some(row => row.id === record.id && row.jid === record.jid)) return record
-      await appendFile(files[account], JSON.stringify(record) + '\n', { encoding: 'utf8', mode: 0o600 })
+      const key = record.jid + '|' + record.id
+      const known = knownMessageKeys.get(account)
+      if (known.has(key)) return record
+      await appendFile(files[account], JSON.stringify(record) + String.fromCharCode(10), { encoding: 'utf8', mode: 0o600 })
       await chmod(files[account], 0o600)
+      known.add(key)
+      if (known.size > MAX_KNOWN_MESSAGE_KEYS) known.delete(known.values().next().value)
       return record
     })
   }

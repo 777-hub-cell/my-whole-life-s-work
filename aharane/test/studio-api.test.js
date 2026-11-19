@@ -223,3 +223,55 @@ test('Web Chat supports persistent chat preferences, per-conversation search, qu
  for(const marker of ['chatPreferences','chat-searchbar','openMessageMenuP','downloadChatMediaP','toggleChatPreferenceP','switchChats=switchChatsP','X-Voice-Note'])assert.ok(bridge.includes(marker),marker)
  for(const marker of ['rec-waveform','MediaRecorder','analyser.getByteFrequencyData','openMessageMenuP','data-chat-pref','reaction-chips'])assert.ok(app.includes(marker),marker)
 })
+
+
+test('rate limits use only the trusted loopback reverse proxy and command cooldown is command-only', async () => {
+ const source=await read('../src/index.js')
+ assert.ok(source.includes("app.set('trust proxy', 'loopback')"))
+ const handler=source.slice(source.indexOf('async function handleMessages'),source.indexOf("publicCommandRegistry = await loadCommandRegistry"))
+ assert.ok(handler.indexOf('parseCommand(text, prefix)')<handler.indexOf('allowCommand(sessionId +'))
+ assert.ok(handler.includes('!registry?.commands?.has(parsedCommand.name)'))
+})
+
+test('legacy public pairing cannot override the configured Public bot number', async () => {
+ const source=await read('../src/index.js')
+ const start=source.indexOf("app.post('/api/pair-code'")
+ const end=source.indexOf("app.get('/api/update/status'",start)
+ const route=source.slice(start,end)
+ assert.ok(route.includes('phoneNumber !== ownerConfig.publicBotNumber'))
+ assert.ok(route.includes("requestPairingCode('public', ownerConfig.publicBotNumber)"))
+})
+
+test('deployment locks are shared by source mutations, manual Apply, ZIP and Git installer', async () => {
+ const runtime=await read('../src/index.js')
+ const installer=await read('../install-azure.sh')
+ assert.ok(runtime.includes("const DEPLOY_LOCK_DIR = join(DATA_DIR, 'deploy-lock')"))
+ assert.ok(runtime.includes("acquireDeployLock('source-mutation')"))
+ assert.ok(runtime.includes("req.deployLockAcquired"))
+ assert.ok(runtime.includes("setDeployLockSource('manual-files')"))
+ assert.ok(runtime.includes("setDeployLockSource('zip-update')"))
+ const start=installer.indexOf("cat > /usr/local/lib/aharane/verify-update.mjs <<'VERIFY'")
+ const end=installer.indexOf("\nVERIFY",start)
+ const verifier=installer.slice(start,end)
+ assert.ok(verifier.includes("owner?.source === 'git'"))
+ assert.ok(verifier.includes("rm('/var/lib/aharane/deploy-lock'"))
+ assert.ok(installer.includes('mkdir "$LOCK_DIR"'))
+ assert.ok(installer.includes('"$BASHPID" "$SOURCE_SHA"'))
+})
+
+test('bulk delete stages every item and commits one journal operation before cleanup', async () => {
+ const source=await read('../src/index.js')
+ const start=source.indexOf("app.post('/api/files/delete'")
+ const end=source.indexOf("app.post('/api/files/apply'",start)
+ const route=source.slice(start,end)
+ assert.ok(route.includes('const stagedTombstones = []'))
+ assert.ok(route.includes('await recordManualEdits(stagedTombstones.map'))
+ assert.ok(route.includes('for (const item of [...stagedTombstones].reverse())'))
+ assert.ok(route.includes('cleanupPending'))
+})
+
+test('manual dependency manifest changes are directed to the ZIP update installer', async () => {
+ const source=await read('../src/index.js')
+ assert.ok(source.includes("normalized === 'package.json' || normalized === 'package-lock.json'"))
+ assert.ok(source.includes('must be deployed as a validated ZIP update'))
+})

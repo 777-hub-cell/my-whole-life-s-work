@@ -161,7 +161,7 @@ export function createAccountRuntime({
     session.reconnectTimer.unref?.()
   }
 
-  async function start(id, { deferUnregistered = false } = {}) {
+  async function startInternal(id, { deferUnregistered = false } = {}) {
     const session = get(id)
     if (shuttingDown) return null
     if (session.socket) return session.socket
@@ -295,7 +295,7 @@ export function createAccountRuntime({
     }
   }
 
-  async function requestPairingCode(id, phoneNumber) {
+  async function requestPairingCodeInternal(id, phoneNumber) {
     const session = get(id)
     if (session.pairRequestActive) throw Object.assign(new Error('A pairing request is already in progress.'), { status: 409 })
     if (session.registered) throw Object.assign(new Error('This WhatsApp account is already paired.'), { status: 409 })
@@ -305,7 +305,7 @@ export function createAccountRuntime({
     session.pairRequestActive = true
     emit()
     try {
-      const currentSocket = session.socket || await start(id)
+      const currentSocket = session.socket || await startInternal(id)
       if (!currentSocket) throw new Error('WhatsApp socket is unavailable.')
       await waitUntilReady(id)
       if (session.socket !== currentSocket) throw new Error('WhatsApp session changed during pairing. Retry the request.')
@@ -341,7 +341,7 @@ export function createAccountRuntime({
     return sessionSnapshot(session)
   }
 
-  async function stop(id) {
+  async function stopInternal(id) {
     const session = get(id)
     session.manuallyStopped = true
     session.qr = ''
@@ -363,16 +363,16 @@ export function createAccountRuntime({
     return sessionSnapshot(session)
   }
 
-  async function restart(id) {
+  async function restartInternal(id) {
     const session = get(id)
-    await stop(id)
+    await stopInternal(id)
     await wait(150)
     session.manuallyStopped = false
-    await start(id)
+    await startInternal(id)
     return sessionSnapshot(session)
   }
 
-  async function repair(id, backupRoot) {
+  async function repairInternal(id, backupRoot) {
     const session = get(id)
     if (session.state !== 'needs-pairing') {
       throw Object.assign(new Error('Re-pair is only available after WhatsApp rejects the saved session. Use reconnect for ordinary connection problems.'), { status: 409 })
@@ -420,24 +420,27 @@ export function createAccountRuntime({
     return { ...sessionSnapshot(session), backupCreated: Boolean(backupId) }
   }
 
+  const sessionOperationTails = new Map()
+  function serializeSessionOperation(id, operation) {
+    const key = accountId(id)
+    const previous = sessionOperationTails.get(key) || Promise.resolve()
+    const current = previous.catch(() => {}).then(operation)
+    let tracked
+    tracked = current.catch(() => {}).finally(() => {
+      if (sessionOperationTails.get(key) === tracked) sessionOperationTails.delete(key)
+    })
+    sessionOperationTails.set(key, tracked)
+    return current
+  }
+  function start(id, options) { return serializeSessionOperation(id, () => startInternal(id, options)) }
+  function requestPairingCode(id, phoneNumber) { return serializeSessionOperation(id, () => requestPairingCodeInternal(id, phoneNumber)) }
+  function stop(id) { return serializeSessionOperation(id, () => stopInternal(id)) }
+  function restart(id) { return serializeSessionOperation(id, () => restartInternal(id)) }
+  function repair(id, backupRoot) { return serializeSessionOperation(id, () => repairInternal(id, backupRoot)) }
+
   async function shutdown() {
     shuttingDown = true
-    for (const session of sessions.values()) {
-      session.manuallyStopped = true
-      session.qr = ''
-      if (session.reconnectTimer) clearTimeout(session.reconnectTimer)
-      session.reconnectTimer = null
-      const currentSocket = session.socket
-      session.socket = null
-      try { await session.auth?.saveCreds?.() } catch {
-        logger.warn?.({ event: 'auth.save-on-shutdown-failed', accountId: session.id })
-      }
-      if (currentSocket) {
-        try { currentSocket.end?.(undefined) } catch {}
-      }
-      session.state = 'stopped'
-    }
-    emit()
+    await Promise.all(SESSION_IDS.map(id => serializeSessionOperation(id, () => stopInternal(id))))
   }
 
   return {

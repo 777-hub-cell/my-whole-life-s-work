@@ -46,6 +46,7 @@ fun FilesScreen(
     onEditorVisibility: (Boolean) -> Unit,
     entries: List<StudioFileEntry> = emptyList(),
     connected: Boolean = false,
+    previewOnly: Boolean = false,
     onCreateFile: () -> Unit = {},
     onCreateFolder: () -> Unit = {},
     onUpload: () -> Unit = {},
@@ -269,7 +270,7 @@ fun FilesScreen(
                                     currentPath = entry.path
                                     query = ""
                                     selectedPaths.clear()
-                                } else if (action == "open" || connected) {
+                                } else if (connected || (previewOnly && action == "open")) {
                                     onEntryAction(entry, action)
                                 } else {
                                     Toast.makeText(context, "Connect to your Aharane server to manage files.", Toast.LENGTH_SHORT).show()

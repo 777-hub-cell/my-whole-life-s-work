@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +40,9 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.unit.IntOffset
 import com.aharane.studio.core.navigation.MainDestination
+
+val LocalStudioCornerScale = staticCompositionLocalOf { 1f }
+val LocalStudioRowScale = staticCompositionLocalOf { 1f }
 
 @Composable
 fun StudioHeader(onStatusClick: () -> Unit) {
@@ -180,7 +184,7 @@ fun StudioCard(
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = StudioPalette.Surface,
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(18.dp * LocalStudioCornerScale.current),
         border = BorderStroke(1.dp, StudioPalette.Line),
         shadowElevation = 1.dp
     ) {
@@ -227,14 +231,14 @@ fun StudioRow(
     Row(
         modifier = Modifier.fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 14.dp, vertical = 10.dp)
-            .heightIn(min = 40.dp),
+            .padding(horizontal = 14.dp, vertical = 10.dp * LocalStudioRowScale.current)
+            .heightIn(min = 40.dp * LocalStudioRowScale.current),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (icon != null) {
             Box(
-                Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)).background(StudioPalette.Background),
+                Modifier.size(38.dp).clip(RoundedCornerShape(11.dp * LocalStudioCornerScale.current)).background(StudioPalette.Background),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(icon, contentDescription = null, tint = StudioPalette.Muted, modifier = Modifier.size(20.dp))
@@ -272,7 +276,7 @@ fun StudioActionButton(
         destructive -> StudioPalette.Bad
         else -> StudioPalette.Ink
     }
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(12.dp * LocalStudioCornerScale.current)
     Box(
         modifier = modifier.defaultMinSize(minHeight = if (compact) 36.dp else 44.dp)
             .clip(shape)
@@ -298,7 +302,7 @@ fun StudioSearchField(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth().heightIn(min = 46.dp),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(12.dp * LocalStudioCornerScale.current),
         color = StudioPalette.Surface,
         border = BorderStroke(1.dp, StudioPalette.Line)
     ) {
@@ -329,12 +333,12 @@ fun StudioSearchField(
 @Composable
 fun StudioSegmented(options: List<String>, selected: String, onSelect: (String) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(StudioPalette.Background).padding(3.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp * LocalStudioCornerScale.current)).background(StudioPalette.Background).padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         options.forEach { option ->
             val active = option == selected
-            val shape = RoundedCornerShape(9.dp)
+            val shape = RoundedCornerShape(9.dp * LocalStudioCornerScale.current)
             Box(
                 Modifier.weight(1f).defaultMinSize(minHeight = 38.dp).clip(shape)
                     .then(if (active) Modifier.shadow(1.dp, shape).background(StudioPalette.Surface)

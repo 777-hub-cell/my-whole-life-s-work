@@ -55,7 +55,7 @@ fun CodeEditorScreen(
         }
     }
 
-    Column(modifier.fillMaxSize().background(EditorBackground)) {
+    Column(modifier.fillMaxSize().background(EditorBackground).navigationBarsPadding()) {
         Row(
             Modifier.fillMaxWidth().height(46.dp).background(EditorPanel),
             verticalAlignment = Alignment.CenterVertically

@@ -64,7 +64,7 @@ def back():
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    run("adb", "install", "artifacts/app-debug.apk")
+    run("adb", "install", "-r", "artifacts/app-debug.apk")
     run(
         "adb", "shell", "am", "start", "-n", "com.aharane.studio/.MainActivity",
         "--ez", "aharane_preview_mode", "true"

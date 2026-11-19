@@ -92,14 +92,7 @@ jobs:
             sleep 2
             adb exec-out screencap -p > screenshots/03-files.png
 
-            adb shell uiautomator dump /sdcard/aharane-window.xml >/dev/null 2>&1
-            adb shell cat /sdcard/aharane-window.xml > /tmp/aharane-window.xml
-            grep -q 'text="Open editor"' /tmp/aharane-window.xml || { adb shell input swipe 540 2000 540 1100 300; sleep 1; adb shell uiautomator dump /sdcard/aharane-window.xml >/dev/null 2>&1; adb shell cat /sdcard/aharane-window.xml > /tmp/aharane-window.xml; }
-            python3 -c "import re,subprocess,xml.etree.ElementTree as ET; root=ET.parse('/tmp/aharane-window.xml').getroot(); node=next((n for n in root.iter('node') if n.attrib.get('text') == 'Open editor' or n.attrib.get('content-desc') == 'Open editor'),None); assert node is not None, 'Could not locate native Open editor control'; bounds=re.search(r'\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]',node.attrib.get('bounds','')); assert bounds, 'Open editor has no screen bounds'; x1,y1,x2,y2=map(int,bounds.groups()); subprocess.run(['adb','shell','input','tap',str((x1+x2)//2),str((y1+y2)//2)],check=True)"
-            sleep 3
-            adb exec-out screencap -p > screenshots/03a-editor.png
-            adb shell input keyevent 4
-            sleep 1
+            python3 aharane/android/scripts/capture_editor_screenshot.py
 
             adb shell input tap 756 2232
             sleep 2

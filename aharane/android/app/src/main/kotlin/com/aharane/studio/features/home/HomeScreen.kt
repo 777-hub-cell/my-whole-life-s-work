@@ -8,7 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -112,9 +112,10 @@ fun HomeScreen(
                 StudioRow(
                     title = "Configuration",
                     subtitle = "Private Owner · Not loaded · Public Owner · Not loaded · Public bot number · Not loaded",
-                    icon = Icons.Outlined.Settings,
+                    icon = Icons.Outlined.Tune,
                     trailing = "›",
-                    onClick = onOpenConfiguration
+                    onClick = onOpenConfiguration,
+                    subtitleMaxLines = 1
                 )
             }
         }

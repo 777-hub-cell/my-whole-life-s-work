@@ -122,7 +122,7 @@ def main():
     # empty/disconnected UI can be compared directly to the web reference.
     run("adb", "shell", "am", "force-stop", "com.aharane.studio")
     run("adb", "shell", "am", "start", "-n", "com.aharane.studio/.MainActivity")
-    capture("07-home-disconnected.png", 3)
+    capture("07-home-disconnected.png", 8)
     tap_label("Files")
     capture("08-files-disconnected.png")
     tap_label("ENV")

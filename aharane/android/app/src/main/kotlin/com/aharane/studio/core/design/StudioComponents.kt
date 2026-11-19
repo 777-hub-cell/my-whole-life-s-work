@@ -226,7 +226,8 @@ fun StudioRow(
     icon: ImageVector? = null,
     trailing: String? = null,
     onClick: (() -> Unit)? = null,
-    trailingContent: (@Composable RowScope.() -> Unit)? = null
+    trailingContent: (@Composable RowScope.() -> Unit)? = null,
+    subtitleMaxLines: Int = 2
 ) {
     Row(
         modifier = Modifier.fillMaxWidth()

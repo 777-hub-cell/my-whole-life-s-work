@@ -16,6 +16,7 @@ import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -103,6 +104,7 @@ fun FilesScreen(
         }
         item {
             FlowRow(
+                maxItemsInEachRow = 3,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -283,7 +285,22 @@ fun FilesScreen(
             Spacer(Modifier.height(10.dp))
         }
         item {
-            StudioSectionHeading("Update packages", action = "View all", onAction = { packagesOpen = true })
+            Row(
+                Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Update packages",
+                    color = StudioPalette.Ink,
+                    fontFamily = MaterialTheme.typography.titleLarge.fontFamily,
+                    fontSize = 17.sp,
+                    lineHeight = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.15).sp
+                )
+                Spacer(Modifier.weight(1f))
+                StudioActionButton("View all", compact = true, onClick = { packagesOpen = true })
+            }
             Text(
                 "0 saved ZIP package(s)",
                 color = StudioPalette.Muted,

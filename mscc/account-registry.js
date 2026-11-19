@@ -1,9 +1,10 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, join, resolve } from 'node:path'
 
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const PHONE_RE = /^\d{7,15}$/
+export const ACCOUNT_SLOTS = Object.freeze([...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'])
 
 const digits = value => String(value || '').replace(/\D/g, '')
 
@@ -18,8 +19,15 @@ function normalizeRecord(row) {
   const phoneNumber = digits(row?.phoneNumber)
   const authDir = String(row?.authDir || '').trim()
   if (!ID_RE.test(id) || !PHONE_RE.test(phoneNumber) || !authDir) return null
+  const rawSlot = String(row?.slot || '').trim().toUpperCase()
+  if (rawSlot && !ACCOUNT_SLOTS.includes(rawSlot)) throw new Error('Invalid account slot in saved registry')
+  const letterId = /^[A-Z]$/i.test(id) ? id.toUpperCase() : ''
+  if (letterId && rawSlot && letterId !== rawSlot) {
+    throw new Error('Letter account ID and account slot must match')
+  }
   return {
     id,
+    slot: rawSlot || letterId,
     phoneNumber,
     displayName: String(row?.displayName || '').trim().slice(0, 48),
     authDir: resolve(authDir),
@@ -41,10 +49,10 @@ function assertUniqueAuthDirs(records) {
 }
 
 export class AccountRegistry {
-  constructor({ file, authRoot, maxAccounts = 2, legacy = [] }) {
+  constructor({ file, authRoot, maxAccounts = 26, legacy = [] }) {
     this.file = resolve(file)
     this.authRoot = resolve(authRoot)
-    this.maxAccounts = Math.max(1, Math.min(50, Number(maxAccounts) || 2))
+    this.maxAccounts = Math.max(1, Math.min(26, Number(maxAccounts) || 26))
     this.legacy = legacy
     this.records = new Map()
     this.nextSequence = 1
@@ -68,6 +76,10 @@ export class AccountRegistry {
     if (this.records.has(raw)) return raw
     const lower = raw.toLowerCase()
     for (const id of this.records.keys()) if (id.toLowerCase() === lower) return id
+    const requestedSlot = raw.toUpperCase()
+    if (ACCOUNT_SLOTS.includes(requestedSlot)) {
+      for (const row of this.records.values()) if (row.slot === requestedSlot) return row.id
+    }
     return ''
   }
 
@@ -76,11 +88,25 @@ export class AccountRegistry {
     return id ? { ...this.records.get(id) } : null
   }
 
+  slots() {
+    const occupied = new Map([...this.records.values()].map(row => [row.slot, row]))
+    return ACCOUNT_SLOTS.map(slot => {
+      const row = occupied.get(slot)
+      return {
+        slot,
+        occupied: Boolean(row),
+        id: row?.id || null,
+        displayName: row?.displayName || '',
+      }
+    })
+  }
+
   entitlements() {
     return {
       count: this.records.size,
       maxAccounts: this.maxAccounts,
       canAddAccount: this.records.size < this.maxAccounts,
+      availableSlots: this.slots().filter(row => !row.occupied).map(row => row.slot),
     }
   }
 
@@ -91,15 +117,20 @@ export class AccountRegistry {
     } catch (error) {
       if (error?.code !== 'ENOENT') throw error
     }
+    if (raw !== null && !Array.isArray(raw?.accounts)) {
+      throw new Error('Saved account registry has no valid accounts array')
+    }
 
     this.records.clear()
     for (const row of raw?.accounts || []) {
       const record = normalizeRecord(row)
-      if (record && !this.records.has(record.id)) this.records.set(record.id, record)
+      if (!record) throw new Error('Saved account registry contains an invalid record')
+      if (this.records.has(record.id)) throw new Error('Duplicate account ID in saved registry')
+      this.records.set(record.id, record)
     }
 
     let needsSave = false
-    if (!this.records.size) {
+    if (!this.records.size && raw === null) {
       for (const row of this.legacy) {
         const record = normalizeRecord(row)
         if (record && !this.records.has(record.id)) this.records.set(record.id, record)
@@ -113,39 +144,63 @@ export class AccountRegistry {
       )
     }
 
+    if (this.records.size > ACCOUNT_SLOTS.length) {
+      throw new Error('Saved registry exceeds 26 personal account slots')
+    }
     assertUniqueAuthDirs(this.records.values())
-
-    if (this.records.size) {
-      if (!this.records.has('A')) {
-        const previousMain =
-          [...this.records.values()].find(row => row.role === 'owner') ||
-          this.records.values().next().value
-        if (previousMain) {
-          this.records.delete(previousMain.id)
-          previousMain.id = 'A'
-          this.records.set('A', previousMain)
-          needsSave = true
-        }
-      }
-
-      const preferredMain = this.records.get('A')
-
-      for (const record of this.records.values()) {
-        const role = record.id === preferredMain.id ? 'owner' : 'linked'
-        if (record.role !== role) {
-          record.role = role
-          needsSave = true
-        }
-        if (!record.displayName) {
-          record.displayName = defaultDisplayName(record.id, role)
-          needsSave = true
-        }
-      }
-
-      if (preferredMain.id === 'A') this.nextSequence = Math.max(2, this.nextSequence)
+    const phones = new Set()
+    for (const row of this.records.values()) {
+      if (phones.has(row.phoneNumber)) throw new Error('Duplicate WhatsApp number in saved registry')
+      phones.add(row.phoneNumber)
     }
 
-    if (needsSave) await this.save()
+    if (this.records.size) {
+      // Never mutate an existing internal ID: shared storage, group routes,
+      // messages and auth directory paths are all keyed by this stable ID.
+      if (!this.records.has('A')) {
+        throw new Error('Account A is missing; refusing an unsafe automatic ID migration')
+      }
+      const used = new Map()
+      for (const row of this.records.values()) {
+        if (!row.slot) continue
+        if ((row.id === 'A') !== (row.slot === 'A')) {
+          throw new Error('Only permanent Account A may occupy slot A')
+        }
+        if (used.has(row.slot)) throw new Error('Duplicate A–Z account slot in saved registry')
+        used.set(row.slot, row.id)
+      }
+      // Reserve letter-named accounts first, then allocate unassigned legacy
+      // account-<sequence> records in saved order. Existing IDs are untouched.
+      for (const row of this.records.values()) {
+        if (!row.slot) {
+          const available = ACCOUNT_SLOTS.slice(1).find(slot => !used.has(slot))
+          if (!available) throw new Error('No A–Z account slot available for legacy record')
+          row.slot = available
+          used.set(available, row.id)
+          needsSave = true
+        }
+        const role = row.id === 'A' ? 'owner' : 'linked'
+        if (row.role !== role) {
+          row.role = role
+          needsSave = true
+        }
+        if (!row.displayName) {
+          row.displayName = defaultDisplayName(row.id, role)
+          needsSave = true
+        }
+      }
+      this.nextSequence = Math.max(2, this.nextSequence)
+    }
+
+    if (needsSave) {
+      if (raw !== null) {
+        // Migration recovery copy: no WhatsApp auth file or internal ID moves.
+        const backup = this.file + '.pre-az-' + randomUUID() + '.bak'
+        await copyFile(this.file, backup)
+        await chmod(backup, 0o600)
+      }
+      await this.save()
+    }
     return this.list()
   }
 
@@ -174,7 +229,7 @@ export class AccountRegistry {
 
   save() {
     const content = JSON.stringify({
-      version: 2,
+      version: 3,
       savedAt: Date.now(),
       nextSequence: this.nextSequence,
       accounts: this.list(),
@@ -194,7 +249,7 @@ export class AccountRegistry {
     return task
   }
 
-  create({ phoneNumber, displayName = '' }) {
+  create({ phoneNumber, displayName = '', slot = '' }) {
     return this._mutate(async () => {
       if (this.records.size >= this.maxAccounts) {
         throw new Error(`Account limit reached (${this.records.size}/${this.maxAccounts})`)
@@ -205,26 +260,39 @@ export class AccountRegistry {
         throw new Error('That WhatsApp number is already registered')
       }
 
-      const firstAccount = this.records.size === 0
-      let id
-      if (firstAccount) {
-        id = 'A'
-        this.nextSequence = Math.max(this.nextSequence, 2)
-      } else {
-        do {
-          id = `account-${this.nextSequence++}`
-        } while (this.records.has(id))
+      const requested = String(slot || '').trim().toUpperCase()
+      if (requested && !ACCOUNT_SLOTS.includes(requested)) {
+        throw new Error('Slot must be one letter from A to Z')
       }
+      const firstAccount = this.records.size === 0
+      if (firstAccount && requested && requested !== 'A') {
+        throw new Error('The first account must occupy permanent slot A')
+      }
+      if (!firstAccount && requested === 'A') {
+        throw new Error('Slot A is reserved for the permanent main account')
+      }
+      const used = new Set([...this.records.values()].map(row => row.slot))
+      const selected = firstAccount
+        ? 'A'
+        : (requested || ACCOUNT_SLOTS.slice(1).find(candidate => !used.has(candidate)))
+      if (!selected || used.has(selected) || this.records.has(selected)) {
+        throw new Error('The requested account slot is already occupied or unavailable')
+      }
+      const id = selected
+      if (firstAccount) this.nextSequence = Math.max(this.nextSequence, 2)
+      // A reused letter must NEVER inherit credentials from an older account.
+      // New linked accounts get a distinct random authentication directory.
       const record = {
         id,
+        slot: selected,
         phoneNumber: number,
         displayName: String(displayName || '').trim().slice(0, 48) || defaultDisplayName(id, firstAccount ? 'owner' : 'linked'),
-        authDir: firstAccount ? join(this.authRoot, 'A') : join(this.authRoot, id),
+        authDir: firstAccount ? join(this.authRoot, 'A') : join(this.authRoot, selected + '-' + randomUUID()),
         role: firstAccount ? 'owner' : 'linked',
         paused: false,
         createdAt: Date.now(),
       }
-      await mkdir(record.authDir, { recursive: true })
+      await mkdir(record.authDir, { recursive: true, mode: 0o700 })
       this.records.set(id, record)
       return { ...record }
     })

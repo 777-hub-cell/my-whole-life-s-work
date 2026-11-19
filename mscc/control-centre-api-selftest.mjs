@@ -23,6 +23,8 @@ const state = {
     { id: 'unassigned', displayName: 'Unassigned', capabilities: [], universal: false, basePriority: 0 },
     { id: 'josiah', displayName: 'Josiah', capabilities: [{ capability: 'general', priority: 100 }], universal: true, basePriority: 100 },
   ],
+  accountSlots: [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map(slot => ({ slot, occupied: ['A', 'B'].includes(slot), id: ['A', 'B'].includes(slot) ? slot : null })),
+  entitlements: { maxAccounts: 26 },
   accounts: [
     { id: 'A', displayName: 'Private Control', role: 'owner', profile: 'control', connected: true, enabled: true, numberMasked: '+234***0001', lastConnectedAt: Date.now() },
     { id: 'B', displayName: 'Public Session', role: 'linked', profile: 'josiah', connected: false, enabled: true, registered:false, invalid:false, savedAuthPresent:false, numberMasked: '+234***0002' },
@@ -199,14 +201,26 @@ try {
   const overview = await call('/api/control-centre/overview')
   assert.equal(overview.status, 200)
   assert.equal(overview.payload.data.fleet.total, 2)
+  assert.equal(overview.payload.data.fleet.capacity, 26)
   assert.equal(overview.payload.data.messages24h, null, 'must not fabricate a message count')
   const activity = await call('/api/control-centre/activity')
   assert.equal(activity.status, 200)
   assert.equal(JSON.stringify(activity.payload).includes('should-not-leak'), false, 'nested credential fields must be removed')
   const accounts = await call('/api/control-centre/accounts')
   assert.equal(accounts.payload.data[0].id, 'A')
+  assert.equal(accounts.payload.data[0].slot, 'A')
   assert.equal(accounts.payload.data[0].session, 'Private control')
   assert.equal(accounts.payload.data[0].phone, '+234***0001')
+  const slots = await call('/api/control-centre/account-slots')
+  assert.equal(slots.status, 200)
+  assert.equal(slots.payload.data.length, 26)
+  assert.equal(slots.payload.data[0].occupied, true)
+  assert.equal(slots.payload.data[2].slot, 'C')
+  assert.equal(slots.payload.data[2].occupied, false)
+  const reserved = await call('/api/control-centre/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: { name:'Blocked', phone:'2348000000004', slot:'A' } })
+  assert.equal(reserved.status, 400)
+  const occupied = await call('/api/control-centre/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: { name:'Blocked', phone:'2348000000004', slot:'B' } })
+  assert.equal(occupied.status, 409)
 
   // Account A stays private, and other linked sessions cannot acquire Control.
   const moveA = await call('/api/control-centre/accounts/A', {

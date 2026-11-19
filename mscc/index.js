@@ -1,4 +1,4 @@
-import { appendFile, chmod, cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, chmod, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
@@ -155,7 +155,7 @@ const MANAGED_ENV_FILE = process.env.MSCC_MANAGED_ENV_FILE || join(dirname(SETTI
 const MANAGED_ENV_SCHEMA = Object.freeze({
   MESSAGE_TTL_HOURS: { label:'Message retention (hours)', description:'How long indexed message metadata is retained.', min:1, max:168, default:24 },
   MAX_MESSAGE_CACHE: { label:'Message cache limit', description:'Maximum cached messages per account.', min:100, max:20000, default:5000 },
-  MAX_ACCOUNTS: { label:'Maximum linked accounts', description:'Maximum number of WhatsApp account records.', min:1, max:50, default:4 },
+  MAX_ACCOUNTS: { label:'Maximum linked accounts', description:'Maximum number of WhatsApp account records (A–Z).', min:1, max:26, default:26 },
   GROUP_META_TTL_SECONDS: { label:'Group metadata cache (seconds)', description:'How long group metadata can be reused before refreshing.', min:10, max:600, default:60 },
   GROUP_META_CACHE_MAX: { label:'Group metadata cache size', description:'Maximum group metadata entries kept in memory.', min:16, max:1024, default:128 },
   AI_HISTORY_DAYS: { label:'AI history retention (days)', description:'How long conversational history is retained.', min:1, max:365, default:30 },
@@ -219,7 +219,7 @@ const ACTIVITY_FILE = process.env.MSCC_ACTIVITY_FILE || join(dirname(SETTINGS_FI
 const AUTH_BACKUP_DIR = process.env.AUTH_BACKUP_DIR || '/var/backups/mscc'
 const TTL_MS = num('MESSAGE_TTL_HOURS', 24, 1, 168) * 3600000
 const MAX_CACHE = num('MAX_MESSAGE_CACHE', 5000, 100, 20000)
-const MAX_ACCOUNTS = num('MAX_ACCOUNTS', 4, 1, 50)
+const MAX_ACCOUNTS = num('MAX_ACCOUNTS', 26, 1, 26)
 const GROUP_META_TTL_MS = num('GROUP_META_TTL_SECONDS', 60, 10, 600) * 1000
 const GROUP_META_CACHE_MAX = num('GROUP_META_CACHE_MAX', 128, 16, 1024)
 const AI_HISTORY_DAYS = num('AI_HISTORY_DAYS', 30, 1, 365)
@@ -278,6 +278,7 @@ const squidGame = createSquidGame({
 let squidGameTimer = null
 const makeAccount = record => ({
   id: record.id,
+  slot: record.slot,
   number: record.phoneNumber,
   authDir: record.authDir,
   displayName: record.displayName || '',
@@ -337,6 +338,7 @@ async function createAccount(input = {}) {
     ok: true,
     account: {
       id: account.id,
+      slot: account.slot,
       displayName: account.displayName,
       role: account.role,
       profile: sharedStorage?.profileForAccount(account.id)?.id || 'unassigned',
@@ -430,8 +432,18 @@ async function getAccountDiagnostics(value, limit = 40) {
   const account = resolved ? accounts.get(resolved) : null
   if (!account) return null
 
+  // Only expose backup existence, never backup paths or auth contents.
+  let backupAvailable = false
+  try {
+    const names = await readdir(AUTH_BACKUP_DIR)
+    backupAvailable = names.some(name => name.startsWith('account-' + account.id + '-'))
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
   const snapshot = sessionSnapshot({
     ...account,
+    slot: account.slot,
+    backupAvailable,
     profile: sharedStorage?.profileForAccount(account.id)?.id || 'unassigned',
     numberMasked: masked(account.number),
     status: statusOf(account),
@@ -3288,7 +3300,7 @@ async function startAccount(account) {
       account.pairingQr = ''
       account.pairingError = ''
       account.lastQr = ''
-      console.log(`[${account.id}] connected as ${sock.user?.id || account.number}`)
+      console.log(`[${account.id}] connected (${masked(account.number)})`)
       await recordActivity('account.connected', {
         account: account.id,
         displayName: account.displayName,
@@ -3740,6 +3752,7 @@ function commandDiagnostics() {
     publicCommandsEnabled: settings.publicCommandsEnabled !== false,
     accounts: [...accounts.values()].map(a => ({
       id: a.id,
+      slot: a.slot,
       displayName: a.displayName,
       role: a.role,
       profile: sharedStorage?.profileForAccount(a.id)?.id || 'unassigned',
@@ -3764,10 +3777,10 @@ async function statusText(ping = false) {
   const mem = process.memoryUsage()
   const fixedDestination = destinationIdFor()
   const accountLines = [...accounts.values()].map(account => {
-    const name = account.displayName || `Account ${account.id}`
+    const name = account.displayName || `Account ${account.slot || account.id}`
     const marker = account.id === fixedDestination ? ' • CC inbox' : ''
     const profile = sharedStorage?.profileForAccount(account.id)?.id || 'unassigned'
-    return `${name} [${account.id}] • ${profile}: ${statusOf(account)} • ${countFor(account.id)}/${MAX_CACHE}${marker}`
+    return `${name} [${account.slot || account.id}] • ${profile}: ${statusOf(account)} • ${countFor(account.id)}/${MAX_CACHE}${marker}`
   })
   return [
     ping ? '🏓 Night' : null,
@@ -3807,9 +3820,12 @@ async function webState() {
     })) || [],
     entitlements: {
       maxAccounts: accountRegistry.maxAccounts,
+      availableSlots: accountRegistry.slots().filter(row => !row.occupied).map(row => row.slot),
     },
+    accountSlots: accountRegistry.slots(),
     accounts: [...accounts.values()].map(a => ({
       id: a.id,
+      slot: a.slot,
       displayName: a.displayName,
       role: a.role,
       profile: sharedStorage?.profileForAccount(a.id)?.id || 'unassigned',

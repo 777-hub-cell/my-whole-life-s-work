@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { envView, isChatVisible, loadStudioSettings, normalizeChatVisibility, normalizeStudioSettings, saveStudioSettings } from '../src/studio-settings.js'
+import { envView, isChatVisible, loadStudioSettings, normalizeChatAppearance, normalizeChatVisibility, normalizeStudioSettings, saveStudioSettings } from '../src/studio-settings.js'
 
 test('studio settings persist isolated fixed command prefixes and redact no server credentials', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'aharane-settings-'))
@@ -70,7 +70,40 @@ test('pinned and muted chat preferences are validated and persist independently 
     private: { chatPreferences: { pinned: [direct, direct], muted: [group] } },
     public: { chatPreferences: { pinned: [group] } },
   })
-  assert.deepEqual(settings.private.chatPreferences, { pinned: [direct], muted: [group] })
-  assert.deepEqual(settings.public.chatPreferences, { pinned: [group], muted: [] })
+  assert.deepEqual(settings.private.chatPreferences, { pinned: [direct], muted: [group], archived: [] })
+  assert.deepEqual(settings.public.chatPreferences, { pinned: [group], muted: [], archived: [] })
   assert.throws(() => normalizeStudioSettings({ private: { chatPreferences: { pinned: ['not-a-jid'] } } }), /invalid chat identifier/)
+})
+
+
+test('shared chat appearance is validated, normalized and persisted independently of WhatsApp accounts', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-appearance-'))
+  const file = join(dir, 'settings.json')
+  try {
+    const defaults = normalizeStudioSettings({})
+    assert.equal(defaults.chatAppearance.theme, 'system')
+    assert.equal(defaults.chatAppearance.wallpaper, 'default')
+    const appearance = normalizeChatAppearance({
+      theme: 'dark', wallpaper: 'grid', incomingBubble: '#fefefe',
+      outgoingBubble: '#aabbcc', textScale: 145, bubbleRadius: 3,
+      messageSpacing: 'compact', chatDensity: 'compact',
+      showTimestamps: false, showAvatars: false, reduceMotion: true,
+    })
+    assert.equal(appearance.theme, 'dark')
+    assert.equal(appearance.wallpaper, 'grid')
+    assert.equal(appearance.textScale, 130)
+    assert.equal(appearance.bubbleRadius, 8)
+    assert.equal(appearance.showTimestamps, false)
+    assert.equal(appearance.showAvatars, false)
+    assert.equal(appearance.reduceMotion, true)
+    assert.equal(normalizeChatAppearance({ theme: 'neon', incomingBubble: 'not-a-colour' }).theme, 'system')
+    assert.equal(normalizeChatAppearance({ theme: 'neon', incomingBubble: 'not-a-colour' }).incomingBubble, '#ffffff')
+
+    const saved = await saveStudioSettings(file, { ...defaults, chatAppearance: appearance })
+    assert.equal(saved.chatAppearance.theme, 'dark')
+    assert.equal(saved.private.prefix, '.')
+    assert.equal(saved.public.prefix, '!')
+    const loaded = await loadStudioSettings(file)
+    assert.deepEqual(loaded.chatAppearance, appearance)
+  } finally { await rm(dir, { recursive: true, force: true }) }
 })

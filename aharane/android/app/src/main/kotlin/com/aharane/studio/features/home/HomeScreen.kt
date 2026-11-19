@@ -94,7 +94,7 @@ fun HomeScreen(
             StudioCard {
                 AccountRow(
                     account = ChatAccount.PRIVATE,
-                    state = "Not paired",
+                    state = "Status not loaded",
                     onLink = { pairingAccount = ChatAccount.PRIVATE }
                 )
                 StudioDivider()
@@ -111,7 +111,7 @@ fun HomeScreen(
             StudioCard {
                 StudioRow(
                     title = "Configuration",
-                    subtitle = "Private Owner · Needs configuration · Public Owner · Needs configuration · Public bot number · Needs configuration",
+                    subtitle = "Private Owner · Not loaded · Public Owner · Not loaded · Public bot number · Not loaded",
                     icon = Icons.Outlined.Settings,
                     trailing = "›",
                     onClick = onOpenConfiguration

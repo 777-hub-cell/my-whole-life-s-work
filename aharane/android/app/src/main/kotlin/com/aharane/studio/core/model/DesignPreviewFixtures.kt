@@ -121,7 +121,7 @@ module.exports = { isOwner };
         "index.js" to """const config = require('./config');
 
 async function startStudioBot() {
-  console.log(`Starting ${'`);
+  console.log('Starting ' + config.name);
   return { ready: true };
 }
 
@@ -133,7 +133,7 @@ module.exports = { startStudioBot };
 """,
         "commands/ping.js" to """module.exports = async function ping(client, message) {
   const started = Date.now();
-  await message.reply(`Pong · ${'ms`);
+  await message.reply('Pong · ' + (Date.now() - started) + 'ms');
 };
 """,
         "package.json" to """{
@@ -161,7 +161,7 @@ module.exports = { startStudioBot };
 """,
         "commands/ping.js" to """module.exports = async function ping(client, message) {
   const started = Date.now();
-  await message.reply(`Pong · ${'ms`);
+  await message.reply('Pong · ' + (Date.now() - started) + 'ms');
 };
 """,
         "package.json" to """{

@@ -89,3 +89,32 @@ jobs:
           path: screenshots/*.png
           if-no-files-found: error
           retention-days: 14
+
+  web-reference-screenshots:
+    name: Capture actual web Studio reference at mobile size
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Prepare actual web source
+        run: |
+          mkdir -p web/aharane/studio
+          cp -R aharane/control-centre/. web/aharane/studio/
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Capture web reference screens
+        run: node aharane/android/scripts/capture_web_reference.mjs
+      - name: Upload web reference screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: aharane-web-reference-screenshots
+          path: web-reference-screenshots/*.png
+          if-no-files-found: error
+          retention-days: 14

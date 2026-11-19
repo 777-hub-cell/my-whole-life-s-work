@@ -5,7 +5,7 @@ plugins {
 }
 android {
     namespace = "com.aharane.studio"
-    compileSdk = 37
+    compileSdk = 36
     defaultConfig {
         applicationId = "com.aharane.studio"
         minSdk = 26

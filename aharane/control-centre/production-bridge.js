@@ -7,7 +7,7 @@ const pack=JSON.stringify;
 // Shared preview callbacks replaced by the live production bridge. Keep these
 // bindings declared inside this strict-mode closure before installBridgeP assigns them.
 let filesBase, openFileBase, actBase, moreBase, homeBase, bubBase, openChatBase, bindBase, openPairBaseP, drawMsgsBaseP;
-const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],packageError:'',filesError:'',fileMeta:new Map(),fileData:new Map(),pending:false,stale:false,changedCount:0,uploadProgress:null,chatTimer:null,chatRefreshBusy:false,chatSearchTimer:null,chatSearchQuery:'',chatSearchResults:[],chatSearchLoading:false,chatSearchError:'',messageFingerprints:new Map(),qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false,visibility:null,visibilityChats:[]};
+const P={runtime:null,snapshot:null,owners:{},env:[],metrics:{},activity:[],packages:[],packageError:'',filesError:'',fileMeta:new Map(),fileData:new Map(),pending:false,stale:false,changedCount:0,uploadProgress:null,chatTimer:null,chatRefreshBusy:false,chatSearchTimer:null,chatSearchQuery:'',chatSearchResults:[],chatSearchLoading:false,chatSearchError:'',messageFingerprints:new Map(),qrTimer:null,statusTimer:null,chatJid:'',chatLoaded:false,visibility:null,visibilityChats:[],selectedMessageIds:new Set(),bulkMode:false,chatAppearance:null,chatAppearanceVersion:1};
 const fileAutosaveTimersP=new Map(),fileAutosaveBusyP=new Set(),fileAutosaveQueuedP=new Map();
 const fileLocalDraftsP=new Map(),fileAutosaveConflictsP=new Set();
 const FILE_LOCAL_DRAFTS_KEY='aharane-files-local-drafts-v1';
@@ -823,7 +823,7 @@ function changePasswordP(){
 async function signOutP(){try{await apiP('auth/logout',{method:'POST',body:pack({})})}catch{}await showLoginP()}
 function mapMessageP(row){
  const m={id:row.id||'',d:row.fromMe?'o':'i',t:row.text||'',ts:Number(row.timestamp)||Date.now(),r:row.status==='read',
-  mediaAvailable:row.mediaAvailable===true,mediaUnavailable:row.mediaUnavailable||'',ptt:row.ptt===true,dur:Number(row.duration)||0,reactions:Array.isArray(row.reactions)?row.reactions:[]};
+  mediaAvailable:row.mediaAvailable===true,mediaUnavailable:row.mediaUnavailable||'',ptt:row.ptt===true,dur:Number(row.duration)||0,reactions:Array.isArray(row.reactions)?row.reactions:[],starred:row.starred===true};
  if(row.viewOnce){
   m.k='once';m.id=row.id;m.type=row.type;m.f=row.type==='video'?'View-once video':'View-once photo';
   m.viewed=row.viewOnceViewed===true;m.unavailable=row.mediaUnavailable||'';
@@ -891,9 +891,9 @@ function drawChatVisibilityP(account,search){
 }
 
 async function refreshChatsP(){
- const account=S.cacc==='private'?'private':'public',r=await apiP('chats/'+account+'?limit=500'),current=P.chatJid,prefs=r.preferences||{pinned:[],muted:[]},pinned=new Set(prefs.pinned||[]),muted=new Set(prefs.muted||[]);
+ const account=S.cacc==='private'?'private':'public',r=await apiP('chats/'+account+'?limit=500'),current=P.chatJid,prefs=r.preferences||{pinned:[],muted:[],archived:[]},pinned=new Set(prefs.pinned||[]),muted=new Set(prefs.muted||[]),archived=new Set(prefs.archived||[]);
  P.chatPreferences=prefs;
- CH.splice(0,CH.length,...(r.chats||[]).map(c=>({jid:c.jid,n:c.name||c.jid.split('@')[0],g:c.group===true||String(c.jid).endsWith('@g.us'),mem:[],un:c.unreadCount||0,pinned:pinned.has(c.jid),muted:muted.has(c.jid),m:[{d:c.fromMe?'o':'i',t:c.lastMessage||'',ts:c.timestamp||Date.now()}]})));P.messageFingerprints.clear();
+ CH.splice(0,CH.length,...(r.chats||[]).map(c=>({jid:c.jid,n:c.name||c.jid.split('@')[0],g:c.group===true||String(c.jid).endsWith('@g.us'),mem:[],un:c.unreadCount||0,pinned:pinned.has(c.jid),muted:muted.has(c.jid),archived:archived.has(c.jid),m:[{d:c.fromMe?'o':'i',t:c.lastMessage||'',ts:c.timestamp||Date.now()}]})));P.messageFingerprints.clear();
  if(current&&S.chat!==null){const i=CH.findIndex(c=>c.jid===current);if(i>=0)S.chat=i;else S.chat=null}
 }
 async function loadMessagesP(index=S.chat,before=0){
@@ -916,7 +916,7 @@ async function sendChatP(msg){
  await loadMessagesP(S.chat,0);
 }
 async function attachLiveP(file){try{await sendChatP({b:file,f:file.name})}catch(error){notifyP(error.message)}}
-function switchChatsP(){S.cacc=S.cacc==='private'?'public':'private';S.chat=null;P.chatJid='';P.chatSearchQuery='';P.chatSearchResults=[];P.chatSearchError='';P.openChatSearchResults=[];P.openChatQuery='';P.messageFingerprints.clear();refreshChatsP().then(render).catch(e=>notifyP(e.message))}
+function switchChatsP(){P.bulkMode=false;P.selectedMessageIds.clear();S.cacc=S.cacc==='private'?'public':'private';S.chat=null;P.chatJid='';P.chatSearchQuery='';P.chatSearchResults=[];P.chatSearchError='';P.openChatSearchResults=[];P.openChatQuery='';P.messageFingerprints.clear();refreshChatsP().then(render).catch(e=>notifyP(e.message))}
 async function toggleChatPreferenceP(index,kind){
  const chat=CH[index];if(!chat?.jid)return;
  const account=S.cacc==='private'?'private':'public',field=kind==='pin'?'pinned':'muted',next=!chat[field];
@@ -931,7 +931,7 @@ function bindChatRowsP(){
   row.onpointerup=event=>{const dx=event.clientX-startX,dy=event.clientY-startY;if(Math.abs(dx)>48&&Math.abs(dx)>Math.abs(dy)*1.4){wrap.classList.toggle('swiped',dx<0);wrap.dataset.swipeHandled='1';moved=true}};
   row.onclick=()=>{if(wrap.dataset.swipeHandled==='1'){wrap.dataset.swipeHandled='0';return}if(wrap.classList.contains('swiped'))return;openChat(Number(row.dataset.c))};
  });
- document.querySelectorAll('[data-chat-pref]').forEach(button=>button.onclick=event=>{event.preventDefault();event.stopPropagation();toggleChatPreferenceP(Number(button.dataset.chatIndex),button.dataset.chatPref)});
+ document.querySelectorAll('[data-chat-pref]').forEach(button=>button.onclick=event=>{event.preventDefault();event.stopPropagation();const index=Number(button.dataset.chatIndex),kind=button.dataset.chatPref;if(kind==='archive')void toggleChatArchiveP(index);else if(kind==='unread')void markChatUnreadP(index);else void toggleChatPreferenceP(index,kind)});
 }
 let messageMenuOutsideP=null;
 function closeMessageMenuP(){
@@ -943,7 +943,7 @@ window.openMessageMenuP=function(index,anchor){
  closeMessageMenuP();
  const menu=document.createElement('div');menu.id='chat-message-pop';menu.className='pop chat-message-pop';menu.setAttribute('role','menu');
  menu.innerHTML='<div class="message-emoji-row">'+['❤️','👍','😂','😮','😢','🙏','🔥','🎉'].map(emoji=>'<button type="button" data-message-emoji="'+emoji+'" aria-label="React with '+emoji+'">'+emoji+'</button>').join('')+'</div>'+
-  '<button type="button" data-message-action="reply">Reply</button><button type="button" data-message-action="copy">Copy</button><button type="button" data-message-action="forward">Forward</button><button type="button" data-message-action="delete" class="del">Delete</button>';
+  '<button type="button" data-message-action="reply">Reply</button><button type="button" data-message-action="copy">Copy</button><button type="button" data-message-action="forward">Forward</button><button type="button" data-message-action="star">'+(message.starred?'Unstar':'Star')+'</button><button type="button" data-message-action="select">Select messages</button><button type="button" data-message-action="delete" class="del">Delete</button>';
  document.body.appendChild(menu);
  const rect=anchor?.getBoundingClientRect?.()||{left:12,right:220,top:100,bottom:150};
  const width=menu.offsetWidth,height=menu.offsetHeight;
@@ -961,12 +961,14 @@ window.openMessageMenuP=function(index,anchor){
 async function messageActionP(action,index,emoji=''){
  const chat=CH[S.chat],message=chat?.m?.[index];if(!chat?.jid||!message?.id)return;
  if(action==='reply'){setReply(index);return}
+ if(action==='select'){P.bulkMode=true;P.selectedMessageIds.add(message.id);drawMsgs();updateBulkBarP();return}
  if(action==='copy'){
   const text=message.t||message.f||({img:'Photo',vid:'Video',vn:'Voice note'}[message.k]||'Attachment');
   try{await navigator.clipboard.writeText(text);notifyP('Message copied')}catch{notifyP('Copy is not available in this browser')}
   return;
  }
  const account=S.cacc==='private'?'private':'public',base='chats/'+account+'/'+encodeURIComponent(chat.jid);
+ if(action==='star'){try{const starred=!message.starred;await apiP(base+'/star',{method:'POST',body:pack({messageId:message.id,starred})});message.starred=starred;drawMsgs();notifyP(starred?'Message starred':'Message unstarred')}catch(error){notifyP(error.message)}return}
  if(action==='forward'){
   const choices=CH.map((target,i)=>'<button type="button" class="row" data-forward-target="'+i+'"><span class="av">'+escP(target.n.slice(0,1))+'</span><span class="grow"><span class="t">'+escP(target.n)+'</span><span class="d">'+(target.g?'Group':'Chat')+'</span></span></button>').join('');
   sheet('<h3>Forward to</h3><div class="card list">'+choices+'</div><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Cancel</button></div>');
@@ -1160,6 +1162,8 @@ function bindProductionP(){
   S.pm=b.dataset.pm;S.pin=null;S.qrRequested=false;render();
  });
  const clear=Q('#lcl');if(clear)clear.onclick=clearActivityP;
+ const starred=Q('#chat-starred');if(starred)starred.onclick=()=>openStarredMessagesP();
+ if(S.chat!==null){ensureChatToolsP();updateBulkBarP()}
  const source=Q('#open-app-source');if(source)source.onclick=()=>openAppSourceP('index.html');
  const localSource=Q('#offline-open-source');if(localSource)localSource.onclick=()=>openAppSourceP('index.html');
  const backSource=Q('#back-from-app-source');if(backSource)backSource.onclick=()=>{S.sub=null;render()};
@@ -1558,7 +1562,7 @@ function installBridgeP(){
  };
  openPairBaseP=openPair;openPair=async function(i){if(P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}S.pin=null;S.qrRequested=false;try{await refreshRuntimeP()}catch(error){notifyP('Could not refresh account status: '+error.message)}openPairBaseP(i)};
  const chatsBaseP=chatsV;chatsV=function(){
-  const html=chatsBaseP().replace('</button></div><p class="sub">','</button><button class="modeb" id="chat-visibility" aria-label="Configure chat visibility">'+ico('cfg')+'</button></div><p class="sub">');
+  const html=chatsBaseP().replace('</button></div><p class="sub">','</button><button class="modeb" id="chat-visibility" aria-label="Configure chat visibility">'+ico('cfg')+'</button><button class="modeb" id="chat-starred" aria-label="Starred messages">★</button></div><p class="sub">');
   return html.replace('<div class="card list">','<div id="chat-search-results">'+chatSearchPanelP()+'</div><div class="card list">');
  };
  filesV=filesScreenP;envV=envViewP;accV=accountViewP;pairV=pairViewP;moreV=moreViewP;storV=storageViewP;
@@ -1569,11 +1573,16 @@ function installBridgeP(){
  unlink=function(i){accountActionP(accts[i]?.slot,'stop')};
  pinPane=pairViewP;qrPane=pairViewP;newQr=startQrP;
  svc=async action=>{try{await Promise.all(['private','public'].map(id=>apiP('accounts/'+id+'/'+(action==='start'?'reconnect':action),{method:'POST',body:pack({})})));await refreshRuntimeP();render()}catch(e){notifyP(e.message)}};
- openChatBase=openChat;openChat=function(i){openChatBase(i);P.openChatSearchResults=[];P.openChatQuery='';if(Q('#chat-searchbar'))Q('#chat-searchbar').hidden=true;if(Q('#chat-search-input'))Q('#chat-search-input').value='';bindConversationSearchP();loadMessagesP(i).catch(e=>notifyP(e.message))};
+ openChatBase=openChat;openChat=function(i){P.bulkMode=false;P.selectedMessageIds.clear();openChatBase(i);ensureChatToolsP();updateBulkBarP();applyChatAppearanceP(P.chatAppearance||CHAT_APPEARANCE_DEFAULTS_P);P.openChatSearchResults=[];P.openChatQuery='';if(Q('#chat-searchbar'))Q('#chat-searchbar').hidden=true;if(Q('#chat-search-input'))Q('#chat-search-input').value='';bindConversationSearchP();loadMessagesP(i).catch(e=>notifyP(e.message))};
  switchChats=switchChatsP;sendMsg=msg=>sendChatP(msg).catch(e=>{notifyP(e.message);throw e});attach=attachLiveP;
  bub=function(msg,first,last,index){
-  if(msg.dl)return '<div class="b '+(msg.d==='o'?'o ':'')+(first?'f ':'')+(last?'l':'')+'" data-i="'+index+'" data-message-id="'+escP(msg.id||'')+'"><a href="'+escP(msg.dl)+'" download="'+escP(msg.f||'attachment')+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">'+escP(msg.f||'Attachment')+'</a>'+(msg.reactions?.length?'<div class="reaction-chips">'+msg.reactions.map(item=>'<span class="reaction-chip">'+escP(item.emoji)+' <small>'+escP(item.actor)+'</small></span>').join('')+'</div>':'')+'<span class="mt">'+fmtT(msg.ts)+'</span></div>';
-  return bubBase(msg,first,last,index);
+  const starred=msg.starred?'<span class="star-indicator" aria-label="Starred">★</span>':'';
+  const select=P.bulkMode&&msg.id?'<button type="button" class="msg-select-marker '+(P.selectedMessageIds.has(msg.id)?'selected':'')+'" data-bulk-toggle="'+index+'" aria-label="Select message">'+(P.selectedMessageIds.has(msg.id)?'✓':'')+'</button>':'';
+  if(msg.dl)return '<div class="b '+(msg.d==='o'?'o ':'')+(first?'f ':'')+(last?'l':'')+'" data-i="'+index+'" data-message-id="'+escP(msg.id||'')+'">'+select+starred+'<a href="'+escP(msg.dl)+'" download="'+escP(msg.f||'attachment')+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">'+escP(msg.f||'Attachment')+'</a>'+(msg.reactions?.length?'<div class="reaction-chips">'+msg.reactions.map(item=>'<span class="reaction-chip">'+escP(item.emoji)+' <small>'+escP(item.actor)+'</small></span>').join('')+'</div>':'')+'<span class="mt">'+fmtT(msg.ts)+'</span></div>';
+  let html=bubBase(msg,first,last,index);
+  if(starred)html=html.replace('<span class="mt">',starred+'<span class="mt">');
+  if(select)html=html.replace(/(<div class="b [^"]*"[^>]*>)/, '$1'+select);
+  return html;
  };
  openF=openLiveFileP;mk=t=>createLiveFileP(t==='dir'?'folder':'file');menu=fileMenuP;
  drawMsgsBaseP=drawMsgs;drawMsgs=preserveChatScrollDrawP;

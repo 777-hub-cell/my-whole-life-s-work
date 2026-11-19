@@ -1,5 +1,7 @@
 package com.aharane.studio.features.files
 
+import android.widget.Toast
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -55,6 +58,15 @@ fun FilesScreen(
     var menuPath by remember { mutableStateOf<String?>(null) }
     val selectedPaths = remember { mutableStateListOf<String>() }
     var packagesOpen by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    fun serverAction(label: String, action: () -> Unit) {
+        if (connected) action() else Toast.makeText(
+            context,
+            "Connect to your Aharane server to $label.",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
 
     val visibleEntries = remember(entries, query, currentPath) {
         entries.asSequence()
@@ -93,10 +105,10 @@ fun FilesScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                StudioActionButton("New file", compact = true, enabled = connected, onClick = onCreateFile)
-                StudioActionButton("Upload", compact = true, enabled = connected, onClick = onUpload)
-                StudioActionButton("New folder", compact = true, enabled = connected, onClick = onCreateFolder)
-                StudioActionButton("Export Bot Source", compact = true, enabled = connected, onClick = onExportSource)
+                StudioActionButton("New file", compact = true, onClick = { serverAction("create files", onCreateFile) })
+                StudioActionButton("Upload", compact = true, onClick = { serverAction("upload files", onUpload) })
+                StudioActionButton("New folder", compact = true, onClick = { serverAction("create folders", onCreateFolder) })
+                StudioActionButton("Export Bot Source", compact = true, onClick = { serverAction("export source", onExportSource) })
             }
             Row(
                 Modifier.fillMaxWidth().padding(top = 13.dp, bottom = 10.dp),
@@ -175,18 +187,18 @@ fun FilesScreen(
                         modifier = Modifier.padding(end = 8.dp)
                     )
                     StudioActionButton(
-                        "Move", compact = true, enabled = connected,
-                        onClick = { onBulkAction(selectedEntries, "move") }
+                        "Move", compact = true,
+                        onClick = { serverAction("move files", { onBulkAction(selectedEntries, "move") }) }
                     )
                     Spacer(Modifier.width(5.dp))
                     StudioActionButton(
-                        "ZIP", compact = true, enabled = connected,
-                        onClick = { onBulkAction(selectedEntries, "zip") }
+                        "ZIP", compact = true,
+                        onClick = { serverAction("export selected files", { onBulkAction(selectedEntries, "zip") }) }
                     )
                     Spacer(Modifier.width(5.dp))
                     StudioActionButton(
-                        "Delete", compact = true, destructive = true, enabled = connected,
-                        onClick = { onBulkAction(selectedEntries, "delete") }
+                        "Delete", compact = true, destructive = true,
+                        onClick = { serverAction("delete files", { onBulkAction(selectedEntries, "delete") }) }
                     )
                 }
             }
@@ -257,8 +269,10 @@ fun FilesScreen(
                                     currentPath = entry.path
                                     query = ""
                                     selectedPaths.clear()
-                                } else {
+                                } else if (action == "open" || connected) {
                                     onEntryAction(entry, action)
+                                } else {
+                                    Toast.makeText(context, "Connect to your Aharane server to manage files.", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         )

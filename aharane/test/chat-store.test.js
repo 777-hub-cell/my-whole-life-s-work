@@ -216,3 +216,76 @@ test('text messages retain quote source, reactions attach to the target bubble, 
     assert.equal(await store.getMessage('private', jid, 'target-1'), null)
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
+
+
+test('starred messages persist and can be collected across conversations', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-starred-'))
+  try {
+    const store = createChatStore({ dataDir: dir })
+    await store.init()
+    const first = '2348012345678@s.whatsapp.net'
+    const second = '2348098765432@s.whatsapp.net'
+    await store.recordMessage({
+      sessionId: 'private',
+      message: { key: { id: 'star-1', remoteJid: first, fromMe: false }, pushName: 'Mira', messageTimestamp: 1760000100, message: { conversation: 'Keep this for later' } },
+    })
+    await store.recordMessage({
+      sessionId: 'private',
+      message: { key: { id: 'star-2', remoteJid: second, fromMe: true }, messageTimestamp: 1760000200, message: { conversation: 'Another saved message' } },
+    })
+    assert.deepEqual(await store.setStarred('private', first, 'star-1', true), { id: 'star-1', starred: true })
+    await store.setStarred('private', second, 'star-2', true)
+    const starred = await store.listStarredMessages('private')
+    assert.deepEqual(starred.map(row => row.id), ['star-2', 'star-1'])
+    assert.equal((await store.getMessages('private', first))[0].starred, true)
+    await store.setStarred('private', first, 'star-1', false)
+    assert.deepEqual((await store.listStarredMessages('private')).map(row => row.id), ['star-2'])
+    assert.deepEqual(await store.listStarredMessages('public'), [])
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
+test('media gallery and chat export describe saved attachments without auto-downloading', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-gallery-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348012345678@s.whatsapp.net'
+    await store.recordMessage({
+      sessionId: 'public',
+      message: { key: { id: 'gallery-photo', remoteJid: jid, fromMe: false }, pushName: 'Contact', messageTimestamp: 1760000300, message: { imageMessage: { mimetype: 'image/png', fileLength: 5, caption: 'A picture' } } },
+    })
+    const gallery = await store.getMediaGallery('public', jid)
+    assert.equal(gallery.length, 1)
+    assert.equal(gallery[0].type, 'image')
+    assert.equal(gallery[0].mediaUrl, '')
+    assert.equal(gallery[0].mediaAvailable, true)
+    const exported = await store.exportConversation('public', jid)
+    assert.equal(exported.length, 1)
+    assert.equal(exported[0].text, 'A picture')
+    assert.equal(exported[0].mediaUrl, '')
+    assert.equal(exported[0].mediaAvailable, true)
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
+test('mark unread restores one fresh incoming notification without changing account history', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-unread-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348012345678@s.whatsapp.net'
+    await store.recordMessage({
+      sessionId: 'private',
+      message: { key: { id: 'unread-old', remoteJid: jid, fromMe: false }, messageTimestamp: 1760000400, message: { conversation: 'Earlier' } },
+    })
+    await store.recordMessage({
+      sessionId: 'private',
+      message: { key: { id: 'unread-new', remoteJid: jid, fromMe: false }, messageTimestamp: 1760000401, message: { conversation: 'Latest' } },
+    })
+    await store.markRead('private', jid)
+    assert.equal((await store.listChats('private'))[0].unreadCount, 0)
+    const unread = await store.markUnread('private', jid)
+    assert.equal(unread.unreadCount, 1)
+    assert.equal((await store.listChats('private'))[0].unreadCount, 1)
+    assert.equal((await store.listChats('public')).length, 0)
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})

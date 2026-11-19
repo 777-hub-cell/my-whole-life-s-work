@@ -253,8 +253,9 @@ fun CodeEditorScreen(
                 }
             }
         } else {
-            Row(Modifier.weight(1f).fillMaxWidth().background(EditorBackground)) {
-                if (lineNumbers) {
+            Box(Modifier.weight(1f).fillMaxWidth().background(EditorBackground)) {
+                Row(Modifier.fillMaxSize()) {
+                    if (lineNumbers) {
                     val lineCount = editorText.count { it == '\n' } + 1
                     val numbers = (1..lineCount).joinToString("\n")
                     Text(
@@ -294,7 +295,8 @@ fun CodeEditorScreen(
                         .verticalScroll(verticalScroll)
                         .onFocusChanged { editorFocused = it.isFocused }
                         .padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 56.dp)
-                )
+                    )
+                }
                 if (explorerOpen) {
                     ExplorerDrawer(
                         files = availableFiles,
@@ -304,6 +306,7 @@ fun CodeEditorScreen(
                 }
                 if (panelOpen) {
                     EditorBottomPanel(
+                        modifier = Modifier.align(Alignment.BottomCenter),
                         tab = panelTab,
                         onTabSelected = { panelTab = it },
                         onClose = { panelOpen = false },

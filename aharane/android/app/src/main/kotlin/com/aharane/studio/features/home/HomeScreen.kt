@@ -21,7 +21,8 @@ import com.aharane.studio.core.design.*
 fun HomeScreen(
     onOpenChats: () -> Unit,
     onOpenMore: () -> Unit,
-    onOpenConfiguration: () -> Unit
+    onOpenConfiguration: () -> Unit,
+    onOpenActivity: () -> Unit = onOpenMore
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -127,7 +128,7 @@ fun HomeScreen(
                 )
             }
         }
-        item { StudioSectionHeading("Recent activity", action = "View all", onAction = onOpenMore) }
+        item { StudioSectionHeading("Recent activity", action = "View all", onAction = onOpenActivity) }
         item {
             StudioCard {
                 StudioEmpty(

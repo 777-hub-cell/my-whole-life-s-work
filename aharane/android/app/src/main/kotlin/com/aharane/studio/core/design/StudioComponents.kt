@@ -303,7 +303,8 @@ fun StudioSearchField(
     onValueChange: (String) -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
-    trailing: (@Composable () -> Unit)? = null
+    trailing: (@Composable () -> Unit)? = null,
+    showIcon: Boolean = false
 ) {
     Surface(
         modifier = modifier.fillMaxWidth().heightIn(min = 46.dp),
@@ -315,8 +316,10 @@ fun StudioSearchField(
             Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Outlined.Search, contentDescription = null, tint = StudioPalette.Muted, modifier = Modifier.size(19.dp))
-            Spacer(Modifier.width(9.dp))
+            if (showIcon) {
+                Icon(Icons.Outlined.Search, contentDescription = null, tint = StudioPalette.Muted, modifier = Modifier.size(19.dp))
+                Spacer(Modifier.width(9.dp))
+            }
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                 if (value.isEmpty()) Text(placeholder, color = StudioPalette.Muted, fontSize = 14.sp)
                 BasicTextField(

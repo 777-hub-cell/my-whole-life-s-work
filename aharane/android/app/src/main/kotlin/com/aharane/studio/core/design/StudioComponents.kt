@@ -1,5 +1,6 @@
 package com.aharane.studio.core.design
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,24 +24,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.Path
-import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.unit.IntOffset
 import com.aharane.studio.core.navigation.MainDestination
 
 @Composable
 fun StudioHeader(onStatusClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().background(StudioPalette.Background)
-            .padding(horizontal = 16.dp, vertical = 6.dp).height(42.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 18.dp)
+            .height(30.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -50,7 +55,7 @@ fun StudioHeader(onStatusClick: () -> Unit) {
                 contentAlignment = Alignment.Center
             ) {
                 Canvas(Modifier.size(15.dp)) {
-                    val sw = 2.0.dp.toPx()
+                    val sw = 2.1.dp.toPx()
                     drawLine(Color.White, Offset(size.width * .12f, size.height * .88f),
                         Offset(size.width * .50f, size.height * .12f), sw, cap = StrokeCap.Round)
                     drawLine(Color.White, Offset(size.width * .50f, size.height * .12f),
@@ -62,21 +67,22 @@ fun StudioHeader(onStatusClick: () -> Unit) {
             Text(
                 "Aharane",
                 color = StudioPalette.Ink,
+                fontFamily = MaterialTheme.typography.titleLarge.fontFamily,
                 fontSize = 21.sp,
                 lineHeight = 25.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.35).sp
+                letterSpacing = (-0.42).sp
             )
         }
         Spacer(Modifier.weight(1f))
         Box(
-            modifier = Modifier.size(38.dp).clip(CircleShape)
+            modifier = Modifier.size(30.dp).clip(CircleShape)
                 .background(StudioPalette.Surface)
                 .border(1.dp, StudioPalette.Line, CircleShape)
                 .clickable(onClick = onStatusClick),
             contentAlignment = Alignment.Center
         ) {
-            Box(Modifier.size(12.dp).clip(CircleShape).background(StudioPalette.Bad))
+            StudioStatusDot(online = false, size = 8)
         }
     }
 }
@@ -106,12 +112,7 @@ fun StudioBottomNavigation(
                         MainDestination.ENVIRONMENT -> Icons.Outlined.Terminal
                         MainDestination.MORE -> Icons.Outlined.MoreHoriz
                     }
-                    Box(
-                        Modifier.height(26.dp).width(52.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(21.dp))
-                    }
+                    Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
                     Text(
                         destination.label,
                         color = tint,
@@ -132,18 +133,14 @@ fun StudioPageTitle(title: String, subtitle: String? = null) {
         Text(
             title,
             color = StudioPalette.Ink,
+            fontFamily = MaterialTheme.typography.headlineLarge.fontFamily,
             fontSize = 30.sp,
-            lineHeight = 34.sp,
+            lineHeight = 33.sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = (-0.7).sp
+            letterSpacing = (-0.75).sp
         )
         if (subtitle != null) {
-            Text(
-                subtitle,
-                color = StudioPalette.Muted,
-                fontSize = 15.sp,
-                lineHeight = 21.sp
-            )
+            Text(subtitle, color = StudioPalette.Muted, fontSize = 15.sp, lineHeight = 21.sp)
         }
     }
 }
@@ -151,15 +148,25 @@ fun StudioPageTitle(title: String, subtitle: String? = null) {
 @Composable
 fun StudioSectionHeading(title: String, action: String? = null, onAction: (() -> Unit)? = null) {
     Row(
-        Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 10.dp),
+        Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(title, color = StudioPalette.Ink, fontSize = 17.sp, lineHeight = 22.sp,
-            fontWeight = FontWeight.Bold, letterSpacing = (-0.15).sp)
+        Text(
+            title,
+            color = StudioPalette.Ink,
+            fontFamily = MaterialTheme.typography.titleLarge.fontFamily,
+            fontSize = 17.sp,
+            lineHeight = 22.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = (-0.15).sp
+        )
         Spacer(Modifier.weight(1f))
         if (action != null && onAction != null) {
-            Text(action, color = StudioPalette.Accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onAction).padding(6.dp))
+            Text(
+                action, color = StudioPalette.Accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onAction)
+                    .padding(horizontal = 7.dp, vertical = 5.dp)
+            )
         }
     }
 }
@@ -188,7 +195,10 @@ fun StudioDivider() {
 
 @Composable
 fun StudioStatusDot(online: Boolean, modifier: Modifier = Modifier, size: Int = 8) {
-    Box(modifier.size(size.dp).clip(CircleShape).background(if (online) StudioPalette.Accent else StudioPalette.Bad))
+    Box(
+        modifier.size(size.dp).clip(CircleShape)
+            .background(if (online) StudioPalette.Accent else StudioPalette.Muted.copy(alpha = .55f))
+    )
 }
 
 @Composable
@@ -211,20 +221,20 @@ fun StudioRow(
     subtitle: String? = null,
     icon: ImageVector? = null,
     trailing: String? = null,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    trailingContent: (@Composable RowScope.() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier.fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 14.dp, vertical = 12.dp)
-            .heightIn(min = 36.dp),
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .heightIn(min = 40.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (icon != null) {
             Box(
-                Modifier.size(38.dp).clip(RoundedCornerShape(11.dp))
-                    .background(StudioPalette.Background),
+                Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)).background(StudioPalette.Background),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(icon, contentDescription = null, tint = StudioPalette.Muted, modifier = Modifier.size(20.dp))
@@ -238,7 +248,8 @@ fun StudioRow(
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
-        if (trailing != null) {
+        if (trailingContent != null) trailingContent()
+        else if (trailing != null) {
             Text(trailing, color = StudioPalette.Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
@@ -251,22 +262,29 @@ fun StudioActionButton(
     modifier: Modifier = Modifier,
     primary: Boolean = false,
     compact: Boolean = false,
+    destructive: Boolean = false,
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
-    val background = if (primary) StudioPalette.Accent else StudioPalette.Surface
-    val foreground = if (primary) Color.White else StudioPalette.Ink
+    val bg = if (primary) StudioPalette.Accent else StudioPalette.Surface
+    val fg = when {
+        primary -> Color.White
+        destructive -> StudioPalette.Bad
+        else -> StudioPalette.Ink
+    }
+    val shape = RoundedCornerShape(12.dp)
     Box(
         modifier = modifier.defaultMinSize(minHeight = if (compact) 36.dp else 44.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(background)
-            .border(1.dp, if (primary) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(12.dp))
+            .clip(shape)
+            .background(bg)
+            .border(1.dp, if (primary) StudioPalette.Accent else StudioPalette.Line, shape)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = if (compact) 11.dp else 14.dp, vertical = if (compact) 6.dp else 10.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(label, color = foreground.copy(alpha = if (enabled) 1f else .45f),
-            fontSize = if (compact) 13.sp else 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, color = fg.copy(alpha = if (enabled) 1f else .38f),
+            fontSize = if (compact) 13.sp else 14.sp, lineHeight = 18.sp,
+            fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
@@ -275,7 +293,8 @@ fun StudioSearchField(
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null
 ) {
     Surface(
         modifier = modifier.fillMaxWidth().heightIn(min = 46.dp),
@@ -295,32 +314,31 @@ fun StudioSearchField(
                     value = value,
                     onValueChange = onValueChange,
                     singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = StudioPalette.Ink, fontSize = 14.sp),
+                    textStyle = TextStyle(
+                        color = StudioPalette.Ink, fontSize = 14.sp, lineHeight = 20.sp,
+                        fontWeight = FontWeight.Normal, fontFamily = MaterialTheme.typography.bodyLarge.fontFamily
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+            trailing?.invoke()
         }
     }
 }
 
 @Composable
-fun StudioSegmented(
-    options: List<String>,
-    selected: String,
-    onSelect: (String) -> Unit
-) {
+fun StudioSegmented(options: List<String>, selected: String, onSelect: (String) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(StudioPalette.Background)
-            .padding(3.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(StudioPalette.Background).padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         options.forEach { option ->
             val active = option == selected
+            val shape = RoundedCornerShape(9.dp)
             Box(
-                Modifier.weight(1f).defaultMinSize(minHeight = 38.dp)
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(if (active) StudioPalette.Surface else Color.Transparent)
-                    .then(if (active) Modifier.border(1.dp, StudioPalette.Line, RoundedCornerShape(9.dp)) else Modifier)
+                Modifier.weight(1f).defaultMinSize(minHeight = 38.dp).clip(shape)
+                    .then(if (active) Modifier.shadow(1.dp, shape).background(StudioPalette.Surface)
+                        .border(1.dp, StudioPalette.Line, shape) else Modifier.background(Color.Transparent))
                     .clickable { onSelect(option) }.padding(horizontal = 4.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -339,10 +357,45 @@ fun StudioEmpty(title: String, description: String? = null, modifier: Modifier =
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Text(title, color = StudioPalette.Muted, fontSize = 14.sp, lineHeight = 19.sp,
-            fontWeight = FontWeight.SemiBold)
+            fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
         if (description != null) {
             Text(description, color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 18.sp,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                textAlign = TextAlign.Center)
+        }
+    }
+}
+
+data class StudioMenuAction(val title: String, val destructive: Boolean = false, val onClick: () -> Unit)
+
+@Composable
+fun StudioFloatingMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    actions: List<StudioMenuAction>
+) {
+    if (!expanded) return
+    Popup(
+        alignment = Alignment.TopEnd,
+        offset = IntOffset(-4, 6),
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true, dismissOnBackPress = true, dismissOnClickOutside = true)
+    ) {
+        Column(
+            Modifier.width(190.dp).shadow(8.dp, RoundedCornerShape(9.dp))
+                .border(1.dp, Color(0xFFE6E6E6), RoundedCornerShape(9.dp))
+                .background(Color.White, RoundedCornerShape(9.dp)).padding(vertical = 5.dp)
+        ) {
+            actions.forEach { action ->
+                Box(
+                    Modifier.fillMaxWidth().heightIn(min = 42.dp)
+                        .clickable { onDismiss(); action.onClick() }
+                        .padding(horizontal = 13.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Text(action.title, color = if (action.destructive) Color(0xFFC43B32) else Color(0xFF171717),
+                        fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium)
+                }
+            }
         }
     }
 }

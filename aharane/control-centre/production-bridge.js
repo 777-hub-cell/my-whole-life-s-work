@@ -1163,6 +1163,7 @@ function bindProductionP(){
  });
  const clear=Q('#lcl');if(clear)clear.onclick=clearActivityP;
  const starred=Q('#chat-starred');if(starred)starred.onclick=()=>openStarredMessagesP();
+ const appearanceList=Q('#chat-appearance-list');if(appearanceList)appearanceList.onclick=()=>openChatAppearanceP();
  if(S.chat!==null){ensureChatToolsP();updateBulkBarP()}
  const source=Q('#open-app-source');if(source)source.onclick=()=>openAppSourceP('index.html');
  const localSource=Q('#offline-open-source');if(localSource)localSource.onclick=()=>openAppSourceP('index.html');
@@ -1295,13 +1296,13 @@ function appearanceOptionsP(){
  root?.querySelectorAll('[data-app-choice]').forEach(button=>button.onclick=()=>{
   appearanceDraftP[button.dataset.appChoice]=button.dataset.value;applyChatAppearanceP(appearanceDraftP);appearanceOptionsP();
  });
- root?.addEventListener('input',event=>{
+ root.oninput=event=>{
   const input=event.target.closest('[data-app-input]');if(!input)return;
   const key=input.dataset.appInput;
   appearanceDraftP[key]=input.type==='checkbox'?input.checked:(input.type==='range'?Number(input.value):input.value);
   applyChatAppearanceP(appearanceDraftP);
   const display=root.querySelector('[data-app-value="'+key+'"]');if(display)display.textContent=key==='textScale'?input.value+'%':input.value+' px';
- });
+ };
  root?.querySelectorAll('[data-app-action]').forEach(button=>button.onclick=async()=>{
   const action=button.dataset.appAction;
   if(action==='upload'){Q('#appearance-upload')?.click();return}
@@ -1324,9 +1325,13 @@ function appearanceOptionsP(){
   catch(error){notifyP(error.message)}
  };
 }
+async function loadChatAppearanceP(){
+ try{const r=await apiP('chat-appearance');P.chatAppearance={...CHAT_APPEARANCE_DEFAULTS_P,...(r.appearance||{})};P.chatAppearanceVersion=Date.now();applyChatAppearanceP(P.chatAppearance);return P.chatAppearance}
+ catch(error){notifyP(error.message);return null}
+}
 async function openChatAppearanceP(){
- try{const r=await apiP('chat-appearance');appearanceDraftP={...CHAT_APPEARANCE_DEFAULTS_P,...(r.appearance||{})};P.chatAppearanceVersion=Date.now();applyChatAppearanceP(appearanceDraftP);appearanceOptionsP()}
- catch(error){notifyP(error.message)}
+ const loaded=await loadChatAppearanceP();if(!loaded)return;
+ appearanceDraftP={...loaded};appearanceOptionsP();
 }
 function ensureChatToolsP(){
  const header=Q('.ch');if(!header)return;
@@ -1562,7 +1567,7 @@ function installBridgeP(){
  };
  openPairBaseP=openPair;openPair=async function(i){if(P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}S.pin=null;S.qrRequested=false;try{await refreshRuntimeP()}catch(error){notifyP('Could not refresh account status: '+error.message)}openPairBaseP(i)};
  const chatsBaseP=chatsV;chatsV=function(){
-  const html=chatsBaseP().replace('</button></div><p class="sub">','</button><button class="modeb" id="chat-visibility" aria-label="Configure chat visibility">'+ico('cfg')+'</button><button class="modeb" id="chat-starred" aria-label="Starred messages">★</button></div><p class="sub">');
+  const html=chatsBaseP().replace('</button></div><p class="sub">','</button><button class="modeb" id="chat-visibility" aria-label="Configure chat visibility">'+ico('cfg')+'</button><button class="modeb" id="chat-starred" aria-label="Starred messages">★</button><button class="modeb" id="chat-appearance-list" aria-label="Chat appearance">Aa</button></div><p class="sub">');
   return html.replace('<div class="card list">','<div id="chat-search-results">'+chatSearchPanelP()+'</div><div class="card list">');
  };
  filesV=filesScreenP;envV=envViewP;accV=accountViewP;pairV=pairViewP;moreV=moreViewP;storV=storageViewP;
@@ -1573,7 +1578,7 @@ function installBridgeP(){
  unlink=function(i){accountActionP(accts[i]?.slot,'stop')};
  pinPane=pairViewP;qrPane=pairViewP;newQr=startQrP;
  svc=async action=>{try{await Promise.all(['private','public'].map(id=>apiP('accounts/'+id+'/'+(action==='start'?'reconnect':action),{method:'POST',body:pack({})})));await refreshRuntimeP();render()}catch(e){notifyP(e.message)}};
- openChatBase=openChat;openChat=function(i){P.bulkMode=false;P.selectedMessageIds.clear();openChatBase(i);ensureChatToolsP();updateBulkBarP();applyChatAppearanceP(P.chatAppearance||CHAT_APPEARANCE_DEFAULTS_P);P.openChatSearchResults=[];P.openChatQuery='';if(Q('#chat-searchbar'))Q('#chat-searchbar').hidden=true;if(Q('#chat-search-input'))Q('#chat-search-input').value='';bindConversationSearchP();loadMessagesP(i).catch(e=>notifyP(e.message))};
+ openChatBase=openChat;openChat=function(i){P.bulkMode=false;P.selectedMessageIds.clear();openChatBase(i);ensureChatToolsP();updateBulkBarP();if(P.chatAppearance)applyChatAppearanceP(P.chatAppearance);else void loadChatAppearanceP();P.openChatSearchResults=[];P.openChatQuery='';if(Q('#chat-searchbar'))Q('#chat-searchbar').hidden=true;if(Q('#chat-search-input'))Q('#chat-search-input').value='';bindConversationSearchP();loadMessagesP(i).catch(e=>notifyP(e.message))};
  switchChats=switchChatsP;sendMsg=msg=>sendChatP(msg).catch(e=>{notifyP(e.message);throw e});attach=attachLiveP;
  bub=function(msg,first,last,index){
   const starred=msg.starred?'<span class="star-indicator" aria-label="Starred">★</span>':'';

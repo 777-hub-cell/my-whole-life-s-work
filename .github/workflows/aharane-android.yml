@@ -52,7 +52,7 @@ jobs:
   preview-screenshots:
     name: Run native app and capture real emulator screenshots
     needs: build
-    if: always()
+    if: needs.build.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -67,21 +67,10 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Download APK from this build
-        if: needs.build.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: aharane-native-android-debug
           path: artifacts
-
-      - name: Reuse the last successful APK if this build is blocked
-        if: needs.build.result != 'success'
-        uses: actions/download-artifact@v4
-        with:
-          name: aharane-native-android-debug
-          path: artifacts
-          repository: 777-hub-cell/my-whole-life-s-work
-          run-id: 44581557942
-          github-token: ${{ github.token }}
 
       - name: Run app in Android emulator and capture screens
         uses: reactivecircus/android-emulator-runner@v2.38.0
@@ -102,9 +91,39 @@ jobs:
             adb shell input tap 324 2232
             sleep 2
             adb exec-out screencap -p > screenshots/02-chats.png
+
             adb shell input tap 540 2232
             sleep 2
             adb exec-out screencap -p > screenshots/03-files.png
+
+            adb shell uiautomator dump /sdcard/aharane-window.xml >/dev/null 2>&1
+            adb shell cat /sdcard/aharane-window.xml > /tmp/aharane-window.xml
+            python3 - <<'PY'
+            import os, re, subprocess, time, xml.etree.ElementTree as ET
+            def find_and_tap(label):
+                root = ET.parse('/tmp/aharane-window.xml').getroot()
+                for node in root.iter('node'):
+                    if node.attrib.get('text') == label or node.attrib.get('content-desc') == label:
+                        match = re.fullmatch(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', node.attrib.get('bounds',''))
+                        if match:
+                            x1,y1,x2,y2 = map(int, match.groups())
+                            subprocess.run(['adb','shell','input','tap',str((x1+x2)//2),str((y1+y2)//2)], check=True)
+                            return True
+                return False
+            if not find_and_tap('Open editor'):
+                subprocess.run(['adb','shell','input','swipe','540','2000','540','1100','300'], check=True)
+                time.sleep(1)
+                subprocess.run(['adb','shell','uiautomator','dump','/sdcard/aharane-window.xml'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                data=subprocess.run(['adb','shell','cat','/sdcard/aharane-window.xml'], check=True, capture_output=True, text=True).stdout
+                open('/tmp/aharane-window.xml','w').write(data)
+                if not find_and_tap('Open editor'):
+                    raise SystemExit('Could not locate native Open editor control for screenshot')
+            time.sleep(3)
+            subprocess.run(['adb','exec-out','screencap','-p'], stdout=open('screenshots/03a-editor.png','wb'), check=True)
+            subprocess.run(['adb','shell','input','keyevent','4'], check=True)
+            time.sleep(1)
+            PY
+
             adb shell input tap 756 2232
             sleep 2
             adb exec-out screencap -p > screenshots/04-env.png

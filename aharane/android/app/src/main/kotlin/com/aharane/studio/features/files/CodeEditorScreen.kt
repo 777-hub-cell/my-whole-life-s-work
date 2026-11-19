@@ -92,7 +92,7 @@ fun CodeEditorScreen(
     onSelectDocument: (String) -> Unit = {},
     onCloseDocument: (String) -> Unit = {},
     onContentChange: (String, String) -> Unit = { _, _ -> },
-    onSave: (String, String) -> Unit = { _, _ -> }
+    onSave: (String, String) -> Boolean = { _, _ -> false }
 ) {
     var explorerOpen by rememberSaveable { mutableStateOf(false) }
     var panelOpen by rememberSaveable { mutableStateOf(false) }
@@ -104,8 +104,20 @@ fun CodeEditorScreen(
         mutableStateOf(TextFieldValue(activeDocument?.content.orEmpty()))
     }
     var dirty by remember(activeDocument?.path) { mutableStateOf(false) }
+    var saveState by remember(activeDocument?.path) { mutableStateOf("saved") }
     LaunchedEffect(activeDocument?.path, activeDocument?.content) {
         if (!dirty) editorValue = TextFieldValue(activeDocument?.content.orEmpty())
+    }
+    LaunchedEffect(editorValue.text, dirty, activeDocument?.path, editable) {
+        if (dirty && editable && activeDocument != null) {
+            kotlinx.coroutines.delay(600)
+            saveState = if (onSave(activeDocument.path, editorValue.text)) {
+                dirty = false
+                "saved"
+            } else {
+                "unsaved"
+            }
+        }
     }
     val verticalScroll = rememberScrollState()
     val horizontalScroll = rememberScrollState()
@@ -148,8 +160,12 @@ fun CodeEditorScreen(
                 )
             }
             Text(
-                if (dirty) "Saving…" else "Saved",
-                color = Color(0xFF4EC9B0),
+                when (saveState) {
+                    "saving" -> "Saving…"
+                    "unsaved" -> "Unsaved"
+                    else -> "Saved"
+                },
+                color = if (saveState == "unsaved") Color(0xFFE5B567) else Color(0xFF4EC9B0),
                 fontSize = 12.sp,
                 modifier = Modifier.padding(horizontal = 7.dp)
             )
@@ -262,6 +278,7 @@ fun CodeEditorScreen(
                     onValueChange = { next ->
                         editorValue = next
                         dirty = true
+                        saveState = "saving"
                         onContentChange(activeDocument.path, next.text)
                     },
                     visualTransformation = if (activeDocument.path.endsWith(".js", true) ||
@@ -325,6 +342,7 @@ fun CodeEditorScreen(
                                 editorValue = insertEditorText(editorValue, insertion)
                                 activeDocument?.let { onContentChange(it.path, editorValue.text) }
                                 dirty = true
+                                saveState = "saving"
                             }.padding(horizontal = 9.dp),
                         contentAlignment = Alignment.Center
                     ) {

@@ -23,7 +23,21 @@ import com.aharane.studio.features.more.MoreScreen
 @Composable
 fun AharaneApp(
     themeMode: String,
-    onThemeModeChanged: (String) -> Unit
+    onThemeModeChanged: (String) -> Unit,
+    accentColor: String,
+    onAccentColorChanged: (String) -> Unit,
+    interfaceSize: String,
+    onInterfaceSizeChanged: (String) -> Unit,
+    cornerStyle: String,
+    onCornerStyleChanged: (String) -> Unit,
+    rowSpacing: String,
+    onRowSpacingChanged: (String) -> Unit,
+    editorTheme: String,
+    onEditorThemeChanged: (String) -> Unit,
+    editorFontSize: Int,
+    onEditorFontSizeChanged: (Int) -> Unit,
+    editorLineNumbers: Boolean,
+    onEditorLineNumbersChanged: (Boolean) -> Unit
 ) {
     var destinationName by rememberSaveable { mutableStateOf(MainDestination.HOME.name) }
     var accountName by rememberSaveable { mutableStateOf(ChatAccount.PRIVATE.name) }
@@ -53,7 +67,10 @@ fun AharaneApp(
                     onClose = {
                         editorOpen = false
                         if (editorFromConfiguration) configurationOpen = true
-                    }
+                    },
+                    lineNumbers = editorLineNumbers,
+                    fontSizeSp = editorFontSize,
+                    editorTheme = editorTheme
                 )
                 activeConversation != null -> ConversationScreen(
                     conversation = activeConversation!!,
@@ -96,7 +113,21 @@ fun AharaneApp(
                     MainDestination.ENVIRONMENT -> EnvironmentScreen()
                     MainDestination.MORE -> MoreScreen(
                         themeMode = themeMode,
-                        onThemeModeChanged = onThemeModeChanged
+                        onThemeModeChanged = onThemeModeChanged,
+                        accentColor = accentColor,
+                        onAccentColorChanged = onAccentColorChanged,
+                        interfaceSize = interfaceSize,
+                        onInterfaceSizeChanged = onInterfaceSizeChanged,
+                        cornerStyle = cornerStyle,
+                        onCornerStyleChanged = onCornerStyleChanged,
+                        rowSpacing = rowSpacing,
+                        onRowSpacingChanged = onRowSpacingChanged,
+                        editorTheme = editorTheme,
+                        onEditorThemeChanged = onEditorThemeChanged,
+                        editorFontSize = editorFontSize,
+                        onEditorFontSizeChanged = onEditorFontSizeChanged,
+                        editorLineNumbers = editorLineNumbers,
+                        onEditorLineNumbersChanged = onEditorLineNumbersChanged
                     )
                 }
             }

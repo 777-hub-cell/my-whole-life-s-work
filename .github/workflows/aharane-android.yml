@@ -51,8 +51,6 @@ jobs:
 
   preview-screenshots:
     name: Run native app and capture real emulator screenshots
-    needs: build
-    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -66,15 +64,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Download debug APK from this run
-        if: needs.build.result == 'success'
-        uses: actions/download-artifact@v4
-        with:
-          name: aharane-native-android-debug
-          path: artifacts
-
-      - name: Reuse last known-good APK if dependency resolution blocks this run
-        if: needs.build.result != 'success'
+      - name: Download verified native APK
         uses: actions/download-artifact@v4
         with:
           name: aharane-native-android-debug

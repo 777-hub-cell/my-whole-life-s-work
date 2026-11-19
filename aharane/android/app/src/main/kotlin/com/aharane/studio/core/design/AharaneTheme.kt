@@ -104,9 +104,10 @@ fun AharaneTheme(
     rowScale: Float = 1f,
     content: @Composable () -> Unit
 ) {
+    val amoled = themeMode == "amoled"
     val dark = when (themeMode) {
         "light" -> false
-        "dark" -> true
+        "dark", "amoled" -> true
         else -> isSystemInDarkTheme()
     }
     val accent = remember(accentColorHex) {
@@ -128,7 +129,11 @@ fun AharaneTheme(
         primary = darkAccent,
         onPrimary = Color(0xFF04140E),
         primaryContainer = blend(darkAccent, Color.Black, .72f),
-        onPrimaryContainer = Color(0xFFEAF0EE)
+        onPrimaryContainer = Color(0xFFEAF0EE),
+        background = if (amoled) Color.Black else Dark.background,
+        surface = if (amoled) Color.Black else Dark.surface,
+        surfaceVariant = if (amoled) Color(0xFF101614) else Dark.surfaceVariant,
+        outline = if (amoled) Color(0xFF202725) else Dark.outline
     )
     val baseDensity = LocalDensity.current
     val scaledDensity = Density(

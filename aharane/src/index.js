@@ -1828,10 +1828,15 @@ app.post('/api/chats/:accountId/:jid/delete', requireAdmin, async (req, res) => 
     if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid)) return res.status(404).json({ ok: false, error: 'Conversation not found.' })
     const original = await chatStore.getMessage(accountId, jid, String(req.body?.messageId || ''))
     if (!original) return res.status(404).json({ ok: false, error: 'Message not found.' })
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected') return res.status(503).json({ ok: false, error: 'Connect this WhatsApp account before deleting a message.' })
     if (original.fromMe) {
-      const session = accountRuntime.get(accountId), socket = session.socket
-      if (!socket || session.state !== 'connected') return res.status(503).json({ ok: false, error: 'This WhatsApp account is not connected.' })
       await socket.sendMessage(jid, { delete: original.key })
+    } else {
+      if (typeof socket.chatModify !== 'function') return res.status(501).json({ ok: false, error: 'This WhatsApp connection does not support deleting incoming messages for this account.' })
+      await socket.chatModify({ clear: { messages: [{
+        id: original.id, fromMe: false, timestamp: String(Math.floor(Number(original.timestamp || 0) / 1000)),
+      }] } }, jid)
     }
     await chatStore.deleteMessage(accountId, jid, original.id)
     publishStudioEvent('whatsapp.message.deleted', { accountId, jid, messageId: original.id })

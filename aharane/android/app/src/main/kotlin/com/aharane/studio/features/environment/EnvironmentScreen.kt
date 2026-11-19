@@ -32,8 +32,17 @@ import com.aharane.studio.core.design.*
 private data class EnvDraft(val key: String, val value: String, val secret: Boolean)
 
 @Composable
-fun EnvironmentScreen() {
-    val variables = remember { mutableStateListOf<EnvDraft>() }
+fun EnvironmentScreen(previewMode: Boolean = false) {
+    val variables = remember(previewMode) { mutableStateListOf<EnvDraft>().apply {
+        if (previewMode) addAll(listOf(
+            EnvDraft("BOT_NAME", "Aharane", false),
+            EnvDraft("COMMAND_PREFIX", ".", false),
+            EnvDraft("OWNER_NUMBER", "••••••••••", false),
+            EnvDraft("SESSION_SECRET", "preview-secret-value", true),
+            EnvDraft("MEGA_EMAIL", "", false),
+            EnvDraft("MEGA_PASSWORD", "", true)
+        ))
+    } }
     val revealed = remember { mutableStateMapOf<String, Boolean>() }
     var revealAll by rememberSaveable { mutableStateOf(false) }
     var addDialog by rememberSaveable { mutableStateOf(false) }

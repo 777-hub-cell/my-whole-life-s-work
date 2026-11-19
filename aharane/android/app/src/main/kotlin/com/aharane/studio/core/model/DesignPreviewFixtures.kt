@@ -121,7 +121,139 @@ module.exports = { isOwner };
         "index.js" to """const config = require('./config');
 
 async function startStudioBot() {
-  console.log(`Starting ${config.name}`);
+  console.log(`Starting ${'`);
+  return { ready: true };
+}
+
+module.exports = { startStudioBot };
+""",
+        "commands/menu.js" to """module.exports = async function menu(client, message) {
+  await message.reply('Aharane commands');
+};
+""",
+        "commands/ping.js" to """module.exports = async function ping(client, message) {
+  const started = Date.now();
+  await message.reply(`Pong · ${'ms`);
+};
+""",
+        "package.json" to """{
+  "name": "aharane",
+  "version": "1.0.0",
+  "private": true
+}
+""",
+        "README.md" to """# Aharane
+A private WhatsApp companion bot.
+"""
+    )
+
+    fun messageTimestamp(offsetMinutes: Long): Long = now - offsetMinutes * 60_000L
+}
+}{config.name}`);
+  return { ready: true };
+}
+
+module.exports = { startStudioBot };
+""",
+        "commands/menu.js" to """module.exports = async function menu(client, message) {
+  await message.reply('Aharane commands');
+};
+""",
+        "commands/ping.js" to """module.exports = async function ping(client, message) {
+  const started = Date.now();
+  await message.reply(`Pong · ${'ms`);
+};
+""",
+        "package.json" to """{
+  "name": "aharane",
+  "version": "1.0.0",
+  "private": true
+}
+""",
+        "README.md" to """# Aharane
+A private WhatsApp companion bot.
+"""
+    )
+
+    fun messageTimestamp(offsetMinutes: Long): Long = now - offsetMinutes * 60_000L
+}
+}{Date.now() - started}ms`);
+};
+""",
+        "package.json" to """{
+  "name": "aharane",
+  "version": "1.0.0",
+  "private": true
+}
+""",
+        "README.md" to """# Aharane
+A private WhatsApp companion bot.
+"""
+    )
+
+    fun messageTimestamp(offsetMinutes: Long): Long = now - offsetMinutes * 60_000L
+}
+}{config.name}`);
+  return { ready: true };
+}
+
+module.exports = { startStudioBot };
+""",
+        "commands/menu.js" to """module.exports = async function menu(client, message) {
+  await message.reply('Aharane commands');
+};
+""",
+        "commands/ping.js" to """module.exports = async function ping(client, message) {
+  const started = Date.now();
+  await message.reply(`Pong · ${Date.now() - started}ms`);
+};
+""",
+        "package.json" to """{
+  "name": "aharane",
+  "version": "1.0.0",
+  "private": true
+}
+""",
+        "README.md" to """# Aharane
+A private WhatsApp companion bot.
+"""
+    )
+
+    fun messageTimestamp(offsetMinutes: Long): Long = now - offsetMinutes * 60_000L
+}
+}{Date.now() - started}ms`);
+};
+""",
+        "package.json" to """{
+  "name": "aharane",
+  "version": "1.0.0",
+  "private": true
+}
+""",
+        "README.md" to """# Aharane
+A private WhatsApp companion bot.
+"""
+    )
+
+    fun messageTimestamp(offsetMinutes: Long): Long = now - offsetMinutes * 60_000L
+}
+}{Date.now() - started}ms`);
+};
+""",
+        "package.json" to """{
+  "name": "aharane",
+  "version": "1.0.0",
+  "private": true
+}
+""",
+        "README.md" to """# Aharane
+A private WhatsApp companion bot.
+"""
+    )
+
+    fun messageTimestamp(offsetMinutes: Long): Long = now - offsetMinutes * 60_000L
+}
+}{config.name}`);
   return { ready: true };
 }
 

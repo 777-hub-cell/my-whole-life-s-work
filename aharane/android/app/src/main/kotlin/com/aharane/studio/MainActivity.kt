@@ -1,6 +1,7 @@
 package com.aharane.studio
 
 import android.os.Bundle
+import android.content.pm.ApplicationInfo
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -14,7 +15,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val previewMode = BuildConfig.DEBUG && intent?.getBooleanExtra("aharane_preview_mode", false) == true
+        val isDebuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        val previewMode = isDebuggable && intent?.getBooleanExtra("aharane_preview_mode", false) == true
         val preferences = getSharedPreferences("aharane-studio-ui", MODE_PRIVATE)
 
         setContent {

@@ -39,13 +39,13 @@ fun FilesScreen() {
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StudioActionButton("New file", modifier = Modifier.weight(1f)) { unavailable("creating files") }
-                StudioActionButton("Upload", modifier = Modifier.weight(1f)) { unavailable("uploading files") }
+                StudioActionButton("New file", modifier = Modifier.weight(1f), compact = true) { unavailable("creating files") }
+                StudioActionButton("Upload", modifier = Modifier.weight(1f), compact = true) { unavailable("uploading files") }
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StudioActionButton("New folder", modifier = Modifier.weight(1f)) { unavailable("creating folders") }
-                StudioActionButton("Export Bot Source", modifier = Modifier.weight(1f)) { unavailable("exporting bot source") }
+                StudioActionButton("New folder", modifier = Modifier.weight(1f), compact = true) { unavailable("creating folders") }
+                StudioActionButton("Export Bot Source", modifier = Modifier.weight(1f), compact = true) { unavailable("exporting bot source") }
             }
             Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {

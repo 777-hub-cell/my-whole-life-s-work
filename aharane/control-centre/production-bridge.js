@@ -890,7 +890,7 @@ function drawChatVisibilityP(account,search){
  const save=Q('#vis-save');if(save)save.onclick=async()=>{save.disabled=true;save.textContent='Saving…';try{const response=await apiP('chats/'+account+'/visibility',{method:'PUT',body:pack({visibility:visibilityDraftP})});P.visibility=response.visibility||visibilityDraftP;visibilityDraftP=null;visibilityChatsDraftP=[];closeSheet();await refreshChatsP();render();notifyP('Chat visibility saved')}catch(error){save.disabled=false;save.textContent='Save visibility';notifyP(error.message)}};
 }
 
-async async function refreshChatsP(){
+async function refreshChatsP(){
  const account=S.cacc==='private'?'private':'public',r=await apiP('chats/'+account+'?limit=500'),current=P.chatJid,prefs=r.preferences||{pinned:[],muted:[]},pinned=new Set(prefs.pinned||[]),muted=new Set(prefs.muted||[]);
  P.chatPreferences=prefs;
  CH.splice(0,CH.length,...(r.chats||[]).map(c=>({jid:c.jid,n:c.name||c.jid.split('@')[0],g:c.group===true||String(c.jid).endsWith('@g.us'),mem:[],un:c.unreadCount||0,pinned:pinned.has(c.jid),muted:muted.has(c.jid),m:[{d:c.fromMe?'o':'i',t:c.lastMessage||'',ts:c.timestamp||Date.now()}]})));P.messageFingerprints.clear();

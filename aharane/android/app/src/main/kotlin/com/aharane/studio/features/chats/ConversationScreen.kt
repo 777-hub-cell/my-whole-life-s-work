@@ -86,7 +86,7 @@ fun ConversationScreen(
     }
 
     Column(
-        Modifier.fillMaxSize().background(StudioPalette.Background)
+        Modifier.fillMaxSize().background(StudioPalette.Background).imePadding()
     ) {
         Row(
             Modifier.fillMaxWidth().height(58.dp)

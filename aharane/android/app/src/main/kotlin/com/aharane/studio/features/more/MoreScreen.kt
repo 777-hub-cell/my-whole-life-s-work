@@ -36,7 +36,21 @@ private val AccentChoices = listOf(
 @Composable
 fun MoreScreen(
     themeMode: String,
-    onThemeModeChanged: (String) -> Unit
+    onThemeModeChanged: (String) -> Unit,
+    accentColor: String,
+    onAccentColorChanged: (String) -> Unit,
+    interfaceSize: String,
+    onInterfaceSizeChanged: (String) -> Unit,
+    cornerStyle: String,
+    onCornerStyleChanged: (String) -> Unit,
+    rowSpacing: String,
+    onRowSpacingChanged: (String) -> Unit,
+    editorTheme: String,
+    onEditorThemeChanged: (String) -> Unit,
+    editorFontSize: Int,
+    onEditorFontSizeChanged: (Int) -> Unit,
+    editorLineNumbers: Boolean,
+    onEditorLineNumbersChanged: (Boolean) -> Unit
 ) {
     var page by rememberSaveable { mutableStateOf("more") }
     var dialog by rememberSaveable { mutableStateOf("") }
@@ -56,12 +70,12 @@ fun MoreScreen(
                         .clickable { page = "more" }.padding(vertical = 6.dp)
                 )
                 Spacer(Modifier.height(10.dp))
-                StudioPageTitle("Appearance", "Changes apply instantly and are remembered.")
+                StudioPageTitle("Appearance", "Changes apply instantly and are remembered on this phone.")
             }
             item { StudioSectionHeading("App") }
             item {
                 StudioCard {
-                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                         Text("Theme", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         Text("Light, dark, or follow your phone.", color = StudioPalette.Muted, fontSize = 12.5.sp)
                         StudioSegmented(
@@ -70,22 +84,54 @@ fun MoreScreen(
                             onSelect = { onThemeModeChanged(it.lowercase()) }
                         )
                         StudioDivider()
-                        DisabledPreference("Accent color", "Used for buttons, active tabs and highlights.")
-                        Row(horizontalArrangement = Arrangement.spacedBy(11.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Accent color", color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Used for active tabs, buttons and highlights.", color = StudioPalette.Muted, fontSize = 12.sp)
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             AccentChoices.forEach { color ->
+                                val selected = accentColor.equals(color, ignoreCase = true)
+                                val parsed = runCatching { Color(android.graphics.Color.parseColor(color)) }.getOrDefault(StudioPalette.Accent)
                                 Box(
-                                    Modifier.size(27.dp).clip(CircleShape).background(color)
-                                        .border(1.dp, StudioPalette.Line.copy(alpha = .6f), CircleShape)
-                                )
+                                    Modifier.size(if (selected) 32.dp else 28.dp)
+                                        .clip(CircleShape)
+                                        .background(parsed)
+                                        .then(if (selected) Modifier.border(2.dp, StudioPalette.Ink, CircleShape) else Modifier)
+                                        .clickable { onAccentColorChanged(color) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (selected) {
+                                        Text("✓", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
                             }
-                            StudioTag("Not available")
                         }
                         StudioDivider()
-                        DisabledPreference("Interface size", "Scales text and spacing across the app.", "Default")
+                        PreferenceChoice(
+                            "Interface size",
+                            listOf("Compact", "Default", "Large"),
+                            when (interfaceSize) { "compact" -> "Compact"; "large" -> "Large"; else -> "Default" }
+                        ) { choice ->
+                            onInterfaceSizeChanged(when (choice) { "Compact" -> "compact"; "Large" -> "large"; else -> "default" })
+                        }
                         StudioDivider()
-                        DisabledPreference("Corners", "Roundness of cards and buttons.", "Default")
+                        PreferenceChoice(
+                            "Corners",
+                            listOf("Sharp", "Default", "Round"),
+                            when (cornerStyle) { "sharp" -> "Sharp"; "rounded" -> "Round"; else -> "Default" }
+                        ) { choice ->
+                            onCornerStyleChanged(when (choice) { "Sharp" -> "sharp"; "Round" -> "rounded"; else -> "default" })
+                        }
                         StudioDivider()
-                        DisabledPreference("Spacing", "Row height in lists.", "Comfortable")
+                        PreferenceChoice(
+                            "Spacing",
+                            listOf("Compact", "Comfortable", "Relaxed"),
+                            when (rowSpacing) { "compact" -> "Compact"; "relaxed" -> "Relaxed"; else -> "Comfortable" }
+                        ) { choice ->
+                            onRowSpacingChanged(when (choice) { "Compact" -> "compact"; "Relaxed" -> "relaxed"; else -> "comfortable" })
+                        }
                     }
                 }
             }
@@ -93,11 +139,26 @@ fun MoreScreen(
             item {
                 StudioCard {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DisabledPreference("Color scheme", "The editor has its own look, separate from the app.", "Dark+")
+                        Text("Color scheme", color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                        StudioSegmented(
+                            options = listOf("Dark+", "Light+"),
+                            selected = if (editorTheme == "Light+") "Light+" else "Dark+",
+                            onSelect = onEditorThemeChanged
+                        )
                         StudioDivider()
-                        DisabledPreference("Font size", "Code text size.", "14sp")
+                        Text("Font size", color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                        StudioSegmented(
+                            options = listOf("12", "14", "16", "18"),
+                            selected = editorFontSize.toString(),
+                            onSelect = { onEditorFontSizeChanged(it.toInt()) }
+                        )
                         StudioDivider()
-                        DisabledPreference("Line numbers", "Show the numbered gutter beside your code.", "On")
+                        PreferenceSwitch(
+                            title = "Line numbers",
+                            description = "Show the numbered gutter beside your code.",
+                            checked = editorLineNumbers,
+                            onCheckedChange = onEditorLineNumbersChanged
+                        )
                     }
                 }
             }

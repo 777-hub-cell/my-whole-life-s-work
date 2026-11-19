@@ -53,6 +53,7 @@ fun AharaneApp(
     var editorOpen by rememberSaveable { mutableStateOf(false) }
     var editorFromConfiguration by rememberSaveable { mutableStateOf(false) }
     var configurationOpen by rememberSaveable { mutableStateOf(false) }
+    var morePage by rememberSaveable { mutableStateOf("more") }
     var activeConversation by remember { mutableStateOf<ChatSummary?>(null) }
     var activeEditorPath by rememberSaveable { mutableStateOf<String?>(null) }
     val previewMessages = remember { mutableStateListOf<ChatMessage>().apply {
@@ -156,8 +157,9 @@ fun AharaneApp(
                 else -> when (destination) {
                     MainDestination.HOME -> HomeScreen(
                         onOpenChats = { destinationName = MainDestination.CHATS.name },
-                        onOpenMore = { destinationName = MainDestination.MORE.name },
-                        onOpenConfiguration = { configurationOpen = true }
+                        onOpenMore = { destinationName = MainDestination.MORE.name; morePage = "more" },
+                        onOpenConfiguration = { configurationOpen = true },
+                        onOpenActivity = { destinationName = MainDestination.MORE.name; morePage = "activity" }
                     )
                     MainDestination.CHATS -> ChatsScreen(
                         account = account,
@@ -198,7 +200,10 @@ fun AharaneApp(
                         editorFontSize = editorFontSize,
                         onEditorFontSizeChanged = onEditorFontSizeChanged,
                         editorLineNumbers = editorLineNumbers,
-                        onEditorLineNumbersChanged = onEditorLineNumbersChanged
+                        onEditorLineNumbersChanged = onEditorLineNumbersChanged,
+                        page = morePage,
+                        onPageChange = { morePage = it },
+                        onOpenEnvironment = { destinationName = MainDestination.ENVIRONMENT.name; morePage = "more" }
                     )
                 }
             }
@@ -209,6 +214,7 @@ fun AharaneApp(
                 selected = destination,
                 onNavigate = {
                     configurationOpen = false
+                    if (it != MainDestination.MORE) morePage = "more"
                     destinationName = it.name
                 }
             )

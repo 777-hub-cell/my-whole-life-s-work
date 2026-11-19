@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.sp
 import com.aharane.studio.core.design.*
 
 @Composable
-fun FilesScreen(onOpenEditor: () -> Unit) {
+fun FilesScreen(onEditorVisibility: (Boolean) -> Unit) {
     val context = LocalContext.current
     var query by rememberSaveable { mutableStateOf("") }
     val unavailable: (String) -> Unit = { action ->
@@ -75,9 +75,7 @@ fun FilesScreen(onOpenEditor: () -> Unit) {
                     Modifier.fillMaxWidth().heightIn(min = 40.dp).padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        Modifier.size(18.dp).border(1.dp, StudioPalette.Line, RoundedCornerShape(4.dp))
-                    )
+                    Box(Modifier.size(18.dp).border(1.dp, StudioPalette.Line, RoundedCornerShape(4.dp)))
                     Text(
                         "Select all",
                         color = StudioPalette.Muted,
@@ -110,7 +108,12 @@ fun FilesScreen(onOpenEditor: () -> Unit) {
                     title = "Source editor",
                     subtitle = "Open the native code workspace",
                     trailingContent = {
-                        StudioActionButton("Open editor", compact = true, primary = true, onClick = onOpenEditor)
+                        StudioActionButton(
+                            "Open editor",
+                            compact = true,
+                            primary = true,
+                            onClick = { onEditorVisibility(true) }
+                        )
                     }
                 )
             }

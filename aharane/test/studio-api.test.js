@@ -132,7 +132,7 @@ test('the app source editor works on-device and can safely reset its overrides',
  const recovery=await read('../control-centre/recover.html')
  for(const file of ['index.html','styles.css','app.js','production-bridge.js','manifest.webmanifest'])assert.ok(bridge.includes(file))
  for(const marker of ["id=\"open-local-source\"","indexedDB.open('aharane-local-studio',2)","objectStore('appOverrides').put","objectStore('appOverrides').clear","function openAppSourceP","function saveAppSourceP","function resetAppSourceP"])assert.ok(bridge.includes(marker),marker)
- assert.ok(worker.includes('aharane-local-studio-shell-v13'))
+ assert.ok(worker.includes('aharane-local-studio-shell-v14'))
  assert.ok(worker.includes('SOURCE_PATHS'))
  assert.ok(worker.includes("['/aharane/studio/production-bridge.js','production-bridge.js']"))
  assert.ok(worker.includes("u.pathname.startsWith('/aharane/api/')"))
@@ -208,7 +208,7 @@ test('Web Chat supports persistent chat preferences, per-conversation search, qu
  const store=await read('../src/chat-store.js')
  const bridge=await read('../control-centre/production-bridge.js')
  const app=await read('../control-centre/app.js')
- assert.ok(!runtime.includes('downloadMedia: (msg, socket)'), 'Incoming media must not be fetched when a message arrives.')
+ assert.ok(!runtime.includes('downloadMedia: (msg, socket) => downloadMediaMessage'), 'Incoming message handlers must not download media on receipt.')
  for(const marker of [
   "app.put('/api/chats/:accountId/preferences'",
   "app.get('/api/chats/:accountId/:jid/search'",

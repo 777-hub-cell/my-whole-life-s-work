@@ -960,7 +960,7 @@ async function handleMessages(sessionId, currentSocket, event) {
         sessionId, remoteJid, ownJid: currentSocket.user?.id || '',
         privateOwnerNumber: ownerConfig.privateOwnerNumber,
       })
-      await chatStore.recordMessage({ sessionId, message, socket: currentSocket, downloadMedia: (msg, socket) => downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: socket.updateMediaMessage }) })
+      await chatStore.recordMessage({ sessionId, message, socket: currentSocket })
       if (message.key.fromMe !== true && studioSettings.private.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
       if (message.key.fromMe !== true || !privateSelfChat) continue
       privateControl = isPrivateSelfCommand({
@@ -985,7 +985,7 @@ async function handleMessages(sessionId, currentSocket, event) {
         allowedSenders: publicAllowedSenders(),
       })
       const firstConversationMessage = allowedToUseCommands && !await chatStore.hasConversation(sessionId, remoteJid)
-      await chatStore.recordMessage({ sessionId, message, socket: currentSocket, downloadMedia: (msg, socket) => downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: socket.updateMediaMessage }) })
+      await chatStore.recordMessage({ sessionId, message, socket: currentSocket })
       if (studioSettings.public.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
       if (!allowedToUseCommands) continue
       if (firstConversationMessage && studioSettings.public.welcomeMessage) {

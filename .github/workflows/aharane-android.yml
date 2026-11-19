@@ -127,7 +127,6 @@ jobs:
                 y, _ = max(matches)
                 run("adb", "shell", "input", "tap", str(x), str(y))
                 time.sleep(2)
-                run("adb", "exec-out", "screencap", "-p")
                 image = subprocess.run(
                     ["adb", "exec-out", "screencap", "-p"],
                     check=True, stdout=subprocess.PIPE

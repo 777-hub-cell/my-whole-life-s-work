@@ -50,7 +50,12 @@ fun AharaneApp(
         }
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            when (destination) {
+            if (editorOpen) {
+                com.aharane.studio.features.files.CodeEditorScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    onClose = { editorOpen = false }
+                )
+            } else when (destination) {
                 MainDestination.HOME -> HomeScreen(
                     onOpenChats = { destinationName = MainDestination.CHATS.name },
                     onOpenMore = { destinationName = MainDestination.MORE.name },

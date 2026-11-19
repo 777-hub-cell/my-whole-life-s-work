@@ -1,83 +1,101 @@
 package com.aharane.studio.features.home
-import androidx.compose.foundation.BorderStroke
+
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material3.*
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import com.aharane.studio.core.design.*
 
 @Composable
 fun HomeScreen(onOpenChats: () -> Unit, onOpenMore: () -> Unit) {
     LazyColumn(
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(22.dp)
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Your workspace", style = MaterialTheme.typography.headlineMedium)
-                Text("Manage Aharane and its connected WhatsApp sessions.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            StudioPageTitle("Welcome back", "Your private bot workspace.")
+            Spacer(Modifier.height(18.dp))
         }
         item {
-            Surface(Modifier.fillMaxWidth(), RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text("Server connection", style = MaterialTheme.typography.titleMedium)
-                        Text("Not linked", color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelMedium)
+            StudioCard(padding = PaddingValues(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    StudioStatusDot(online = false, size = 14)
+                    Text("Aharane bot", color = StudioPalette.Ink, fontSize = 26.sp,
+                        lineHeight = 30.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp)
+                    Spacer(Modifier.weight(1f))
+                    StudioTag("Not linked")
+                }
+                Text("Native app connection required", color = StudioPalette.Muted,
+                    fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 3.dp))
+                Row(
+                    Modifier.fillMaxWidth().height(64.dp).padding(top = 16.dp, bottom = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    repeat(24) { index ->
+                        Box(
+                            Modifier.weight(1f).height(if (index % 4 == 0) 7.dp else 4.dp)
+                                .background(StudioPalette.Line, RoundedCornerShape(3.dp))
+                        )
                     }
-                    Text("This native app is not linked to your Aharane server yet. Your existing bot and web Studio are unchanged.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium)
-                    Button(onClick = onOpenMore) { Text("Connection setup") }
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Messages handled, last 24 hours", color = StudioPalette.Muted,
+                        fontSize = 12.5.sp, lineHeight = 17.sp)
+                    Spacer(Modifier.weight(1f))
+                    Text("—", color = StudioPalette.Muted, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StudioActionButton("Restart", enabled = false, onClick = {})
+                    StudioActionButton("Stop", enabled = false, onClick = {})
                 }
             }
         }
+
+        item { StudioSectionHeading("Accounts") }
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("WhatsApp sessions", style = MaterialTheme.typography.titleLarge)
-                SessionRow("Private", "Your private WhatsApp identity", Icons.Outlined.Lock)
-                SessionRow("Public", "Your public-facing WhatsApp identity", Icons.Outlined.Public)
+            StudioCard {
+                StudioRow("Private", "Private WhatsApp account", Icons.Outlined.Lock, "Not linked")
+                StudioDivider()
+                StudioRow("Public", "Public WhatsApp account", Icons.Outlined.Public, "Not linked")
             }
         }
+
+        item { StudioSectionHeading("Setup") }
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Quick access", style = MaterialTheme.typography.titleLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(onClick = onOpenChats) {
-                        Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null)
-                        Text("Chats", Modifier.padding(start = 8.dp))
-                    }
-                    OutlinedButton(onClick = onOpenMore) { Text("More") }
-                }
+            StudioCard {
+                StudioRow(
+                    title = "Configuration",
+                    subtitle = "Prefix, access and bot behaviour",
+                    icon = Icons.Outlined.Settings,
+                    trailing = "›",
+                    onClick = onOpenMore
+                )
             }
         }
-    }
-}
-@Composable
-private fun SessionRow(title: String, detail: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        Icon(icon, contentDescription = title, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Column {
-            Text("$title session", style = MaterialTheme.typography.titleSmall)
-            Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall)
+
+        item { StudioSectionHeading("Recent activity", action = "View all", onAction = onOpenMore) }
+        item {
+            StudioCard {
+                StudioEmpty(
+                    title = "No activity available",
+                    description = "Connect your Aharane server to see recent bot activity and diagnostics."
+                )
+            }
         }
-        Spacer(Modifier.weight(1f))
-        Text("Native link pending", color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelSmall)
+        item { Spacer(Modifier.height(10.dp)) }
     }
 }

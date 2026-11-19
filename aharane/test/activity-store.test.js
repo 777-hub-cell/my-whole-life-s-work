@@ -30,7 +30,7 @@ test('activity history is physically capped instead of growing forever', async (
     assert.equal(rows.length, 2)
     assert.equal(rows[0].message, 'entry 7')
     const { readFile } = await import('node:fs/promises')
-    const diskRows = (await readFile(join(dir, 'activity.jsonl'), 'utf8')).trim().split('\\n')
+    const diskRows = (await readFile(join(dir, 'activity.jsonl'), 'utf8')).trim().split(String.fromCharCode(10))
     assert.equal(diskRows.length, 2)
   } finally { await rm(dir, { recursive: true, force: true }) }
 })

@@ -129,12 +129,18 @@ async function pause(ms) {
   await new Promise(resolve => setTimeout(resolve, ms))
 }
 
+const lockOwner = await readFile('/var/lib/aharane/deploy-lock/owner', 'utf8').catch(() => '')
+// A Git installer owns the lock until its own end-to-end health check completes.
+// Do not mistake an older ZIP/manual update journal for the current Git deployment.
+if (lockOwner.startsWith('git:')) process.exit(0)
+
 const state = await readState()
 if (!state || state.status !== 'awaiting-healthcheck') process.exit(0)
 
 const previous = path.resolve(String(state.previousRelease || ''))
 if (!previous.startsWith(releases + path.sep)) {
   await writeState({ ...state, status: 'rollback_failed', message: 'Previous release path was invalid.', finishedAt: new Date().toISOString() })
+  await rm('/var/lib/aharane/deploy-lock', { recursive: true, force: true }).catch(() => {})
   process.exit(1)
 }
 
@@ -158,6 +164,7 @@ if (healthy) {
   if (['manual-files', 'manual-discard'].includes(state.source)) {
     await rm('/var/lib/aharane/updates/manual-edit-state.json', { force: true }).catch(() => {})
   }
+  await rm('/var/lib/aharane/deploy-lock', { recursive: true, force: true }).catch(() => {})
   process.exit(0)
 }
 
@@ -182,6 +189,7 @@ try {
     finishedAt: new Date().toISOString(),
   })
 }
+await rm('/var/lib/aharane/deploy-lock', { recursive: true, force: true }).catch(() => {})
 process.exit(1)
 VERIFY
 chown root:root /usr/local/lib/aharane/verify-update.mjs

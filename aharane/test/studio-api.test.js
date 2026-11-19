@@ -241,3 +241,19 @@ test('legacy public pairing cannot override the configured Public bot number', a
  assert.ok(route.includes('phoneNumber !== ownerConfig.publicBotNumber'))
  assert.ok(route.includes("requestPairingCode('public', ownerConfig.publicBotNumber)"))
 })
+
+
+test('deployment locks are released only after the matching health check or Git install completes', async () => {
+ const runtime=await read('../src/index.js')
+ const installer=await read('../install-azure.sh')
+ assert.ok(runtime.includes("const DEPLOY_LOCK_DIR = join(DATA_DIR, 'deploy-lock')"))
+ assert.ok(runtime.includes("await stat(DEPLOY_LOCK_DIR)"))
+ assert.ok(runtime.includes("acquireDeployLock('manual-files')"))
+ assert.ok(runtime.includes("acquireDeployLock('zip-update')"))
+ const verifyStart=installer.indexOf("cat > /usr/local/lib/aharane/verify-update.mjs <<'VERIFY'")
+ const verifyEnd=installer.indexOf("\nVERIFY",verifyStart)
+ const verify=installer.slice(verifyStart,verifyEnd)
+ assert.ok(verify.includes("lockOwner.startsWith('git:')"))
+ assert.ok(verify.includes("rm('/var/lib/aharane/deploy-lock'"))
+ assert.ok(installer.includes('if [[ "$LOCK_ACQUIRED" -eq 1 ]]; then rm -rf "$LOCK_DIR"; fi'))
+})

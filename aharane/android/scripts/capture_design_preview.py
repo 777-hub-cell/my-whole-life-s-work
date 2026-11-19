@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Capture native UI preview screens using explicitly debug-only fixture data.
 
-The launch flag is guarded by BuildConfig.DEBUG. This script never touches the
-Aharane server and sample content is not available in release builds.
+The launch flag is guarded by ApplicationInfo.FLAG_DEBUGGABLE. This script never
+contacts the Aharane server; sample content is absent from release launches.
 """
 import re
 import subprocess

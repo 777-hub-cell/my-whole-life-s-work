@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Info
@@ -16,6 +17,8 @@ import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -51,12 +54,18 @@ fun MoreScreen(
     editorFontSize: Int,
     onEditorFontSizeChanged: (Int) -> Unit,
     editorLineNumbers: Boolean,
-    onEditorLineNumbersChanged: (Boolean) -> Unit
+    onEditorLineNumbersChanged: (Boolean) -> Unit,
+    page: String,
+    onPageChange: (String) -> Unit,
+    onOpenEnvironment: () -> Unit = {}
 ) {
-    var page by rememberSaveable { mutableStateOf("more") }
     var dialog by rememberSaveable { mutableStateOf("") }
+    var customColorOpen by rememberSaveable { mutableStateOf(false) }
+    var customHex by rememberSaveable { mutableStateOf(accentColor) }
+    var activityQuery by rememberSaveable { mutableStateOf("") }
+    var activityFilter by rememberSaveable { mutableStateOf("All · 0") }
 
-    BackHandler(enabled = page == "appearance") { page = "more" }
+    BackHandler(enabled = page != "more") { onPageChange("more") }
 
     if (page == "appearance") {
         LazyColumn(
@@ -70,7 +79,7 @@ fun MoreScreen(
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                        .clickable { page = "more" }.padding(vertical = 6.dp)
+                        .clickable { onPageChange("more") }.padding(vertical = 6.dp)
                 )
                 Spacer(Modifier.height(10.dp))
                 StudioPageTitle("Appearance", "Changes apply instantly and are remembered on this phone.")
@@ -82,8 +91,8 @@ fun MoreScreen(
                         Text("Theme", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         Text("Light, dark, or follow your phone.", color = StudioPalette.Muted, fontSize = 12.5.sp)
                         StudioSegmented(
-                            options = listOf("System", "Light", "Dark"),
-                            selected = when (themeMode) { "light" -> "Light"; "dark" -> "Dark"; else -> "System" },
+                            options = listOf("System", "Light", "Dark", "AMOLED"),
+                            selected = when (themeMode) { "light" -> "Light"; "dark" -> "Dark"; "amoled" -> "AMOLED"; else -> "System" },
                             onSelect = { onThemeModeChanged(it.lowercase()) }
                         )
                         StudioDivider()
@@ -105,19 +114,26 @@ fun MoreScreen(
                                         .clickable { onAccentColorChanged(color) },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    if (selected) {
-                                        Text("✓", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                    }
+                                    if (selected) Text("✓", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                 }
+                            }
+                            Box(
+                                Modifier.size(30.dp).clip(CircleShape)
+                                    .background(StudioPalette.Surface)
+                                    .border(1.dp, StudioPalette.Line, CircleShape)
+                                    .clickable { customHex = accentColor; customColorOpen = true },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("+", color = StudioPalette.Ink, fontSize = 19.sp, fontWeight = FontWeight.Medium)
                             }
                         }
                         StudioDivider()
                         PreferenceChoice(
                             "Interface size",
-                            listOf("Compact", "Default", "Large"),
-                            when (interfaceSize) { "compact" -> "Compact"; "large" -> "Large"; else -> "Default" }
+                            listOf("Small", "Default", "Large", "Largest"),
+                            when (interfaceSize) { "small" -> "Small"; "large" -> "Large"; "largest" -> "Largest"; else -> "Default" }
                         ) { choice ->
-                            onInterfaceSizeChanged(when (choice) { "Compact" -> "compact"; "Large" -> "large"; else -> "default" })
+                            onInterfaceSizeChanged(when (choice) { "Small" -> "small"; "Large" -> "large"; "Largest" -> "largest"; else -> "default" })
                         }
                         StudioDivider()
                         PreferenceChoice(
@@ -130,10 +146,10 @@ fun MoreScreen(
                         StudioDivider()
                         PreferenceChoice(
                             "Spacing",
-                            listOf("Compact", "Comfortable", "Relaxed"),
-                            when (rowSpacing) { "compact" -> "Compact"; "relaxed" -> "Relaxed"; else -> "Comfortable" }
+                            listOf("Compact", "Comfortable", "Roomy"),
+                            when (rowSpacing) { "compact" -> "Compact"; "roomy" -> "Roomy"; else -> "Comfortable" }
                         ) { choice ->
-                            onRowSpacingChanged(when (choice) { "Compact" -> "compact"; "Relaxed" -> "relaxed"; else -> "comfortable" })
+                            onRowSpacingChanged(when (choice) { "Compact" -> "compact"; "Roomy" -> "roomy"; else -> "comfortable" })
                         }
                     }
                 }
@@ -144,16 +160,26 @@ fun MoreScreen(
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Color scheme", color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
                         StudioSegmented(
-                            options = listOf("Dark+", "Light+"),
-                            selected = if (editorTheme == "Light+") "Light+" else "Dark+",
+                            options = listOf("Dark+", "AMOLED", "Light"),
+                            selected = editorTheme,
                             onSelect = onEditorThemeChanged
                         )
                         StudioDivider()
-                        Text("Font size", color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
-                        StudioSegmented(
-                            options = listOf("12", "14", "16", "18"),
-                            selected = editorFontSize.toString(),
-                            onSelect = { onEditorFontSizeChanged(it.toInt()) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Font size", color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.weight(1f))
+                            Text("$editorFontSize px", color = StudioPalette.Muted, fontSize = 12.sp)
+                        }
+                        Slider(
+                            value = editorFontSize.toFloat(),
+                            onValueChange = { onEditorFontSizeChanged(it.toInt()) },
+                            valueRange = 11f..20f,
+                            steps = 8,
+                            colors = SliderDefaults.colors(
+                                thumbColor = StudioPalette.Accent,
+                                activeTrackColor = StudioPalette.Accent,
+                                inactiveTrackColor = StudioPalette.Line
+                            )
                         )
                         StudioDivider()
                         PreferenceSwitch(
@@ -165,7 +191,148 @@ fun MoreScreen(
                     }
                 }
             }
-            item { Spacer(Modifier.height(12.dp)) }
+            item {
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp)) {
+                    StudioActionButton(
+                        "Reset to defaults",
+                        compact = true,
+                        onClick = {
+                            onThemeModeChanged("system")
+                            onAccentColorChanged("#0E7A5C")
+                            onInterfaceSizeChanged("default")
+                            onCornerStyleChanged("default")
+                            onRowSpacingChanged("comfortable")
+                            onEditorThemeChanged("Dark+")
+                            onEditorFontSizeChanged(14)
+                            onEditorLineNumbersChanged(true)
+                        }
+                    )
+                }
+            }
+        }
+    } else if (page == "activity") {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            item {
+                BackToMore { onPageChange("more") }
+                Spacer(Modifier.height(12.dp))
+                StudioPageTitle("Activity and logs", "No server activity is available while disconnected.")
+                Text(
+                    "0 entries",
+                    color = StudioPalette.Muted,
+                    fontSize = 12.5.sp,
+                    modifier = Modifier.padding(top = 5.dp, bottom = 12.dp)
+                )
+            }
+            item {
+                StudioSearchField(
+                    value = activityQuery,
+                    onValueChange = { activityQuery = it },
+                    placeholder = "Search logs"
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+            item {
+                StudioSegmented(
+                    options = listOf("All · 0", "Info · 0", "Warnings · 0", "Errors · 0"),
+                    selected = activityFilter,
+                    onSelect = { activityFilter = it }
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+            item {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    StudioActionButton("Live", compact = true, enabled = false)
+                    StudioActionButton("Copy", compact = true, enabled = false)
+                    StudioActionButton("Export", compact = true, enabled = false)
+                    StudioActionButton("Clear", compact = true, destructive = true, enabled = false)
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+            item {
+                StudioCard {
+                    StudioEmpty(
+                        title = if (activityQuery.isBlank()) "No log entries yet." else "No log entries match.",
+                        description = "Connect to your Aharane server to load activity, warnings, errors and diagnostic details."
+                    )
+                }
+            }
+        }
+    } else if (page == "storage") {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            item {
+                BackToMore { onPageChange("more") }
+                Spacer(Modifier.height(12.dp))
+                StudioPageTitle("Storage", "What the bot’s files take up.")
+                Spacer(Modifier.height(14.dp))
+            }
+            item {
+                StudioCard(padding = PaddingValues(18.dp)) {
+                    Text("—", color = StudioPalette.Ink, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    Text("of — limit", color = StudioPalette.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 10.dp)
+                            .height(7.dp).clip(RoundedCornerShape(6.dp)).background(StudioPalette.Line)
+                    ) { }
+                    listOf("Code and text", "Images", "Videos", "Audio").forEachIndexed { index, label ->
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 42.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                Modifier.size(8.dp).clip(CircleShape).background(
+                                    listOf(Color(0xFF3B82F6), StudioPalette.Accent, Color(0xFFD6336C), Color(0xFFE0A100))[index]
+                                )
+                            )
+                            Text(label, color = StudioPalette.Ink, fontSize = 13.sp, modifier = Modifier.padding(start = 10.dp).weight(1f))
+                            Text("—", color = StudioPalette.Muted, fontSize = 12.sp)
+                        }
+                    }
+                    Text(
+                        "Server storage values are not available until you connect this app.",
+                        color = StudioPalette.Muted,
+                        fontSize = 11.5.sp,
+                        lineHeight = 16.sp,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+            }
+            item {
+                StudioSectionHeading("Largest files")
+                StudioCard { StudioEmpty("No files yet.", "Connect to browse file sizes and storage use.") }
+            }
+            item {
+                StudioSectionHeading("By folder")
+                StudioCard { StudioEmpty("No folders yet.", "Folder usage appears after the file tree loads.") }
+            }
+            item {
+                StudioSectionHeading("MEGA backup")
+                StudioCard {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("MEGA", color = StudioPalette.Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.weight(1f))
+                            StudioTag("Not connected")
+                        }
+                        Text(
+                            "Back up the bot’s files to your MEGA account. The Studio reads MEGA_EMAIL and MEGA_PASSWORD from ENV, so your password stays with your other secrets.",
+                            color = StudioPalette.Muted,
+                            fontSize = 12.5.sp,
+                            lineHeight = 18.sp
+                        )
+                        StudioActionButton("Add credentials in ENV", enabled = false, onClick = onOpenEnvironment)
+                    }
+                }
+            }
+            item { Spacer(Modifier.height(14.dp)) }
         }
     } else {
         LazyColumn(
@@ -183,7 +350,7 @@ fun MoreScreen(
                         "Review bot activity and diagnostic records",
                         Icons.Outlined.Timeline,
                         "›",
-                        onClick = { dialog = "activity" }
+                        onClick = { onPageChange("activity") }
                     )
                     StudioDivider()
                     StudioRow(
@@ -191,7 +358,7 @@ fun MoreScreen(
                         "View disk and storage usage",
                         Icons.Outlined.Storage,
                         "›",
-                        onClick = { dialog = "storage" }
+                        onClick = { onPageChange("storage") }
                     )
                 }
             }
@@ -204,7 +371,7 @@ fun MoreScreen(
                         "Theme, accent color, text size and editor",
                         Icons.Outlined.Palette,
                         "›",
-                        onClick = { page = "appearance" }
+                        onClick = { onPageChange("appearance") }
                     )
                 }
             }
@@ -233,6 +400,42 @@ fun MoreScreen(
         }
     }
 
+    if (customColorOpen) {
+        Dialog(onDismissRequest = { customColorOpen = false }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(StudioPalette.Surface).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("Custom accent", color = StudioPalette.Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("Enter a six-digit hex color.", color = StudioPalette.Muted, fontSize = 12.5.sp)
+                BasicTextField(
+                    value = customHex,
+                    onValueChange = { customHex = it },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(color = StudioPalette.Ink, fontSize = 15.sp),
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                        .background(StudioPalette.Background).border(1.dp, StudioPalette.Line, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 12.dp, vertical = 12.dp)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.align(Alignment.End)) {
+                    StudioActionButton("Cancel", compact = true, onClick = { customColorOpen = false })
+                    StudioActionButton(
+                        "Apply",
+                        compact = true,
+                        primary = true,
+                        enabled = Regex("^#?[0-9A-Fa-f]{6}$").matches(customHex.trim()),
+                        onClick = {
+                            val value = customHex.trim().let { if (it.startsWith("#")) it else "#$it" }
+                            onAccentColorChanged(value.uppercase())
+                            customColorOpen = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+
     if (dialog.isNotEmpty()) {
         Dialog(onDismissRequest = { dialog = "" }) {
             Column(
@@ -241,20 +444,6 @@ fun MoreScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 when (dialog) {
-                    "activity" -> {
-                        Text("Activity and logs", color = StudioPalette.Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            "No activity is available because this app is not connected to an Aharane server.",
-                            color = StudioPalette.Muted, fontSize = 14.sp, lineHeight = 20.sp
-                        )
-                    }
-                    "storage" -> {
-                        Text("Storage information", color = StudioPalette.Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            "Server disk usage will appear here after secure server linking. No server storage values are available right now.",
-                            color = StudioPalette.Muted, fontSize = 14.sp, lineHeight = 20.sp
-                        )
-                    }
                     "help" -> {
                         Text("Help", color = StudioPalette.Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                         HelpItem("Accounts", "Private and Public WhatsApp sessions are kept separate.")
@@ -284,6 +473,18 @@ fun MoreScreen(
             }
         }
     }
+}
+
+@Composable
+private fun BackToMore(onClick: () -> Unit) {
+    Text(
+        "‹  Back to More",
+        color = StudioPalette.Accent,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick).padding(vertical = 6.dp)
+    )
 }
 
 @Composable

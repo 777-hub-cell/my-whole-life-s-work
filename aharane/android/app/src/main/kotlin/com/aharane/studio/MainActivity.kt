@@ -46,8 +46,9 @@ class MainActivity : ComponentActivity() {
             }
 
             val interfaceScale = when (interfaceSize) {
-                "compact" -> .94f
-                "large" -> 1.06f
+                "small" -> .90f
+                "large" -> 1.15f
+                "largest" -> 1.30f
                 else -> 1f
             }
             val cornerScale = when (cornerStyle) {
@@ -56,8 +57,8 @@ class MainActivity : ComponentActivity() {
                 else -> 1f
             }
             val rowScale = when (rowSpacing) {
-                "compact" -> .88f
-                "relaxed" -> 1.12f
+                "compact" -> .80f
+                "roomy" -> 1.15f
                 else -> 1f
             }
 

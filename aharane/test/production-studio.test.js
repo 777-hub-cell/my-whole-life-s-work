@@ -36,7 +36,7 @@ test('Export Bot Source uses a real browser download instead of the preview-only
 
 test('the offline service worker caches the bridge and invalidates the previous shell', async () => {
   const sw = await read('../control-centre/sw.js')
-  assert.ok(sw.includes('aharane-local-studio-shell-v13'))
+  assert.ok(sw.includes('aharane-local-studio-shell-v14'))
   assert.ok(sw.includes('/aharane/studio/production-bridge.js'))
   assert.ok(sw.includes("['/aharane/studio/production-bridge.js','production-bridge.js']"))
 })

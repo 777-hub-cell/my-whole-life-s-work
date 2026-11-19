@@ -960,7 +960,7 @@ async function handleMessages(sessionId, currentSocket, event) {
         sessionId, remoteJid, ownJid: currentSocket.user?.id || '',
         privateOwnerNumber: ownerConfig.privateOwnerNumber,
       })
-      await chatStore.recordMessage({ sessionId, message, socket: currentSocket, downloadMedia: (msg, socket) => downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: socket.updateMediaMessage }) })
+      await chatStore.recordMessage({ sessionId, message, socket: currentSocket })
       if (message.key.fromMe !== true && studioSettings.private.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
       if (message.key.fromMe !== true || !privateSelfChat) continue
       privateControl = isPrivateSelfCommand({
@@ -985,7 +985,7 @@ async function handleMessages(sessionId, currentSocket, event) {
         allowedSenders: publicAllowedSenders(),
       })
       const firstConversationMessage = allowedToUseCommands && !await chatStore.hasConversation(sessionId, remoteJid)
-      await chatStore.recordMessage({ sessionId, message, socket: currentSocket, downloadMedia: (msg, socket) => downloadMediaMessage(msg, 'buffer', {}, { logger, reuploadRequest: socket.updateMediaMessage }) })
+      await chatStore.recordMessage({ sessionId, message, socket: currentSocket })
       if (studioSettings.public.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
       if (!allowedToUseCommands) continue
       if (firstConversationMessage && studioSettings.public.welcomeMessage) {
@@ -1524,11 +1524,33 @@ app.put('/api/chats/:accountId/visibility', requireAdmin, async (req, res) => {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not save inbox visibility.') })
   }
 })
+app.put('/api/chats/:accountId/preferences', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = String(req.body?.jid || '')
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid) || !await chatStore.hasConversation(accountId, jid)) {
+      return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    }
+    const next = structuredClone(studioSettings)
+    const preferences = next[accountId].chatPreferences || { pinned: [], muted: [] }
+    for (const key of ['pinned', 'muted']) {
+      if (typeof req.body?.[key] !== 'boolean') continue
+      preferences[key] = (preferences[key] || []).filter(value => value !== jid)
+      if (req.body[key]) preferences[key].push(jid)
+    }
+    next[accountId].chatPreferences = preferences
+    studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings(next))
+    publishStudioEvent('settings.updated', { [accountId]: true })
+    res.json({ ok: true, preferences: studioSettings[accountId].chatPreferences })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not save chat preferences.') })
+  }
+})
 app.get('/api/chats/:accountId', requireAdmin, async (req, res) => {
   try {
     const accountId = chatAccount(req.params.accountId)
     const chats = await chatStore.listChats(accountId, { limit: req.query.limit, query: req.query.q })
-    res.json({ ok: true, chats: chats.filter(chat => authorizedChat(accountId, chat.jid) && isChatVisible(studioSettings[accountId], chat.jid)) })
+    res.json({ ok: true, preferences: studioSettings[accountId].chatPreferences, chats: chats.filter(chat => authorizedChat(accountId, chat.jid) && isChatVisible(studioSettings[accountId], chat.jid)) })
   } catch (error) {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not read conversations.') })
   }
@@ -1545,6 +1567,20 @@ app.get('/api/chats/:accountId/search', requireAdmin, async (req, res) => {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not search stored messages.') })
   }
 })
+app.get('/api/chats/:accountId/:jid/search', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = decodeURIComponent(String(req.params.jid || ''))
+    const query = String(req.query.q || '').trim()
+    if ((!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid)) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    if (query.length < 2) return res.json({ ok: true, results: [] })
+    if (query.length > 100) return res.status(400).json({ ok: false, error: 'Search text must be 100 characters or fewer.' })
+    const results = await chatStore.searchMessages(accountId, { query, jid, limit: req.query.limit || 100 })
+    res.json({ ok: true, results })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not search this conversation.') })
+  }
+})
 app.get('/api/chats/:accountId/:jid/messages', requireAdmin, async (req, res) => {
   try {
     const accountId = chatAccount(req.params.accountId)
@@ -1557,6 +1593,80 @@ app.get('/api/chats/:accountId/:jid/messages', requireAdmin, async (req, res) =>
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not read messages.') })
   }
 })
+app.post('/api/chats/:accountId/:jid/media/:messageId/download', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = decodeURIComponent(String(req.params.jid || ''))
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid)) return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected') return res.status(503).json({ ok: false, error: 'Connect this WhatsApp account before downloading media.' })
+    const downloaded = await chatStore.downloadMessageMedia(accountId, jid, req.params.messageId,
+      (message, currentSocket) => downloadMediaMessage(message, 'buffer', {}, { logger, reuploadRequest: currentSocket.updateMediaMessage }), socket)
+    if (!downloaded) return res.status(410).json({ ok: false, error: 'This media is no longer available to download.' })
+    res.json({ ok: true, message: downloaded })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not download this media.') })
+  }
+})
+app.post('/api/chats/:accountId/:jid/reaction', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = decodeURIComponent(String(req.params.jid || ''))
+    const messageId = String(req.body?.messageId || '')
+    const emoji = String(req.body?.emoji || '')
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    if (!/^[\p{Extended_Pictographic}\uFE0F\u200D\u{1F1E6}-\u{1F1FF}]{1,16}$/u.test(emoji)) return res.status(400).json({ ok: false, error: 'Choose a valid emoji reaction.' })
+    const original = await chatStore.getMessage(accountId, jid, messageId)
+    if (!original) return res.status(404).json({ ok: false, error: 'Message not found.' })
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected') return res.status(503).json({ ok: false, error: 'This WhatsApp account is not connected.' })
+    await socket.sendMessage(jid, { react: { key: original.key, text: emoji } })
+    const reactions = await chatStore.applyReaction(accountId, jid, messageId, emoji, 'You')
+    publishStudioEvent('whatsapp.message.reaction', { accountId, jid, messageId })
+    res.json({ ok: true, reactions })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not react to this message.') })
+  }
+})
+app.post('/api/chats/:accountId/:jid/forward', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = decodeURIComponent(String(req.params.jid || ''))
+    const targetJid = String(req.body?.targetJid || '')
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid) ||
+        !authorizedChat(accountId, targetJid) || !isChatVisible(studioSettings[accountId], targetJid) ||
+        !await chatStore.hasConversation(accountId, targetJid)) return res.status(404).json({ ok: false, error: 'Source or destination conversation is not available.' })
+    const original = await chatStore.getMessage(accountId, jid, String(req.body?.messageId || ''))
+    if (!original?.sourceMessage) return res.status(410).json({ ok: false, error: 'This message is too old to forward from the stored inbox.' })
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected') return res.status(503).json({ ok: false, error: 'This WhatsApp account is not connected.' })
+    const sent = await socket.sendMessage(targetJid, { forward: original.sourceMessage })
+    await chatStore.recordMessage({ sessionId: accountId, message: sent, socket })
+    publishStudioEvent('whatsapp.message.forwarded', { accountId, jid: targetJid })
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not forward this message.') })
+  }
+})
+app.post('/api/chats/:accountId/:jid/delete', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = decodeURIComponent(String(req.params.jid || ''))
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid)) return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    const original = await chatStore.getMessage(accountId, jid, String(req.body?.messageId || ''))
+    if (!original) return res.status(404).json({ ok: false, error: 'Message not found.' })
+    if (original.fromMe) {
+      const session = accountRuntime.get(accountId), socket = session.socket
+      if (!socket || session.state !== 'connected') return res.status(503).json({ ok: false, error: 'This WhatsApp account is not connected.' })
+      await socket.sendMessage(jid, { delete: original.key })
+    }
+    await chatStore.deleteMessage(accountId, jid, original.id)
+    publishStudioEvent('whatsapp.message.deleted', { accountId, jid, messageId: original.id })
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not delete this message.') })
+  }
+})
 app.post('/api/chats/:accountId/:jid/send', requireAdmin, async (req, res) => {
   try {
     const accountId = chatAccount(req.params.accountId)
@@ -1566,7 +1676,10 @@ app.post('/api/chats/:accountId/:jid/send', requireAdmin, async (req, res) => {
     if ((!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid)) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found or not authorized.' })
     const session = accountRuntime.get(accountId), socket = session.socket
     if (!socket || session.state !== 'connected') return res.status(503).json({ ok: false, error: 'This WhatsApp account is not connected.' })
-    const sent = await socket.sendMessage(jid, { text })
+    const quotedMessageId = String(req.body?.quotedMessageId || '')
+    const quoted = quotedMessageId ? await chatStore.getMessage(accountId, jid, quotedMessageId) : null
+    if (quotedMessageId && !quoted?.sourceMessage) return res.status(410).json({ ok: false, error: 'The original message is not available to quote.' })
+    const sent = await socket.sendMessage(jid, { text }, quoted?.sourceMessage ? { quoted: quoted.sourceMessage } : undefined)
     await chatStore.recordMessage({ sessionId: accountId, message: sent, socket })
     publishStudioEvent('whatsapp.message.sent', { accountId, jid, type: 'text' })
     res.json({ ok: true, message: sent?.key?.id || '' })
@@ -1588,11 +1701,11 @@ app.post('/api/chats/:accountId/:jid/media', requireAdmin, express.raw({ type: '
     let content
     if (mime.startsWith('image/') && mime !== 'image/webp') content = { image: req.body, caption }
     else if (mime.startsWith('video/')) content = { video: req.body, caption }
-    else if (mime.startsWith('audio/')) content = { audio: req.body, mimetype: mime, ptt: false }
+    else if (mime.startsWith('audio/')) content = { audio: req.body, mimetype: mime, ptt: req.get('x-voice-note') === 'true' }
     else if (mime === 'image/webp') content = { sticker: req.body }
     else content = { document: req.body, mimetype: mime, fileName: filename, caption }
     const sent = await socket.sendMessage(jid, content)
-    await chatStore.recordOutgoingMedia({ sessionId: accountId, jid, buffer: req.body, mimeType: mime, fileName: filename, sendResult: sent, text: caption })
+    await chatStore.recordOutgoingMedia({ sessionId: accountId, jid, buffer: req.body, mimeType: mime, fileName: filename, sendResult: sent, text: caption, ptt: req.get('x-voice-note') === 'true', duration: req.get('x-duration-seconds') })
     publishStudioEvent('whatsapp.message.sent', { accountId, jid, type: 'media' })
     res.json({ ok: true, message: sent?.key?.id || '' })
   } catch (error) {
@@ -1624,6 +1737,12 @@ app.post('/api/chats/:accountId/media/:messageId/view-once', requireAdmin, async
     if (info.viewed) return res.status(410).json({ ok: false, error: 'This view-once media has already been opened.' })
     if (!['image/', 'video/'].some(prefix => String(info.mimeType).startsWith(prefix))) {
       return res.status(415).json({ ok: false, error: 'This view-once media type is not supported.' })
+    }
+    if (!info.viewed) {
+      const session = accountRuntime.get(accountId), socket = session.socket
+      if (!socket || session.state !== 'connected') return res.status(503).json({ ok: false, error: 'Connect this WhatsApp account before opening view-once media.' })
+      await chatStore.downloadMessageMedia(accountId, info.jid, req.params.messageId,
+        (message, currentSocket) => downloadMediaMessage(message, 'buffer', {}, { logger, reuploadRequest: currentSocket.updateMediaMessage }), socket)
     }
     const media = await chatStore.consumeViewOnceMedia(accountId, req.params.messageId)
     if (!media) return res.status(410).json({ ok: false, error: 'This view-once media is no longer available.' })

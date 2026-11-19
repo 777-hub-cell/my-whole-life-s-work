@@ -822,7 +822,8 @@ function changePasswordP(){
 }
 async function signOutP(){try{await apiP('auth/logout',{method:'POST',body:pack({})})}catch{}await showLoginP()}
 function mapMessageP(row){
- const m={d:row.fromMe?'o':'i',t:row.text||'',ts:Number(row.timestamp)||Date.now(),r:row.status==='read'};
+ const m={id:row.id||'',d:row.fromMe?'o':'i',t:row.text||'',ts:Number(row.timestamp)||Date.now(),r:row.status==='read',
+  mediaAvailable:row.mediaAvailable===true,mediaUnavailable:row.mediaUnavailable||'',ptt:row.ptt===true,dur:Number(row.duration)||0,reactions:Array.isArray(row.reactions)?row.reactions:[]};
  if(row.viewOnce){
   m.k='once';m.id=row.id;m.type=row.type;m.f=row.type==='video'?'View-once video':'View-once photo';
   m.viewed=row.viewOnceViewed===true;m.unavailable=row.mediaUnavailable||'';
@@ -890,14 +891,15 @@ function drawChatVisibilityP(account,search){
 }
 
 async function refreshChatsP(){
- const account=S.cacc==='private'?'private':'public',r=await apiP('chats/'+account+'?limit=500'),current=P.chatJid;
- CH.splice(0,CH.length,...(r.chats||[]).map(c=>({jid:c.jid,n:c.name||c.jid.split('@')[0],g:c.group===true||String(c.jid).endsWith('@g.us'),mem:[],un:c.unreadCount||0,m:[{d:c.fromMe?'o':'i',t:c.lastMessage||'',ts:c.timestamp||Date.now()}]})));P.messageFingerprints.clear();
+ const account=S.cacc==='private'?'private':'public',r=await apiP('chats/'+account+'?limit=500'),current=P.chatJid,prefs=r.preferences||{pinned:[],muted:[]},pinned=new Set(prefs.pinned||[]),muted=new Set(prefs.muted||[]);
+ P.chatPreferences=prefs;
+ CH.splice(0,CH.length,...(r.chats||[]).map(c=>({jid:c.jid,n:c.name||c.jid.split('@')[0],g:c.group===true||String(c.jid).endsWith('@g.us'),mem:[],un:c.unreadCount||0,pinned:pinned.has(c.jid),muted:muted.has(c.jid),m:[{d:c.fromMe?'o':'i',t:c.lastMessage||'',ts:c.timestamp||Date.now()}]})));P.messageFingerprints.clear();
  if(current&&S.chat!==null){const i=CH.findIndex(c=>c.jid===current);if(i>=0)S.chat=i;else S.chat=null}
 }
 async function loadMessagesP(index=S.chat,before=0){
  const c=CH[index];if(!c?.jid)return;P.chatJid=c.jid;
  const account=S.cacc==='private'?'private':'public',url='chats/'+account+'/'+encodeURIComponent(c.jid)+'/messages?limit=500'+(before?'&before='+encodeURIComponent(before):'');
- const r=await apiP(url),messages=r.messages||[],fingerprint=JSON.stringify(messages.map(m=>[m.id,m.timestamp,m.type,m.text,m.status,m.mediaUrl,m.viewOnceViewed]));
+ const r=await apiP(url),messages=r.messages||[],fingerprint=JSON.stringify(messages.map(m=>[m.id,m.timestamp,m.type,m.text,m.status,m.mediaUrl,m.viewOnceViewed,m.reactions,m.mediaAvailable,m.ptt]));
  const key=account+'|'+c.jid+'|'+(before||'latest');
  if(P.messageFingerprints.get(key)===fingerprint)return;
  P.messageFingerprints.set(key,fingerprint);c.m=messages.map(mapMessageP);
@@ -906,14 +908,143 @@ async function loadMessagesP(index=S.chat,before=0){
 async function sendChatP(msg){
  const c=CH[S.chat];if(!c?.jid)throw new Error('Open a conversation first.');
  const account=S.cacc==='private'?'private':'public',base='chats/'+account+'/'+encodeURIComponent(c.jid);
- if(msg.t)await apiP(base+'/send',{method:'POST',body:pack({text:msg.t})});
- else if(msg.b instanceof Blob)await apiP(base+'/media',{method:'POST',body:await msg.b.arrayBuffer(),headers:{'Content-Type':'application/octet-stream','X-Media-Type':msg.b.type||'application/octet-stream','X-File-Name':encodeURIComponent(msg.f||'attachment')}});
+ if(msg.t)await apiP(base+'/send',{method:'POST',body:pack({text:msg.t,quotedMessageId:S.rp?.ref?.id||''})});
+ else if(msg.b instanceof Blob)await apiP(base+'/media',{method:'POST',body:await msg.b.arrayBuffer(),headers:{'Content-Type':'application/octet-stream','X-Media-Type':msg.b.type||'application/octet-stream','X-File-Name':encodeURIComponent(msg.f||'attachment'),'X-Voice-Note':msg.ptt?'true':'false','X-Duration-Seconds':String(msg.dur||0)}});
  else return;
+ S.rp=null;if(typeof rpDraw==='function')rpDraw();
  P.messageFingerprints.delete(account+'|'+c.jid+'|latest');
  await loadMessagesP(S.chat,0);
 }
 async function attachLiveP(file){try{await sendChatP({b:file,f:file.name})}catch(error){notifyP(error.message)}}
-function switchChatsP(){S.cacc=S.cacc==='private'?'public':'private';S.chat=null;P.chatJid='';P.chatSearchQuery='';P.chatSearchResults=[];P.chatSearchError='';P.messageFingerprints.clear();refreshChatsP().then(render).catch(e=>notifyP(e.message))}
+function switchChatsP(){S.cacc=S.cacc==='private'?'public':'private';S.chat=null;P.chatJid='';P.chatSearchQuery='';P.chatSearchResults=[];P.chatSearchError='';P.openChatSearchResults=[];P.openChatQuery='';P.messageFingerprints.clear();refreshChatsP().then(render).catch(e=>notifyP(e.message))}
+async function toggleChatPreferenceP(index,kind){
+ const chat=CH[index];if(!chat?.jid)return;
+ const account=S.cacc==='private'?'private':'public',field=kind==='pin'?'pinned':'muted',next=!chat[field];
+ try{await apiP('chats/'+account+'/preferences',{method:'PUT',body:pack({jid:chat.jid,[field]:next})});await refreshChatsP();render();notifyP((next?'Added to ':'Removed from ')+(field==='pinned'?'pinned chats':'muted chats'))}
+ catch(error){notifyP(error.message)}
+}
+function bindChatRowsP(){
+ document.querySelectorAll('.chat-row-wrap').forEach(wrap=>{
+  const row=wrap.querySelector('.row');if(!row)return;
+  let startX=0,startY=0,moved=false;
+  row.onpointerdown=event=>{startX=event.clientX;startY=event.clientY;moved=false};
+  row.onpointerup=event=>{const dx=event.clientX-startX,dy=event.clientY-startY;if(Math.abs(dx)>48&&Math.abs(dx)>Math.abs(dy)*1.4){wrap.classList.toggle('swiped',dx<0);wrap.dataset.swipeHandled='1';moved=true}};
+  row.onclick=()=>{if(wrap.dataset.swipeHandled==='1'){wrap.dataset.swipeHandled='0';return}if(wrap.classList.contains('swiped'))return;openChat(Number(row.dataset.c))};
+ });
+ document.querySelectorAll('[data-chat-pref]').forEach(button=>button.onclick=event=>{event.preventDefault();event.stopPropagation();toggleChatPreferenceP(Number(button.dataset.chatIndex),button.dataset.chatPref)});
+}
+let messageMenuOutsideP=null;
+function closeMessageMenuP(){
+ document.getElementById('chat-message-pop')?.remove();
+ if(messageMenuOutsideP){document.removeEventListener('pointerdown',messageMenuOutsideP,true);messageMenuOutsideP=null}
+}
+window.openMessageMenuP=function(index,anchor){
+ const message=CH[S.chat]?.m?.[index];if(!message?.id)return notifyP('This message is not available for actions.');
+ closeMessageMenuP();
+ const menu=document.createElement('div');menu.id='chat-message-pop';menu.className='pop chat-message-pop';menu.setAttribute('role','menu');
+ menu.innerHTML='<div class="message-emoji-row">'+['❤️','👍','😂','😮','😢','🙏','🔥','🎉'].map(emoji=>'<button type="button" data-message-emoji="'+emoji+'" aria-label="React with '+emoji+'">'+emoji+'</button>').join('')+'</div>'+
+  '<button type="button" data-message-action="reply">Reply</button><button type="button" data-message-action="copy">Copy</button><button type="button" data-message-action="forward">Forward</button><button type="button" data-message-action="delete" class="del">Delete</button>';
+ document.body.appendChild(menu);
+ const rect=anchor?.getBoundingClientRect?.()||{left:12,right:220,top:100,bottom:150};
+ const width=menu.offsetWidth,height=menu.offsetHeight;
+ menu.style.left=Math.max(8,Math.min(innerWidth-width-8,rect.left))+'px';
+ menu.style.top=rect.bottom+height+8>innerHeight?Math.max(8,rect.top-height-8)+'px':Math.min(innerHeight-height-8,rect.bottom+6)+'px';
+ menu.onclick=event=>{
+  const emoji=event.target.closest('[data-message-emoji]')?.dataset.messageEmoji;
+  const action=event.target.closest('[data-message-action]')?.dataset.messageAction;
+  if(!emoji&&!action)return;closeMessageMenuP();
+  if(emoji)void messageActionP('reaction',index,emoji);else void messageActionP(action,index);
+ };
+ messageMenuOutsideP=event=>{if(!event.target.closest('#chat-message-pop'))closeMessageMenuP()};
+ document.addEventListener('pointerdown',messageMenuOutsideP,true);
+};
+async function messageActionP(action,index,emoji=''){
+ const chat=CH[S.chat],message=chat?.m?.[index];if(!chat?.jid||!message?.id)return;
+ if(action==='reply'){setReply(index);return}
+ if(action==='copy'){
+  const text=message.t||message.f||({img:'Photo',vid:'Video',vn:'Voice note'}[message.k]||'Attachment');
+  try{await navigator.clipboard.writeText(text);notifyP('Message copied')}catch{notifyP('Copy is not available in this browser')}
+  return;
+ }
+ const account=S.cacc==='private'?'private':'public',base='chats/'+account+'/'+encodeURIComponent(chat.jid);
+ if(action==='forward'){
+  const choices=CH.map((target,i)=>'<button type="button" class="row" data-forward-target="'+i+'"><span class="av">'+escP(target.n.slice(0,1))+'</span><span class="grow"><span class="t">'+escP(target.n)+'</span><span class="d">'+(target.g?'Group':'Chat')+'</span></span></button>').join('');
+  sheet('<h3>Forward to</h3><div class="card list">'+choices+'</div><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Cancel</button></div>');
+  Q('#sheet')?.querySelectorAll('[data-forward-target]').forEach(button=>button.onclick=async()=>{
+   const target=CH[Number(button.dataset.forwardTarget)];if(!target?.jid)return;
+   try{await apiP(base+'/forward',{method:'POST',body:pack({messageId:message.id,targetJid:target.jid})});closeSheet();notifyP('Message forwarded')}
+   catch(error){notifyP(error.message)}
+  });
+  return;
+ }
+ if(action==='delete'){
+  sheet('<h3>Delete message?</h3><p class="sub">Your own sent message will also be deleted for everyone when WhatsApp allows it. Other messages are removed from this Studio history only.</p><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Cancel</button><button class="btn d" id="confirm-chat-delete" type="button">Delete</button></div>');
+  Q('#confirm-chat-delete').onclick=async()=>{
+   try{await apiP(base+'/delete',{method:'POST',body:pack({messageId:message.id})});closeSheet();P.messageFingerprints.delete(account+'|'+chat.jid+'|latest');await loadMessagesP(S.chat,0);notifyP('Message deleted')}
+   catch(error){notifyP(error.message)}
+  };
+  return;
+ }
+ if(action==='reaction'){
+  try{await apiP(base+'/reaction',{method:'POST',body:pack({messageId:message.id,emoji})});P.messageFingerprints.delete(account+'|'+chat.jid+'|latest');await loadMessagesP(S.chat,0)}
+  catch(error){notifyP(error.message)}
+ }
+}
+async function downloadChatMediaP(index){
+ const chat=CH[S.chat],message=chat?.m?.[index];if(!chat?.jid||!message?.id||message.loading)return;
+ if(message.u)return;
+ message.loading=true;drawMsgs();
+ const account=S.cacc==='private'?'private':'public',endpoint='chats/'+account+'/'+encodeURIComponent(chat.jid)+'/media/'+encodeURIComponent(message.id)+'/download';
+ try{await apiP(endpoint,{method:'POST',body:pack({})});P.messageFingerprints.delete(account+'|'+chat.jid+'|latest');await loadMessagesP(S.chat,0);notifyP('Media downloaded')}
+ catch(error){message.loading=false;drawMsgs();notifyP(error.message)}
+}
+window.downloadChatMediaP=downloadChatMediaP;
+function setOpenChatSearchCountP(){
+ const output=Q('#chat-search-count');if(!output)return;
+ const matches=P.openChatSearchResults||[],index=Number(P.openChatSearchIndex)||0;
+ output.textContent=matches.length?(index+1)+' of '+matches.length:'0 matches';
+}
+async function focusOpenChatSearchP(index){
+ const matches=P.openChatSearchResults||[];if(!matches.length)return;
+ P.openChatSearchIndex=(index+matches.length)%matches.length;
+ const hit=matches[P.openChatSearchIndex],chat=CH[S.chat];if(!chat)return;
+ let messageIndex=chat.m.findIndex(message=>message.id===hit.id);
+ if(messageIndex<0){
+  const account=S.cacc==='private'?'private':'public';
+  P.messageFingerprints.delete(account+'|'+chat.jid+'|'+(Number(hit.timestamp)+1));
+  await loadMessagesP(S.chat,Number(hit.timestamp)+1);
+  messageIndex=chat.m.findIndex(message=>message.id===hit.id);
+ }
+ document.querySelectorAll('#msgs .chat-search-hit,#msgs .chat-search-hit-current').forEach(node=>node.classList.remove('chat-search-hit','chat-search-hit-current'));
+ const target=Q('#msgs .b[data-i="'+messageIndex+'"]');
+ if(target){target.classList.add('chat-search-hit-current');target.scrollIntoView({block:'center',behavior:'smooth'})}
+ setOpenChatSearchCountP();
+}
+function scheduleOpenChatSearchP(value){
+ const query=String(value||'').trim(),chat=CH[S.chat];P.openChatQuery=query;P.openChatSearchResults=[];P.openChatSearchIndex=0;setOpenChatSearchCountP();
+ if(P.openChatSearchTimer)clearTimeout(P.openChatSearchTimer);
+ if(query.length<2)return;
+ P.openChatSearchTimer=setTimeout(async()=>{
+  if(S.chat===null||P.openChatQuery!==query)return;
+  const account=S.cacc==='private'?'private':'public',current=CH[S.chat];
+  try{
+   const response=await apiP('chats/'+account+'/'+encodeURIComponent(current.jid)+'/search?q='+encodeURIComponent(query)+'&limit=100');
+   if(P.openChatQuery!==query||S.chat===null||CH[S.chat]?.jid!==current.jid)return;
+   P.openChatSearchResults=response.results||[];P.openChatSearchIndex=0;setOpenChatSearchCountP();
+   if(P.openChatSearchResults.length)await focusOpenChatSearchP(0);
+  }catch(error){notifyP(error.message)}
+ },350);
+}
+function bindConversationSearchP(){
+ const toggle=Q('#chat-search-toggle'),bar=Q('#chat-searchbar'),input=Q('#chat-search-input');
+ if(toggle)toggle.onclick=()=>{if(!bar)return;bar.hidden=!bar.hidden;if(!bar.hidden)input?.focus()};
+ if(input)input.oninput=()=>scheduleOpenChatSearchP(input.value);
+ if(input)input.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();void focusOpenChatSearchP((Number(P.openChatSearchIndex)||0)+1)}};
+ const previous=Q('#chat-search-prev'),next=Q('#chat-search-next'),close=Q('#chat-search-close');
+ if(previous)previous.onclick=()=>void focusOpenChatSearchP((Number(P.openChatSearchIndex)||0)-1);
+ if(next)next.onclick=()=>void focusOpenChatSearchP((Number(P.openChatSearchIndex)||0)+1);
+ if(close)close.onclick=()=>{if(bar)bar.hidden=true;if(input)input.value='';scheduleOpenChatSearchP('');document.querySelectorAll('#msgs .chat-search-hit,#msgs .chat-search-hit-current').forEach(node=>node.classList.remove('chat-search-hit','chat-search-hit-current'))};
+}
 function preserveChatScrollDrawP(){
  const el=Q('#msgs'),top=el?.scrollTop||0,wasNearBottom=el?el.scrollHeight-el.scrollTop-el.clientHeight<120:true;
  drawMsgsBaseP();
@@ -972,7 +1103,7 @@ function bindProductionP(){
  document.querySelectorAll('[data-open]').forEach(b=>b.onclick=async()=>{const name=b.dataset.open;if(typeof node(S.path)[name]==='object'){S.path.push(name);S.sel={};try{await loadTreeP(currentPathP())}catch(e){notifyP(e.message)}render()}else openLiveFileP(name).catch(e=>notifyP(e.message))});
  document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>fileMenuP(b.dataset.m,b));
  document.querySelectorAll('[data-package]').forEach(b=>b.onclick=()=>packageMenuP(b.dataset.package,b));
- document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>openChat(+b.dataset.c));
+ document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{const wrap=b.closest('.chat-row-wrap');if(wrap?.dataset.swipeHandled==='1'){wrap.dataset.swipeHandled='0';return}if(wrap?.classList.contains('swiped'))return;openChat(+b.dataset.c)});
  document.querySelectorAll('[data-pair-account]').forEach(b=>b.onclick=()=>openPair(b.dataset.pairAccount==='private'?0:1));
  document.querySelectorAll('[data-account]').forEach(b=>b.onclick=()=>accountActionP(b.dataset.account,b.dataset.action));
  const owner=Q('#save-owners');if(owner)owner.onclick=saveOwnersP;
@@ -1062,6 +1193,8 @@ function bindProductionP(){
   }catch{}
   finally{P.chatRefreshBusy=false}
  },15000);
+ if(S.tab==='chats')bindChatRowsP();
+ if(S.chat!==null)bindConversationSearchP();
  if(S.tab!=='chats'&&P.chatTimer){clearInterval(P.chatTimer);P.chatTimer=null}
 }
 function homeViewP(){
@@ -1141,10 +1274,10 @@ function installBridgeP(){
  unlink=function(i){accountActionP(accts[i]?.slot,'stop')};
  pinPane=pairViewP;qrPane=pairViewP;newQr=startQrP;
  svc=async action=>{try{await Promise.all(['private','public'].map(id=>apiP('accounts/'+id+'/'+(action==='start'?'reconnect':action),{method:'POST',body:pack({})})));await refreshRuntimeP();render()}catch(e){notifyP(e.message)}};
- openChatBase=openChat;openChat=function(i){openChatBase(i);loadMessagesP(i).catch(e=>notifyP(e.message))};
- switchChats=switchChatsP;sendMsg=msg=>sendChatP(msg).catch(e=>notifyP(e.message));attach=attachLiveP;
+ openChatBase=openChat;openChat=function(i){openChatBase(i);P.openChatSearchResults=[];P.openChatQuery='';if(Q('#chat-searchbar'))Q('#chat-searchbar').hidden=true;if(Q('#chat-search-input'))Q('#chat-search-input').value='';bindConversationSearchP();loadMessagesP(i).catch(e=>notifyP(e.message))};
+ switchChats=switchChatsP;sendMsg=msg=>sendChatP(msg).catch(e=>{notifyP(e.message);throw e});attach=attachLiveP;
  bub=function(msg,first,last,index){
-  if(msg.dl)return '<div class="b '+(msg.d==='o'?'o ':'')+(first?'f ':'')+(last?'l':'')+'" data-i="'+index+'"><a href="'+escP(msg.dl)+'" download="'+escP(msg.f||'attachment')+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">'+escP(msg.f||'Attachment')+'</a><span class="mt">'+fmtT(msg.ts)+'</span></div>';
+  if(msg.dl)return '<div class="b '+(msg.d==='o'?'o ':'')+(first?'f ':'')+(last?'l':'')+'" data-i="'+index+'" data-message-id="'+escP(msg.id||'')+'"><a href="'+escP(msg.dl)+'" download="'+escP(msg.f||'attachment')+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">'+escP(msg.f||'Attachment')+'</a>'+(msg.reactions?.length?'<div class="reaction-chips">'+msg.reactions.map(item=>'<span class="reaction-chip">'+escP(item.emoji)+' <small>'+escP(item.actor)+'</small></span>').join('')+'</div>':'')+'<span class="mt">'+fmtT(msg.ts)+'</span></div>';
   return bubBase(msg,first,last,index);
  };
  openF=openLiveFileP;mk=t=>createLiveFileP(t==='dir'?'folder':'file');menu=fileMenuP;

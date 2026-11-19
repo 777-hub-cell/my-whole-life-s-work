@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createChatStore } from '../src/chat-store.js'
 
-test('chat history persists by account, marks read and stores incoming media privately', async () => {
+test('chat history persists by account, marks read and downloads incoming media only on request', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-'))
   try {
     const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
@@ -27,8 +27,12 @@ test('chat history persists by account, marks read and stores incoming media pri
     await store.recordMessage({
       sessionId: 'public',
       message: { key: { id: 'message-2', remoteJid: jid, fromMe: false }, pushName: 'Contact', messageTimestamp: 1760000001, message: { imageMessage: { mimetype: 'image/png', fileLength: 5, caption: 'Photo' } } },
-      downloadMedia: async () => Buffer.from('image'),
     })
+    const [beforeDownload] = (await store.getMessages('public', jid)).filter(row => row.id === 'message-2')
+    assert.equal(beforeDownload.mediaUrl, '')
+    assert.equal(beforeDownload.mediaAvailable, true)
+    assert.equal(await store.getMedia('public', 'message-2'), null)
+    await store.downloadMessageMedia('public', jid, 'message-2', async () => Buffer.from('image'), {})
     const [mediaMessage] = (await store.getMessages('public', jid)).filter(row => row.id === 'message-2')
     assert.match(mediaMessage.mediaUrl, /\/aharane\/api\/chats\/public\/media\//)
     const media = await store.getMedia('public', 'message-2')
@@ -66,11 +70,16 @@ test('chat store preserves LID-addressed inbox messages as distinct conversation
       sessionId: 'private',
       message: { key: { id: 'lid-message-1', remoteJid: jid, fromMe: false }, pushName: 'Private contact', messageTimestamp: 1760000010, message: { conversation: 'LID inbox message' } },
     })
+    await store.recordMessage({
+      sessionId: 'private',
+      message: { key: { id: 'lid-message-2', remoteJid: jid, fromMe: false }, messageTimestamp: 1760000020, message: { conversation: 'Later message without a push name' } },
+    })
     const chats = await store.listChats('private')
     assert.equal(chats.length, 1)
     assert.equal(chats[0].jid, jid)
+    assert.equal(chats[0].name, 'Private contact')
     const messages = await store.getMessages('private', jid)
-    assert.equal(messages.length, 1)
+    assert.equal(messages.length, 2)
     assert.equal(messages[0].text, 'LID inbox message')
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
@@ -100,8 +109,8 @@ test('view-once media is labelled, withheld from normal media URLs and consumed 
           },
         },
       },
-      downloadMedia: async () => Buffer.from('once-video'),
     })
+    await store.downloadMessageMedia('private', jid, 'once-video-1', async () => Buffer.from('once-video'), {})
 
     const [message] = await store.getMessages('private', jid)
     assert.equal(message.type, 'video')
@@ -139,7 +148,6 @@ test('legacy view-once wrappers are identified without changing ordinary image m
         key: { id: 'once-image-1', remoteJid: jid, fromMe: false },
         message: { viewOnceMessage: { message: { imageMessage: { mimetype: 'image/jpeg', fileLength: 4 } } } },
       },
-      downloadMedia: async () => Buffer.from('once'),
     })
     await store.recordMessage({
       sessionId: 'public',
@@ -147,8 +155,9 @@ test('legacy view-once wrappers are identified without changing ordinary image m
         key: { id: 'normal-image-1', remoteJid: jid, fromMe: false },
         message: { imageMessage: { mimetype: 'image/jpeg', fileLength: 4 } },
       },
-      downloadMedia: async () => Buffer.from('norm'),
     })
+    await store.downloadMessageMedia('public', jid, 'once-image-1', async () => Buffer.from('once'), {})
+    await store.downloadMessageMedia('public', jid, 'normal-image-1', async () => Buffer.from('norm'), {})
     const messages = await store.getMessages('public', jid)
     const once = messages.find(row => row.id === 'once-image-1')
     const normal = messages.find(row => row.id === 'normal-image-1')
@@ -179,5 +188,31 @@ test('message search finds older messages, names and filenames in a single accou
     assert.equal(results[0].id, 'search-old')
     assert.equal((await store.searchMessages('public', { query: 'needle' })).length, 0)
     assert.deepEqual(await store.searchMessages('private', { query: 'x' }), [])
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
+test('text messages retain quote source, reactions attach to the target bubble, and local deletion removes them', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-actions-'))
+  try {
+    const store = createChatStore({ dataDir: dir })
+    await store.init()
+    const jid = '2348012345678@s.whatsapp.net'
+    const original = { key: { id: 'target-1', remoteJid: jid, fromMe: false }, pushName: 'Mira', message: { conversation: 'Original message' } }
+    await store.recordMessage({ sessionId: 'private', message: original })
+    const source = await store.getMessage('private', jid, 'target-1')
+    assert.equal(source.sourceMessage.message.conversation, 'Original message')
+    const reaction = {
+      key: { id: 'reaction-1', remoteJid: jid, fromMe: false },
+      pushName: 'Quincy',
+      message: { reactionMessage: { key: { id: 'target-1', remoteJid: jid, fromMe: false }, text: '❤️' } },
+    }
+    await store.recordMessage({ sessionId: 'private', message: reaction })
+    let [message] = await store.getMessages('private', jid)
+    assert.deepEqual(message.reactions, [{ actor: 'Quincy', emoji: '❤️' }])
+    await store.applyReaction('private', jid, 'target-1', '👍', 'You')
+    ;[message] = await store.getMessages('private', jid)
+    assert.deepEqual(message.reactions, [{ actor: 'Quincy', emoji: '❤️' }, { actor: 'You', emoji: '👍' }])
+    assert.equal(await store.deleteMessage('private', jid, 'target-1'), true)
+    assert.equal(await store.getMessage('private', jid, 'target-1'), null)
   } finally { await rm(dir, { recursive: true, force: true }) }
 })

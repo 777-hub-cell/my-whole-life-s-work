@@ -132,7 +132,7 @@ test('the app source editor works on-device and can safely reset its overrides',
  const recovery=await read('../control-centre/recover.html')
  for(const file of ['index.html','styles.css','app.js','production-bridge.js','manifest.webmanifest'])assert.ok(bridge.includes(file))
  for(const marker of ["id=\"open-local-source\"","indexedDB.open('aharane-local-studio',2)","objectStore('appOverrides').put","objectStore('appOverrides').clear","function openAppSourceP","function saveAppSourceP","function resetAppSourceP"])assert.ok(bridge.includes(marker),marker)
- assert.ok(worker.includes('aharane-local-studio-shell-v13'))
+ assert.ok(worker.includes('aharane-local-studio-shell-v14'))
  assert.ok(worker.includes('SOURCE_PATHS'))
  assert.ok(worker.includes("['/aharane/studio/production-bridge.js','production-bridge.js']"))
  assert.ok(worker.includes("u.pathname.startsWith('/aharane/api/')"))
@@ -201,4 +201,25 @@ test('new and existing file writes are checked against their on-disk contents be
  assert.ok(create.includes('if (savedContent !== content)'))
  assert.ok(update.includes("const savedContent = await readFile(target.full, 'utf8')"))
  assert.ok(update.includes('if (savedContent !== content)'))
+})
+
+test('Web Chat supports persistent chat preferences, per-conversation search, quoted replies and message actions', async () => {
+ const runtime=await read('../src/index.js')
+ const store=await read('../src/chat-store.js')
+ const bridge=await read('../control-centre/production-bridge.js')
+ const app=await read('../control-centre/app.js')
+ assert.ok(!runtime.includes('downloadMedia: (msg, socket) => downloadMediaMessage'), 'Incoming message handlers must not download media on receipt.')
+ for(const marker of [
+  "app.put('/api/chats/:accountId/preferences'",
+  "app.get('/api/chats/:accountId/:jid/search'",
+  "app.post('/api/chats/:accountId/:jid/media/:messageId/download'",
+  "app.post('/api/chats/:accountId/:jid/reaction'",
+  "app.post('/api/chats/:accountId/:jid/forward'",
+  "app.post('/api/chats/:accountId/:jid/delete'",
+  "quoted: quoted.sourceMessage",
+  "ptt: req.get('x-voice-note') === 'true'"
+ ]) assert.ok(runtime.includes(marker),marker)
+ for(const marker of ['downloadMessageMedia','applyReaction','deleteMessage','sourceMessage','reactions'])assert.ok(store.includes(marker),marker)
+ for(const marker of ['chatPreferences','chat-searchbar','openMessageMenuP','downloadChatMediaP','toggleChatPreferenceP','switchChats=switchChatsP','X-Voice-Note'])assert.ok(bridge.includes(marker),marker)
+ for(const marker of ['rec-waveform','MediaRecorder','analyser.getByteFrequencyData','openMessageMenuP','data-chat-pref','reaction-chips'])assert.ok(app.includes(marker),marker)
 })

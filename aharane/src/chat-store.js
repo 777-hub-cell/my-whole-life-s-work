@@ -64,7 +64,7 @@ function messageContent(message) {
     const mimeType = String(value.mimetype || '')
     const fileName = String(value.fileName || '')
     const size = Number(value.fileLength?.toString?.() || value.fileLength || 0) || 0
-    return { type, text: text.slice(0, MAX_TEXT), mimeType, fileName, size, media: MEDIA_TYPES.has(type), viewOnce: viewOnce && VIEW_ONCE_TYPES.has(type) }
+    return { type, text: text.slice(0, MAX_TEXT), mimeType, fileName, size, duration: Math.max(0, Number(value.seconds || value.duration || 0) || 0), media: MEDIA_TYPES.has(type), viewOnce: viewOnce && VIEW_ONCE_TYPES.has(type) }
   }
   return { type: 'unsupported', text: '', mimeType: '', fileName: '', size: 0, media: false, viewOnce: false }
 }
@@ -164,7 +164,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     })
   }
 
-  async function recordMessage({ sessionId, message, socket, downloadMedia } = {}) {
+  async function recordMessage({ sessionId, message, socket } = {}) {
     const account = accountId(sessionId)
     const key = message?.key || {}
     const jid = safeJid(key.remoteJid)
@@ -173,42 +173,31 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     const extracted = messageContent(message)
     const ts = timestamp(message.messageTimestamp)
     const fromMe = key.fromMe === true
+    if (extracted.type === 'reaction') {
+      const { body } = unwrap(message.message)
+      const reaction = body.reactionMessage || {}
+      return applyReaction(account, jid, String(reaction.key?.id || ''), String(reaction.text || ''),
+        fromMe ? 'You' : (String(message.pushName || key.participant || 'Contact').slice(0, 120)))
+    }
+
+    let sourceMessage = ''
+    try {
+        const serialized = JSON.stringify(message)
+        if (serialized && Buffer.byteLength(serialized, 'utf8') <= 512 * 1024) sourceMessage = serialized
+    } catch {}
     const record = {
       id, jid, fromMe, participant: String(key.participant || ''),
       pushName: String(message.pushName || '').slice(0, 120),
       timestamp: ts, type: extracted.type, text: extracted.text,
       mimeType: extracted.mimeType, fileName: extracted.fileName ? safeName(extracted.fileName) : '',
-      size: extracted.size, mediaFile: '', mediaUrl: '', viewOnce: extracted.viewOnce, viewOnceViewed: false, status: '',
+      size: extracted.size, duration: extracted.duration || 0, mediaFile: '', mediaUrl: '', sourceMessage,
+      viewOnce: extracted.viewOnce, viewOnceViewed: false, status: '',
+      reactions: [],
     }
-
-    if (extracted.media && typeof downloadMedia === 'function' &&
-        (!extracted.size || extracted.size <= MAX_MEDIA_BYTES)) {
-      try {
-        const data = await downloadMedia(message, socket)
-        const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data || [])
-        if (buffer.length && buffer.length <= MAX_MEDIA_BYTES) {
-          const digest = createHash('sha256').update(account + ':' + id).digest('hex')
-          const extension = mediaExtension(extracted.mimeType, extracted.fileName)
-          const storedName = digest + extension
-          const full = join(mediaRoot, account, storedName)
-          const temp = full + '.' + randomUUID() + '.tmp'
-          await writeFile(temp, buffer, { flag: 'wx', mode: 0o600 })
-          await rename(temp, full)
-          record.mediaFile = storedName
-          record.size = buffer.length
-          record.mediaUrl = extracted.viewOnce ? '' : mediaUrl(account, id)
-          if (!record.fileName) record.fileName = 'WhatsApp ' + extracted.type + extension
-        } else {
-          record.mediaUnavailable = 'Media exceeded the supported size limit.'
-        }
-      } catch (error) {
-        logger.warn?.({ event: 'chat-media.download-failed', accountId: account, messageId: id, error: String(error?.message || error).slice(0, 160) })
-        record.mediaUnavailable = 'WhatsApp media is no longer available to download.'
-      }
-    } else if (extracted.media) {
-      record.mediaUnavailable = extracted.size > MAX_MEDIA_BYTES
-        ? 'Media is larger than the Local Studio download limit.'
-        : 'Media download is not available for this message.'
+    if (extracted.media && extracted.size > MAX_MEDIA_BYTES) {
+      record.mediaUnavailable = 'Media is larger than the Local Studio download limit.'
+    } else if (extracted.media && !sourceMessage) {
+      record.mediaUnavailable = 'This older or unsupported media message cannot be downloaded on demand.'
     }
 
     await persist(account, record)
@@ -222,10 +211,12 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       readFile(readMarkers[account], 'utf8').then(JSON.parse).catch(() => ({})),
     ])
     const lastByJid = new Map()
+    const nameByJid = new Map()
     const unread = new Map()
     for (const row of rows) {
       const old = lastByJid.get(row.jid)
       if (!old || row.timestamp >= old.timestamp) lastByJid.set(row.jid, row)
+      if (row.pushName && (!nameByJid.has(row.jid) || row.timestamp >= nameByJid.get(row.jid).timestamp)) nameByJid.set(row.jid, { name: row.pushName, timestamp: row.timestamp })
       if (!row.fromMe && row.timestamp > Number(markersRaw[row.jid] || 0)) {
         unread.set(row.jid, (unread.get(row.jid) || 0) + 1)
       }
@@ -238,7 +229,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       .slice(0, Math.max(1, Math.min(500, Number(limit) || 200)))
       .map(row => ({
         jid: row.jid,
-        name: row.pushName || row.jid.replace(/@.*$/, ''),
+        name: nameByJid.get(row.jid)?.name || row.jid.replace(/@.*$/, ''),
         group: row.jid.endsWith('@g.us'),
         lastMessage: row.viewOnce ? 'View once · ' + (row.type === 'video' ? 'Video' : 'Photo') : row.text || (row.type === 'unsupported' ? 'Message' : 'Attachment · ' + row.type),
         lastMessageType: row.type, timestamp: row.timestamp,
@@ -258,20 +249,23 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       .map(row => ({
         id: row.id, jid: row.jid, fromMe: row.fromMe, participant: row.participant,
         pushName: row.pushName, timestamp: row.timestamp, type: row.type, text: row.text,
-        mimeType: row.mimeType, fileName: row.fileName, size: row.size,
+        mimeType: row.mimeType, fileName: row.fileName, size: row.size, duration: row.duration || 0,
         mediaUrl: row.viewOnce ? '' : row.mediaFile ? row.mediaUrl || mediaUrl(account, row.id) : '',
         viewOnce: row.viewOnce === true, viewOnceViewed: row.viewOnceViewed === true,
-        mediaUnavailable: row.mediaUnavailable || '', status: row.status || '',
+        mediaUnavailable: row.mediaUnavailable || '', mediaAvailable: Boolean(row.sourceMessage && MEDIA_TYPES.has(row.type) && !row.mediaUnavailable),
+        reactions: Array.isArray(row.reactions) ? row.reactions : [], ptt: row.ptt === true, status: row.status || '',
       }))
   }
 
-  async function searchMessages(id, { query = '', limit = 60 } = {}) {
+  async function searchMessages(id, { query = '', limit = 60, jid: jidValue = '' } = {}) {
     const account = accountId(id)
     const term = String(query || '').trim().toLocaleLowerCase()
     if (term.length < 2) return []
     const rows = await readRows(account)
+    const wantedJid = jidValue ? safeJid(jidValue) : ''
+    if (jidValue && !wantedJid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
     return rows
-      .filter(row => [row.text, row.pushName, row.fileName, row.jid].some(value =>
+      .filter(row => (!wantedJid || row.jid === wantedJid) && [row.text, row.pushName, row.fileName, row.jid].some(value =>
         String(value || '').toLocaleLowerCase().includes(term)
       ))
       .sort((a, b) => b.timestamp - a.timestamp)
@@ -281,6 +275,107 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         timestamp: row.timestamp, type: row.type, text: row.text,
         fileName: row.fileName,
       }))
+  }
+
+  async function getMessage(id, jidValue, messageId) {
+    const account = accountId(id), jid = safeJid(jidValue), key = String(messageId || '')
+    if (!jid || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw Object.assign(new Error('Invalid message reference.'), { status: 400 })
+    const rows = await readRows(account), row = rows.find(item => item.jid === jid && item.id === key)
+    if (!row) return null
+    let sourceMessage = null
+    if (row.sourceMessage) {
+      try { sourceMessage = reviveMessage(JSON.parse(row.sourceMessage)) } catch {}
+    }
+    if (!sourceMessage && ['conversation', 'extendedTextMessage'].includes(row.type) && row.text) {
+      sourceMessage = { key: { remoteJid: row.jid, id: row.id, fromMe: row.fromMe === true, ...(row.participant ? { participant: row.participant } : {}) },
+        message: { conversation: row.text }, messageTimestamp: Math.floor(row.timestamp / 1000), pushName: row.pushName || '' }
+    }
+    return { id: row.id, jid: row.jid, fromMe: row.fromMe, participant: row.participant,
+      pushName: row.pushName, timestamp: row.timestamp, type: row.type, text: row.text,
+      mimeType: row.mimeType, fileName: row.fileName, size: row.size, viewOnce: row.viewOnce === true,
+      key: { remoteJid: row.jid, id: row.id, fromMe: row.fromMe === true, ...(row.participant ? { participant: row.participant } : {}) },
+      sourceMessage }
+  }
+
+  function reviveMessage(value) {
+    if (Array.isArray(value)) return value.map(reviveMessage)
+    if (!value || typeof value !== 'object') return value
+    if (value.type === 'Buffer' && Array.isArray(value.data)) return Buffer.from(value.data)
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, reviveMessage(child)]))
+  }
+
+  async function downloadMessageMedia(id, jidValue, messageId, downloadMedia, socket) {
+    const account = accountId(id), jid = safeJid(jidValue), key = String(messageId || '')
+    if (!jid || !/^[A-Za-z0-9_-]{1,256}$/.test(key) || typeof downloadMedia !== 'function') {
+      throw Object.assign(new Error('Invalid media request.'), { status: 400 })
+    }
+    return enqueue(account, async () => {
+      const rows = await readRows(account), row = rows.find(item => item.jid === jid && item.id === key)
+      if (!row || !MEDIA_TYPES.has(row.type) || row.viewOnceViewed) return null
+      if (row.mediaFile) return { id: row.id, mediaUrl: row.viewOnce ? '' : row.mediaUrl || mediaUrl(account, key), viewOnce: row.viewOnce === true }
+      if (!row.sourceMessage) return null
+      if (row.size > MAX_MEDIA_BYTES) return null
+      let source
+      try { source = reviveMessage(JSON.parse(row.sourceMessage)) } catch { return null }
+      try {
+        const data = await downloadMedia(source, socket)
+        const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data || [])
+        if (!buffer.length || buffer.length > MAX_MEDIA_BYTES) {
+          row.mediaUnavailable = 'Media exceeded the supported size limit.'
+          row.sourceMessage = ''
+          await rewriteRows(account, rows)
+          return null
+        }
+        const digest = createHash('sha256').update(account + ':' + key).digest('hex')
+        const extension = mediaExtension(row.mimeType, row.fileName)
+        const storedName = digest + extension
+        const full = join(mediaRoot, account, storedName)
+        const temp = full + '.' + randomUUID() + '.tmp'
+        await writeFile(temp, buffer, { flag: 'wx', mode: 0o600 })
+        await rename(temp, full)
+        row.mediaFile = storedName; row.size = buffer.length
+        row.mediaUrl = row.viewOnce ? '' : mediaUrl(account, key)
+        row.sourceMessage = ''
+        if (!row.fileName) row.fileName = 'WhatsApp ' + row.type + extension
+        await rewriteRows(account, rows)
+        return { id: row.id, mediaUrl: row.mediaUrl, viewOnce: row.viewOnce === true }
+      } catch (error) {
+        logger.warn?.({ event: 'chat-media.download-failed', accountId: account, messageId: key, error: String(error?.message || error).slice(0, 160) })
+        row.mediaUnavailable = 'WhatsApp media is no longer available to download.'
+        row.sourceMessage = ''
+        await rewriteRows(account, rows)
+        throw Object.assign(new Error(row.mediaUnavailable), { status: 410 })
+      }
+    })
+  }
+
+  async function applyReaction(id, jidValue, messageId, emoji, actor = 'You') {
+    const account = accountId(id), jid = safeJid(jidValue), key = String(messageId || '')
+    if (!jid || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw Object.assign(new Error('Invalid message reference.'), { status: 400 })
+    return enqueue(account, async () => {
+      const rows = await readRows(account), row = rows.find(item => item.jid === jid && item.id === key)
+      if (!row) return null
+      const reactions = Array.isArray(row.reactions) ? row.reactions.filter(item => item.actor !== actor) : []
+      if (emoji) reactions.push({ actor: String(actor).slice(0, 120), emoji: String(emoji).slice(0, 16) })
+      row.reactions = reactions
+      await rewriteRows(account, rows)
+      return reactions
+    })
+  }
+
+  async function deleteMessage(id, jidValue, messageId) {
+    const account = accountId(id), jid = safeJid(jidValue), key = String(messageId || '')
+    if (!jid || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw Object.assign(new Error('Invalid message reference.'), { status: 400 })
+    return enqueue(account, async () => {
+      const rows = await readRows(account), index = rows.findIndex(item => item.jid === jid && item.id === key)
+      if (index < 0) return false
+      const [removed] = rows.splice(index, 1)
+      if (removed.mediaFile && /^[a-f0-9]{64}\.[a-z0-9]{1,8}$/.test(removed.mediaFile)) {
+        await unlink(join(mediaRoot, account, removed.mediaFile)).catch(() => {})
+      }
+      await rewriteRows(account, rows)
+      return true
+    })
   }
 
   async function hasConversation(id, jidValue) {
@@ -368,7 +463,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
   }
 
 
-  async function recordOutgoingMedia({ sessionId, jid: jidValue, buffer, mimeType, fileName, sendResult, text = '' } = {}) {
+  async function recordOutgoingMedia({ sessionId, jid: jidValue, buffer, mimeType, fileName, sendResult, text = '', ptt = false, duration = 0 } = {}) {
     const account = accountId(sessionId), jid = safeJid(jidValue)
     const id = String(sendResult?.key?.id || '')
     if (!jid || !id || !Buffer.isBuffer(buffer) || !buffer.length || buffer.length > MAX_MEDIA_BYTES) {
@@ -388,8 +483,8 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     const record = {
       id, jid, fromMe: true, participant: '', pushName: 'You', timestamp: Date.now(),
       type, text: String(text || '').slice(0, MAX_TEXT), mimeType: String(mimeType || ''),
-      fileName: safeName(fileName), size: buffer.length, mediaFile: storedName,
-      mediaUrl: mediaUrl(account, id), status: 'sent',
+      fileName: safeName(fileName), size: buffer.length, duration: Math.max(0, Number(duration) || 0), mediaFile: storedName,
+      mediaUrl: mediaUrl(account, id), status: 'sent', ptt: ptt === true, reactions: [],
     }
     await persist(account, record)
     return record
@@ -432,5 +527,5 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return { bytes: total, files: count }
   }
 
-  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
+  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, deleteMessage, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
 }

@@ -41,6 +41,19 @@ export function isChatVisible(profile, jid) {
   const override = filter.overrides?.find(entry => entry.jid === value)
   return override ? override.visible === true : filter.mode !== 'selected'
 }
+function normalizeChatPreferences(value = {}) {
+  const normalize = entries => {
+    const result = [], seen = new Set()
+    for (const raw of Array.isArray(entries) ? entries.slice(0, 1000) : []) {
+      const jid = String(raw || '').trim()
+      if (!CHAT_JID_PATTERNS.some(pattern => pattern.test(jid))) throw new Error('Chat preferences contain an invalid chat identifier.')
+      if (seen.has(jid)) continue
+      seen.add(jid); result.push(jid)
+    }
+    return result
+  }
+  return { pinned: normalize(value.pinned), muted: normalize(value.muted) }
+}
 function normalizeProfile(value = {}, scope) {
   const name = String(value.botName ?? DEFAULT_PROFILE.botName).trim().slice(0, 48) || 'Aharane'
   const cooldown = Number(value.commandCooldown ?? DEFAULT_PROFILE.commandCooldown)
@@ -53,6 +66,7 @@ function normalizeProfile(value = {}, scope) {
     commandCooldown: Math.round(cooldown * 10) / 10,
     welcomeMessage: String(value.welcomeMessage ?? '').slice(0, 1000),
     chatVisibility: normalizeChatVisibility(value.chatVisibility || {}),
+    chatPreferences: normalizeChatPreferences(value.chatPreferences || {}),
   }
   for (const key of booleanKeys) profile[key] = value[key] === true
   // Private and Public profiles share the same supported behavior controls.

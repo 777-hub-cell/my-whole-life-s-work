@@ -64,7 +64,7 @@ try {
   await page.goto("http://127.0.0.1:4173/aharane/studio/", { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.body.classList.contains("aharane-authenticated"), null, { timeout: 15000 });
   await page.waitForFunction(() => document.querySelector("#view")?.textContent?.includes("Welcome back"), null, { timeout: 15000 });
-  await page.evaluate(() => document.fonts.ready);
+  await page.evaluate(() => document.fonts.ready.then(() => true));
   await delay(500);
 
   const out = "web-reference-screenshots";

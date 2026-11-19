@@ -122,8 +122,12 @@ fun CodeEditorScreen(
     val verticalScroll = rememberScrollState()
     val horizontalScroll = rememberScrollState()
 
-    BackHandler(explorerOpen || panelOpen) {
-        if (explorerOpen) explorerOpen = false else panelOpen = false
+    BackHandler {
+        when {
+            explorerOpen -> explorerOpen = false
+            panelOpen -> panelOpen = false
+            else -> onClose()
+        }
     }
 
     CompositionLocalProvider(

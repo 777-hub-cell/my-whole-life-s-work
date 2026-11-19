@@ -240,6 +240,7 @@ fun CodeEditorScreen(
                 }
                 if (panelOpen) {
                     EditorBottomPanel(
+                        modifier = Modifier.align(Alignment.BottomCenter),
                         tab = panelTab,
                         onTabSelected = { panelTab = it },
                         onClose = { panelOpen = false },
@@ -470,14 +471,14 @@ private fun ExplorerDrawer(
 
 @Composable
 private fun EditorBottomPanel(
+    modifier: Modifier = Modifier,
     tab: String,
     onTabSelected: (String) -> Unit,
     onClose: () -> Unit,
     message: String
 ) {
     Column(
-        Modifier.fillMaxWidth().fillMaxHeight(.36f).background(EditorPanel)
-            .align(Alignment.BottomCenter)
+        modifier.fillMaxWidth().fillMaxHeight(.36f).background(EditorPanel)
     ) {
         Row(
             Modifier.fillMaxWidth().height(39.dp).padding(start = 8.dp, end = 5.dp),

@@ -100,50 +100,33 @@ jobs:
             adb exec-out screencap -p > screenshots/01-home.png
 
             python3 - <<'PY'
+            import re
             import subprocess
             import time
-            import xml.etree.ElementTree as ET
             from pathlib import Path
 
+            size = subprocess.check_output(["adb", "shell", "wm", "size"], text=True)
+            match = re.search(r"(?:Physical|Override) size: (\\d+)x(\\d+)", size)
+            if not match:
+                raise RuntimeError(f"Unable to read emulator screen size: {size}")
+            width, height = map(int, match.groups())
+            tap_y = round(height * 0.93)
+
             targets = [
-                ("Chats", "02-chats.png"),
-                ("Files", "03-files.png"),
-                ("ENV", "04-env.png"),
-                ("More", "05-more.png"),
+                ("Chats", 1, "02-chats.png"),
+                ("Files", 2, "03-files.png"),
+                ("ENV", 3, "04-env.png"),
+                ("More", 4, "05-more.png"),
             ]
 
-            def run(*args, capture=False):
-                return subprocess.run(
-                    list(args), check=True, text=True,
-                    stdout=subprocess.PIPE if capture else None
+            for label, slot, filename in targets:
+                tap_x = round(width * (slot + 0.5) / 5)
+                subprocess.run(
+                    ["adb", "shell", "input", "tap", str(tap_x), str(tap_y)],
+                    check=True
                 )
-
-            for label, filename in targets:
-                run("adb", "shell", "uiautomator", "dump", "/sdcard/aharane-ui.xml")
-                run("adb", "pull", "/sdcard/aharane-ui.xml", "/tmp/aharane-ui.xml")
-                root = ET.parse("/tmp/aharane-ui.xml").getroot()
-                matches = []
-                for node in root.iter("node"):
-                    if node.attrib.get("text") == label or node.attrib.get("content-desc") == label:
-                        bounds = node.attrib.get("bounds", "")
-                        try:
-                            left_top, right_bottom = bounds.strip("[]").split("][")
-                            x1, y1 = map(int, left_top.split(","))
-                            x2, y2 = map(int, right_bottom.split(","))
-                            matches.append(((y1 + y2) // 2, (x1 + x2) // 2))
-                        except Exception:
-                            pass
-                if not matches:
-                    raise RuntimeError(f"Could not locate the {label} navigation item in the live UI")
-                # A page title or quick-access row can repeat a label; the bottom nav is the lowest match.
-                _, x = max(matches)
-                y, _ = max(matches)
-                run("adb", "shell", "input", "tap", str(x), str(y))
                 time.sleep(2)
-                image = subprocess.run(
-                    ["adb", "exec-out", "screencap", "-p"],
-                    check=True, stdout=subprocess.PIPE
-                ).stdout
+                image = subprocess.check_output(["adb", "exec-out", "screencap", "-p"])
                 Path("screenshots", filename).write_bytes(image)
             PY
 

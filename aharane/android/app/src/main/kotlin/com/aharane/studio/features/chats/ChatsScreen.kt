@@ -1,6 +1,7 @@
 package com.aharane.studio.features.chats
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -48,6 +49,7 @@ fun ChatsScreen(
                 Box(
                     Modifier.size(46.dp).clip(CircleShape)
                         .background(StudioPalette.Surface)
+                        .border(1.dp, StudioPalette.Line, CircleShape)
                         .clickable {
                             onAccountSelected(if (account == ChatAccount.PRIVATE) ChatAccount.PUBLIC else ChatAccount.PRIVATE)
                         },

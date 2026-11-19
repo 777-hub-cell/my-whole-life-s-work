@@ -13,6 +13,7 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -284,9 +285,7 @@ fun StudioSearchField(
             Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            androidx.compose.material.icons.Icons.Outlined.Search.let {
-                Icon(it, contentDescription = null, tint = StudioPalette.Muted, modifier = Modifier.size(19.dp))
-            }
+            Icon(Icons.Outlined.Search, contentDescription = null, tint = StudioPalette.Muted, modifier = Modifier.size(19.dp))
             Spacer(Modifier.width(9.dp))
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                 if (value.isEmpty()) Text(placeholder, color = StudioPalette.Muted, fontSize = 14.sp)
@@ -347,12 +346,12 @@ fun StudioEmpty(title: String, description: String? = null, modifier: Modifier =
 }
 
 object StudioPalette {
-    val Background = Color(0xFFF2F4F3)
-    val Surface = Color(0xFFFFFFFF)
-    val Ink = Color(0xFF12181B)
-    val Muted = Color(0xFF66726F)
-    val Line = Color(0xFFE1E6E4)
-    val Accent = Color(0xFF0E7A5C)
-    val Soft = Color(0xFFDDF1EA)
-    val Bad = Color(0xFFC2372D)
+    val Background: Color @Composable get() = MaterialTheme.colorScheme.background
+    val Surface: Color @Composable get() = MaterialTheme.colorScheme.surface
+    val Ink: Color @Composable get() = MaterialTheme.colorScheme.onSurface
+    val Muted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+    val Line: Color @Composable get() = MaterialTheme.colorScheme.outline
+    val Accent: Color @Composable get() = MaterialTheme.colorScheme.primary
+    val Soft: Color @Composable get() = MaterialTheme.colorScheme.primaryContainer
+    val Bad: Color @Composable get() = MaterialTheme.colorScheme.error
 }

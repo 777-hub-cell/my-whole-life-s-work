@@ -1225,6 +1225,301 @@ function installFileSaveLifecycleP(){
   for(const path of fileAutosaveQueuedP.keys())setFileEditorStatusP(path,'Offline · draft saved on this device');
  });
 }
+
+const CHAT_APPEARANCE_DEFAULTS_P = {
+ theme:'system',wallpaper:'default',incomingBubble:'#ffffff',outgoingBubble:'#d9f4e5',
+ textScale:100,bubbleRadius:18,messageSpacing:'comfortable',chatDensity:'comfortable',
+ showTimestamps:true,showPreviews:true,showAvatars:true,reduceMotion:false,largerText:false,customWallpaperMime:''
+};
+let appearanceDraftP=null;
+function applyChatAppearanceP(value){
+ const a={...CHAT_APPEARANCE_DEFAULTS_P,...(value||{})},root=document.documentElement,chat=Q('#chat'),msgs=Q('#msgs');
+ P.chatAppearance=a;
+ if(a.theme==='system')root.removeAttribute('data-theme');else root.setAttribute('data-theme',a.theme);
+ root.style.setProperty('--chat-incoming',a.incomingBubble);
+ root.style.setProperty('--chat-outgoing',a.outgoingBubble);
+ root.style.setProperty('--chat-text-scale',(Number(a.textScale)||100)+'%');
+ root.style.setProperty('--chat-bubble-radius',(Number(a.bubbleRadius)||18)+'px');
+ root.style.setProperty('--chat-message-gap',a.messageSpacing==='compact'?'3px':a.messageSpacing==='spacious'?'11px':'6px');
+ root.style.setProperty('--chat-row-height',a.chatDensity==='compact'?'58px':'72px');
+ root.dataset.chatLargerText=a.largerText?'true':'false';
+ root.dataset.chatReducedMotion=a.reduceMotion?'true':'false';
+ if(chat){
+  chat.dataset.showTimestamps=a.showTimestamps?'true':'false';
+  chat.dataset.showPreviews=a.showPreviews?'true':'false';
+  chat.dataset.showAvatars=a.showAvatars?'true':'false';
+ }
+ if(msgs){
+  const backgrounds={
+   default:'none',
+   sage:'linear-gradient(145deg,#e6eee8,#f1f4ef)',
+   sand:'linear-gradient(145deg,#f3eadc,#f8f4ec)',
+   slate:'linear-gradient(145deg,#e5e9ed,#f2f4f6)',
+   lavender:'linear-gradient(145deg,#ece8f3,#f6f3fa)',
+   dots:'radial-gradient(circle,#8b9b91 1px,transparent 1.5px)',
+   grid:'linear-gradient(#a1aea5 1px,transparent 1px),linear-gradient(90deg,#a1aea5 1px,transparent 1px)',
+   custom:'none'
+  };
+  msgs.style.backgroundColor=a.wallpaper==='default'?'var(--bg)':a.wallpaper==='sage'?'#eef3ef':a.wallpaper==='sand'?'#f6f0e5':a.wallpaper==='slate'?'#edf0f3':a.wallpaper==='lavender'?'#f1edf7':'#edf1ed';
+  msgs.style.backgroundImage=a.wallpaper==='custom'?'url("'+API+'/chat-appearance/wallpaper?v='+encodeURIComponent(P.chatAppearanceVersion||'1')+'")':(backgrounds[a.wallpaper]||'none');
+  msgs.style.backgroundSize=a.wallpaper==='dots'?'18px 18px':a.wallpaper==='grid'?'22px 22px,22px 22px':a.wallpaper==='custom'?'cover':'auto';
+  msgs.style.backgroundPosition='center';
+  msgs.style.backgroundAttachment='local';
+ }
+}
+function appearanceOptionsP(){
+ const a=appearanceDraftP||{...CHAT_APPEARANCE_DEFAULTS_P};
+ const choices=(field,items)=>'<div class="appearance-choices">'+items.map(([value,label])=>'<button type="button" class="appearance-choice '+(a[field]===value?'on':'')+'" data-app-choice="'+field+'" data-value="'+value+'">'+label+'</button>').join('')+'</div>';
+ const toggle=(field,label,description)=>'<label class="appearance-toggle"><span><b>'+label+'</b><small>'+description+'</small></span><input type="checkbox" data-app-input="'+field+'" '+(a[field]?'checked':'')+'></label>';
+ sheet('<div class="appearance-sheet-body"><div class="appearance-head"><div><h3>Chat appearance</h3><p class="sub">Changes apply across Private and Public chat views.</p></div></div>'+
+ '<h4>Theme</h4>'+choices('theme',[['system','System'],['light','Light'],['dark','Dark']])+
+ '<h4>Chat wallpaper</h4>'+choices('wallpaper',[['default','Default'],['sage','Sage'],['sand','Sand'],['slate','Slate'],['lavender','Lavender'],['dots','Dots'],['grid','Grid'],['custom','Custom']])+
+ '<div class="appearance-inline"><button class="btn sm" type="button" data-app-action="upload">Choose image</button><button class="btn sm" type="button" data-app-action="clear-wallpaper">Remove custom image</button><input type="file" id="appearance-upload" accept="image/jpeg,image/png,image/webp" hidden></div>'+
+ '<h4>Message bubbles</h4><div class="appearance-colours"><label>Incoming <input type="color" data-app-input="incomingBubble" value="'+escP(a.incomingBubble)+'"></label><label>Outgoing <input type="color" data-app-input="outgoingBubble" value="'+escP(a.outgoingBubble)+'"></label></div>'+
+ '<label class="appearance-range"><span>Text size <b data-app-value="textScale">'+Number(a.textScale)+'%</b></span><input type="range" min="80" max="130" step="5" data-app-input="textScale" value="'+Number(a.textScale)+'"></label>'+
+ '<label class="appearance-range"><span>Bubble roundness <b data-app-value="bubbleRadius">'+Number(a.bubbleRadius)+' px</b></span><input type="range" min="8" max="28" step="2" data-app-input="bubbleRadius" value="'+Number(a.bubbleRadius)+'"></label>'+
+ '<h4>Message spacing</h4>'+choices('messageSpacing',[['compact','Compact'],['comfortable','Comfortable'],['spacious','Spacious']])+
+ '<h4>Chat list</h4>'+choices('chatDensity',[['compact','Compact'],['comfortable','Comfortable']])+
+ toggle('showTimestamps','Show message times','Display the time under each message')+
+ toggle('showPreviews','Show message previews','Show the latest message in the chat list')+
+ toggle('showAvatars','Show profile pictures','Keep contact and group avatars visible')+
+ toggle('largerText','Larger interface text','Increase text size across the chat view')+
+ toggle('reduceMotion','Reduce motion','Use fewer movement and transition effects')+
+ '<div class="appearance-preview"><div class="d">Preview</div><div class="appearance-preview-bubble">Incoming message</div><div class="appearance-preview-bubble outgoing">Your message</div></div>'+
+ '<div class="btns"><button class="btn" type="button" data-app-action="reset">Reset</button><span class="grow"></span><button class="btn" type="button" data-app-action="cancel">Cancel</button><button class="btn p" type="button" data-app-action="save">Save</button></div></div>');
+ const root=Q('#sheet');root?.classList.add('appearance-sheet');
+ root?.querySelectorAll('[data-app-choice]').forEach(button=>button.onclick=()=>{
+  appearanceDraftP[button.dataset.appChoice]=button.dataset.value;applyChatAppearanceP(appearanceDraftP);appearanceOptionsP();
+ });
+ root?.addEventListener('input',event=>{
+  const input=event.target.closest('[data-app-input]');if(!input)return;
+  const key=input.dataset.appInput;
+  appearanceDraftP[key]=input.type==='checkbox'?input.checked:(input.type==='range'?Number(input.value):input.value);
+  applyChatAppearanceP(appearanceDraftP);
+  const display=root.querySelector('[data-app-value="'+key+'"]');if(display)display.textContent=key==='textScale'?input.value+'%':input.value+' px';
+ });
+ root?.querySelectorAll('[data-app-action]').forEach(button=>button.onclick=async()=>{
+  const action=button.dataset.appAction;
+  if(action==='upload'){Q('#appearance-upload')?.click();return}
+  if(action==='cancel'){appearanceDraftP=null;applyChatAppearanceP(P.chatAppearance);closeSheet();return}
+  if(action==='reset'){appearanceDraftP={...CHAT_APPEARANCE_DEFAULTS_P};applyChatAppearanceP(appearanceDraftP);appearanceOptionsP();return}
+  if(action==='clear-wallpaper'){
+   try{const r=await apiP('chat-appearance/wallpaper',{method:'DELETE'});appearanceDraftP=r.appearance||{...appearanceDraftP,wallpaper:'default'};P.chatAppearanceVersion=Date.now();applyChatAppearanceP(appearanceDraftP);appearanceOptionsP();notifyP('Custom wallpaper removed')}
+   catch(error){notifyP(error.message)}return;
+  }
+  if(action==='save'){
+   button.disabled=true;button.textContent='Saving…';
+   try{const r=await apiP('chat-appearance',{method:'PUT',body:pack({appearance:appearanceDraftP})});appearanceDraftP=r.appearance;P.chatAppearance=r.appearance;P.chatAppearanceVersion=Date.now();applyChatAppearanceP(r.appearance);appearanceDraftP=null;root.classList.remove('appearance-sheet');closeSheet();notifyP('Chat appearance saved')}
+   catch(error){button.disabled=false;button.textContent='Save';notifyP(error.message)}
+  }
+ });
+ const upload=Q('#appearance-upload');if(upload)upload.onchange=async()=>{
+  const file=upload.files?.[0];upload.value='';if(!file)return;
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>2*1024*1024){notifyP('Choose a JPG, PNG or WebP image up to 2 MB.');return}
+  try{const r=await apiP('chat-appearance/wallpaper',{method:'POST',body:file,headers:{'Content-Type':file.type}});appearanceDraftP=r.appearance||appearanceDraftP;P.chatAppearanceVersion=Date.now();applyChatAppearanceP(appearanceDraftP);appearanceOptionsP();notifyP('Wallpaper image saved')}
+  catch(error){notifyP(error.message)}
+ };
+}
+async function openChatAppearanceP(){
+ try{const r=await apiP('chat-appearance');appearanceDraftP={...CHAT_APPEARANCE_DEFAULTS_P,...(r.appearance||{})};P.chatAppearanceVersion=Date.now();applyChatAppearanceP(appearanceDraftP);appearanceOptionsP()}
+ catch(error){notifyP(error.message)}
+}
+function ensureChatToolsP(){
+ const header=Q('.ch');if(!header)return;
+ const search=Q('#chat-search-toggle');
+ const tools=[
+  ['chat-info-action','Chat information','<circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/>'],
+  ['chat-gallery-action','Shared media','<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/>'],
+  ['chat-appearance-action','Chat appearance','<path d="M12 3a9 9 0 100 18h1a2 2 0 001.5-3.3 1.5 1.5 0 011.1-2.5H17a4 4 0 004-4c0-4.5-4-8.2-9-8.2z"/><circle cx="7.5" cy="10" r="1"/><circle cx="12" cy="7" r="1"/><circle cx="16.5" cy="10" r="1"/>']
+ ];
+ for(const [id,label,path] of tools)if(!Q('#'+id)){
+  const b=document.createElement('button');b.type='button';b.className='ib';b.id=id;b.setAttribute('aria-label',label);b.title=label;
+  b.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+path+'</svg>';
+  header.insertBefore(b,search||null);
+ }
+ const chat=Q('#chat');
+ if(chat&&!Q('#chat-bulkbar')){
+  const bar=document.createElement('div');bar.id='chat-bulkbar';bar.hidden=true;
+  const msgs=Q('#msgs');chat.insertBefore(bar,msgs||null);
+ }
+ if(!Q('#msgs')?.dataset.bulkBound){
+  const messages=Q('#msgs');if(messages){messages.dataset.bulkBound='1';messages.addEventListener('click',event=>{
+   const button=event.target.closest('[data-bulk-toggle]');if(!button)return;
+   event.preventDefault();event.stopPropagation();toggleBulkMessageP(Number(button.dataset.bulkToggle));
+  })}
+ }
+ const info=Q('#chat-info-action');if(info)info.onclick=()=>openChatInfoP();
+ const gallery=Q('#chat-gallery-action');if(gallery)gallery.onclick=()=>openChatGalleryP();
+ const appearance=Q('#chat-appearance-action');if(appearance)appearance.onclick=()=>openChatAppearanceP();
+}
+async function openChatInfoP(){
+ const chat=CH[S.chat];if(!chat?.jid)return;
+ try{
+  const account=S.cacc==='private'?'private':'public',r=await apiP('chats/'+account+'/'+encodeURIComponent(chat.jid)+'/info'),info=r.info||{};
+  const picture=String(info.pictureUrl||'').startsWith('https:')?'<img class="chat-info-picture" src="'+escP(info.pictureUrl)+'" alt="">':'<div class="chat-info-picture fallback">'+escP((info.name||chat.n||'?').charAt(0).toUpperCase())+'</div>';
+  const participants=(info.participants||[]).map(person=>'<div class="chat-info-person"><span>'+escP(String(person.id||'').replace(/@.*$/,''))+'</span><small>'+(person.superAdmin?'Group creator':person.admin?'Admin':'Member')+'</small></div>').join('');
+  sheet('<div class="chat-info-panel">'+picture+'<h3>'+escP(info.name||chat.n)+'</h3><p class="sub">'+(info.group?'Group conversation':'WhatsApp contact')+'</p><div class="chat-info-actions"><button class="btn sm" data-info-action="gallery">Shared media</button><button class="btn sm" data-info-action="export">Export chat</button></div>'+
+  '<div class="chat-info-row"><span>WhatsApp ID</span><b>'+escP(info.jid||chat.jid)+'</b></div>'+
+  (info.description?'<div class="chat-info-row"><span>Description</span><p>'+escP(info.description)+'</p></div>':'')+
+  (info.createdAt?'<div class="chat-info-row"><span>Created</span><b>'+new Date(info.createdAt).toLocaleDateString()+'</b></div>':'')+
+  (info.group?'<div class="chat-info-row"><span>Participants</span><b>'+Number(info.participantCount||0)+'</b></div><div class="chat-info-people">'+participants+'</div>':'')+
+  '<div class="btns"><button class="btn" type="button" onclick="closeSheet()">Close</button><span class="grow"></span><button class="btn p" type="button" data-info-action="appearance">Appearance</button></div></div>');
+  Q('#sheet')?.querySelectorAll('[data-info-action]').forEach(b=>b.onclick=()=>{const a=b.dataset.infoAction;closeSheet();if(a==='gallery')openChatGalleryP();else if(a==='export')openChatExportChoiceP();else openChatAppearanceP()});
+ }catch(error){notifyP(error.message)}
+}
+async function openChatGalleryP(){
+ const chat=CH[S.chat];if(!chat?.jid)return;
+ try{
+  const account=S.cacc==='private'?'private':'public',r=await apiP('chats/'+account+'/'+encodeURIComponent(chat.jid)+'/gallery?limit=300'),items=r.items||[];
+  const cards=items.map((item,index)=>{
+   const label=item.type==='image'?'Photo':item.type==='video'?'Video':item.type==='audio'?'Audio':item.type==='sticker'?'Sticker':'Document';
+   const preview=item.mediaUrl&&['image','sticker'].includes(item.type)?'<img src="'+escP(item.mediaUrl)+'" alt="" loading="lazy">':item.mediaUrl&&item.type==='video'?'<video src="'+escP(item.mediaUrl)+'#t=0.1" muted preload="metadata"></video>':'<span>'+label+'</span>';
+   return '<button type="button" class="chat-gallery-item" data-gallery-index="'+index+'" '+(!item.mediaUrl?'data-gallery-download="'+index+'"':'')+'>'+preview+'<small>'+escP(item.fileName||label)+'</small></button>';
+  }).join('');
+  sheet('<div class="chat-gallery-panel"><h3>Shared media</h3><p class="sub">'+items.length+' saved or available attachments</p><div class="chat-gallery-grid">'+(cards||'<div class="empty">No shared media has been saved for this chat yet.</div>')+'</div><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Close</button><span class="grow"></span><button class="btn p" type="button" data-gallery-export>Export chat</button></div></div>');
+  Q('#sheet')?.querySelectorAll('[data-gallery-index]').forEach(button=>button.onclick=()=>{
+   const item=items[Number(button.dataset.galleryIndex)];if(!item)return;
+   if(item.mediaUrl){closeSheet();openMv([{name:item.fileName||item.type,k:item.type==='video'?'vid':item.type==='audio'?'aud':'img',url:item.mediaUrl,size:item.size}],0)}
+   else if(item.mediaAvailable){void downloadGalleryItemP(item.id)}
+   else notifyP(item.mediaUnavailable||'This attachment is not available.');
+  });
+  const exp=Q('[data-gallery-export]');if(exp)exp.onclick=()=>{closeSheet();openChatExportChoiceP()};
+ }catch(error){notifyP(error.message)}
+}
+async function downloadGalleryItemP(messageId){
+ const chat=CH[S.chat];if(!chat?.jid)return;
+ const account=S.cacc==='private'?'private':'public';
+ try{await apiP('chats/'+account+'/'+encodeURIComponent(chat.jid)+'/media/'+encodeURIComponent(messageId)+'/download',{method:'POST',body:pack({})});notifyP('Media downloaded');openChatGalleryP()}
+ catch(error){notifyP(error.message)}
+}
+async function openChatExportChoiceP(){
+ sheet('<h3>Export conversation</h3><p class="sub">Create a ZIP containing the saved message history and media already downloaded into Studio. You can also ask WhatsApp for remaining media first; this may use mobile data and take longer.</p><div class="chat-export-choice"><button class="row" type="button" data-export-mode="saved"><span class="grow"><b class="t">Saved media only</b><small class="d">Fast export using files already stored here</small></span><span>›</span></button><button class="row" type="button" data-export-mode="all"><span class="grow"><b class="t">Try to include available WhatsApp media</b><small class="d">Downloads missing attachments before building the ZIP</small></span><span>›</span></button></div><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Cancel</button></div>');
+ Q('#sheet')?.querySelectorAll('[data-export-mode]').forEach(b=>b.onclick=()=>{const all=b.dataset.exportMode==='all';closeSheet();void exportChatBundleP(all)});
+}
+async function exportChatBundleP(includePending){
+ const chat=CH[S.chat];if(!chat?.jid)return;
+ const account=S.cacc==='private'?'private':'public',base='chats/'+account+'/'+encodeURIComponent(chat.jid);
+ try{
+  notifyP(includePending?'Preparing WhatsApp media for export…':'Preparing chat export…');
+  let data=await apiP(base+'/export?limit=5000');
+  if(includePending){
+   const pending=(data.messages||[]).filter(message=>message.mediaAvailable&&!message.mediaUrl);
+   for(let index=0;index<pending.length;index++){
+    try{await apiP(base+'/media/'+encodeURIComponent(pending[index].id)+'/download',{method:'POST',body:pack({})})}catch{}
+   }
+   data=await apiP(base+'/export?limit=5000');
+  }
+  const zip=typeof JSZip==='function'?new JSZip():null;
+  if(!zip){
+   downloadP('aharane-chat-export.json',new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+   notifyP('JSON export saved. ZIP media packaging is unavailable in this browser.');return;
+  }
+  const media=zip.folder('media'),manifest=JSON.parse(JSON.stringify(data)),included=[];
+  for(const message of manifest.messages||[]){
+   if(!message.mediaUrl)continue;
+   try{
+    const response=await fetch(message.mediaUrl,{credentials:'same-origin',cache:'no-store'});
+    if(!response.ok)continue;
+    const blob=await response.blob(),safe=(String(message.fileName||message.type||'attachment').replace(/[^a-z0-9._-]/gi,'_').slice(0,90)||'attachment');
+    const name=String(message.timestamp||Date.now())+'-'+String(message.id||included.length)+'-'+safe;
+    media.file(name,blob);message.exportMediaPath='media/'+name;included.push(message.id);
+   }catch{}
+  }
+  manifest.mediaIncluded=included.length;manifest.messagesIncluded=(manifest.messages||[]).length;
+  zip.file('chat-history.json',JSON.stringify(manifest,null,2));
+  zip.file('README.txt','Aharane WhatsApp chat export\\nAccount: '+account+'\\nConversation: '+chat.n+'\\nExported: '+data.exportedAt+'\\nMedia files included: '+included.length+'\\nMissing or unavailable media: '+(data.missingMedia||[]).length+'\\n\\nView-once messages are excluded from media downloads.');
+  const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:5}});
+  const name='aharane-chat-'+String(chat.n||'conversation').replace(/[^a-z0-9_-]/gi,'_').slice(0,36)+'-'+new Date().toISOString().slice(0,10)+'.zip';
+  downloadP(name,blob);
+  notifyP('Chat export ready · '+included.length+' media files included');
+ }catch(error){notifyP(error.message)}
+}
+async function openStarredMessagesP(){
+ const account=S.cacc==='private'?'private':'public';
+ try{
+  const r=await apiP('chats/'+account+'/starred?limit=200'),messages=r.messages||[];
+  const html=messages.map((message,index)=>'<button type="button" class="row" data-starred-index="'+index+'"><span class="ic">★</span><span class="grow"><span class="t" style="display:block">'+escP(message.pushName||message.jid.split('@')[0])+'</span><span class="d" style="display:block;white-space:normal">'+escP(message.text||message.fileName||('Attachment · '+message.type))+'</span></span><span class="d">'+rel(message.timestamp)+'</span></button>').join('');
+  sheet('<h3>Starred messages</h3><div class="card list">'+(html||'<div class="empty">No starred messages yet. Long-press a message and choose Star.</div>')+'</div><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Close</button></div>');
+  Q('#sheet')?.querySelectorAll('[data-starred-index]').forEach(button=>button.onclick=async()=>{
+   const message=messages[Number(button.dataset.starredIndex)];if(!message)return;
+   closeSheet();await openMessageInChatP(message.jid,message.id,message.timestamp);
+  });
+ }catch(error){notifyP(error.message)}
+}
+async function openMessageInChatP(jid,messageId,timestamp){
+ try{
+  await refreshChatsP();const index=CH.findIndex(chat=>chat.jid===jid);
+  if(index<0){notifyP('That conversation is hidden or no longer available.');return}
+  S.fl=CH[index].archived?'archived':'all';openChat(index);
+  await loadMessagesP(index,Number(timestamp||0)+1);
+  const messageIndex=CH[index].m.findIndex(message=>message.id===messageId);
+  const target=messageIndex>=0?Q('#msgs .b[data-i="'+messageIndex+'"]'):null;
+  if(target){target.scrollIntoView({block:'center',behavior:'smooth'});target.classList.add('flash')}
+ }catch(error){notifyP(error.message)}
+}
+async function toggleChatArchiveP(index){
+ const chat=CH[index];if(!chat?.jid)return;
+ const account=S.cacc==='private'?'private':'public',archived=!chat.archived;
+ try{
+  await apiP('chats/'+account+'/'+encodeURIComponent(chat.jid)+'/archive',{method:'POST',body:pack({archived})});
+  S.fl=archived?'archived':'all';await refreshChatsP();render();notifyP(archived?'Chat archived in WhatsApp':'Chat unarchived');
+ }catch(error){notifyP(error.message)}
+}
+async function markChatUnreadP(index){
+ const chat=CH[index];if(!chat?.jid)return;
+ const account=S.cacc==='private'?'private':'public';
+ try{await apiP('chats/'+account+'/'+encodeURIComponent(chat.jid)+'/mark-unread',{method:'POST',body:pack({})});await refreshChatsP();render();notifyP('Chat marked unread')}
+ catch(error){notifyP(error.message)}
+}
+function updateBulkBarP(){
+ const bar=Q('#chat-bulkbar');if(!bar)return;
+ const count=P.selectedMessageIds?.size||0;
+ bar.hidden=!P.bulkMode||!count;
+ if(!P.bulkMode){bar.innerHTML='';return}
+ bar.innerHTML='<div class="chat-bulk-inner"><b>'+count+' selected</b><button type="button" data-bulk-action="star">Star</button><button type="button" data-bulk-action="copy">Copy</button><button type="button" data-bulk-action="forward">Forward</button><button type="button" data-bulk-action="delete" class="danger">Delete</button><button type="button" data-bulk-action="cancel" aria-label="Cancel selection">×</button></div>';
+ bar.querySelectorAll('[data-bulk-action]').forEach(button=>button.onclick=()=>runBulkActionP(button.dataset.bulkAction));
+}
+function toggleBulkMessageP(index){
+ const message=CH[S.chat]?.m?.[index];if(!message?.id)return;
+ P.bulkMode=true;P.selectedMessageIds=P.selectedMessageIds||new Set();
+ if(P.selectedMessageIds.has(message.id))P.selectedMessageIds.delete(message.id);else P.selectedMessageIds.add(message.id);
+ if(!P.selectedMessageIds.size)P.bulkMode=false;
+ drawMsgs();updateBulkBarP();
+}
+function selectedMessagesP(){
+ const selected=P.selectedMessageIds||new Set();return (CH[S.chat]?.m||[]).filter(message=>selected.has(message.id));
+}
+function clearBulkSelectionP(){P.bulkMode=false;P.selectedMessageIds=new Set();drawMsgs();updateBulkBarP()}
+async function runBulkActionP(action){
+ const chat=CH[S.chat],messages=selectedMessagesP();if(!chat?.jid||!messages.length)return;
+ const account=S.cacc==='private'?'private':'public',base='chats/'+account+'/'+encodeURIComponent(chat.jid);
+ if(action==='cancel'){clearBulkSelectionP();return}
+ if(action==='copy'){
+  const value=messages.map(message=>message.t||message.f||message.k||'Attachment').join('\\n');
+  try{await navigator.clipboard.writeText(value);notifyP('Selected messages copied');clearBulkSelectionP()}catch{notifyP('Copy is not available in this browser')}return;
+ }
+ if(action==='star'){
+  try{for(const message of messages)await apiP(base+'/star',{method:'POST',body:pack({messageId:message.id,starred:true})});P.messageFingerprints.delete(account+'|'+chat.jid+'|latest');await loadMessagesP(S.chat,0);clearBulkSelectionP();notifyP('Messages starred')}
+  catch(error){notifyP(error.message)}return;
+ }
+ if(action==='forward'){
+  const targets=CH.map((target,index)=>'<button type="button" class="row" data-bulk-target="'+index+'"><span class="av">'+escP(target.n.slice(0,1))+'</span><span class="grow"><span class="t">'+escP(target.n)+'</span><span class="d">'+(target.g?'Group':'Chat')+'</span></span></button>').join('');
+  sheet('<h3>Forward '+messages.length+' messages</h3><div class="card list">'+targets+'</div><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Cancel</button></div>');
+  Q('#sheet')?.querySelectorAll('[data-bulk-target]').forEach(button=>button.onclick=async()=>{
+   const target=CH[Number(button.dataset.bulkTarget)];if(!target?.jid)return;
+   try{for(const message of messages)await apiP(base+'/forward',{method:'POST',body:pack({messageId:message.id,targetJid:target.jid})});closeSheet();clearBulkSelectionP();notifyP('Selected messages forwarded')}
+   catch(error){notifyP(error.message)}
+  });return;
+ }
+ if(action==='delete'){
+  sheet('<h3>Delete '+messages.length+' messages?</h3><p class="sub">Your own sent messages may be revoked for everyone. Other messages are removed from this Studio history.</p><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Cancel</button><button class="btn d" id="bulk-delete-confirm">Delete</button></div>');
+  Q('#bulk-delete-confirm').onclick=async()=>{
+   try{for(const message of messages)await apiP(base+'/delete',{method:'POST',body:pack({messageId:message.id})});closeSheet();P.messageFingerprints.delete(account+'|'+chat.jid+'|latest');await loadMessagesP(S.chat,0);clearBulkSelectionP();notifyP('Selected messages deleted')}
+   catch(error){notifyP(error.message)}
+  };
+ }
+}
+
 function installBridgeP(){
  installFileSaveLifecycleP();
  const configViewBaseP=cfgV;

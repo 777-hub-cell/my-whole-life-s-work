@@ -82,7 +82,7 @@ fun ConversationScreen(
             .toList()
     }
 
-    LaunchedEffect(messages.size, search) {
+    LaunchedEffect(messages, search, conversation.key) {
         if (visible.isNotEmpty() && search.isBlank()) {
             listState.animateScrollToItem(visible.lastIndex)
         }
@@ -164,7 +164,7 @@ fun ConversationScreen(
                     }
                 )
                 Text(
-                    if (search.isBlank()) "${messages.size} messages" else "${visible.size} matches",
+                    if (search.isBlank()) "${visible.size} messages" else "${visible.size} matches",
                     color = StudioPalette.Muted,
                     fontSize = 11.5.sp,
                     modifier = Modifier.padding(start = 8.dp)
@@ -209,7 +209,7 @@ fun ConversationScreen(
                         }
                         MessageBubble(
                             message = message,
-                            reply = message.replyToMessageId?.let { id -> messages.firstOrNull { it.messageId == id } },
+                            reply = message.replyToMessageId?.let { id -> messages.firstOrNull { it.messageId == id && it.key == conversation.key } },
                             onReply = { replyTo = message },
                             onOpenMedia = { onOpenMedia(message) },
                             onViewOnce = { onViewOnce(message) },

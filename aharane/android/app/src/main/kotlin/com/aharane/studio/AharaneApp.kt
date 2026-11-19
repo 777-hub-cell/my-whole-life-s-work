@@ -8,9 +8,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import com.aharane.studio.core.design.*
 import com.aharane.studio.core.model.ChatAccount
+import com.aharane.studio.core.model.ChatSummary
 import com.aharane.studio.core.model.ChatFilter
 import com.aharane.studio.core.navigation.MainDestination
 import com.aharane.studio.features.chats.ChatsScreen
+import com.aharane.studio.features.chats.ConversationScreen
 import com.aharane.studio.features.configuration.ConfigurationScreen
 import com.aharane.studio.features.environment.EnvironmentScreen
 import com.aharane.studio.features.files.CodeEditorScreen
@@ -29,6 +31,7 @@ fun AharaneApp(
     var editorOpen by rememberSaveable { mutableStateOf(false) }
     var editorFromConfiguration by rememberSaveable { mutableStateOf(false) }
     var configurationOpen by rememberSaveable { mutableStateOf(false) }
+    var activeConversation by remember { mutableStateOf<ChatSummary?>(null) }
 
     val destination = MainDestination.valueOf(destinationName)
     val account = ChatAccount.valueOf(accountName)
@@ -39,7 +42,7 @@ fun AharaneApp(
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
-        if (!editorOpen) {
+        if (!editorOpen && activeConversation == null) {
             StudioHeader(onStatusClick = { destinationName = MainDestination.HOME.name })
         }
 
@@ -51,6 +54,15 @@ fun AharaneApp(
                         editorOpen = false
                         if (editorFromConfiguration) configurationOpen = true
                     }
+                )
+                activeConversation != null -> ConversationScreen(
+                    conversation = activeConversation!!,
+                    messages = emptyList(),
+                    connected = false,
+                    onBack = { activeConversation = null },
+                    onSend = { _, _ -> },
+                    onAttach = {},
+                    onRecordVoice = {}
                 )
                 configurationOpen -> ConfigurationScreen(
                     onBack = { configurationOpen = false },
@@ -70,7 +82,10 @@ fun AharaneApp(
                         account = account,
                         onAccountSelected = { accountName = it.name },
                         filter = filter,
-                        onFilterSelected = { filterName = it.name }
+                        onFilterSelected = { filterName = it.name },
+                        conversations = emptyList(),
+                        accountConnected = false,
+                        onConversationSelected = { activeConversation = it }
                     )
                     MainDestination.FILES -> FilesScreen(
                         onEditorVisibility = {
@@ -87,7 +102,7 @@ fun AharaneApp(
             }
         }
 
-        if (!editorOpen) {
+        if (!editorOpen && activeConversation == null) {
             StudioBottomNavigation(
                 selected = destination,
                 onNavigate = {

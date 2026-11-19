@@ -18,7 +18,11 @@ import androidx.compose.ui.unit.sp
 import com.aharane.studio.core.design.*
 
 @Composable
-fun HomeScreen(onOpenChats: () -> Unit, onOpenMore: () -> Unit) {
+fun HomeScreen(
+    onOpenChats: () -> Unit,
+    onOpenMore: () -> Unit,
+    onOpenConfiguration: () -> Unit
+) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
@@ -64,11 +68,19 @@ fun HomeScreen(onOpenChats: () -> Unit, onOpenMore: () -> Unit) {
                     }
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Messages handled, last 24 hours", color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 17.sp)
+                    Text(
+                        "Messages handled, last 24 hours",
+                        color = StudioPalette.Muted,
+                        fontSize = 12.5.sp,
+                        lineHeight = 17.sp
+                    )
                     Spacer(Modifier.weight(1f))
                     Text("—", color = StudioPalette.Muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
-                Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     StudioActionButton("Start", modifier = Modifier.weight(1f), enabled = false, onClick = {})
                     StudioActionButton("Stop", modifier = Modifier.weight(1f), enabled = false, onClick = {})
                     StudioActionButton("Restart", modifier = Modifier.weight(1f), enabled = false, onClick = {})
@@ -111,7 +123,7 @@ fun HomeScreen(onOpenChats: () -> Unit, onOpenMore: () -> Unit) {
                     subtitle = "Prefix, access and bot behaviour",
                     icon = Icons.Outlined.Settings,
                     trailing = "›",
-                    onClick = onOpenMore
+                    onClick = onOpenConfiguration
                 )
             }
         }

@@ -25,30 +25,30 @@ Do not derive the production UI from the static prototype under `aharane/prototy
 
 ## Shared shell
 
-The header has the 26dp Aharane brand mark, Bricolage Grotesque wordmark, and a compact status control. The bottom navigation is a fixed 58dp five-destination bar (Home, Chats, Files, ENV, More), with 20dp line icons and compact 11.5sp labels. The selected destination uses the accent colour without a Material selected-pill background. Hide the global header/navigation while the source editor or a conversation occupies the full screen.
+The header has the 26dp Aharane brand mark, Bricolage Grotesque wordmark, and a compact status control. The bottom navigation is a fixed 58dp five-destination bar in the exact web order (Home, Files, ENV, Chats, More), with 20dp line icons and compact 11.5sp labels. The selected destination uses the accent colour without a Material selected-pill background. Hide the global header/navigation while the source editor or a conversation occupies the full screen.
 
 ## Screens
 
 ### Home
 
 Translate the live web dashboard structure:
-1. “Welcome back” page title and “Your private bot workspace.” subtitle.
-2. Aharane bot hero card with connection state, uptime when available, 24-hour message bars and actual handled-message count, then Start/Stop/Restart actions.
-3. Private and Public account rows with their real account identity and connection state.
-4. Setup / Configuration row.
-5. Recent activity section and View all action.
+1. “Welcome back” page title and “Your Aharane workspace.” subtitle.
+2. A compact service-status card: “Aharane service”, the actual service-connection state, and the explanation that the two WhatsApp accounts are independent.
+3. “WhatsApp accounts” rows for Private WhatsApp and Public WhatsApp, each with its real state and Link account / Manage / Reconnect action as appropriate.
+4. “Setup” / Configuration row with Private Owner, Public Owner and Public bot number configuration state.
+5. “Recent activity” and the real activity log surface.
 
-Never generate uptime, message counts, status, account identities or log entries locally to make the dashboard look populated. Until linked, show neutral not-connected status, unavailable chart values and disabled service controls.
+Do not invent service state, account state, identities, owner numbers or log entries. Until the service is linked, show offline/not-connected state and explain that account linking requires the server. Do not show fake uptime or synthetic message metrics.
 
 ### Chats
 
-Translate the actual inbox header, account switcher, account identity/count text, search field, and All / Unread / Groups / Archived segmented filter. Connected state must render real conversation rows with web-equivalent avatars, previews, relative timestamps, unread count, pinned/muted and outgoing status indicators. The account switcher must keep Private and Public inboxes separate.
+Translate the Chats heading, account switcher, chat visibility control, starred-message control, chat-appearance control, account/conversation subtitle, search field without a leading glyph, and All / Unread / Groups / Archived segmented filter. Keep the order and control sizes of the current web toolbar. The empty state is one compact centered “No chats match.” line inside a single card. Connected state must render real conversation rows with web-equivalent avatars, previews, relative timestamps, unread count, pinned/muted and outgoing status indicators. Account counts, unread counts, search and actions must stay scoped to the selected Private or Public account.
 
 Opening a conversation is a full-screen native route with a top bar, in-conversation search, message timeline, date separators, incoming/outgoing bubbles, attachments/media previews, reply/attachment actions and composer. Preserve the user's chat privacy invariants: opening messages must not send read receipts or presence, and view-once image/video media must only be opened once. Do not mark a conversation read merely because the screen was rendered. (The native conversation surface is implemented; authenticated message loading, media playback, voice capture, and transport-backed privacy enforcement remain to be connected.)
 
 ### Files and source editor
 
-Translate the Files title, search, New file / Upload / New folder / Export Bot Source actions, breadcrumb, selection toolbar, and file/folder list. Folders must sort A–Z first, then files A–Z. Do not add View or Sort controls.
+Translate the Files title and subtitle, search without a leading glyph, naturally wrapping New file / Upload / New folder / Export Bot Source actions, breadcrumb, selection toolbar, file/folder list, and Update packages section with View all and package count. Folders must sort A–Z first, then files A–Z. Do not add View or Sort controls. The empty list card includes the centered empty message, sorting hint and Code editor / Open editor callout inside that same card.
 
 A file's three-dot menu is a compact white floating native popup anchored at that row's three-dot control, approximately 190dp wide. It overlays the existing rows, does not add a row or spacing, does not resize the list or expand the selected row, and dismisses on outside tap or action selection. Keep the popup white even when the Studio theme is dark, matching the web menu.
 
@@ -56,29 +56,34 @@ Opening a source file switches to the dedicated full-screen dark editor. Transla
 
 ### ENV
 
-Translate the ENV heading and subtitle, Show all secrets control, compact variable cards, monospace 13sp variable labels, value fields, per-variable Show/Hide, three-dot actions, Add variable and Save changes. Secret visibility must be explicit and must not leak into logs or clipboard actions without user selection. Server save is unavailable until the authenticated API adapter exists; never display a false success.
+Translate the ENV heading and the current subtitle: “Managed environment values for the Private and Public accounts. Command prefixes are fixed by Aharane.” Render the actual server-provided environment values with fixed/read-only labels where appropriate, and the current prominent Save changes action. The empty disconnected state is a quiet single divider/rule before Save changes; do not add demo variables or an invented Add variable action. Saving must report the result returned by the server and never display a false success.
 
 ### More
 
-Keep the compact grouped sections:
+Keep the current compact More sections and order:
+- Accounts & owners.
 - Tools: Activity and logs; Storage information.
-- Preferences: Appearance (System / Light / Dark, accent, text size and editor preferences as supported).
+- Preferences: Appearance (System / Light / Dark / AMOLED, accent, interface size, corners, spacing and editor preferences).
 - Support: Help; About Aharane.
+- Development: Studio source.
+- Change password and Sign out actions.
+
+Use plain title/subtitle rows rather than decorative icon tiles. The native Studio source page must explain that Kotlin app source is bundled into the installed package and cannot be edited as a web HTML file at runtime. Account, activity, storage, password and sign-out operations remain unavailable until their authenticated services are connected.
 
 Dialogs and bottom sheets should preserve web Studio spacing/radius, white/dark surface, type hierarchy and dismissal behaviour.
 
 ## Current implementation state
 
 Implemented in the native Kotlin branch:
-- A custom Studio shell with Home / Chats / Files / ENV / More navigation, web-matched light/dark palettes, and bundled Bricolage Grotesque + Instrument Sans typefaces.
-- A dashboard with truthful disconnected states and no generated uptime, activity, or message totals.
-- A data-driven Chats inbox UI with account separation, search, four filters, sorting, previews, unread counts, and pinned/muted indicators.
+- A custom Studio shell with the exact Home / Files / ENV / Chats / More navigation order, web-matched light/dark palettes, and bundled Bricolage Grotesque + Instrument Sans typefaces.
+- A Home dashboard translated to the current service-status, WhatsApp-account, setup/configuration and recent-activity sections, with no generated uptime, activity or message totals.
+- A Chats inbox with account separation, search, four filters, sorting, previews, unread counts, pinned/muted indicators, four current toolbar controls, and compact empty state. Chat visibility/starred/appearance dialogs are present; their server-backed data/settings are not wired yet.
 - A full-screen native conversation surface with its own header, in-thread search, date dividers, incoming/outgoing message styling, reply preview, attachment action, view-once treatment, and message composer. Conversation data, searches, reply lookups and unread counts are scoped to the active account/JID key; rendering the screen does not mark messages read or send presence.
-- A Files browser model with breadcrumbs, search, folder-first A–Z ordering, selection/bulk-action surfaces, and a row-anchored 190dp white floating action menu. The menu dismisses on outside tap and selection.
+- A Files browser with naturally wrapping actions, breadcrumbs, search, folder-first A–Z ordering, selection/bulk-action surfaces, Update packages section, and a row-anchored 190dp white floating action menu. The menu dismisses on outside tap and selection. Disconnected actions show explicit server-connection feedback.
 - A native full-screen editor workbench with tabs, expandable Explorer tree, monospaced editable document surface, JavaScript/JSON syntax token colours, synchronized line-number gutter, cursor-aware accessory-key row, Problems / Console panel and status strip. File open/content/save callbacks are exposed; server-backed file access is still pending.
-- Local ENV variable drafts with secret reveal controls. Server save is intentionally unavailable until the secure API adapter exists.
-- More / Appearance controls for theme, accent, interface scale, corners, row spacing, editor palette, editor font size, and line-number visibility. These preferences persist on the device.
-- Debug-only emulator design fixtures for conversations, messages, file trees, source documents and ENV rows. They require both a debuggable APK and the explicit `aharane_preview_mode` launch extra; they are not loaded in normal launches or release builds.
+- An API-ready ENV variable presentation with a quiet disconnected state and Save changes action. No invented variables are shown; server save awaits the authenticated API adapter.
+- More sections in web order, including Accounts & owners, Activity and logs, Storage information, Appearance, Help, About, Development / Studio source, Change password and Sign out. Appearance controls for theme, accent, interface size, corners, spacing, editor palette, editor font size and line-number visibility persist on-device.
+- Debug-only emulator design fixtures for conversations, messages, file trees and source documents. They require both a debuggable APK and the explicit `aharane_preview_mode` launch extra; they are not loaded in normal launches or release builds.
 - A design contract and acceptance checklist in this document.
 
 Not implemented yet:
@@ -87,7 +92,8 @@ Not implemented yet:
 - Media/video/audio playback, voice recording, message reactions and full view-once enforcement at the Android transport layer.
 - Full language-server syntax highlighting, cursor/selection and scroll restoration across document switches, and a live bot console.
 - Complete configuration/setup workflows and end-to-end permission/error handling.
-- Fresh screenshot-by-screenshot comparison of the populated native debug preview against the web Studio reference, plus verification on the target Galaxy A16.
+- Securely integrating server-backed account rows, owner identities, activity/storage details, chat tools, ENV and password actions.
+- Final screenshot-by-screenshot review of the newest native APK (both populated debug preview and normal disconnected UI) against the current Chromium web reference, followed by verification on the target Galaxy A16.
 
 ## Delivery roadmap
 

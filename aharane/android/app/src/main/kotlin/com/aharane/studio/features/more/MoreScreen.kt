@@ -210,6 +210,87 @@ fun MoreScreen(
                 }
             }
         }
+    } else if (page == "accounts") {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            item {
+                BackToMore { onPageChange("more") }
+                Spacer(Modifier.height(12.dp))
+                StudioPageTitle("Accounts", "Two independent WhatsApp sessions. Pairing numbers are saved in Configuration.")
+                Spacer(Modifier.height(14.dp))
+            }
+            item {
+                StudioCard {
+                    StudioRow(
+                        title = "Private account",
+                        subtitle = "Not paired · Not connected",
+                        trailingContent = {
+                            StudioActionButton("Link account", compact = true, enabled = false, onClick = {})
+                        }
+                    )
+                    StudioDivider()
+                    StudioRow(
+                        title = "Public account",
+                        subtitle = "Not paired · Not connected",
+                        trailingContent = {
+                            StudioActionButton("Link account", compact = true, enabled = false, onClick = {})
+                        }
+                    )
+                }
+            }
+            item { StudioSectionHeading("Owner identities") }
+            item {
+                StudioCard(padding = PaddingValues(14.dp)) {
+                    listOf(
+                        "Private Owner number",
+                        "Public Owner number",
+                        "Public bot WhatsApp number",
+                        "Allowed public senders"
+                    ).forEachIndexed { index, label ->
+                        if (index > 0) Spacer(Modifier.height(12.dp))
+                        Text(label, color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (index == 3) "Not loaded" else "Not configured",
+                            color = StudioPalette.Muted,
+                            fontSize = 13.sp,
+                            modifier = Modifier.fillMaxWidth().padding(top = 5.dp)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(StudioPalette.Background)
+                                .border(1.dp, StudioPalette.Line, RoundedCornerShape(9.dp))
+                                .padding(horizontal = 11.dp, vertical = 10.dp)
+                        )
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    StudioActionButton("Save owner settings", primary = true, enabled = false, onClick = {})
+                }
+            }
+        }
+    } else if (page == "source") {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            item {
+                BackToMore { onPageChange("more") }
+                Spacer(Modifier.height(12.dp))
+                StudioPageTitle("Studio source", "The native Android app is built from Kotlin source files.")
+                Spacer(Modifier.height(14.dp))
+            }
+            item {
+                StudioCard(padding = PaddingValues(16.dp)) {
+                    Text(
+                        "Native source is bundled into the installed application and cannot be edited at runtime. Changes to the Android UI are made in the Aharane project source and installed through a new app build.",
+                        color = StudioPalette.Muted,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    StudioTag("Managed in the project repository")
+                }
+            }
+        }
     } else if (page == "activity") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -342,22 +423,35 @@ fun MoreScreen(
         ) {
             item { StudioPageTitle("More", "Additional tools and information") }
 
+            item {
+                Spacer(Modifier.height(18.dp))
+                StudioCard {
+                    StudioRow(
+                        "Accounts & owners",
+                        "Pair the two WhatsApp sessions and set their separate Owner identities",
+                        icon = null,
+                        trailing = "›",
+                        onClick = { onPageChange("accounts") }
+                    )
+                }
+            }
+
             item { StudioSectionHeading("Tools") }
             item {
                 StudioCard {
                     StudioRow(
                         "Activity and logs",
                         "Review bot activity and diagnostic records",
-                        Icons.Outlined.Timeline,
-                        "›",
+                        icon = null,
+                        trailing = "›",
                         onClick = { onPageChange("activity") }
                     )
                     StudioDivider()
                     StudioRow(
                         "Storage information",
                         "View disk and storage usage",
-                        Icons.Outlined.Storage,
-                        "›",
+                        icon = null,
+                        trailing = "›",
                         onClick = { onPageChange("storage") }
                     )
                 }
@@ -369,8 +463,8 @@ fun MoreScreen(
                     StudioRow(
                         "Appearance",
                         "Theme, accent color, text size and editor",
-                        Icons.Outlined.Palette,
-                        "›",
+                        icon = null,
+                        trailing = "›",
                         onClick = { onPageChange("appearance") }
                     )
                 }
@@ -382,21 +476,41 @@ fun MoreScreen(
                     StudioRow(
                         "Help",
                         "Guidance for using Aharane Studio",
-                        Icons.Outlined.HelpOutline,
-                        "›",
+                        icon = null,
+                        trailing = "›",
                         onClick = { dialog = "help" }
                     )
                     StudioDivider()
                     StudioRow(
                         "About Aharane",
                         "Version and application information",
-                        Icons.Outlined.Info,
-                        "›",
+                        icon = null,
+                        trailing = "›",
                         onClick = { dialog = "about" }
                     )
                 }
             }
-            item { Spacer(Modifier.height(12.dp)) }
+            item { StudioSectionHeading("Development") }
+            item {
+                StudioCard {
+                    StudioRow(
+                        "Studio source",
+                        "Edit the native Android source in the Aharane project",
+                        icon = null,
+                        trailing = "›",
+                        onClick = { onPageChange("source") }
+                    )
+                }
+            }
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    StudioActionButton("Change password", compact = true, enabled = false, onClick = {})
+                    StudioActionButton("Sign out", compact = true, destructive = true, enabled = false, onClick = {})
+                }
+            }
         }
     }
 

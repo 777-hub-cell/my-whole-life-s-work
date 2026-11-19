@@ -28,11 +28,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-      - name: Install Android SDK
+      - name: Install Android SDK platform and licenses
         run: |
-          sdkmanager --install "platforms;android-37" "platform-tools"
           yes | sdkmanager --licenses >/dev/null
+          sdkmanager --install "platforms;android-37" "platform-tools"
       - uses: gradle/actions/setup-gradle@v5
       - name: Unit tests
         working-directory: aharane/android

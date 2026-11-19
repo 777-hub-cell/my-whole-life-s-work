@@ -980,7 +980,7 @@ async function messageActionP(action,index,emoji=''){
   return;
  }
  if(action==='delete'){
-  sheet('<h3>Delete message?</h3><p class="sub">Your own sent message will also be deleted for everyone when WhatsApp allows it. Other messages are removed from this Studio history only.</p><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Cancel</button><button class="btn d" id="confirm-chat-delete" type="button">Delete</button></div>');
+  sheet('<h3>Delete message?</h3><p class="sub">Your own sent message is revoked for everyone when WhatsApp allows it. An incoming message is deleted for this linked account only; other participants still keep it.</p><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Cancel</button><button class="btn d" id="confirm-chat-delete" type="button">Delete</button></div>');
   Q('#confirm-chat-delete').onclick=async()=>{
    try{await apiP(base+'/delete',{method:'POST',body:pack({messageId:message.id})});closeSheet();P.messageFingerprints.delete(account+'|'+chat.jid+'|latest');await loadMessagesP(S.chat,0);notifyP('Message deleted')}
    catch(error){notifyP(error.message)}
@@ -1249,6 +1249,9 @@ function applyChatAppearanceP(value){
  root.style.setProperty('--chat-row-height',a.chatDensity==='compact'?'58px':'72px');
  root.dataset.chatLargerText=a.largerText?'true':'false';
  root.dataset.chatReducedMotion=a.reduceMotion?'true':'false';
+ root.dataset.chatShowPreviews=a.showPreviews?'true':'false';
+ root.dataset.chatShowAvatars=a.showAvatars?'true':'false';
+ root.dataset.chatShowTimestamps=a.showTimestamps?'true':'false';
  if(chat){
   chat.dataset.showTimestamps=a.showTimestamps?'true':'false';
   chat.dataset.showPreviews=a.showPreviews?'true':'false';
@@ -1388,8 +1391,12 @@ async function openChatGalleryP(){
   sheet('<div class="chat-gallery-panel"><h3>Shared media</h3><p class="sub">'+items.length+' saved or available attachments</p><div class="chat-gallery-grid">'+(cards||'<div class="empty">No shared media has been saved for this chat yet.</div>')+'</div><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Close</button><span class="grow"></span><button class="btn p" type="button" data-gallery-export>Export chat</button></div></div>');
   Q('#sheet')?.querySelectorAll('[data-gallery-index]').forEach(button=>button.onclick=()=>{
    const item=items[Number(button.dataset.galleryIndex)];if(!item)return;
-   if(item.mediaUrl){closeSheet();openMv([{name:item.fileName||item.type,k:item.type==='video'?'vid':item.type==='audio'?'aud':'img',url:item.mediaUrl,size:item.size}],0)}
-   else if(item.mediaAvailable){void downloadGalleryItemP(item.id)}
+   if(item.mediaUrl){
+    closeSheet();
+    if(['image','sticker'].includes(item.type))openMv([{name:item.fileName||item.type,k:'img',url:item.mediaUrl,size:item.size}],0);
+    else if(item.type==='video')openMv([{name:item.fileName||item.type,k:'vid',url:item.mediaUrl,size:item.size}],0);
+    else window.open(item.mediaUrl,'_blank','noopener');
+   }else if(item.mediaAvailable){void downloadGalleryItemP(item.id)}
    else notifyP(item.mediaUnavailable||'This attachment is not available.');
   });
   const exp=Q('[data-gallery-export]');if(exp)exp.onclick=()=>{closeSheet();openChatExportChoiceP()};
@@ -1521,7 +1528,7 @@ async function runBulkActionP(action){
   });return;
  }
  if(action==='delete'){
-  sheet('<h3>Delete '+messages.length+' messages?</h3><p class="sub">Your own sent messages may be revoked for everyone. Other messages are removed from this Studio history.</p><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Cancel</button><button class="btn d" id="bulk-delete-confirm">Delete</button></div>');
+  sheet('<h3>Delete '+messages.length+' messages?</h3><p class="sub">Your sent messages are revoked for everyone when WhatsApp allows it. Incoming messages are deleted for this linked account only.</p><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Cancel</button><button class="btn d" id="bulk-delete-confirm">Delete</button></div>');
   Q('#bulk-delete-confirm').onclick=async()=>{
    try{for(const message of messages)await apiP(base+'/delete',{method:'POST',body:pack({messageId:message.id})});closeSheet();P.messageFingerprints.delete(account+'|'+chat.jid+'|latest');await loadMessagesP(S.chat,0);clearBulkSelectionP();notifyP('Selected messages deleted')}
    catch(error){notifyP(error.message)}

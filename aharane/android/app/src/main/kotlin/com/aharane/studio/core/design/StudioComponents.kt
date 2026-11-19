@@ -201,7 +201,7 @@ fun StudioDivider() {
 fun StudioStatusDot(online: Boolean, modifier: Modifier = Modifier, size: Int = 8) {
     Box(
         modifier.size(size.dp).clip(CircleShape)
-            .background(if (online) StudioPalette.Accent else StudioPalette.Muted.copy(alpha = .55f))
+            .background(if (online) StudioPalette.Accent else StudioPalette.Bad)
     )
 }
 

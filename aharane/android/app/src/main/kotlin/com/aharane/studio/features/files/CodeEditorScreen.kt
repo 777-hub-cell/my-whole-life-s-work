@@ -63,6 +63,10 @@ private val LightEditorPalette = EditorPalette(
     Color(0xFFF7F8F8), Color(0xFFECEFEE), Color(0xFFE2E7E5),
     Color(0xFFD1D9D6), Color(0xFF202927), Color(0xFF5F6A66), Color(0xFF007ACC)
 )
+private val AmoledEditorPalette = EditorPalette(
+    Color.Black, Color(0xFF080B0A), Color(0xFF111715),
+    Color(0xFF202725), Color(0xFFEAF0EE), Color(0xFF8B9895), Color(0xFF007ACC)
+)
 private val LocalEditorPalette = staticCompositionLocalOf { DarkEditorPalette }
 private val EditorBackground: Color @Composable get() = LocalEditorPalette.current.background
 private val EditorPanel: Color @Composable get() = LocalEditorPalette.current.panel
@@ -132,7 +136,11 @@ fun CodeEditorScreen(
     }
 
     CompositionLocalProvider(
-        LocalEditorPalette provides if (editorTheme.equals("Light+", ignoreCase = true)) LightEditorPalette else DarkEditorPalette
+        LocalEditorPalette provides when (editorTheme.lowercase()) {
+            "light", "light+" -> LightEditorPalette
+            "amoled" -> AmoledEditorPalette
+            else -> DarkEditorPalette
+        }
     ) {
     Column(modifier.fillMaxSize().background(EditorBackground).navigationBarsPadding().imePadding()) {
         // Compact native translation of the web Studio workbench header.

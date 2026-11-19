@@ -52,7 +52,37 @@ function normalizeChatPreferences(value = {}) {
     }
     return result
   }
-  return { pinned: normalize(value.pinned), muted: normalize(value.muted) }
+  return { pinned: normalize(value.pinned), muted: normalize(value.muted), archived: normalize(value.archived) }
+}
+const APPEARANCE_DEFAULTS = Object.freeze({
+  theme: 'system', wallpaper: 'default', incomingBubble: '#ffffff', outgoingBubble: '#d9f4e5',
+  textScale: 100, bubbleRadius: 18, messageSpacing: 'comfortable', chatDensity: 'comfortable',
+  showTimestamps: true, showPreviews: true, showAvatars: true, reduceMotion: false, largerText: false,
+  customWallpaperMime: '',
+})
+const COLOR = /^#[0-9a-f]{6}$/i
+export function normalizeChatAppearance(value = {}) {
+  const allowed = (candidate, choices, fallback) => choices.includes(candidate) ? candidate : fallback
+  const number = (candidate, min, max, fallback) => {
+    const n = Number(candidate)
+    return Number.isFinite(n) ? Math.round(Math.max(min, Math.min(max, n))) : fallback
+  }
+  return {
+    theme: allowed(value.theme, ['system', 'light', 'dark'], APPEARANCE_DEFAULTS.theme),
+    wallpaper: allowed(value.wallpaper, ['default', 'sage', 'sand', 'slate', 'lavender', 'dots', 'grid', 'custom'], APPEARANCE_DEFAULTS.wallpaper),
+    incomingBubble: COLOR.test(String(value.incomingBubble || '')) ? String(value.incomingBubble) : APPEARANCE_DEFAULTS.incomingBubble,
+    outgoingBubble: COLOR.test(String(value.outgoingBubble || '')) ? String(value.outgoingBubble) : APPEARANCE_DEFAULTS.outgoingBubble,
+    textScale: number(value.textScale, 80, 130, APPEARANCE_DEFAULTS.textScale),
+    bubbleRadius: number(value.bubbleRadius, 8, 28, APPEARANCE_DEFAULTS.bubbleRadius),
+    messageSpacing: allowed(value.messageSpacing, ['compact', 'comfortable', 'spacious'], APPEARANCE_DEFAULTS.messageSpacing),
+    chatDensity: allowed(value.chatDensity, ['compact', 'comfortable'], APPEARANCE_DEFAULTS.chatDensity),
+    showTimestamps: value.showTimestamps !== false,
+    showPreviews: value.showPreviews !== false,
+    showAvatars: value.showAvatars !== false,
+    reduceMotion: value.reduceMotion === true,
+    largerText: value.largerText === true,
+    customWallpaperMime: ['image/jpeg', 'image/png', 'image/webp'].includes(value.customWallpaperMime) ? value.customWallpaperMime : '',
+  }
 }
 function normalizeProfile(value = {}, scope) {
   const name = String(value.botName ?? DEFAULT_PROFILE.botName).trim().slice(0, 48) || 'Aharane'
@@ -75,7 +105,8 @@ function normalizeProfile(value = {}, scope) {
 }
 export function normalizeStudioSettings(value = {}) {
   return {
-    version: 1,
+    version: 2,
+    chatAppearance: normalizeChatAppearance(value.chatAppearance),
     private: normalizeProfile(value.private, 'private'),
     public: normalizeProfile(value.public, 'public'),
     updatedAt: String(value.updatedAt || ''),

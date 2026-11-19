@@ -192,7 +192,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       mimeType: extracted.mimeType, fileName: extracted.fileName ? safeName(extracted.fileName) : '',
       size: extracted.size, duration: extracted.duration || 0, mediaFile: '', mediaUrl: '', sourceMessage,
       viewOnce: extracted.viewOnce, viewOnceViewed: false, status: '',
-      reactions: [],
+      reactions: [], starred: false,
     }
     if (extracted.media && extracted.size > MAX_MEDIA_BYTES) {
       record.mediaUnavailable = 'Media is larger than the Local Studio download limit.'
@@ -253,7 +253,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         mediaUrl: row.viewOnce ? '' : row.mediaFile ? row.mediaUrl || mediaUrl(account, row.id) : '',
         viewOnce: row.viewOnce === true, viewOnceViewed: row.viewOnceViewed === true,
         mediaUnavailable: row.mediaUnavailable || '', mediaAvailable: Boolean(row.sourceMessage && MEDIA_TYPES.has(row.type) && !row.mediaUnavailable),
-        reactions: Array.isArray(row.reactions) ? row.reactions : [], ptt: row.ptt === true, status: row.status || '',
+        reactions: Array.isArray(row.reactions) ? row.reactions : [], starred: row.starred === true, ptt: row.ptt === true, status: row.status || '',
       }))
   }
 
@@ -294,7 +294,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       pushName: row.pushName, timestamp: row.timestamp, type: row.type, text: row.text,
       mimeType: row.mimeType, fileName: row.fileName, size: row.size, viewOnce: row.viewOnce === true,
       key: { remoteJid: row.jid, id: row.id, fromMe: row.fromMe === true, ...(row.participant ? { participant: row.participant } : {}) },
-      sourceMessage }
+      starred: row.starred === true, sourceMessage }
   }
 
   function reviveMessage(value) {
@@ -376,6 +376,75 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       await rewriteRows(account, rows)
       return true
     })
+  }
+
+  async function setStarred(id, jidValue, messageId, starred) {
+    const account = accountId(id), jid = safeJid(jidValue), key = String(messageId || '')
+    if (!jid || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw Object.assign(new Error('Invalid message reference.'), { status: 400 })
+    return enqueue(account, async () => {
+      const rows = await readRows(account), row = rows.find(item => item.jid === jid && item.id === key)
+      if (!row) return null
+      row.starred = starred === true
+      await rewriteRows(account, rows)
+      return { id: row.id, starred: row.starred }
+    })
+  }
+
+  async function listStarredMessages(id, { limit = 200 } = {}) {
+    const account = accountId(id), rows = await readRows(account)
+    return rows.filter(row => row.starred === true)
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, Math.max(1, Math.min(500, Number(limit) || 200)))
+      .map(row => ({
+        id: row.id, jid: row.jid, fromMe: row.fromMe, pushName: row.pushName,
+        timestamp: row.timestamp, type: row.type, text: row.text, fileName: row.fileName,
+        mediaUrl: row.viewOnce ? '' : row.mediaFile ? row.mediaUrl || mediaUrl(account, row.id) : '',
+      }))
+  }
+
+  async function getMediaGallery(id, jidValue, { limit = 300 } = {}) {
+    const account = accountId(id), jid = safeJid(jidValue)
+    if (!jid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
+    const rows = await readRows(account)
+    return rows.filter(row => row.jid === jid && MEDIA_TYPES.has(row.type) && row.viewOnce !== true)
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, Math.max(1, Math.min(500, Number(limit) || 300)))
+      .map(row => ({
+        id: row.id, type: row.type, text: row.text, fileName: row.fileName,
+        mimeType: row.mimeType, size: row.size, timestamp: row.timestamp,
+        mediaUrl: row.mediaFile ? row.mediaUrl || mediaUrl(account, row.id) : '',
+        mediaAvailable: Boolean(row.sourceMessage && !row.mediaUnavailable), mediaUnavailable: row.mediaUnavailable || '',
+      }))
+  }
+
+  async function exportConversation(id, jidValue, { limit = 500 } = {}) {
+    const account = accountId(id), jid = safeJid(jidValue)
+    if (!jid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
+    const rows = await readRows(account)
+    return rows.filter(row => row.jid === jid)
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .slice(-Math.max(1, Math.min(5000, Number(limit) || 500)))
+      .map(row => ({
+        id: row.id, jid: row.jid, fromMe: row.fromMe, participant: row.participant,
+        pushName: row.pushName, timestamp: row.timestamp, type: row.type, text: row.text,
+        mimeType: row.mimeType, fileName: row.fileName, size: row.size, duration: row.duration || 0,
+        starred: row.starred === true, reactions: Array.isArray(row.reactions) ? row.reactions : [],
+        mediaUrl: row.viewOnce ? '' : row.mediaFile ? row.mediaUrl || mediaUrl(account, row.id) : '',
+        mediaAvailable: Boolean(row.sourceMessage && MEDIA_TYPES.has(row.type) && !row.mediaUnavailable),
+        mediaUnavailable: row.mediaUnavailable || '',
+      }))
+  }
+
+  async function markUnread(id, jidValue) {
+    const account = accountId(id), jid = safeJid(jidValue)
+    if (!jid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
+    const rows = await readRows(account)
+    const latestIncoming = rows.filter(row => row.jid === jid && !row.fromMe)
+      .reduce((max, row) => Math.max(max, Number(row.timestamp) || 0), 0)
+    const markers = await readFile(readMarkers[account], 'utf8').then(JSON.parse).catch(() => ({}))
+    markers[jid] = Math.max(0, latestIncoming - 1)
+    await writeReadMarkers(account, markers)
+    return { jid, unreadCount: rows.filter(row => row.jid === jid && !row.fromMe && row.timestamp > markers[jid]).length }
   }
 
   async function hasConversation(id, jidValue) {
@@ -527,5 +596,5 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return { bytes: total, files: count }
   }
 
-  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, deleteMessage, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
+  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
 }

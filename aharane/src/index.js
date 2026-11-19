@@ -25,7 +25,7 @@ import { loadOwnerConfig, normalizeOwnerConfig, saveOwnerConfig } from './owner-
 import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_ARCHIVE_BYTES, normalizeUpdatePath } from './update-manager.js'
 import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { createChatStore } from './chat-store.js'
-import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, normalizeChatVisibility, isChatVisible, envView } from './studio-settings.js'
+import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, normalizeChatVisibility, normalizeChatAppearance, isChatVisible, envView } from './studio-settings.js'
 import { createActivityStore } from './activity-store.js'
 
 const APP_NAME = 'Aharane'
@@ -90,6 +90,7 @@ const chatStore = createChatStore({ dataDir: DATA_DIR, logger })
 const activityStore = createActivityStore({ dataDir: DATA_DIR })
 await Promise.all([chatStore.init(), activityStore.init()])
 const SETTINGS_FILE = join(DATA_DIR, 'studio-settings.json')
+const CHAT_WALLPAPER_FILE = join(DATA_DIR, 'chat-wallpaper')
 let studioSettings = await loadStudioSettings(SETTINGS_FILE)
 let accountRuntime = null
 let publicCommandRegistry = null
@@ -1483,6 +1484,54 @@ app.put('/api/env', requireAdmin, async (req, res) => {
   }
 })
 app.get('/api/settings', requireAdmin, (_req, res) => res.json({ ok: true, settings: studioSettings }))
+app.get('/api/chat-appearance', requireAdmin, (_req, res) => res.json({ ok: true, appearance: studioSettings.chatAppearance }))
+app.put('/api/chat-appearance', requireAdmin, async (req, res) => {
+  try {
+    const next = structuredClone(studioSettings)
+    next.chatAppearance = normalizeChatAppearance(req.body?.appearance || {})
+    studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings(next))
+    publishStudioEvent('chat.appearance.updated', {})
+    res.json({ ok: true, appearance: studioSettings.chatAppearance })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || 'Could not save chat appearance.') })
+  }
+})
+app.get('/api/chat-appearance/wallpaper', requireAdmin, async (_req, res) => {
+  try {
+    const buffer = await readFile(CHAT_WALLPAPER_FILE)
+    res.set('Content-Type', studioSettings.chatAppearance.customWallpaperMime || 'image/png')
+    res.set('Cache-Control', 'private, max-age=3600')
+    res.send(buffer)
+  } catch {
+    res.status(404).json({ ok: false, error: 'No custom chat wallpaper is saved.' })
+  }
+})
+app.post('/api/chat-appearance/wallpaper', requireAdmin, express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '2mb' }), async (req, res) => {
+  try {
+    const mime = String(req.get('content-type') || '').split(';')[0].toLowerCase()
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(mime) || !Buffer.isBuffer(req.body) || !req.body.length || req.body.length > 2 * 1024 * 1024) {
+      return res.status(400).json({ ok: false, error: 'Choose a JPG, PNG or WebP image up to 2 MB.' })
+    }
+    await writeFile(CHAT_WALLPAPER_FILE, req.body, { mode: 0o600 })
+    const next = structuredClone(studioSettings)
+    next.chatAppearance = normalizeChatAppearance({ ...next.chatAppearance, wallpaper: 'custom', customWallpaperMime: mime })
+    studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings(next))
+    res.json({ ok: true, appearance: studioSettings.chatAppearance })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || 'Could not save the wallpaper.') })
+  }
+})
+app.delete('/api/chat-appearance/wallpaper', requireAdmin, async (_req, res) => {
+  try {
+    await rm(CHAT_WALLPAPER_FILE, { force: true })
+    const next = structuredClone(studioSettings)
+    next.chatAppearance = normalizeChatAppearance({ ...next.chatAppearance, wallpaper: 'default', customWallpaperMime: '' })
+    studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings(next))
+    res.json({ ok: true, appearance: studioSettings.chatAppearance })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || 'Could not remove the wallpaper.') })
+  }
+})
 app.put('/api/settings', requireAdmin, async (req, res) => {
   try {
     studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings(req.body?.settings || {}))
@@ -1533,10 +1582,19 @@ app.put('/api/chats/:accountId/preferences', requireAdmin, async (req, res) => {
     }
     const next = structuredClone(studioSettings)
     const preferences = next[accountId].chatPreferences || { pinned: [], muted: [] }
-    for (const key of ['pinned', 'muted']) {
-      if (typeof req.body?.[key] !== 'boolean') continue
-      preferences[key] = (preferences[key] || []).filter(value => value !== jid)
-      if (req.body[key]) preferences[key].push(jid)
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected' || typeof socket.chatModify !== 'function') {
+      return res.status(503).json({ ok: false, error: 'Connect this WhatsApp account before changing chat settings.' })
+    }
+    if (typeof req.body?.pinned === 'boolean') {
+      await socket.chatModify({ pin: req.body.pinned }, jid)
+      preferences.pinned = (preferences.pinned || []).filter(value => value !== jid)
+      if (req.body.pinned) preferences.pinned.push(jid)
+    }
+    if (typeof req.body?.muted === 'boolean') {
+      await socket.chatModify({ mute: req.body.muted ? 7 * 24 * 60 * 60 * 1000 : null }, jid)
+      preferences.muted = (preferences.muted || []).filter(value => value !== jid)
+      if (req.body.muted) preferences.muted.push(jid)
     }
     next[accountId].chatPreferences = preferences
     studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings(next))
@@ -1553,6 +1611,15 @@ app.get('/api/chats/:accountId', requireAdmin, async (req, res) => {
     res.json({ ok: true, preferences: studioSettings[accountId].chatPreferences, chats: chats.filter(chat => authorizedChat(accountId, chat.jid) && isChatVisible(studioSettings[accountId], chat.jid)) })
   } catch (error) {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not read conversations.') })
+  }
+})
+app.get('/api/chats/:accountId/starred', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const starred = await chatStore.listStarredMessages(accountId, { limit: req.query.limit || 200 })
+    res.json({ ok: true, messages: starred.filter(row => authorizedChat(accountId, row.jid) && isChatVisible(studioSettings[accountId], row.jid)) })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not read starred messages.') })
   }
 })
 app.get('/api/chats/:accountId/search', requireAdmin, async (req, res) => {
@@ -1579,6 +1646,112 @@ app.get('/api/chats/:accountId/:jid/search', requireAdmin, async (req, res) => {
     res.json({ ok: true, results })
   } catch (error) {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not search this conversation.') })
+  }
+})
+async function lastChatMessageForModify(accountId, jid) {
+  const [last] = await chatStore.getMessages(accountId, jid, { limit: 1 })
+  if (!last) throw Object.assign(new Error('This conversation has no saved message to anchor the WhatsApp update.'), { status: 410 })
+  const original = await chatStore.getMessage(accountId, jid, last.id)
+  if (!original?.key) throw Object.assign(new Error('The latest WhatsApp message is not available.'), { status: 410 })
+  return { key: original.key, messageTimestamp: String(Math.floor(Number(last.timestamp || 0) / 1000)) }
+}
+app.post('/api/chats/:accountId/:jid/archive', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId), jid = decodeURIComponent(String(req.params.jid || ''))
+    const archived = req.body?.archived === true
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected' || typeof socket.chatModify !== 'function') return res.status(503).json({ ok: false, error: 'Connect this WhatsApp account before archiving chats.' })
+    const lastMessage = await lastChatMessageForModify(accountId, jid)
+    await socket.chatModify({ archive: archived, lastMessages: [lastMessage] }, jid)
+    const next = structuredClone(studioSettings), preferences = next[accountId].chatPreferences || { pinned: [], muted: [], archived: [] }
+    preferences.archived = (preferences.archived || []).filter(value => value !== jid)
+    if (archived) preferences.archived.push(jid)
+    next[accountId].chatPreferences = preferences
+    studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings(next))
+    publishStudioEvent('whatsapp.chat.archived', { accountId, jid, archived })
+    res.json({ ok: true, preferences: studioSettings[accountId].chatPreferences })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not archive this chat.') })
+  }
+})
+app.post('/api/chats/:accountId/:jid/mark-unread', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId), jid = decodeURIComponent(String(req.params.jid || ''))
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected' || typeof socket.chatModify !== 'function') return res.status(503).json({ ok: false, error: 'Connect this WhatsApp account before marking unread.' })
+    const lastMessage = await lastChatMessageForModify(accountId, jid)
+    await socket.chatModify({ markRead: false, lastMessages: [lastMessage] }, jid)
+    const state = await chatStore.markUnread(accountId, jid)
+    publishStudioEvent('whatsapp.chat.unread', { accountId, jid })
+    res.json({ ok: true, ...state })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not mark this chat unread.') })
+  }
+})
+app.get('/api/chats/:accountId/:jid/info', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId), jid = decodeURIComponent(String(req.params.jid || ''))
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected') return res.status(503).json({ ok: false, error: 'Connect this WhatsApp account to load contact or group details.' })
+    const group = jid.endsWith('@g.us')
+    let metadata = null, pictureUrl = ''
+    if (group) metadata = await socket.groupMetadata(jid).catch(() => null)
+    try { pictureUrl = await socket.profilePictureUrl(jid, 'preview') || '' } catch {}
+    const recent = await chatStore.getMessages(accountId, jid, { limit: 500 })
+    const latest = recent[recent.length - 1] || {}
+    res.json({ ok: true, info: {
+      jid, group, name: group ? String(metadata?.subject || '') : String(latest.pushName || jid.replace(/@.*$/, '')),
+      pictureUrl, description: String(metadata?.desc || ''),
+      createdAt: metadata?.creation ? Number(metadata.creation) * 1000 : 0,
+      owner: String(metadata?.owner || ''), participantCount: Number(metadata?.participants?.length || 0),
+      participants: Array.isArray(metadata?.participants) ? metadata.participants.slice(0, 300).map(item => ({
+        id: String(item.id || ''), admin: Boolean(item.admin || item.isAdmin || item.isSuperAdmin),
+        superAdmin: Boolean(item.isSuperAdmin),
+      })) : [],
+    } })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not load chat information.') })
+  }
+})
+app.get('/api/chats/:accountId/:jid/gallery', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId), jid = decodeURIComponent(String(req.params.jid || ''))
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    const items = await chatStore.getMediaGallery(accountId, jid, { limit: req.query.limit || 300 })
+    res.json({ ok: true, items })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not load shared media.') })
+  }
+})
+app.get('/api/chats/:accountId/:jid/export', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId), jid = decodeURIComponent(String(req.params.jid || ''))
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    const messages = await chatStore.exportConversation(accountId, jid, { limit: req.query.limit || 5000 })
+    const missingMedia = messages.filter(message => message.mediaAvailable && !message.mediaUrl).map(message => ({ id: message.id, type: message.type, fileName: message.fileName }))
+    res.json({ ok: true, accountId, jid, exportedAt: new Date().toISOString(), messages, missingMedia })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not export this chat.') })
+  }
+})
+app.post('/api/chats/:accountId/:jid/star', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId), jid = decodeURIComponent(String(req.params.jid || ''))
+    const messageId = String(req.body?.messageId || ''), starred = req.body?.starred === true
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    const original = await chatStore.getMessage(accountId, jid, messageId)
+    if (!original) return res.status(404).json({ ok: false, error: 'Message not found.' })
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected' || typeof socket.chatModify !== 'function') return res.status(503).json({ ok: false, error: 'Connect this WhatsApp account before starring messages.' })
+    await socket.chatModify({ star: { messages: [{ id: original.id, fromMe: original.fromMe === true }], star: starred } }, jid)
+    const result = await chatStore.setStarred(accountId, jid, original.id, starred)
+    publishStudioEvent('whatsapp.message.starred', { accountId, jid, messageId: original.id, starred })
+    res.json({ ok: true, ...result })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not update starred message.') })
   }
 })
 app.get('/api/chats/:accountId/:jid/messages', requireAdmin, async (req, res) => {

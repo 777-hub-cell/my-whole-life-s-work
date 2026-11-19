@@ -202,3 +202,24 @@ test('new and existing file writes are checked against their on-disk contents be
  assert.ok(update.includes("const savedContent = await readFile(target.full, 'utf8')"))
  assert.ok(update.includes('if (savedContent !== content)'))
 })
+
+test('Web Chat supports persistent chat preferences, per-conversation search, quoted replies and message actions', async () => {
+ const runtime=await read('../src/index.js')
+ const store=await read('../src/chat-store.js')
+ const bridge=await read('../control-centre/production-bridge.js')
+ const app=await read('../control-centre/app.js')
+ assert.ok(!runtime.includes('downloadMedia: (msg, socket)'), 'Incoming media must not be fetched when a message arrives.')
+ for(const marker of [
+  "app.put('/api/chats/:accountId/preferences'",
+  "app.get('/api/chats/:accountId/:jid/search'",
+  "app.post('/api/chats/:accountId/:jid/media/:messageId/download'",
+  "app.post('/api/chats/:accountId/:jid/reaction'",
+  "app.post('/api/chats/:accountId/:jid/forward'",
+  "app.post('/api/chats/:accountId/:jid/delete'",
+  "quoted: quoted.sourceMessage",
+  "ptt: req.get('x-voice-note') === 'true'"
+ ]) assert.ok(runtime.includes(marker),marker)
+ for(const marker of ['downloadMessageMedia','applyReaction','deleteMessage','sourceMessage','reactions'])assert.ok(store.includes(marker),marker)
+ for(const marker of ['chatPreferences','chat-searchbar','openMessageMenuP','downloadChatMediaP','toggleChatPreferenceP','switchChats=switchChatsP','X-Voice-Note'])assert.ok(bridge.includes(marker),marker)
+ for(const marker of ['rec-waveform','MediaRecorder','analyser.getByteFrequencyData','openMessageMenuP','data-chat-pref','reaction-chips'])assert.ok(app.includes(marker),marker)
+})

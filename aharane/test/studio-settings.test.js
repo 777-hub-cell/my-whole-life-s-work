@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { envView, isChatVisible, loadStudioSettings, normalizeChatVisibility, saveStudioSettings } from '../src/studio-settings.js'
+import { envView, isChatVisible, loadStudioSettings, normalizeChatVisibility, normalizeStudioSettings, saveStudioSettings } from '../src/studio-settings.js'
 
 test('studio settings persist isolated fixed command prefixes and redact no server credentials', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'aharane-settings-'))
@@ -61,4 +61,16 @@ test('chat visibility settings persist separate individual and group allow/block
   assert.equal(isChatVisible({ chatVisibility: defaults }, group), true)
   assert.throws(() => normalizeChatVisibility({ groups: { overrides: [{ jid: direct, visible: false }] } }), /invalid chat identifier/)
   assert.throws(() => normalizeChatVisibility({ individuals: { overrides: [{ jid: 'opaque@lid', visible: true }] } }), /invalid chat identifier/)
+})
+
+test('pinned and muted chat preferences are validated and persist independently per account', async () => {
+  const direct = '2348012345678@s.whatsapp.net'
+  const group = '120363000000000000-1234567890@g.us'
+  const settings = normalizeStudioSettings({
+    private: { chatPreferences: { pinned: [direct, direct], muted: [group] } },
+    public: { chatPreferences: { pinned: [group] } },
+  })
+  assert.deepEqual(settings.private.chatPreferences, { pinned: [direct], muted: [group] })
+  assert.deepEqual(settings.public.chatPreferences, { pinned: [group], muted: [] })
+  assert.throws(() => normalizeStudioSettings({ private: { chatPreferences: { pinned: ['not-a-jid'] } } }), /invalid chat identifier/)
 })

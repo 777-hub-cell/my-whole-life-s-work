@@ -1,6 +1,7 @@
 package com.aharane.studio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -22,6 +23,7 @@ import com.aharane.studio.features.files.FilesScreen
 import com.aharane.studio.features.home.HomeScreen
 import com.aharane.studio.features.more.MoreScreen
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AharaneApp() {
     var destinationName by rememberSaveable { mutableStateOf(MainDestination.HOME.name) }
@@ -55,8 +57,8 @@ fun AharaneApp() {
                 }
             }
         }
-    ) {
-        Box(Modifier.fillMaxSize()) {
+    ) { innerPadding ->
+        Box(Modifier.fillMaxSize().padding(innerPadding)) {
             when (destination) {
                 MainDestination.HOME -> HomeScreen(
                     { destinationName = MainDestination.CHATS.name },

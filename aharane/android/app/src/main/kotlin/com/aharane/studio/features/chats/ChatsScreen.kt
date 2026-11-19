@@ -48,7 +48,8 @@ fun ChatsScreen(
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     val switchIcon = if (account == ChatAccount.PRIVATE) Icons.Outlined.Lock else Icons.Outlined.Public
-    val unreadCount = conversations.sumOf { it.unreadCount }
+    val accountConversations = conversations.filter { it.key.account == account }
+    val unreadCount = accountConversations.sumOf { it.unreadCount }
     val visibleChats = remember(conversations, account, filter, query) {
         conversations.asSequence()
             .filter { it.key.account == account }
@@ -104,7 +105,7 @@ fun ChatsScreen(
                     append(accountDisplayName)
                     append(" · ")
                     if (accountConnected) {
-                        append("${conversations.count { it.key.account == account }} conversations")
+                        append("${accountConversations.size} conversations")
                         if (unreadCount > 0) append(" · $unreadCount unread")
                     } else {
                         append("Not connected")

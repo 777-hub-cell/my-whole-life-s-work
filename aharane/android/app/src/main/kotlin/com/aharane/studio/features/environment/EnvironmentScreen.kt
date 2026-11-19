@@ -37,7 +37,7 @@ fun EnvironmentScreen(previewMode: Boolean = false) {
         if (previewMode) addAll(listOf(
             EnvDraft("BOT_NAME", "Aharane", false),
             EnvDraft("COMMAND_PREFIX", ".", false),
-            EnvDraft("OWNER_NUMBER", "••••••••••", false),
+            EnvDraft("OWNER_NUMBER", "••••••••••", true),
             EnvDraft("SESSION_SECRET", "preview-secret-value", true),
             EnvDraft("MEGA_EMAIL", "", false),
             EnvDraft("MEGA_PASSWORD", "", true)

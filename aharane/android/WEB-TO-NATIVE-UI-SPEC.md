@@ -69,14 +69,35 @@ Dialogs and bottom sheets should preserve web Studio spacing/radius, white/dark 
 
 ## Current implementation state
 
-The current native branch implements the shell, exact font families and palette, the Home/Chats list headers and filter surface, a first native Files workspace/editor, editable local ENV drafts, and More/theme/help dialogs. Live server authentication and API sync are not implemented. Full conversation detail/media routes, real server-backed file operations, syntax highlighting/editor selection semantics, full configuration controls, server-backed ENV saving, and comprehensive cross-device visual comparison remain follow-up work. Any UI control whose backing service does not exist must be visibly disabled or explicitly described as a local-only draft.
+Implemented in the native Kotlin branch:
+- A custom Studio shell with Home / Chats / Files / ENV / More navigation, web-matched light/dark palettes, and bundled Bricolage Grotesque + Instrument Sans typefaces.
+- A dashboard with truthful disconnected states and no generated uptime, activity, or message totals.
+- A data-driven Chats inbox UI with account separation, search, four filters, sorting, previews, unread counts, and pinned/muted indicators.
+- A full-screen native conversation surface with its own header, in-thread search, date dividers, incoming/outgoing message styling, reply preview, attachment action, view-once treatment, and a message composer. It is not yet wired to the server message stream or media/voice providers.
+- A Files browser model with breadcrumbs, search, folder-first A–Z ordering, selection/bulk-action surfaces, and a row-anchored 190dp white floating action menu. The menu dismisses on outside tap and selection.
+- A native full-screen editor workbench with tabs, explorer drawer, find field, monospaced editable document surface, synchronized line-number gutter, optional keyboard accessory row, Problems / Output / Terminal panel, and status strip. File contents and save/open callbacks are exposed but still need to be connected to authenticated server file operations.
+- Local ENV variable drafts with secret reveal controls. Server save is intentionally unavailable until the secure API adapter exists.
+- More / Appearance controls for theme, accent, interface scale, corners, row spacing, editor palette, editor font size, and line-number visibility. These preferences persist on the device.
+- A design contract and acceptance checklist in this document.
+
+Not implemented yet:
+- Secure Android pairing/session authentication and the authenticated Aharane API adapter.
+- Live server-backed account state, chats/messages, chat preferences, file tree/content, file mutations, ENV values and ENV saves, logs and storage metrics.
+- Media/video/audio playback, voice recording, message reactions and full view-once enforcement at the Android transport layer.
+- Full syntax highlighting, editor selection/cursor preservation across file switches, and a live bot terminal.
+- Complete configuration/setup workflows and end-to-end permission/error handling.
+- Screenshot-by-screenshot comparison against the live web Studio and verification on the target Galaxy A16.
+
+Any UI control whose backing service does not exist must be disabled or clearly identified as a disconnected/local-only draft. A disabled backend operation must never show a false success state. The Android application remains independent from NIGHT/MSCC; no production deployment is part of this PR.
 
 ## Acceptance checklist
 
 - [ ] Compare Home, Chats, Files, ENV and More against the web Studio at the same viewport size.
 - [ ] Check narrow Android phone width, large font settings and both system themes.
 - [ ] Confirm menus overlay rows without layout movement and close on outside tap.
-- [ ] Confirm source editor is full screen, keyboard-safe, and does not display the global nav.
+- [ ] Confirm conversation and source editor are full screen with global navigation hidden.
+- [ ] Confirm the editor's document field, line numbers, explorer, tabs and keyboard layout behave correctly.
+- [ ] Confirm appearance settings update the interface and survive an app restart.
 - [ ] Confirm no fake server data, no mock conversations and no fake save/start/stop success.
 - [ ] Run unit tests, debug APK build, and real Android emulator screenshot capture.
 - [ ] Review every screenshot for clipping, overflows, text mismatch and layout drift before treating the UI as accepted.

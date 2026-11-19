@@ -241,6 +241,7 @@ fun CodeEditorScreen(
                 if (explorerOpen) {
                     ExplorerDrawer(
                         files = availableFiles,
+                        activePath = activeDocumentPath,
                         onOpen = { path -> explorerOpen = false; onOpenFile(path) },
                         onClose = { explorerOpen = false }
                     )
@@ -464,15 +465,53 @@ private fun EditorPopupMenu(
     }
 }
 
+private data class EditorTreeEntry(
+    val name: String,
+    val path: String,
+    val isDirectory: Boolean,
+    val children: MutableList<EditorTreeEntry> = mutableListOf()
+)
+
+private fun buildEditorTree(paths: List<String>): List<EditorTreeEntry> {
+    val root = EditorTreeEntry(name = "AHARANE", path = "", isDirectory = true)
+    paths.map { it.trim('/') }.filter { it.isNotBlank() }.forEach { rawPath ->
+        val segments = rawPath.split('/').filter { it.isNotBlank() }
+        var parent = root
+        segments.forEachIndexed { index, segment ->
+            val path = segments.take(index + 1).joinToString("/")
+            val directory = index < segments.lastIndex
+            val entry = parent.children.firstOrNull { it.name == segment }
+                ?: EditorTreeEntry(segment, path, directory).also { parent.children.add(it) }
+            parent = entry
+        }
+    }
+    fun sortTree(entry: EditorTreeEntry) {
+        entry.children.sortWith(
+            compareByDescending<EditorTreeEntry> { it.isDirectory }
+                .thenBy { it.name.lowercase(Locale.ROOT) }
+        )
+        entry.children.forEach(::sortTree)
+    }
+    sortTree(root)
+    return root.children
+}
+
 @Composable
 private fun ExplorerDrawer(
     files: List<String>,
+    activePath: String?,
     onOpen: (String) -> Unit,
     onClose: () -> Unit
 ) {
+    val tree = remember(files) { buildEditorTree(files) }
+    val expanded = remember(files) { mutableStateMapOf<String, Boolean>() }
+
     Row(Modifier.fillMaxSize()) {
-        Box(Modifier.weight(1f).fillMaxHeight().background(Color.Black.copy(alpha = .38f))
-            .clickable(onClick = onClose))
+        Box(
+            Modifier.weight(1f).fillMaxHeight()
+                .background(Color.Black.copy(alpha = .38f))
+                .clickable(onClick = onClose)
+        )
         Column(
             Modifier.fillMaxHeight().widthIn(max = 300.dp).fillMaxWidth(.82f)
                 .background(EditorPanel)
@@ -481,7 +520,13 @@ private fun ExplorerDrawer(
                 Modifier.fillMaxWidth().height(42.dp).padding(start = 14.dp, end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("EXPLORER", color = EditorMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = .7.sp)
+                Text(
+                    "EXPLORER",
+                    color = EditorMuted,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = .7.sp
+                )
                 Spacer(Modifier.weight(1f))
                 EditorTool(Icons.Outlined.Close, "Close explorer", onClick = onClose)
             }
@@ -490,10 +535,16 @@ private fun ExplorerDrawer(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("⌄", color = EditorMuted, fontSize = 13.sp)
-                Text("AHARANE", color = EditorText, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                    letterSpacing = .6.sp, modifier = Modifier.padding(start = 7.dp))
+                Text(
+                    "AHARANE",
+                    color = EditorText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = .6.sp,
+                    modifier = Modifier.padding(start = 7.dp)
+                )
             }
-            if (files.isEmpty()) {
+            if (tree.isEmpty()) {
                 Text(
                     "No files loaded. Connect to the Aharane server to browse the source tree.",
                     color = EditorMuted,
@@ -503,25 +554,81 @@ private fun ExplorerDrawer(
                 )
             } else {
                 Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
-                    files.sorted().forEach { path ->
-                        Row(
-                            Modifier.fillMaxWidth().heightIn(min = 38.dp)
-                                .clickable { onOpen(path) }.padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Outlined.Description, null, tint = EditorMuted, modifier = Modifier.size(16.dp))
-                            Text(
-                                path,
-                                color = EditorText,
-                                fontSize = 12.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(start = 8.dp)
-                            )
-                        }
+                    tree.forEach { entry ->
+                        EditorTreeRow(
+                            entry = entry,
+                            depth = 0,
+                            activePath = activePath,
+                            expanded = expanded,
+                            onOpen = onOpen
+                        )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun EditorTreeRow(
+    entry: EditorTreeEntry,
+    depth: Int,
+    activePath: String?,
+    expanded: MutableMap<String, Boolean>,
+    onOpen: (String) -> Unit
+) {
+    val isExpanded = entry.isDirectory && expanded[entry.path] == true
+    val selected = !entry.isDirectory && entry.path == activePath
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 34.dp)
+            .background(if (selected) EditorTab else Color.Transparent)
+            .clickable {
+                if (entry.isDirectory) expanded[entry.path] = !isExpanded
+                else onOpen(entry.path)
+            }
+            .padding(start = (10 + depth * 14).dp, end = 10.dp, top = 7.dp, bottom = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (entry.isDirectory) {
+            Text(
+                if (isExpanded) "⌄" else "›",
+                color = EditorMuted,
+                fontSize = 13.sp,
+                modifier = Modifier.width(15.dp)
+            )
+            Icon(
+                Icons.Outlined.FolderOpen,
+                contentDescription = null,
+                tint = Color(0xFFD7BA7D),
+                modifier = Modifier.size(16.dp)
+            )
+        } else {
+            Spacer(Modifier.width(15.dp))
+            Icon(
+                Icons.Outlined.Description,
+                contentDescription = null,
+                tint = if (selected) Color(0xFF75BEFF) else EditorMuted,
+                modifier = Modifier.size(15.dp)
+            )
+        }
+        Text(
+            entry.name,
+            color = if (selected) Color.White else EditorText,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 8.dp)
+        )
+    }
+    if (entry.isDirectory && isExpanded) {
+        entry.children.forEach { child ->
+            EditorTreeRow(
+                entry = child,
+                depth = depth + 1,
+                activePath = activePath,
+                expanded = expanded,
+                onOpen = onOpen
+            )
         }
     }
 }

@@ -1,5 +1,7 @@
 package com.aharane.studio.features.more
 
+import androidx.activity.compose.BackHandler
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -53,6 +55,8 @@ fun MoreScreen(
 ) {
     var page by rememberSaveable { mutableStateOf("more") }
     var dialog by rememberSaveable { mutableStateOf("") }
+
+    BackHandler(enabled = page == "appearance") { page = "more" }
 
     if (page == "appearance") {
         LazyColumn(

@@ -72,11 +72,14 @@ fun ConversationScreen(
     var moreOpen by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
-    val visible = remember(messages, search) {
-        if (search.isBlank()) messages else messages.filter {
-            it.text.contains(search, ignoreCase = true) ||
-                (it.mediaFileName?.contains(search, ignoreCase = true) == true)
-        }
+    val visible = remember(messages, search, conversation.key) {
+        messages.asSequence()
+            .filter { it.key == conversation.key }
+            .filter {
+                search.isBlank() || it.text.contains(search, ignoreCase = true) ||
+                    (it.mediaFileName?.contains(search, ignoreCase = true) == true)
+            }
+            .toList()
     }
 
     LaunchedEffect(messages.size, search) {

@@ -207,8 +207,12 @@ private fun ConfigToggle(title: String, description: String, key: String) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             Text(description, color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 17.sp)
-            Text(key, color = StudioPalette.Muted, fontSize = 10.5.sp,
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(key, color = StudioPalette.Muted, fontSize = 10.5.sp,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    modifier = Modifier.weight(1f))
+                StudioTag("Not loaded")
+            }
         }
         Box(
             Modifier.size(width = 38.dp, height = 22.dp).clip(RoundedCornerShape(99.dp))

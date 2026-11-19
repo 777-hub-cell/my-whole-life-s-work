@@ -14,6 +14,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val previewMode = BuildConfig.DEBUG && intent?.getBooleanExtra("aharane_preview_mode", false) == true
         val preferences = getSharedPreferences("aharane-studio-ui", MODE_PRIVATE)
 
         setContent {
@@ -66,6 +67,7 @@ class MainActivity : ComponentActivity() {
                 rowScale = rowScale
             ) {
                 AharaneApp(
+                    previewMode = previewMode,
                     themeMode = themeMode,
                     onThemeModeChanged = {
                         themeMode = it

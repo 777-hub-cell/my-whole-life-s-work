@@ -60,7 +60,7 @@ fun CodeEditorScreen(
             Modifier.fillMaxWidth().height(46.dp).background(EditorPanel),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            EditorTool(Icons.Outlined.Close, "Close editor", onClose)
+            EditorTool(Icons.Outlined.Close, "Close editor", onClick = onClose)
             EditorTool(
                 Icons.Outlined.FolderOpen,
                 if (explorerOpen) "Hide explorer" else "Show explorer"

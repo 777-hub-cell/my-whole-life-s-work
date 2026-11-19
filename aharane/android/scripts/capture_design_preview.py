@@ -81,6 +81,16 @@ def main():
         "--ez", "aharane_preview_mode", "true"
     )
     capture("01-home.png", 5)
+    tap_label("Link account", occurrence=0)
+    capture("01a-link-account.png")
+    back()
+    tap_label("Configuration")
+    capture("01b-configuration.png")
+    tap_label("Edit config.js")
+    capture("01c-config-editor.png", 2)
+    back()
+    capture("01d-configuration-return.png")
+    tap_label("‹  Back to Home")
 
     tap_label("Chats")
     capture("02-chats.png")

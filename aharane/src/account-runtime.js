@@ -427,7 +427,7 @@ export function createAccountRuntime({
     const previous = sessionOperationTails.get(key) || Promise.resolve()
     const current = previous.catch(() => {}).then(operation)
     let tracked
-    tracked = current.finally(() => {
+    tracked = current.catch(() => {}).finally(() => {
       if (sessionOperationTails.get(key) === tracked) sessionOperationTails.delete(key)
     })
     sessionOperationTails.set(key, tracked)

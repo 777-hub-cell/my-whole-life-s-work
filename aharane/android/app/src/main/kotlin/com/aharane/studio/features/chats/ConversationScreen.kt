@@ -1,5 +1,7 @@
 package com.aharane.studio.features.chats
 
+import androidx.activity.compose.BackHandler
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -85,6 +87,17 @@ fun ConversationScreen(
     LaunchedEffect(messages, search, conversation.key) {
         if (visible.isNotEmpty() && search.isBlank()) {
             listState.animateScrollToItem(visible.lastIndex)
+        }
+    }
+    BackHandler {
+        when {
+            moreOpen -> moreOpen = false
+            searchOpen -> {
+                searchOpen = false
+                search = ""
+            }
+            replyTo != null -> replyTo = null
+            else -> onBack()
         }
     }
 

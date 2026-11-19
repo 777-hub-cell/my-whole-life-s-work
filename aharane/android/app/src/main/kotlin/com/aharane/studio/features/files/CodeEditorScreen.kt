@@ -232,9 +232,8 @@ fun CodeEditorScreen(
                         onTabSelected = { panelTab = it },
                         onClose = { panelOpen = false },
                         message = when (panelTab) {
-                            "Problems" -> "No problems to display."
-                            "Output" -> "No output is available while the server is disconnected."
-                            else -> "The live bot console appears when a server is connected."
+                            "Problems" -> "No problems in this file."
+                            else -> "The live Studio streams the bot’s console here when connected."
                         }
                     )
                 }
@@ -341,15 +340,20 @@ fun CodeEditorScreen(
             Modifier.fillMaxWidth().height(34.dp).background(EditorBlue).padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Aharane", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-            if (dirty) Text("  ●", color = Color.White, fontSize = 10.sp)
+            Text(
+                "Problems & Console",
+                color = Color.White,
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable { panelOpen = !panelOpen }
+                    .padding(horizontal = 4.dp, vertical = 7.dp)
+            )
             Spacer(Modifier.weight(1f))
             Text(
-                if (activeDocument == null) "No file" else if (dirty) "Unsaved" else "Saved",
-                color = Color.White.copy(alpha = .9f), fontSize = 10.5.sp
+                "${activeDocument?.languageLabel ?: "Plain text"} · Auto-save on",
+                color = Color.White,
+                fontSize = 12.5.sp
             )
-            Spacer(Modifier.width(12.dp))
-            Text(activeDocument?.languageLabel ?: "Plain text", color = Color.White, fontSize = 10.5.sp)
         }
     }
     }
@@ -365,7 +369,7 @@ private fun insertEditorText(value: TextFieldValue, insertion: String): TextFiel
 
 private object StudioCodeHighlight : VisualTransformation {
     private val tokenRegex = Regex(
-        """//[^\\n]*|/\\*[\\s\\S]*?\\*/|'(?:\\\\.|[^'\\\\\\n])*'|"(?:\\\\.|[^"\\\\\\n])*"|`(?:\\\\.|[^`\\\\])*`|\\b(const|let|var|function|async|await|return|if|else|for|while|new|class|throw|try|catch|of|in|typeof)\\b|\\b(true|false|null|undefined)\\b|\\b\\d+(?:\\.\\d+)?\\b|\\b[A-Za-z_$][\\w$]*(?=\\()"""
+        """//[^\n]*|/\*[\s\S]*?\*/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|\b(const|let|var|function|async|await|return|if|else|for|while|new|class|throw|try|catch|of|in|typeof)\b|\b(true|false|null|undefined)\b|\b\d+(?:\.\d+)?\b|\b[A-Za-z_$][\w$]*(?=\()"""
     )
     private val keywords = setOf(
         "const", "let", "var", "function", "async", "await", "return", "if", "else",

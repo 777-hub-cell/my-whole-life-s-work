@@ -980,7 +980,7 @@ async function messageActionP(action,index,emoji=''){
   return;
  }
  if(action==='delete'){
-  sheet('<h3>Delete message?</h3><p class="sub">Your own sent message will also be deleted for everyone when WhatsApp allows it. Other messages are removed from this Studio history only.</p><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Cancel</button><button class="btn d" id="confirm-chat-delete" type="button">Delete</button></div>');
+  sheet('<h3>Delete message?</h3><p class="sub">Your own sent message is revoked for everyone when WhatsApp allows it. An incoming message is deleted for this linked account only; other participants still keep it.</p><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Cancel</button><button class="btn d" id="confirm-chat-delete" type="button">Delete</button></div>');
   Q('#confirm-chat-delete').onclick=async()=>{
    try{await apiP(base+'/delete',{method:'POST',body:pack({messageId:message.id})});closeSheet();P.messageFingerprints.delete(account+'|'+chat.jid+'|latest');await loadMessagesP(S.chat,0);notifyP('Message deleted')}
    catch(error){notifyP(error.message)}
@@ -1528,7 +1528,7 @@ async function runBulkActionP(action){
   });return;
  }
  if(action==='delete'){
-  sheet('<h3>Delete '+messages.length+' messages?</h3><p class="sub">Your own sent messages may be revoked for everyone. Other messages are removed from this Studio history.</p><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Cancel</button><button class="btn d" id="bulk-delete-confirm">Delete</button></div>');
+  sheet('<h3>Delete '+messages.length+' messages?</h3><p class="sub">Your sent messages are revoked for everyone when WhatsApp allows it. Incoming messages are deleted for this linked account only.</p><div class="btns"><button class="btn" type="button" onclick="closeSheet()">Cancel</button><button class="btn d" id="bulk-delete-confirm">Delete</button></div>');
   Q('#bulk-delete-confirm').onclick=async()=>{
    try{for(const message of messages)await apiP(base+'/delete',{method:'POST',body:pack({messageId:message.id})});closeSheet();P.messageFingerprints.delete(account+'|'+chat.jid+'|latest');await loadMessagesP(S.chat,0);clearBulkSelectionP();notifyP('Selected messages deleted')}
    catch(error){notifyP(error.message)}

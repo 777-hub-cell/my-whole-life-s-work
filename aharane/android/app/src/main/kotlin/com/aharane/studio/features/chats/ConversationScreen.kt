@@ -61,6 +61,7 @@ fun ConversationScreen(
     onBack: () -> Unit,
     onSend: (String, ChatMessage?) -> Unit,
     onAttach: () -> Unit = {},
+    onRecordVoice: () -> Unit = {},
     onOpenMedia: (ChatMessage) -> Unit = {},
     onViewOnce: (ChatMessage) -> Unit = {}
 ) {
@@ -308,12 +309,16 @@ fun ConversationScreen(
                         if (hasDraft && connected) StudioPalette.Accent else StudioPalette.Line,
                         CircleShape
                     )
-                    .clickable(enabled = hasDraft && connected) {
-                        val messageText = draft.trim()
-                        if (messageText.isNotEmpty()) {
-                            onSend(messageText, replyTo)
-                            draft = ""
-                            replyTo = null
+                    .clickable(enabled = connected) {
+                        if (hasDraft) {
+                            val messageText = draft.trim()
+                            if (messageText.isNotEmpty()) {
+                                onSend(messageText, replyTo)
+                                draft = ""
+                                replyTo = null
+                            }
+                        } else {
+                            onRecordVoice()
                         }
                     },
                 contentAlignment = Alignment.Center

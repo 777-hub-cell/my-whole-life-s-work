@@ -97,10 +97,33 @@ def main():
     capture("04-env.png")
     tap_label("More")
     capture("05-more.png")
+    tap_label("Accounts & owners")
+    capture("05a-accounts-owners.png")
+    back()
+    tap_label("Studio source")
+    capture("05b-studio-source.png")
+    back()
     tap_label("Appearance")
     capture("06-appearance.png")
+    back()
 
-    print("Captured native Home, Chats, conversation, account switch, Files, menu, editor, Explorer, ENV, More and Appearance screens.")
+    # Repeat the comparison screens with normal (non-preview) app state so
+    # empty/disconnected UI can be compared directly to the web reference.
+    run("adb", "shell", "am", "force-stop", "com.aharane.studio")
+    run("adb", "shell", "am", "start", "-n", "com.aharane.studio/.MainActivity")
+    capture("07-home-disconnected.png", 3)
+    tap_label("Files")
+    capture("08-files-disconnected.png")
+    tap_label("ENV")
+    capture("09-env-disconnected.png")
+    tap_label("Chats")
+    capture("10-chats-disconnected.png")
+    tap_label("More")
+    capture("11-more-disconnected.png")
+    tap_label("Appearance")
+    capture("12-appearance-disconnected.png")
+
+    print("Captured debug-preview interaction screens and matching normal disconnected screens.")
 
 
 if __name__ == "__main__":

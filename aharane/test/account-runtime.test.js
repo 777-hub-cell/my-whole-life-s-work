@@ -201,3 +201,34 @@ test('phone-number pairing fails promptly when WhatsApp closes before readiness'
   assert.deepEqual(sockets[0].pairingRequests, [])
   await runtime.shutdown()
 })
+
+
+test('stop waits for an in-flight startup and closes the socket it creates', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'aharane-stop-race-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  let releaseAuth
+  let authStarted
+  const authStartedPromise = new Promise(resolve => { authStarted = resolve })
+  const authGate = new Promise(resolve => { releaseAuth = resolve })
+  let ended = false
+  const runtime = createAccountRuntime({
+    authDirs: { public: join(root, 'public'), private: join(root, 'private') },
+    loadAuthState: async () => {
+      authStarted()
+      await authGate
+      return { state: { creds: { registered: false } }, saveCreds: async () => {} }
+    },
+    makeSocket: () => ({ ev: new EventEmitter(), end() { ended = true } }),
+    logger: { info() {}, warn() {}, error() {} },
+  })
+  const starting = runtime.start('private')
+  await authStartedPromise
+  const stopping = runtime.stop('private')
+  releaseAuth()
+  await starting
+  const stopped = await stopping
+  assert.equal(stopped.state, 'stopped')
+  assert.equal(runtime.get('private').socket, null)
+  assert.equal(ended, true)
+  await runtime.shutdown()
+})

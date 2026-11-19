@@ -26,6 +26,8 @@ RELEASE="$BASE/releases/$SOURCE_SHA-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 STAGING="$(mktemp -d /tmp/aharane-install.XXXXXXXX)"
 PREVIOUS_RELEASE="$(readlink -f "$BASE/current" 2>/dev/null || true)"
 SERVICE_BACKUP="$(mktemp /tmp/aharane-service-backup.XXXXXXXX)"
+LOCK_DIR="$STATE/deploy-lock"
+LOCK_ACQUIRED=0
 SERVICE_EXISTED=0
 SWITCHED=0
 SUCCESS=0
@@ -81,6 +83,7 @@ finish() {
     fi
   fi
   cleanup
+  if [[ "$LOCK_ACQUIRED" -eq 1 ]]; then rm -rf "$LOCK_DIR"; fi
   exit "$status"
 }
 trap finish EXIT
@@ -105,6 +108,15 @@ if ! id "$SERVICE_USER" >/dev/null 2>&1; then
 fi
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$BASE" "$BASE/releases" "$STATE" "$STATE/whatsapp-auth"
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0750 "$STATE/data" "$STATE/updates" "$STATE/updates/uploads"
+if ! mkdir "$LOCK_DIR"; then
+  echo "Another Aharane deployment is already in progress." >&2
+  exit 2
+fi
+LOCK_ACQUIRED=1
+chown "$SERVICE_USER:$SERVICE_USER" "$LOCK_DIR"
+printf '{"source":"git","pid":%s,"sha":"%s","startedAt":"%s"}' "$BASHPID" "$SOURCE_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$LOCK_DIR/owner.json"
+chown "$SERVICE_USER:$SERVICE_USER" "$LOCK_DIR/owner.json"
+chmod 0600 "$LOCK_DIR/owner.json"
 install -d -o root -g root -m 0755 /usr/local/lib/aharane
 cat > /usr/local/lib/aharane/verify-update.mjs <<'VERIFY'
 import { readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
@@ -129,12 +141,29 @@ async function pause(ms) {
   await new Promise(resolve => setTimeout(resolve, ms))
 }
 
+const ownerText = await readFile('/var/lib/aharane/deploy-lock/owner.json', 'utf8').catch(() => '')
+let owner = null
+try { owner = JSON.parse(ownerText) } catch {}
+if (owner?.source === 'git') {
+  const pid = Number(owner.pid)
+  if (Number.isInteger(pid) && pid > 0) {
+    try { process.kill(pid, 0); process.exit(0) }
+    catch (error) { if (error?.code === 'EPERM') process.exit(0) }
+  }
+  await rm('/var/lib/aharane/deploy-lock', { recursive: true, force: true }).catch(() => {})
+  process.exit(0)
+}
+
 const state = await readState()
-if (!state || state.status !== 'awaiting-healthcheck') process.exit(0)
+if (!state || state.status !== 'awaiting-healthcheck') {
+  await rm('/var/lib/aharane/deploy-lock', { recursive: true, force: true }).catch(() => {})
+  process.exit(0)
+}
 
 const previous = path.resolve(String(state.previousRelease || ''))
 if (!previous.startsWith(releases + path.sep)) {
   await writeState({ ...state, status: 'rollback_failed', message: 'Previous release path was invalid.', finishedAt: new Date().toISOString() })
+  await rm('/var/lib/aharane/deploy-lock', { recursive: true, force: true }).catch(() => {})
   process.exit(1)
 }
 
@@ -158,6 +187,7 @@ if (healthy) {
   if (['manual-files', 'manual-discard'].includes(state.source)) {
     await rm('/var/lib/aharane/updates/manual-edit-state.json', { force: true }).catch(() => {})
   }
+  await rm('/var/lib/aharane/deploy-lock', { recursive: true, force: true }).catch(() => {})
   process.exit(0)
 }
 
@@ -182,6 +212,7 @@ try {
     finishedAt: new Date().toISOString(),
   })
 }
+await rm('/var/lib/aharane/deploy-lock', { recursive: true, force: true }).catch(() => {})
 process.exit(1)
 VERIFY
 chown root:root /usr/local/lib/aharane/verify-update.mjs

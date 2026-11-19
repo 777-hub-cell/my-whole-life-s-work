@@ -19,7 +19,7 @@ import {
   senderNumberFromJid,
 } from './policy.js'
 import { createAccountRuntime } from './account-runtime.js'
-import { loadCommandRegistry, dispatchCommand } from './command-registry.js'
+import { loadCommandRegistry, dispatchCommand, parseCommand } from './command-registry.js'
 import { isPrivateSelfChat, isPrivateSelfCommand, isPublicOwnerSender } from './authorization.js'
 import { loadOwnerConfig, normalizeOwnerConfig, saveOwnerConfig } from './owner-config.js'
 import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_ARCHIVE_BYTES, normalizeUpdatePath } from './update-manager.js'
@@ -52,6 +52,7 @@ const APP_BASE = resolve('/opt/aharane')
 const CURRENT_RELEASE = join(APP_BASE, 'current')
 const RELEASES_DIR = join(APP_BASE, 'releases')
 const UPDATE_DIR = join(DATA_DIR, 'updates')
+const DEPLOY_LOCK_DIR = join(DATA_DIR, 'deploy-lock')
 const UPLOADS_DIR = join(UPDATE_DIR, 'uploads')
 const UPDATE_STATE_FILE = join(UPDATE_DIR, 'state.json')
 const MANUAL_EDIT_STATE_FILE = join(UPDATE_DIR, 'manual-edit-state.json')
@@ -320,6 +321,23 @@ async function writeJsonAtomic(filePath, value) {
   const temporary = filePath + '.tmp-' + randomUUID()
   await writeFile(temporary, JSON.stringify(value, null, 2), { mode: 0o600, flag: 'wx' })
   await rename(temporary, filePath)
+}
+async function acquireDeployLock(source) {
+  try { await mkdir(DEPLOY_LOCK_DIR, { mode: 0o700 }) }
+  catch (error) { if (error?.code === 'EEXIST') return false; throw error }
+  try {
+    await writeJsonAtomic(join(DEPLOY_LOCK_DIR, 'owner.json'), { source: String(source || 'source-mutation'), pid: process.pid, startedAt: new Date().toISOString() })
+    return true
+  } catch (error) {
+    await rm(DEPLOY_LOCK_DIR, { recursive: true, force: true }).catch(() => {})
+    throw error
+  }
+}
+async function setDeployLockSource(source) {
+  await writeJsonAtomic(join(DEPLOY_LOCK_DIR, 'owner.json'), { source: String(source || 'deployment'), pid: process.pid, startedAt: new Date().toISOString() })
+}
+async function releaseDeployLock() {
+  await rm(DEPLOY_LOCK_DIR, { recursive: true, force: true })
 }
 
 function validUpdateId(value) {
@@ -759,6 +777,9 @@ async function validateManualEditWorkspaceFiles(workspace, modifiedPaths) {
   for (const item of modifiedPaths || []) {
     if (!['modified-file', 'created-file', 'renamed-to', 'moved-to'].includes(item?.action)) continue
     const normalized = normalizeUpdatePath(String(item?.path || '')).path
+    if (normalized === 'package.json' || normalized === 'package-lock.json') {
+      sourcePathError(409, 'DEPENDENCY_UPDATE_REQUIRED', 'Package and dependency manifest changes must be deployed as a validated ZIP update so production dependencies can be installed safely.')
+    }
     if (checked.has(normalized)) continue
     checked.add(normalized)
     const parts = normalized.split('/')
@@ -912,6 +933,7 @@ async function prepareAndActivateUpdate(updateId) {
     }).catch(() => {})
     logger.error({ event: 'update.preparation-failed', message: String(error?.message || 'unknown').slice(0, 200) })
     updateInProgress = false
+    await releaseDeployLock().catch(() => {})
   }
 }
 
@@ -1003,11 +1025,15 @@ async function handleMessages(sessionId, currentSocket, event) {
       continue
     }
 
-    if (!text || !allowCommand(sessionId + ':' + (sessionId === 'private'
+    if (!text) continue
+    const prefix = sessionId === 'private' ? PRIVATE_COMMAND_PREFIX : PUBLIC_COMMAND_PREFIX
+    const parsedCommand = parseCommand(text, prefix)
+    if (!parsedCommand || !registry?.commands?.has(parsedCommand.name)) continue
+    if (!allowCommand(sessionId + ':' + (sessionId === 'private'
       ? ownerConfig.privateOwnerNumber
       : senderNumberFromJid(remoteJid)))) continue
 
-    const command = text.split(/\s+/, 1)[0].slice(0, 40)
+    const command = parsedCommand.name.slice(0, 40)
     try {
       const handled = await dispatchCommand({
         registry,
@@ -1073,6 +1099,7 @@ accountRuntime = createAccountRuntime({
 })
 
 const app = express()
+app.set('trust proxy', 'loopback')
 app.disable('x-powered-by')
 app.use(express.json({ limit: '2mb', strict: true }))
 app.use('/api', (req, res, next) => {
@@ -1324,13 +1351,16 @@ app.post('/api/pair-code', requireAdmin, async (req, res) => {
     if (!allowPairAttempt(ip)) return res.status(429).json({ ok: false, error: 'Pairing rate limit reached for the public account; try again later.' })
     const phoneNumber = normalizePhone(req.body?.phoneNumber)
     if (!phoneNumber) return res.status(400).json({ ok: false, error: 'Enter a valid international phone number using 7 to 15 digits.' })
-    if (!ownerConfig.privateOwnerNumber || !ownerConfig.publicOwnerNumber) {
-      return res.status(409).json({ ok: false, error: 'Save two different owner numbers before pairing the WhatsApp accounts.' })
+    if (!ownerConfig.privateOwnerNumber || !ownerConfig.publicOwnerNumber || !ownerConfig.publicBotNumber) {
+      return res.status(409).json({ ok: false, error: 'Save the Private Owner, Public Owner and Public bot numbers before pairing.' })
+    }
+    if (phoneNumber !== ownerConfig.publicBotNumber) {
+      return res.status(409).json({ ok: false, error: 'The supplied number does not match the saved Public bot WhatsApp number. Update Configuration first.' })
     }
     if ([ownerConfig.privateOwnerNumber, ownerConfig.publicOwnerNumber].includes(phoneNumber)) {
       return res.status(400).json({ ok: false, error: 'The public bot must use its own WhatsApp number, separate from both owner identities.' })
     }
-    const pairingCode = await accountRuntime.requestPairingCode('public', phoneNumber)
+    const pairingCode = await accountRuntime.requestPairingCode('public', ownerConfig.publicBotNumber)
     res.json({ ok: true, accountId: 'public', pairingCode })
   } catch (error) {
     res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Pairing code could not be generated.') })
@@ -1967,21 +1997,35 @@ function serializeSourceMutations(req, res, next) {
   const previous = sourceMutationTail
   let release
   sourceMutationTail = new Promise(resolve => { release = resolve })
-  previous.then(() => {
+  previous.then(async () => {
     let finished = false
-    const unlock = () => {
+    let lockAcquired = false
+    const unlock = async () => {
       if (finished) return
       finished = true
+      if (lockAcquired && !req.keepDeployLock) await releaseDeployLock().catch(() => {})
       release()
     }
-    res.once('finish', unlock)
-    res.once('close', unlock)
+    res.once('finish', () => { void unlock() })
+    res.once('close', () => { void unlock() })
     if (updateInProgress) {
       res.status(409).json({ ok: false, error: 'Aharane is applying or deploying source changes. Try again when it is healthy.' })
-      unlock()
+      await unlock()
       return
     }
-    next()
+    try {
+      lockAcquired = await acquireDeployLock('source-mutation')
+      if (!lockAcquired) {
+        res.status(409).json({ ok: false, error: 'Another Aharane deployment is in progress. Wait for its health check to finish.' })
+        await unlock()
+        return
+      }
+      req.deployLockAcquired = true
+      next()
+    } catch (error) {
+      await unlock()
+      next(error)
+    }
   }).catch(error => {
     release()
     next(error)
@@ -2439,19 +2483,35 @@ app.post('/api/files/delete', requireAdmin, async (req, res) => {
       }
       targets.push(target)
     }
-    for (const target of targets) {
-      const tombstone = join(dirname(target.full), '.aharane-delete-' + randomUUID())
-      await rename(target.full, tombstone)
-      try {
-        await recordManualEdit(target.path, target.info.isDirectory() ? 'deleted-folder' : 'deleted-file')
-      } catch (error) {
-        await rename(tombstone, target.full).catch(() => {})
-        throw error
+    const stagedTombstones = []
+    try {
+      for (const target of targets) {
+        const tombstone = join(dirname(target.full), '.aharane-delete-' + randomUUID())
+        await rename(target.full, tombstone)
+        stagedTombstones.push({ target, tombstone })
       }
-      await rm(tombstone, { recursive: target.info.isDirectory(), force: true })
-      deleted.push(target)
+      await recordManualEdits(stagedTombstones.map(({ target }) => ({
+        path: target.path,
+        action: target.info.isDirectory() ? 'deleted-folder' : 'deleted-file',
+      })))
+    } catch (error) {
+      for (const item of [...stagedTombstones].reverse()) {
+        await rename(item.tombstone, item.target.full).catch(rollbackError => {
+          logger.error({ event: 'files.delete-rollback-failed', path: item.target.path, error: String(rollbackError?.message || rollbackError) })
+        })
+      }
+      throw error
     }
-    res.json({ ok: true, deleted: deleted.map(target => target.path), pending: true })
+    const cleanupPending = []
+    for (const item of stagedTombstones) {
+      try { await rm(item.tombstone, { recursive: item.target.info.isDirectory(), force: true }) }
+      catch (error) {
+        cleanupPending.push(item.target.path)
+        logger.warn({ event: 'files.delete-tombstone-cleanup-pending', path: item.target.path, error: String(error?.message || error) })
+      }
+      deleted.push(item.target)
+    }
+    res.json({ ok: true, deleted: deleted.map(target => target.path), cleanupPending, pending: true })
   } catch (error) {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not delete the selected source items.') })
   }
@@ -2464,10 +2524,10 @@ app.post('/api/files/apply', requireAdmin, async (req, res) => {
   if (!manual || manual.status !== 'pending' || !Array.isArray(manual.modifiedPaths) || !manual.modifiedPaths.length) {
     return res.status(409).json({ ok: false, error: 'There are no saved manual file edits to apply.' })
   }
-  // The Files mutation middleware holds the queue lock for this request.
-  // Block any other operation before validation starts, not after it finishes.
+  if (!req.deployLockAcquired) return res.status(409).json({ ok: false, error: 'Could not acquire the Aharane deployment lock. Retry when no other operation is running.' })
   updateInProgress = true
   try {
+    await setDeployLockSource('manual-files')
     const current = await currentReleaseDirectory()
     const workspace = String(manual.workspaceRelease || '')
     if (current !== manual.currentRelease || !workspace.startsWith(RELEASES_DIR + sep)) {
@@ -2513,6 +2573,7 @@ app.post('/api/files/apply', requireAdmin, async (req, res) => {
       }).catch(() => {})
       throw error
     }
+    req.keepDeployLock = true
     res.status(202).json({ ok: true, status: 'awaiting-healthcheck', updateId, message: 'Saved file changes passed validation. Aharane is switching to the prepared release and restarting.' })
     setTimeout(() => process.exit(1), 350)
   } catch (error) {
@@ -2645,13 +2706,21 @@ app.post('/api/update/deploy', requireAdmin, async (req, res) => {
   if (!metadata || metadata.status !== 'validated' || !metadata.inspection) {
     return res.status(409).json({ ok: false, error: 'Validate this Aharane ZIP before deploying it.' })
   }
+  if (!req.deployLockAcquired) return res.status(409).json({ ok: false, error: 'Could not acquire the Aharane deployment lock. Retry when no other operation is running.' })
   updateInProgress = true
-  await writeJsonAtomic(UPDATE_STATE_FILE, {
-    status: 'preparing',
-    updateId,
-    version: metadata.inspection.manifest.bot_version,
-    startedAt: new Date().toISOString(),
-  })
+  try {
+    await setDeployLockSource('zip-update')
+    await writeJsonAtomic(UPDATE_STATE_FILE, {
+      status: 'preparing',
+      updateId,
+      version: metadata.inspection.manifest.bot_version,
+      startedAt: new Date().toISOString(),
+    })
+  } catch (error) {
+    updateInProgress = false
+    return res.status(500).json({ ok: false, error: 'Could not record the ZIP deployment state.' })
+  }
+  req.keepDeployLock = true
   res.status(202).json({ ok: true, status: 'preparing', updateId, message: 'Aharane is preparing the new release. Keep this page open to follow its status.' })
   setImmediate(() => { void prepareAndActivateUpdate(updateId) })
 })

@@ -1,19 +1,20 @@
 package com.aharane.studio
+
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.MoreHoriz
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Terminal
-import androidx.compose.material3.*
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material3.MaterialTheme
+import com.aharane.studio.core.design.StudioBottomNavigation
+import com.aharane.studio.core.design.StudioHeader
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatFilter
 import com.aharane.studio.core.navigation.MainDestination
@@ -23,61 +24,44 @@ import com.aharane.studio.features.files.FilesScreen
 import com.aharane.studio.features.home.HomeScreen
 import com.aharane.studio.features.more.MoreScreen
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AharaneApp() {
     var destinationName by rememberSaveable { mutableStateOf(MainDestination.HOME.name) }
     var accountName by rememberSaveable { mutableStateOf(ChatAccount.PRIVATE.name) }
     var filterName by rememberSaveable { mutableStateOf(ChatFilter.ALL.name) }
+
     val destination = MainDestination.valueOf(destinationName)
     val account = ChatAccount.valueOf(accountName)
     val filter = ChatFilter.valueOf(filterName)
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("Aharane", style = MaterialTheme.typography.titleLarge) },
-                actions = {
-                    IconButton(onClick = { destinationName = MainDestination.MORE.name }) {
-                        Icon(Icons.Outlined.Settings, contentDescription = "Open settings")
-                    }
-                }
-            )
-        },
-        bottomBar = {
-            NavigationBar {
-                MainDestination.entries.forEach { item ->
-                    NavigationBarItem(
-                        selected = destination == item,
-                        onClick = { destinationName = item.name },
-                        icon = { Icon(destinationIcon(item), contentDescription = null) },
-                        label = { Text(item.label) }
-                    )
-                }
-            }
-        }
-    ) { innerPadding ->
-        Box(Modifier.fillMaxSize().padding(innerPadding)) {
+    Column(
+        Modifier.fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .windowInsetsPadding(WindowInsets.statusBars)
+    ) {
+        StudioHeader(onStatusClick = { destinationName = MainDestination.HOME.name })
+
+        Box(Modifier.weight(1f).fillMaxWidth()) {
             when (destination) {
                 MainDestination.HOME -> HomeScreen(
-                    { destinationName = MainDestination.CHATS.name },
-                    { destinationName = MainDestination.MORE.name }
+                    onOpenChats = { destinationName = MainDestination.CHATS.name },
+                    onOpenMore = { destinationName = MainDestination.MORE.name }
                 )
                 MainDestination.CHATS -> ChatsScreen(
-                    account, { accountName = it.name }, filter, { filterName = it.name }
+                    account = account,
+                    onAccountSelected = { accountName = it.name },
+                    filter = filter,
+                    onFilterSelected = { filterName = it.name }
                 )
                 MainDestination.FILES -> FilesScreen()
                 MainDestination.ENVIRONMENT -> EnvironmentScreen()
                 MainDestination.MORE -> MoreScreen()
             }
         }
+
+        StudioBottomNavigation(
+            selected = destination,
+            onNavigate = { destinationName = it.name }
+        )
     }
-}
-private fun destinationIcon(destination: MainDestination): ImageVector = when (destination) {
-    MainDestination.HOME -> Icons.Outlined.Home
-    MainDestination.CHATS -> Icons.Outlined.ChatBubbleOutline
-    MainDestination.FILES -> Icons.Outlined.FolderOpen
-    MainDestination.ENVIRONMENT -> Icons.Outlined.Terminal
-    MainDestination.MORE -> Icons.Outlined.MoreHoriz
 }

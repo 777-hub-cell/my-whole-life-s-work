@@ -11,15 +11,12 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aharane.studio.core.design.*
@@ -43,32 +40,35 @@ fun ChatsScreen(
     ) {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    StudioPageTitle("Chats")
-                }
+                Column(Modifier.weight(1f)) { StudioPageTitle("Chats") }
                 Box(
-                    Modifier.size(46.dp).clip(CircleShape)
+                    Modifier.size(44.dp).clip(CircleShape)
                         .background(StudioPalette.Surface)
                         .border(1.dp, StudioPalette.Line, CircleShape)
                         .clickable {
-                            onAccountSelected(if (account == ChatAccount.PRIVATE) ChatAccount.PUBLIC else ChatAccount.PRIVATE)
+                            onAccountSelected(
+                                if (account == ChatAccount.PRIVATE) ChatAccount.PUBLIC else ChatAccount.PRIVATE
+                            )
                         },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(switchIcon, contentDescription = "Switch WhatsApp account",
-                        tint = StudioPalette.Accent, modifier = Modifier.size(22.dp))
-                    Box(Modifier.align(Alignment.BottomEnd).size(13.dp).clip(CircleShape)
-                        .background(StudioPalette.Surface), contentAlignment = Alignment.Center) {
+                        tint = StudioPalette.Accent, modifier = Modifier.size(21.dp))
+                    Box(
+                        Modifier.align(Alignment.BottomEnd).offset(x = 1.dp, y = 1.dp)
+                            .size(13.dp).clip(CircleShape).background(StudioPalette.Surface),
+                        contentAlignment = Alignment.Center
+                    ) {
                         StudioStatusDot(online = false, size = 8)
                     }
                 }
             }
             Text(
-                "${account.label} · 0 conversations",
+                "\${account.label} account · Not connected · 0 conversations",
                 color = StudioPalette.Muted,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
-                modifier = Modifier.padding(top = 6.dp, bottom = 12.dp)
+                modifier = Modifier.padding(top = 5.dp, bottom = 13.dp)
             )
         }
         item {
@@ -83,18 +83,39 @@ fun ChatsScreen(
             StudioSegmented(
                 options = ChatFilter.entries.map { it.label },
                 selected = filter.label,
-                onSelect = { label -> ChatFilter.entries.firstOrNull { it.label == label }?.let(onFilterSelected) }
+                onSelect = { label ->
+                    ChatFilter.entries.firstOrNull { it.label == label }?.let(onFilterSelected)
+                }
             )
             Spacer(Modifier.height(14.dp))
         }
         item {
             StudioCard {
-                StudioEmpty(
-                    title = if (query.isBlank()) "No chats yet" else "No chats match",
-                    description = "Connect Aharane Local Studio to your server to load ${account.label.lowercase()} conversations."
-                )
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 26.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        if (query.isBlank()) "No chats yet" else "No chats match",
+                        color = StudioPalette.Muted,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        if (query.isBlank()) {
+                            "Connect Aharane Local Studio to load \${account.label.lowercase()} conversations."
+                        } else {
+                            "Your \${account.label.lowercase()} inbox is not connected, so there are no messages to search."
+                        },
+                        color = StudioPalette.Muted,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(15.dp))
             Text(
                 "Private and Public inboxes remain separate.",
                 color = StudioPalette.Muted,

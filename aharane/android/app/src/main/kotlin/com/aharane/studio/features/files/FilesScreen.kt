@@ -242,7 +242,13 @@ fun FilesScreen(
                             onMenuDismiss = { menuPath = null },
                             onAction = { action ->
                                 menuPath = null
-                                onEntryAction(entry, action)
+                                if (action == "open" && entry.isDirectory) {
+                                    currentPath = entry.path
+                                    query = ""
+                                    selectedPaths.clear()
+                                } else {
+                                    onEntryAction(entry, action)
+                                }
                             }
                         )
                     }

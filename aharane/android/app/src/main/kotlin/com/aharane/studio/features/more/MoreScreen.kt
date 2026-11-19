@@ -1,60 +1,80 @@
 package com.aharane.studio.features.more
+
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AccountCircle
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Security
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Storage
-import androidx.compose.material3.*
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.aharane.studio.core.design.*
 
 @Composable
 fun MoreScreen() {
-    LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("More", style = MaterialTheme.typography.headlineMedium)
-                Text("Additional Aharane tools and preferences.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                MoreRow(Icons.Outlined.AccountCircle, "Accounts and pairing",
-                    "Manage the separate Private and Public WhatsApp sessions.")
-                MoreRow(Icons.Outlined.Security, "Privacy and security",
-                    "Native sign-in, device access and privacy controls.")
-                MoreRow(Icons.Outlined.History, "Activity and logs",
-                    "Review Aharane service activity and diagnostics.")
-                MoreRow(Icons.Outlined.Storage, "Storage",
-                    "Inspect workspace, chat and media usage.")
-                MoreRow(Icons.Outlined.Settings, "Appearance and settings",
-                    "Configure the native app and its presentation.")
-            }
-        }
-        item {
-            Text("Native foundation · 0.1.0",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelSmall)
-        }
+    val context = LocalContext.current
+    val unavailable = { label: String ->
+        Toast.makeText(context, "$label will be available after connecting to Aharane.", Toast.LENGTH_SHORT).show()
     }
-}
-@Composable
-private fun MoreRow(icon: ImageVector, title: String, description: String) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(title, style = MaterialTheme.typography.titleSmall)
-            Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall)
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp)
+    ) {
+        item {
+            StudioPageTitle("More", "Additional tools and information")
         }
+
+        item { StudioSectionHeading("Tools") }
+        item {
+            StudioCard {
+                StudioRow(
+                    "Activity and logs",
+                    "Review bot activity and diagnostic records",
+                    trailing = "›",
+                    onClick = { unavailable("Activity and logs") }
+                )
+                StudioDivider()
+                StudioRow(
+                    "Storage information",
+                    "View disk and storage usage",
+                    trailing = "›",
+                    onClick = { unavailable("Storage information") }
+                )
+            }
+        }
+
+        item { StudioSectionHeading("Preferences") }
+        item {
+            StudioCard {
+                StudioRow(
+                    "Appearance",
+                    "Theme, accent color, text size and editor",
+                    trailing = "›",
+                    onClick = { unavailable("Appearance settings") }
+                )
+            }
+        }
+
+        item { StudioSectionHeading("Support") }
+        item {
+            StudioCard {
+                StudioRow(
+                    "Help",
+                    "Guidance for using Aharane Studio",
+                    trailing = "›",
+                    onClick = { unavailable("Help") }
+                )
+                StudioDivider()
+                StudioRow(
+                    "About Aharane",
+                    "Version and application information",
+                    trailing = "›",
+                    onClick = { unavailable("About Aharane") }
+                )
+            }
+        }
+        item { Spacer(Modifier.height(10.dp)) }
     }
 }

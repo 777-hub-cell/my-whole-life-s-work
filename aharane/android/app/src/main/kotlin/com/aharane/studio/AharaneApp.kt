@@ -23,6 +23,7 @@ import com.aharane.studio.features.environment.EnvironmentScreen
 import com.aharane.studio.features.files.CodeEditorScreen
 import com.aharane.studio.features.files.FilesScreen
 import com.aharane.studio.features.files.StudioEditorDocument
+import com.aharane.studio.features.files.StudioFileEntry
 import com.aharane.studio.features.home.HomeScreen
 import com.aharane.studio.features.more.MoreScreen
 
@@ -168,7 +169,7 @@ fun AharaneApp(
                         onConversationSelected = { activeConversation = it }
                     )
                     MainDestination.FILES -> FilesScreen(
-                        entries = if (previewMode) DesignPreviewFixtures.files else emptyList(),
+                        entries = if (previewMode) DesignPreviewFixtures.files.map { StudioFileEntry(it.name, it.path, it.isDirectory, it.sizeLabel) } else emptyList(),
                         connected = false,
                         onEditorVisibility = {
                             editorFromConfiguration = false

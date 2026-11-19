@@ -89,36 +89,18 @@ jobs:
             sleep 8
             adb exec-out screencap -p > screenshots/01-home.png
 
-            python3 - <<'PY'
-            import re
-            import subprocess
-            import time
-            from pathlib import Path
-
-            size = subprocess.check_output(["adb", "shell", "wm", "size"], text=True)
-            match = re.search(r"(?:Physical|Override) size: (\\d+)x(\\d+)", size)
-            if not match:
-                raise RuntimeError(f"Unable to read emulator screen size: {size}")
-            width, height = map(int, match.groups())
-            tap_y = round(height * 0.93)
-
-            targets = [
-                ("Chats", 1, "02-chats.png"),
-                ("Files", 2, "03-files.png"),
-                ("ENV", 3, "04-env.png"),
-                ("More", 4, "05-more.png"),
-            ]
-
-            for label, slot, filename in targets:
-                tap_x = round(width * (slot + 0.5) / 5)
-                subprocess.run(
-                    ["adb", "shell", "input", "tap", str(tap_x), str(tap_y)],
-                    check=True
-                )
-                time.sleep(2)
-                image = subprocess.check_output(["adb", "exec-out", "screencap", "-p"])
-                Path("screenshots", filename).write_bytes(image)
-            PY
+            adb shell input tap 324 2232
+            sleep 2
+            adb exec-out screencap -p > screenshots/02-chats.png
+            adb shell input tap 540 2232
+            sleep 2
+            adb exec-out screencap -p > screenshots/03-files.png
+            adb shell input tap 756 2232
+            sleep 2
+            adb exec-out screencap -p > screenshots/04-env.png
+            adb shell input tap 972 2232
+            sleep 2
+            adb exec-out screencap -p > screenshots/05-more.png
 
       - name: Upload real app screenshots
         uses: actions/upload-artifact@v4

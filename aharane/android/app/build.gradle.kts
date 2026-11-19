@@ -1,5 +1,6 @@
-import java.io.File
+import File
 import java.net.URL
+import File
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.Property

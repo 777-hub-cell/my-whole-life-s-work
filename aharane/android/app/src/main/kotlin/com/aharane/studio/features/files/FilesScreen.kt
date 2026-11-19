@@ -292,6 +292,22 @@ fun FilesScreen(
             )
         }
     }
+    if (packagesOpen) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { packagesOpen = false }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(StudioPalette.Surface).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Update packages", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                StudioEmpty("No ZIP update packages saved.", "Upload and validate an Aharane update ZIP to make it available here.")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    StudioActionButton("Close", compact = true, primary = true, onClick = { packagesOpen = false })
+                }
+            }
+        }
+    }
+
 }
 
 @Composable
@@ -373,20 +389,4 @@ private fun FileEntryRow(
             )
         }
     }
-    if (packagesOpen) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = { packagesOpen = false }) {
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                    .background(StudioPalette.Surface).padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text("Update packages", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                StudioEmpty("No ZIP update packages saved.", "Upload and validate an Aharane update ZIP to make it available here.")
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    StudioActionButton("Close", compact = true, primary = true, onClick = { packagesOpen = false })
-                }
-            }
-        }
-    }
-
 }

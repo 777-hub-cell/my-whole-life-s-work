@@ -31,8 +31,9 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           packages: ''
-      - name: Install Android SDK platform
-        run: sdkmanager --install "platforms;android-37" --channel=3
+      - name: Install Android 17 SDK platform and tools
+        run: |
+          sdkmanager --install "platforms;android-37" --channel=3
           sdkmanager --install "platform-tools"
       - uses: gradle/actions/setup-gradle@v5
       - name: Unit tests

@@ -312,6 +312,7 @@ fun CodeEditorScreen(
                 if (explorerOpen) {
                     ExplorerDrawer(
                         files = availableFiles,
+                        activePath = activeDocumentPath,
                         onOpen = { path -> explorerOpen = false; onOpenFile(path) },
                         onClose = { explorerOpen = false }
                     )

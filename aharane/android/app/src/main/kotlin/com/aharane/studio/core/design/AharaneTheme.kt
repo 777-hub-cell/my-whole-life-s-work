@@ -6,7 +6,12 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -83,16 +88,63 @@ private val StudioTypography = Typography(
         fontSize = 11.5.sp, lineHeight = 14.sp)
 )
 
+private fun blend(from: Color, to: Color, amount: Float): Color = Color(
+    red = from.red + (to.red - from.red) * amount,
+    green = from.green + (to.green - from.green) * amount,
+    blue = from.blue + (to.blue - from.blue) * amount,
+    alpha = 1f
+)
+
 @Composable
-fun AharaneTheme(themeMode: String = "system", content: @Composable () -> Unit) {
+fun AharaneTheme(
+    themeMode: String = "system",
+    accentColorHex: String = "#0E7A5C",
+    interfaceScale: Float = 1f,
+    cornerScale: Float = 1f,
+    rowScale: Float = 1f,
+    content: @Composable () -> Unit
+) {
     val dark = when (themeMode) {
         "light" -> false
         "dark" -> true
         else -> isSystemInDarkTheme()
     }
-    MaterialTheme(
-        colorScheme = if (dark) Dark else Light,
-        typography = StudioTypography,
-        content = content
+    val accent = remember(accentColorHex) {
+        runCatching { Color(android.graphics.Color.parseColor(accentColorHex)) }
+            .getOrDefault(Color(0xFF0E7A5C))
+    }
+    val darkAccent = if (accentColorHex.equals("#0E7A5C", ignoreCase = true)) {
+        Color(0xFF3CC79A)
+    } else {
+        blend(accent, Color.White, 0.22f)
+    }
+    val lightScheme = Light.copy(
+        primary = accent,
+        onPrimary = if (accent.luminance() > .62f) Color(0xFF12181B) else Color.White,
+        primaryContainer = blend(accent, Color.White, .86f),
+        onPrimaryContainer = Color(0xFF103D30)
     )
+    val darkScheme = Dark.copy(
+        primary = darkAccent,
+        onPrimary = Color(0xFF04140E),
+        primaryContainer = blend(darkAccent, Color.Black, .72f),
+        onPrimaryContainer = Color(0xFFEAF0EE)
+    )
+    val baseDensity = LocalDensity.current
+    val scaledDensity = Density(
+        density = baseDensity.density * interfaceScale.coerceIn(.88f, 1.12f),
+        fontScale = baseDensity.fontScale
+    )
+
+    CompositionLocalProvider(
+        LocalDensity provides scaledDensity,
+        LocalStudioCornerScale provides cornerScale.coerceIn(.65f, 1.3f),
+        LocalStudioRowScale provides rowScale.coerceIn(.85f, 1.2f)
+    ) {
+        MaterialTheme(
+            colorScheme = if (dark) darkScheme else lightScheme,
+            typography = StudioTypography,
+            content = content
+        )
+    }
 }

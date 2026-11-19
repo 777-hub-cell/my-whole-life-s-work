@@ -154,17 +154,21 @@ fun FilesScreen(
                     },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val allSelected = visibleEntries.isNotEmpty() &&
+                        selectedPaths.containsAll(visibleEntries.map { it.path })
                     Box(
                         Modifier.size(19.dp).clip(RoundedCornerShape(5.dp))
-                            .background(if (visibleEntries.isNotEmpty() && selectedPaths.containsAll(visibleEntries.map { it.path })) StudioPalette.Accent else StudioPalette.Surface)
-                            .then(if (visibleEntries.isNotEmpty() && selectedPaths.containsAll(visibleEntries.map { it.path })) Modifier else Modifier),
+                            .background(if (allSelected) StudioPalette.Accent else StudioPalette.Surface)
+                            .border(1.dp, if (allSelected) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(5.dp))
+                            .clickable {
+                                if (visibleEntries.isNotEmpty()) {
+                                    if (allSelected) selectedPaths.removeAll(visibleEntries.map { it.path }.toSet())
+                                    else visibleEntries.forEach { if (it.path !in selectedPaths) selectedPaths.add(it.path) }
+                                }
+                            },
                         contentAlignment = Alignment.Center
                     ) {
-                        if (visibleEntries.isNotEmpty() && selectedPaths.containsAll(visibleEntries.map { it.path })) {
-                            Text("✓", color = androidx.compose.ui.graphics.Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        } else {
-                            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(5.dp)).background(StudioPalette.Surface))
-                        }
+                        if (allSelected) Text("✓", color = androidx.compose.ui.graphics.Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                     Text(
                         "Select all",

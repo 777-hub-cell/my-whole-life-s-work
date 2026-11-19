@@ -52,8 +52,10 @@ export function isOwnerSelfControlCommand({
  * Linked specialist accounts retain normal inbound handling.
  */
 export function isMainAccountInboundAllowed(account, ownerSelfControl = false) {
-  if (account?.id !== 'A' || account?.role !== 'owner') return true
-  return ownerSelfControl === true
+  if (account?.id !== 'A') return true
+  // Even a malformed registry that assigns Account A a linked role must
+  // never turn the permanent control identity into a public responder.
+  return account.role === 'owner' && ownerSelfControl === true
 }
 
 export function createInboundMessageGuard({

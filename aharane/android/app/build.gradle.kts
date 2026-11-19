@@ -1,3 +1,4 @@
+import java.io.File
 import java.net.URL
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
@@ -6,70 +7,75 @@ import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 
-plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.compose)
-}
-
 abstract class FetchAharaneFontsTask : DefaultTask() {
     @get:OutputDirectory
-    abstract val resourceDirectory: DirectoryProperty
+    abstract val androidResourceDirectory: DirectoryProperty
 
     @get:OutputDirectory
-    abstract val assetDirectory: DirectoryProperty
+    abstract val licenseAssetDirectory: DirectoryProperty
 
     @get:Input
-    abstract val sourceRevision: Property<String>
+    abstract val pinnedFontRevisions: Property<String>
 
     @TaskAction
-    fun downloadFontsAndLicenses() {
-        val fontDir = resourceDirectory.get().dir("font").asFile
-        val licenseDir = assetDirectory.get().dir("fonts").asFile
-        fontDir.mkdirs()
-        licenseDir.mkdirs()
+    fun fetchFonts() {
+        val fontDirectory = androidResourceDirectory.get().dir("font").asFile
+        val licenseDirectory = licenseAssetDirectory.get().dir("fonts").asFile
+        fontDirectory.mkdirs()
+        licenseDirectory.mkdirs()
 
-        fun fetch(url: String, destination: java.io.File, minimumBytes: Long) {
+        fun download(url: String, destination: File, minimumBytes: Long) {
             if (destination.exists() && destination.length() >= minimumBytes) return
-            val temp = java.io.File(destination.parentFile, destination.name + ".part")
+            destination.parentFile?.mkdirs()
+            val temporary = File(destination.parentFile, destination.name + ".part")
+            temporary.delete()
+
             val connection = URL(url).openConnection().apply {
-                connectTimeout = 30_000
-                readTimeout = 60_000
+                connectTimeout = 20_000
+                readTimeout = 45_000
             }
             connection.getInputStream().use { input ->
-                temp.outputStream().use { output -> input.copyTo(output) }
+                temporary.outputStream().use { output -> input.copyTo(output) }
             }
-            require(temp.length() >= minimumBytes) {
-                "Downloaded file is unexpectedly small: " + destination.name
+
+            require(temporary.length() >= minimumBytes) {
+                "Downloaded resource is unexpectedly small: \${destination.name}"
             }
-            if (!temp.renameTo(destination)) {
+            if (!temporary.renameTo(destination)) {
                 destination.delete()
-                check(temp.renameTo(destination)) {
-                    "Unable to install " + destination.name
+                check(temporary.renameTo(destination)) {
+                    "Unable to install generated resource: \${destination.name}"
                 }
             }
         }
 
-        fetch(
+        // Pinned upstream commits keep builds reproducible and make font provenance auditable.
+        download(
             "https://raw.githubusercontent.com/Instrument/instrument-sans/7fa22308a3d0c94ee2b3cd537a1196b65db34a3e/fonts/variable/InstrumentSans%5Bwdth%2Cwght%5D.ttf",
-            java.io.File(fontDir, "instrument_sans.ttf"),
+            File(fontDirectory, "instrument_sans.ttf"),
             20_000L
         )
-        fetch(
+        download(
             "https://raw.githubusercontent.com/ateliertriay/bricolage/84745e5b96261ae5f8c6c856e262fe78d1d6efdd/fonts/variable/BricolageGrotesque%5Bopsz%2Cwdth%2Cwght%5D.ttf",
-            java.io.File(fontDir, "bricolage_grotesque.ttf"),
+            File(fontDirectory, "bricolage_grotesque.ttf"),
             20_000L
         )
-        fetch(
+        download(
             "https://raw.githubusercontent.com/Instrument/instrument-sans/7fa22308a3d0c94ee2b3cd537a1196b65db34a3e/OFL.txt",
-            java.io.File(licenseDir, "Instrument-Sans-OFL.txt"),
-            500L
+            File(licenseDirectory, "Instrument-Sans-OFL.txt"),
+            1_000L
         )
-        fetch(
+        download(
             "https://raw.githubusercontent.com/ateliertriay/bricolage/84745e5b96261ae5f8c6c856e262fe78d1d6efdd/OFL.txt",
-            java.io.File(licenseDir, "Bricolage-Grotesque-OFL.txt"),
-            500L
+            File(licenseDirectory, "Bricolage-Grotesque-OFL.txt"),
+            1_000L
         )
     }
+}
+
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -91,21 +97,23 @@ android {
     lint { abortOnError = true }
 }
 
+val fetchAharaneFonts = tasks.register<FetchAharaneFontsTask>("fetchAharaneFonts") {
+    androidResourceDirectory.set(layout.buildDirectory.dir("generated/aharane-font-res"))
+    licenseAssetDirectory.set(layout.buildDirectory.dir("generated/aharane-font-assets"))
+    pinnedFontRevisions.set("instrument-sans@7fa22308;bricolage-grotesque@84745e5b")
+}
+
+// Register generated resources using the AGP Variant API. AGP 9 disallows
+// Provider-backed directories on the legacy SourceSet API.
 androidComponents {
-    onVariants { variant ->
-        val variantSuffix = variant.name.replaceFirstChar { it.uppercase() }
-        val fontTask = tasks.register<FetchAharaneFontsTask>("fetchAharaneFonts" + variantSuffix) {
-            resourceDirectory.set(layout.buildDirectory.dir("generated/aharane-font-res/" + variant.name))
-            assetDirectory.set(layout.buildDirectory.dir("generated/aharane-font-assets/" + variant.name))
-            sourceRevision.set("instrument-sans-7fa22308;bricolage-grotesque-84745e5b")
-        }
+    onVariants(selector().all()) { variant ->
         variant.sources.res?.addGeneratedSourceDirectory(
-            fontTask,
-            FetchAharaneFontsTask::resourceDirectory
+            fetchAharaneFonts,
+            FetchAharaneFontsTask::androidResourceDirectory
         )
         variant.sources.assets?.addGeneratedSourceDirectory(
-            fontTask,
-            FetchAharaneFontsTask::assetDirectory
+            fetchAharaneFonts,
+            FetchAharaneFontsTask::licenseAssetDirectory
         )
     }
 }

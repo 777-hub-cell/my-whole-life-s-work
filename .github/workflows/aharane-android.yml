@@ -1,0 +1,49 @@
+name: Aharane Android
+
+on:
+  pull_request:
+    branches: [mscc-azure]
+    paths: ['aharane/android/**', '.github/workflows/aharane-android.yml']
+  push:
+    branches: [mscc-azure]
+    paths: ['aharane/android/**', '.github/workflows/aharane-android.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aharane-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Native Android tests and debug APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: |
+          sdkmanager --install "platforms;android-37" "platform-tools"
+          yes | sdkmanager --licenses >/dev/null
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Unit tests
+        working-directory: aharane/android
+        run: ./gradlew --no-daemon testDebugUnitTest
+      - name: Assemble debug APK
+        working-directory: aharane/android
+        run: ./gradlew --no-daemon assembleDebug
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: aharane-native-android-debug
+          path: aharane/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

@@ -101,6 +101,13 @@ jobs:
             sleep 2
             adb exec-out screencap -p > screenshots/05-more.png
 
+            # Capture the actual Appearance preferences page as a separate screen.
+            adb shell input tap 540 1160
+            sleep 2
+            adb exec-out screencap -p > screenshots/06-appearance.png
+            adb shell input keyevent 4
+            sleep 1
+
       - name: Upload real app screenshots
         uses: actions/upload-artifact@v4
         with:

@@ -225,7 +225,7 @@ fun MoreScreen(
                 StudioCard {
                     StudioRow(
                         title = "Private account",
-                        subtitle = "Not paired · Not connected",
+                        subtitle = "Status not loaded",
                         trailingContent = {
                             StudioActionButton("Link account", compact = true, enabled = false, onClick = {})
                         }
@@ -252,7 +252,7 @@ fun MoreScreen(
                         if (index > 0) Spacer(Modifier.height(12.dp))
                         Text(label, color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                         Text(
-                            if (index == 3) "Not loaded" else "Not configured",
+                            "Not loaded",
                             color = StudioPalette.Muted,
                             fontSize = 13.sp,
                             modifier = Modifier.fillMaxWidth().padding(top = 5.dp)

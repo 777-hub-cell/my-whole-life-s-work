@@ -237,8 +237,10 @@ body.aharane-booting .app,body.aharane-booting .nav{visibility:hidden}
 :root[data-chat-larger-text="true"] .chat .b,:root[data-chat-larger-text="true"] .chat .ch{font-size:1.08em}
 :root[data-chat-reduced-motion="true"] *, :root[data-chat-reduced-motion="true"] *::before,:root[data-chat-reduced-motion="true"] *::after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}
 #chat[data-show-timestamps="false"] .b .mt{display:none}
+:root[data-chat-show-previews="false"] #view .chat-row-wrap .grow>.d{display:none}
+:root[data-chat-show-timestamps="false"] #view .chat-row-wrap .meta>.d{display:none}
+:root[data-chat-show-avatars="false"] #view .chat-row-wrap .av{display:none}
 #chat[data-show-avatars="false"] #ca{display:none}
-#chat[data-show-previews="false"] .chat-row-wrap .d{display:none}
 .chat-row-wrap>.row{min-height:var(--chat-row-height)}
 .chat-row-wrap.swiped>.row{transform:translateX(-240px)}
 .chat-row-actions{width:240px}

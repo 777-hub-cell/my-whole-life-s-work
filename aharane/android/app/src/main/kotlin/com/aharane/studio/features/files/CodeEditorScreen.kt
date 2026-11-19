@@ -22,6 +22,8 @@ import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,13 +40,32 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val EditorBackground = Color(0xFF1E1E1E)
-private val EditorPanel = Color(0xFF252526)
-private val EditorTab = Color(0xFF2D2D2D)
-private val EditorLine = Color(0xFF3C3C3C)
-private val EditorText = Color(0xFFD4D4D4)
-private val EditorMuted = Color(0xFF858585)
-private val EditorBlue = Color(0xFF007ACC)
+private data class EditorPalette(
+    val background: Color,
+    val panel: Color,
+    val tab: Color,
+    val line: Color,
+    val text: Color,
+    val muted: Color,
+    val blue: Color
+)
+
+private val DarkEditorPalette = EditorPalette(
+    Color(0xFF1E1E1E), Color(0xFF252526), Color(0xFF2D2D2D),
+    Color(0xFF3C3C3C), Color(0xFFD4D4D4), Color(0xFF858585), Color(0xFF007ACC)
+)
+private val LightEditorPalette = EditorPalette(
+    Color(0xFFF7F8F8), Color(0xFFECEFEE), Color(0xFFE2E7E5),
+    Color(0xFFD1D9D6), Color(0xFF202927), Color(0xFF5F6A66), Color(0xFF007ACC)
+)
+private val LocalEditorPalette = staticCompositionLocalOf { DarkEditorPalette }
+private val EditorBackground: Color @Composable get() = LocalEditorPalette.current.background
+private val EditorPanel: Color @Composable get() = LocalEditorPalette.current.panel
+private val EditorTab: Color @Composable get() = LocalEditorPalette.current.tab
+private val EditorLine: Color @Composable get() = LocalEditorPalette.current.line
+private val EditorText: Color @Composable get() = LocalEditorPalette.current.text
+private val EditorMuted: Color @Composable get() = LocalEditorPalette.current.muted
+private val EditorBlue: Color @Composable get() = LocalEditorPalette.current.blue
 
 data class StudioEditorDocument(
     val path: String,
@@ -62,6 +83,7 @@ fun CodeEditorScreen(
     editable: Boolean = false,
     lineNumbers: Boolean = true,
     fontSizeSp: Int = 14,
+    editorTheme: String = "Dark+",
     onOpenFile: (String) -> Unit = {},
     onSelectDocument: (String) -> Unit = {},
     onContentChange: (String, String) -> Unit = { _, _ -> },
@@ -92,6 +114,9 @@ fun CodeEditorScreen(
         }
     }
 
+    CompositionLocalProvider(
+        LocalEditorPalette provides if (editorTheme.equals("Light+", ignoreCase = true)) LightEditorPalette else DarkEditorPalette
+    ) {
     Column(modifier.fillMaxSize().background(EditorBackground).navigationBarsPadding()) {
         // Workbench toolbar: compact, dark, and visually separate from the Studio shell.
         Row(
@@ -359,6 +384,7 @@ fun CodeEditorScreen(
             Spacer(Modifier.width(12.dp))
             Text(activeDocument?.languageLabel ?: "Plain text", color = Color.White, fontSize = 10.5.sp)
         }
+    }
     }
 }
 

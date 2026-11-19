@@ -75,7 +75,7 @@ fun ChatsScreen(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { StudioPageTitle("Chats") }
                 Box(
-                    Modifier.size(46.dp).clip(CircleShape)
+                    Modifier.size(40.dp).clip(CircleShape)
                         .background(StudioPalette.Surface)
                         .border(1.dp, StudioPalette.Line, CircleShape)
                         .clickable {

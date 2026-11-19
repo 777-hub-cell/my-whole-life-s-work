@@ -47,3 +47,98 @@ jobs:
           path: aharane/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+  preview-screenshots:
+    name: Run native app and capture real emulator screenshots
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Download debug APK
+        uses: actions/download-artifact@v4
+        with:
+          name: aharane-native-android-debug
+          path: artifacts
+
+      - name: Run app in Android emulator and capture screens
+        uses: reactivecircus/android-emulator-runner@v2.38.0
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            mkdir -p screenshots
+            adb install artifacts/app-debug.apk
+            adb shell am start -n com.aharane.studio/.MainActivity
+            sleep 8
+            adb exec-out screencap -p > screenshots/01-home.png
+
+            python3 - <<'PY'
+            import subprocess
+            import time
+            import xml.etree.ElementTree as ET
+            from pathlib import Path
+
+            targets = [
+                ("Chats", "02-chats.png"),
+                ("Files", "03-files.png"),
+                ("ENV", "04-env.png"),
+                ("More", "05-more.png"),
+            ]
+
+            def run(*args, capture=False):
+                return subprocess.run(
+                    list(args), check=True, text=True,
+                    stdout=subprocess.PIPE if capture else None
+                )
+
+            for label, filename in targets:
+                run("adb", "shell", "uiautomator", "dump", "/sdcard/aharane-ui.xml")
+                run("adb", "pull", "/sdcard/aharane-ui.xml", "/tmp/aharane-ui.xml")
+                root = ET.parse("/tmp/aharane-ui.xml").getroot()
+                matches = []
+                for node in root.iter("node"):
+                    if node.attrib.get("text") == label or node.attrib.get("content-desc") == label:
+                        bounds = node.attrib.get("bounds", "")
+                        try:
+                            left_top, right_bottom = bounds.strip("[]").split("][")
+                            x1, y1 = map(int, left_top.split(","))
+                            x2, y2 = map(int, right_bottom.split(","))
+                            matches.append(((y1 + y2) // 2, (x1 + x2) // 2))
+                        except Exception:
+                            pass
+                if not matches:
+                    raise RuntimeError(f"Could not locate the {label} navigation item in the live UI")
+                # A page title or quick-access row can repeat a label; the bottom nav is the lowest match.
+                _, x = max(matches)
+                y, _ = max(matches)
+                run("adb", "shell", "input", "tap", str(x), str(y))
+                time.sleep(2)
+                run("adb", "exec-out", "screencap", "-p")
+                image = subprocess.run(
+                    ["adb", "exec-out", "screencap", "-p"],
+                    check=True, stdout=subprocess.PIPE
+                ).stdout
+                Path("screenshots", filename).write_bytes(image)
+            PY
+
+      - name: Upload real app screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: aharane-native-android-screenshots
+          path: screenshots/*.png
+          if-no-files-found: error
+          retention-days: 14

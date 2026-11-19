@@ -34,3 +34,18 @@ test('activity history is physically capped instead of growing forever', async (
     assert.equal(diskRows.length, 2)
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
+
+
+test('activity clear is serialized with later appends', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-activity-clear-race-'))
+  try {
+    const store = createActivityStore({ dataDir: dir, maxEntries: 10 })
+    await store.append({ message: 'before clear' })
+    const clearing = store.clear()
+    const appending = store.append({ message: 'after clear' })
+    await Promise.all([clearing, appending])
+    const rows = await store.list({ limit: 20 })
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].message, 'after clear')
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})

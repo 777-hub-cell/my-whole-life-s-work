@@ -87,16 +87,18 @@ export function createActivityStore({ dataDir, maxEntries = 20000 } = {}) {
   }
 
   async function clear() {
-    await queue.catch(() => {})
     await init()
-    const tmp = file + '.' + randomUUID() + '.tmp'
-    await writeFile(tmp, '', { encoding: 'utf8', mode: 0o600, flag: 'wx' })
-    await rename(tmp, file).catch(async error => {
-      await rm(tmp, { force: true })
-      throw error
+    const next = queue.catch(() => {}).then(async () => {
+      const tmp = file + '.' + randomUUID() + '.tmp'
+      await writeFile(tmp, '', { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+      await rename(tmp, file).catch(async error => {
+        await rm(tmp, { force: true })
+        throw error
+      })
+      entryCount = 0
     })
-    entryCount = 0
-    queue = Promise.resolve()
+    queue = next
+    return next
   }
 
   return { init, append, list, clear }

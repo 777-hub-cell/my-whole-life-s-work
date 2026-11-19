@@ -257,3 +257,22 @@ test('deployment locks are released only after the matching health check or Git 
  assert.ok(verify.includes("rm('/var/lib/aharane/deploy-lock'"))
  assert.ok(installer.includes('if [[ "$LOCK_ACQUIRED" -eq 1 ]]; then rm -rf "$LOCK_DIR"; fi'))
 })
+
+
+test('bulk delete stages every item and commits one journal operation before cleanup', async () => {
+ const source=await read('../src/index.js')
+ const start=source.indexOf("app.post('/api/files/delete'")
+ const end=source.indexOf("app.post('/api/files/apply'",start)
+ const route=source.slice(start,end)
+ assert.ok(route.includes('const stagedTombstones = []'))
+ assert.ok(route.includes('await recordManualEdits(stagedTombstones.map'))
+ assert.ok(route.includes('for (const item of [...stagedTombstones].reverse())'))
+ assert.ok(route.includes('cleanupPending'))
+ assert.ok(!route.includes('await recordManualEdit(target.path'))
+})
+
+test('manual dependency manifest changes are directed to the ZIP update installer', async () => {
+ const source=await read('../src/index.js')
+ assert.ok(source.includes("normalized === 'package.json' || normalized === 'package-lock.json'"))
+ assert.ok(source.includes('must be deployed as a validated ZIP update'))
+})

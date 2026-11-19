@@ -52,6 +52,7 @@ const APP_BASE = resolve('/opt/aharane')
 const CURRENT_RELEASE = join(APP_BASE, 'current')
 const RELEASES_DIR = join(APP_BASE, 'releases')
 const UPDATE_DIR = join(DATA_DIR, 'updates')
+const DEPLOY_LOCK_DIR = join(DATA_DIR, 'deploy-lock')
 const UPLOADS_DIR = join(UPDATE_DIR, 'uploads')
 const UPDATE_STATE_FILE = join(UPDATE_DIR, 'state.json')
 const MANUAL_EDIT_STATE_FILE = join(UPDATE_DIR, 'manual-edit-state.json')
@@ -319,6 +320,38 @@ async function writeJsonAtomic(filePath, value) {
   const temporary = filePath + '.tmp-' + randomUUID()
   await writeFile(temporary, JSON.stringify(value, null, 2), { mode: 0o600, flag: 'wx' })
   await rename(temporary, filePath)
+}
+
+async function acquireDeployLock(source) {
+  try {
+    await mkdir(DEPLOY_LOCK_DIR, { mode: 0o700 })
+  } catch (error) {
+    if (error?.code === 'EEXIST') return false
+    throw error
+  }
+  try {
+    await writeJsonAtomic(join(DEPLOY_LOCK_DIR, 'owner.json'), {
+      source: String(source || 'source-mutation'),
+      pid: process.pid,
+      startedAt: new Date().toISOString(),
+    })
+    return true
+  } catch (error) {
+    await rm(DEPLOY_LOCK_DIR, { recursive: true, force: true }).catch(() => {})
+    throw error
+  }
+}
+
+async function setDeployLockSource(source) {
+  await writeJsonAtomic(join(DEPLOY_LOCK_DIR, 'owner.json'), {
+    source: String(source || 'deployment'),
+    pid: process.pid,
+    startedAt: new Date().toISOString(),
+  })
+}
+
+async function releaseDeployLock() {
+  await rm(DEPLOY_LOCK_DIR, { recursive: true, force: true })
 }
 
 function validUpdateId(value) {
@@ -758,6 +791,9 @@ async function validateManualEditWorkspaceFiles(workspace, modifiedPaths) {
   for (const item of modifiedPaths || []) {
     if (!['modified-file', 'created-file', 'renamed-to', 'moved-to'].includes(item?.action)) continue
     const normalized = normalizeUpdatePath(String(item?.path || '')).path
+    if (normalized === 'package.json' || normalized === 'package-lock.json') {
+      sourcePathError(409, 'DEPENDENCY_UPDATE_REQUIRED', 'Package and dependency manifest changes must be deployed as a validated ZIP update so production dependencies can be installed safely.')
+    }
     if (checked.has(normalized)) continue
     checked.add(normalized)
     const parts = normalized.split('/')
@@ -911,6 +947,7 @@ async function prepareAndActivateUpdate(updateId) {
     }).catch(() => {})
     logger.error({ event: 'update.preparation-failed', message: String(error?.message || 'unknown').slice(0, 200) })
     updateInProgress = false
+    await releaseDeployLock().catch(() => {})
   }
 }
 
@@ -1799,21 +1836,35 @@ function serializeSourceMutations(req, res, next) {
   const previous = sourceMutationTail
   let release
   sourceMutationTail = new Promise(resolve => { release = resolve })
-  previous.then(() => {
+  previous.then(async () => {
     let finished = false
-    const unlock = () => {
+    let lockAcquired = false
+    const unlock = async () => {
       if (finished) return
       finished = true
+      if (lockAcquired && !req.keepDeployLock) await releaseDeployLock().catch(() => {})
       release()
     }
-    res.once('finish', unlock)
-    res.once('close', unlock)
+    res.once('finish', () => { void unlock() })
+    res.once('close', () => { void unlock() })
     if (updateInProgress) {
       res.status(409).json({ ok: false, error: 'Aharane is applying or deploying source changes. Try again when it is healthy.' })
-      unlock()
+      await unlock()
       return
     }
-    next()
+    try {
+      lockAcquired = await acquireDeployLock('source-mutation')
+      if (!lockAcquired) {
+        res.status(409).json({ ok: false, error: 'Another Aharane deployment is in progress. Wait for its health check to finish.' })
+        await unlock()
+        return
+      }
+      req.deployLockAcquired = true
+      next()
+    } catch (error) {
+      await unlock()
+      next(error)
+    }
   }).catch(error => {
     release()
     next(error)
@@ -2271,19 +2322,38 @@ app.post('/api/files/delete', requireAdmin, async (req, res) => {
       }
       targets.push(target)
     }
-    for (const target of targets) {
-      const tombstone = join(dirname(target.full), '.aharane-delete-' + randomUUID())
-      await rename(target.full, tombstone)
-      try {
-        await recordManualEdit(target.path, target.info.isDirectory() ? 'deleted-folder' : 'deleted-file')
-      } catch (error) {
-        await rename(tombstone, target.full).catch(() => {})
-        throw error
+    const stagedTombstones = []
+    try {
+      // First hide every selected item under a unique tombstone. No journal
+      // entries are committed until the entire selection has been staged.
+      for (const target of targets) {
+        const tombstone = join(dirname(target.full), '.aharane-delete-' + randomUUID())
+        await rename(target.full, tombstone)
+        stagedTombstones.push({ target, tombstone })
       }
-      await rm(tombstone, { recursive: target.info.isDirectory(), force: true })
-      deleted.push(target)
+      await recordManualEdits(stagedTombstones.map(({ target }) => ({
+        path: target.path,
+        action: target.info.isDirectory() ? 'deleted-folder' : 'deleted-file',
+      })))
+    } catch (error) {
+      for (const item of [...stagedTombstones].reverse()) {
+        await rename(item.tombstone, item.target.full).catch(rollbackError => {
+          logger.error({ event: 'files.delete-rollback-failed', path: item.target.path, error: String(rollbackError?.message || rollbackError) })
+        })
+      }
+      throw error
     }
-    res.json({ ok: true, deleted: deleted.map(target => target.path), pending: true })
+    const cleanupPending = []
+    for (const item of stagedTombstones) {
+      try {
+        await rm(item.tombstone, { recursive: item.target.info.isDirectory(), force: true })
+      } catch (error) {
+        cleanupPending.push(item.target.path)
+        logger.warn({ event: 'files.delete-tombstone-cleanup-pending', path: item.target.path, error: String(error?.message || error) })
+      }
+      deleted.push(item.target)
+    }
+    res.json({ ok: true, deleted: deleted.map(target => target.path), cleanupPending, pending: true })
   } catch (error) {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not delete the selected source items.') })
   }
@@ -2296,8 +2366,9 @@ app.post('/api/files/apply', requireAdmin, async (req, res) => {
   if (!manual || manual.status !== 'pending' || !Array.isArray(manual.modifiedPaths) || !manual.modifiedPaths.length) {
     return res.status(409).json({ ok: false, error: 'There are no saved manual file edits to apply.' })
   }
-  // The Files mutation middleware holds the queue lock for this request.
-  // Block any other operation before validation starts, not after it finishes.
+  // The Files mutation middleware owns the cross-process deployment lock.
+  if (!req.deployLockAcquired) return res.status(409).json({ ok: false, error: 'Could not acquire the Aharane deployment lock. Retry when no other operation is running.' })
+  await setDeployLockSource('manual-files')
   updateInProgress = true
   try {
     const current = await currentReleaseDirectory()
@@ -2345,6 +2416,7 @@ app.post('/api/files/apply', requireAdmin, async (req, res) => {
       }).catch(() => {})
       throw error
     }
+    req.keepDeployLock = true
     res.status(202).json({ ok: true, status: 'awaiting-healthcheck', updateId, message: 'Saved file changes passed validation. Aharane is switching to the prepared release and restarting.' })
     setTimeout(() => process.exit(1), 350)
   } catch (error) {
@@ -2477,13 +2549,21 @@ app.post('/api/update/deploy', requireAdmin, async (req, res) => {
   if (!metadata || metadata.status !== 'validated' || !metadata.inspection) {
     return res.status(409).json({ ok: false, error: 'Validate this Aharane ZIP before deploying it.' })
   }
+  if (!req.deployLockAcquired) return res.status(409).json({ ok: false, error: 'Could not acquire the Aharane deployment lock. Retry when no other operation is running.' })
+  await setDeployLockSource('zip-update')
   updateInProgress = true
-  await writeJsonAtomic(UPDATE_STATE_FILE, {
-    status: 'preparing',
-    updateId,
-    version: metadata.inspection.manifest.bot_version,
-    startedAt: new Date().toISOString(),
-  })
+  try {
+    await writeJsonAtomic(UPDATE_STATE_FILE, {
+      status: 'preparing',
+      updateId,
+      version: metadata.inspection.manifest.bot_version,
+      startedAt: new Date().toISOString(),
+    })
+  } catch (error) {
+    updateInProgress = false
+    return res.status(500).json({ ok: false, error: 'Could not record the ZIP deployment state.' })
+  }
+  req.keepDeployLock = true
   res.status(202).json({ ok: true, status: 'preparing', updateId, message: 'Aharane is preparing the new release. Keep this page open to follow its status.' })
   setImmediate(() => { void prepareAndActivateUpdate(updateId) })
 })

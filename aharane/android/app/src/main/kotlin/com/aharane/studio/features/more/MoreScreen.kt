@@ -247,10 +247,10 @@ fun MoreScreen(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
-                    StudioActionButton("Live", compact = true, enabled = false)
-                    StudioActionButton("Copy", compact = true, enabled = false)
-                    StudioActionButton("Export", compact = true, enabled = false)
-                    StudioActionButton("Clear", compact = true, destructive = true, enabled = false)
+                    StudioActionButton("Live", compact = true, enabled = false, onClick = {})
+                    StudioActionButton("Copy", compact = true, enabled = false, onClick = {})
+                    StudioActionButton("Export", compact = true, enabled = false, onClick = {})
+                    StudioActionButton("Clear", compact = true, destructive = true, enabled = false, onClick = {})
                 }
                 Spacer(Modifier.height(12.dp))
             }

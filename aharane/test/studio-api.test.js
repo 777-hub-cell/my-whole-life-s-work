@@ -275,3 +275,11 @@ test('manual dependency manifest changes are directed to the ZIP update installe
  assert.ok(source.includes("normalized === 'package.json' || normalized === 'package-lock.json'"))
  assert.ok(source.includes('must be deployed as a validated ZIP update'))
 })
+
+
+test('permanent installer bearer token is revoked after the owner creates a Studio password', async () => {
+ const source=await read('../src/index.js')
+ assert.ok(source.includes('const adminBearer = !auth?.passwordHash && tokenMatches(bearer)'))
+ assert.ok(source.includes('const ok = (!auth?.passwordHash && tokenMatches(bearer)) || adminSessionMatches(bearer, auth)'))
+ assert.ok(source.includes('sessionKey: randomBytes(32)'))
+})

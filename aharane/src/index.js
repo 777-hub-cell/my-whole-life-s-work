@@ -267,7 +267,9 @@ async function requireAdmin(req, res, next) {
     const auth = await readJsonFile(ADMIN_AUTH_FILE)
     const cookieSession = adminSessionMatches(requestCookie(req, ADMIN_SESSION_COOKIE), auth)
     const bearerSession = adminSessionMatches(bearer, auth)
-    const adminBearer = tokenMatches(bearer)
+    // The install-time token is only a bootstrap credential. Once the owner
+    // creates a Studio password, revoke that permanent bearer alternative.
+    const adminBearer = !auth?.passwordHash && tokenMatches(bearer)
     if (!adminBearer && !bearerSession && !cookieSession) {
       res.status(401).json({ ok: false, error: 'Admin authentication required' })
       return
@@ -2758,7 +2760,9 @@ server.on('upgrade', async (req, transport, head) => {
     const bearer = match?.[1] || ''
     const cookie = requestCookie(req, ADMIN_SESSION_COOKIE)
     const auth = await readJsonFile(ADMIN_AUTH_FILE)
-    const ok = tokenMatches(bearer) || adminSessionMatches(bearer, auth) ||
+    // Match HTTP authentication: the permanent install token is invalid
+    // after password setup; signed sessions remain valid until password rotation.
+    const ok = (!auth?.passwordHash && tokenMatches(bearer)) || adminSessionMatches(bearer, auth) ||
       (sameOriginRequest(req) && adminSessionMatches(cookie, auth))
     if (!ok) {
       transport.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')

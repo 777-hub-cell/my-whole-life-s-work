@@ -26,7 +26,7 @@ import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_
 import { createChatStore } from './chat-store.js'
 import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, normalizeChatVisibility, normalizeChatAppearance, isChatVisible, envView } from './studio-settings.js'
 import { createActivityStore } from './activity-store.js'
-import { createVisualCommandStore, normalizeWorkflow, validateWorkflow, executeVisualWorkflow } from './visual-command-builder.js'
+import { createVisualCommandStore, normalizeWorkflow, validateWorkflow, executeVisualWorkflow, VISUAL_NODE_LIBRARY } from './visual-command-builder.js'
 
 const APP_NAME = 'Aharane'
 const PROCESS_STARTED_AT = Date.now()
@@ -1367,7 +1367,7 @@ app.get('/api/visual-commands', requireAdmin, (req, res) => {
     return res.status(400).json({ ok: false, error: 'Account must be private or public.' })
   }
   const workflows = visualCommandStore.list(account || undefined).map(visualWorkflowPayload)
-  res.json({ ok: true, workflows })
+  res.json({ ok: true, workflows, library: VISUAL_NODE_LIBRARY })
 })
 
 app.post('/api/visual-commands', requireAdmin, async (req, res) => {
@@ -1431,7 +1431,7 @@ app.post('/api/visual-commands/:id/test', requireAdmin, async (req, res) => {
         sender: jid,
         remoteJid: jid,
         commandName: configuredName,
-        rawArgs: messageText.trim().split(/\\s+/).slice(1).join(' '),
+        rawArgs: messageText.trim().split(/\s+/).slice(1).join(' '),
         args: messageText.trim().split(/\\s+/).slice(1),
         socket: {
           sendMessage: async () => { throw new Error('Live sends are disabled during tests.') },

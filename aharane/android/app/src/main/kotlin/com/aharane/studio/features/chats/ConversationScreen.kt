@@ -908,6 +908,15 @@ private fun MessageBubble(
                     onOpenLocation = onOpenLocation
                 )
             }
+            if (message.deletedByRemote && !message.isViewOnce) {
+                Text(
+                    "Deleted by the other person on WhatsApp · retained in Hub",
+                    color = foreground.copy(alpha = .78f),
+                    fontSize = 10.sp,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                )
+            }
             if (showTimestamp || message.isStarred || (outgoing && message.status != MessageStatus.UNKNOWN)) {
                 Row(
                     Modifier.fillMaxWidth().padding(top = 4.dp),

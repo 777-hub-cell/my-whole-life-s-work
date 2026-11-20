@@ -431,7 +431,7 @@ test('contact cards retain vCards, locations retain coordinates and polls retain
 
 
 
-test('incremental chat sync pages by timestamp and does not change the unread marker', async () => {
+test('incremental chat sync uses a composite timestamp/message cursor and preserves unread markers', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-sync-'))
   try {
     const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
@@ -440,7 +440,9 @@ test('incremental chat sync pages by timestamp and does not change the unread ma
     for (const [id, second, text] of [
       ['sync-1', 1760001000, 'first cached'],
       ['sync-2', 1760001001, 'second message'],
-      ['sync-3', 1760001002, 'third message'],
+      ['sync-3', 1760001001, 'third message'],
+      ['sync-4', 1760001001, 'fourth message'],
+      ['sync-5', 1760001002, 'fifth message'],
     ]) {
       await store.recordMessage({
         sessionId: 'private',
@@ -452,12 +454,14 @@ test('incremental chat sync pages by timestamp and does not change the unread ma
       })
     }
     const initial = await store.getMessages('private', jid, { limit: 2 })
-    assert.deepEqual(initial.map(message => message.id), ['sync-2', 'sync-3'])
-    const delta = await store.getMessages('private', jid, { after: 1760001001000, limit: 20 })
-    assert.deepEqual(delta.map(message => message.id), ['sync-2', 'sync-3'])
-    const older = await store.getMessages('private', jid, { before: 1760001002000, limit: 20 })
-    assert.deepEqual(older.map(message => message.id), ['sync-1', 'sync-2'])
-    assert.equal((await store.listChats('private'))[0].unreadCount, 3)
+    assert.deepEqual(initial.map(message => message.id), ['sync-4', 'sync-5'])
+    const delta = await store.getMessages('private', jid, { after: 1760001001000, afterId: 'sync-2', limit: 2 })
+    assert.deepEqual(delta.map(message => message.id), ['sync-3', 'sync-4'])
+    const nextDelta = await store.getMessages('private', jid, { after: 1760001001000, afterId: 'sync-4', limit: 2 })
+    assert.deepEqual(nextDelta.map(message => message.id), ['sync-5'])
+    const older = await store.getMessages('private', jid, { before: 1760001001000, beforeId: 'sync-4', limit: 2 })
+    assert.deepEqual(older.map(message => message.id), ['sync-2', 'sync-3'])
+    assert.equal((await store.listChats('private'))[0].unreadCount, 5)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

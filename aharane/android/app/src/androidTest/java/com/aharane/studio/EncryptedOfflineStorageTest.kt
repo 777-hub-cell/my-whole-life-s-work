@@ -9,6 +9,7 @@ import com.aharane.studio.core.storage.ChatMessageRow
 import com.aharane.studio.core.storage.EncryptedChatDatabase
 import com.aharane.studio.core.storage.EncryptedChatStorageException
 import com.aharane.studio.core.storage.EncryptedMediaCache
+import com.aharane.studio.core.storage.LocalChatRepository
 import com.aharane.studio.features.chats.ChatAppearanceStore
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -188,11 +189,15 @@ class EncryptedOfflineStorageTest {
         db.database.close()
 
         val local = LocalChatRepository(context)
-        assertEquals("offline-search-1", local.search(ChatAccount.PRIVATE, "Alice", jid).single().messageId)
-        assertEquals("offline-search-2", local.search(ChatAccount.PRIVATE, "report.pdf", jid).single().messageId)
-        val byDate = local.search(ChatAccount.PRIVATE, "", jid, secondTimestamp, secondTimestamp + 86_399_999L)
-        assertEquals("offline-search-2", byDate.single().messageId)
-        assertTrue(local.search(ChatAccount.PUBLIC, "Alice", jid).isEmpty())
+        try {
+            assertEquals("offline-search-1", local.search(ChatAccount.PRIVATE, "Alice", jid).single().messageId)
+            assertEquals("offline-search-2", local.search(ChatAccount.PRIVATE, "report.pdf", jid).single().messageId)
+            val byDate = local.search(ChatAccount.PRIVATE, "", jid, secondTimestamp, secondTimestamp + 86_399_999L)
+            assertEquals("offline-search-2", byDate.single().messageId)
+            assertTrue(local.search(ChatAccount.PUBLIC, "Alice", jid).isEmpty())
+        } finally {
+            local.close()
+        }
         val reopened = EncryptedChatDatabase.open(context)
         reopened.database.chatDao().clearMessages("private", jid)
         reopened.database.chatDao().clearConversation("private", jid)

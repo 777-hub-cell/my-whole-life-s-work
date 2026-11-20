@@ -86,7 +86,7 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
     { type: 'profile.updateName', name: 'Change profile name', description: 'Set this WhatsApp account profile name (Owner only).', ports: ports([execIn], [execOut]) },
     { type: 'profile.updateStatus', name: 'Change profile status', description: 'Set this WhatsApp account status text (Owner only).', ports: ports([execIn], [execOut]) },
   ] },
-  { category: 'Statuses and newsletters', nodes: [
+  { category: 'Newsletters', nodes: [
     { type: 'newsletter.create', name: 'Create newsletter', description: 'Create a WhatsApp newsletter (Owner only).', ports: ports([execIn], [execOut, { id: 'newsletterJid', label: 'Newsletter JID', type: 'string' }]) },
     { type: 'newsletter.follow', name: 'Follow newsletter', description: 'Follow a specified newsletter (Owner only).', ports: ports([execIn], [execOut]) },
     { type: 'newsletter.unfollow', name: 'Unfollow newsletter', description: 'Unfollow a specified newsletter (Owner only).', ports: ports([execIn], [execOut]) },
@@ -470,9 +470,11 @@ function triggerAllowsGroups(trigger) {
 
 function safeChat(context, trigger) {
   const jid = textValue(context.remoteJid, 100)
-  if (/^\d{7,15}@s\.whatsapp\.net$/.test(jid)) return true
+  const scope = textValue(trigger?.config?.chatScope, 16) || 'direct'
+  const direct = /^\d{7,15}@s\.whatsapp\.net$/.test(jid)
+  if (direct) return scope === 'direct' || scope === 'both'
   return context.sessionId === 'public' && context.allowedPublicSender === true &&
-    isGroupJid(jid) && triggerAllowsGroups(trigger)
+    isGroupJid(jid) && (scope === 'groups' || scope === 'both')
 }
 
 export async function executeVisualWorkflow(input, options = {}) {

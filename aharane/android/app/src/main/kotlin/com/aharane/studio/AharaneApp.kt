@@ -120,7 +120,7 @@ fun AharaneApp(
     val context = LocalContext.current
     val connectionScope = rememberCoroutineScope()
     val repository = remember(connectionManager) { AharaneRepository(connectionManager) }
-    val chatAppearanceStore = remember(context) { ChatAppearanceStore(context.applicationContext) }
+    val chatAppearanceStore = remember(context, previewMode) { ChatAppearanceStore(context.applicationContext, previewMode) }
     val encryptedMediaCache = remember(context) { EncryptedMediaCache(context.applicationContext) }
     var chatAppearanceRevision by remember { mutableIntStateOf(0) }
     var localChatRepository by remember { mutableStateOf<LocalChatRepository?>(null) }

@@ -60,7 +60,6 @@ fun ChatsScreen(
     savedShowAvatars: Boolean = true,
     savedShowPreviews: Boolean = true,
     savedShowTimestamps: Boolean = true,
-    localStorageError: String = "",
     messageSearchResults: List<ChatMessage> = emptyList(),
     onInboxSearchChanged: (String, Long, Long) -> Unit = { _, _, _ -> },
     onInboxMessageSelected: (ChatMessage) -> Unit = {},
@@ -152,27 +151,12 @@ fun ChatsScreen(
                 }
             }
             Text(
-                when {
-                    accountConnected -> "${account.label} account · ${accountConversations.size} conversations"
-                    accountConversations.isNotEmpty() -> "${account.label} account · offline · ${accountConversations.size} last-loaded conversations"
-                    else -> "${account.label} account · disconnected"
-                },
+                `${account.label} account · ${accountConversations.size} conversations`,
                 color = StudioPalette.Muted,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
                 modifier = Modifier.padding(top = 6.dp, bottom = 12.dp)
             )
-        }
-        if (localStorageError.isNotBlank()) {
-            item {
-                Text(
-                    "Encrypted offline storage unavailable: " + localStorageError,
-                    color = StudioPalette.Bad,
-                    fontSize = 11.5.sp,
-                    lineHeight = 16.sp,
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
-                )
-            }
         }
         item {
             StudioSearchField(
@@ -262,7 +246,6 @@ fun ChatsScreen(
                 StudioCard(padding = PaddingValues(horizontal = 16.dp, vertical = 28.dp)) {
                     Text(
                         when {
-                            !accountConnected && accountConversations.isEmpty() -> "Connect the selected WhatsApp account to load conversations."
                             filter == ChatFilter.UNREAD -> "No unread chats."
                             filter == ChatFilter.GROUPS -> "No groups match."
                             filter == ChatFilter.ARCHIVED -> "No archived chats."
@@ -421,18 +404,6 @@ private fun ChatListRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                }
-                if (chat.lastSyncedAtMillis > 0L) {
-                    Text(
-                        "Saved offline · synced " + android.text.format.DateUtils.getRelativeTimeSpanString(
-                            chat.lastSyncedAtMillis, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS
-                        ),
-                        color = StudioPalette.Muted,
-                        fontSize = 9.5.sp,
-                        maxLines = 1
-                    )
-                } else {
-                    Text("Not saved offline on this phone", color = StudioPalette.Muted, fontSize = 9.5.sp, maxLines = 1)
                 }
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {

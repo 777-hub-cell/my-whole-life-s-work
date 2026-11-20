@@ -588,6 +588,34 @@ test('messages deleted by the other participant stay in the Hub store with a del
   }
 })
 
+test('a revoke initiated by the other participant retains the original outgoing Hub message', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-remote-revoke-outgoing-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348123456789@s.whatsapp.net'
+    await store.recordMessage({
+      sessionId: 'private',
+      message: {
+        key: { id: 'outgoing-revoked-remotely', remoteJid: jid, fromMe: true },
+        messageTimestamp: 1763901000,
+        message: { conversation: 'The other participant revoked my message.' },
+      },
+    })
+    assert.equal(await store.markMessageDeletedByOther('private', jid, 'outgoing-revoked-remotely'), true)
+    const [retained] = await store.getMessages('private', jid, { limit: 10 })
+    assert.equal(retained.text, 'The other participant revoked my message.')
+    assert.equal(retained.fromMe, true)
+    assert.equal(retained.deletedByRemote, true)
+    assert.deepEqual(await store.listRemoteDeletedMessages('private', jid), [
+      { id: 'outgoing-revoked-remotely', deletedAt: retained.deletedAt },
+    ])
+    assert.deepEqual(await store.listDeletedMessageIds('private', jid), [])
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('explicit incoming delete event can safely mark a legacy row without direction metadata', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'aharane-legacy-remote-delete-'))
   try {

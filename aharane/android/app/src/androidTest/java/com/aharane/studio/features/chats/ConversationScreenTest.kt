@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -36,7 +37,11 @@ class ConversationScreenTest {
         compose.onNodeWithTag("conversation-composer").performTextInput("Hello from the chat test")
         compose.onNodeWithContentDescription("Send message").performClick()
         compose.runOnIdle { assertEquals(listOf("Hello from the chat test"), sent) }
-        compose.onNodeWithTag("conversation-composer").assertTextEquals("Message")
+        compose.runOnIdle {
+            val editableText = compose.onNodeWithTag("conversation-composer")
+                .fetchSemanticsNode().config[SemanticsProperties.EditableText]
+            assertEquals("", editableText.text)
+        }
     }
 
     @Test

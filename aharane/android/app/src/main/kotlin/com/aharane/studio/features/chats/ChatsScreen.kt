@@ -129,7 +129,7 @@ fun ChatsScreen(
             StudioSearchField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = "Search chats and messages",
+                placeholder = "Search chats",
                 showIcon = false
             )
             Spacer(Modifier.height(12.dp))
@@ -169,6 +169,9 @@ fun ChatsScreen(
                         ChatListRow(
                             chat = chat,
                             connected = accountConnected,
+                            showAvatar = showAvatars,
+                            showPreview = showPreviews,
+                            showTimestamp = showTimestamps,
                             onClick = { onConversationSelected(chat) },
                             onAction = { action -> onChatAction(chat, action) }
                         )
@@ -309,6 +312,9 @@ private fun PreferenceToggle(title: String, checked: Boolean, onChange: (Boolean
 private fun ChatListRow(
     chat: ChatSummary,
     connected: Boolean,
+    showAvatar: Boolean,
+    showPreview: Boolean,
+    showTimestamp: Boolean,
     onClick: () -> Unit,
     onAction: (String) -> Unit
 ) {
@@ -376,16 +382,18 @@ private fun ChatListRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(11.dp)
         ) {
-            Box(
-                Modifier.size(40.dp).clip(CircleShape).background(StudioPalette.Soft),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    if (chat.isGroup) "◎" else avatarInitials.ifBlank { "?" },
-                    color = StudioPalette.Accent,
-                    fontSize = if (chat.isGroup) 21.sp else 13.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            if (showAvatar) {
+                Box(
+                    Modifier.size(40.dp).clip(CircleShape).background(StudioPalette.Soft),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        if (chat.isGroup) "◎" else avatarInitials.ifBlank { "?" },
+                        color = StudioPalette.Accent,
+                        fontSize = if (chat.isGroup) 21.sp else 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
@@ -397,25 +405,29 @@ private fun ChatListRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    chat.lastMessagePreview,
-                    color = StudioPalette.Muted,
-                    fontSize = 12.5.sp,
-                    lineHeight = 17.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                if (showPreview) {
+                    Text(
+                        chat.lastMessagePreview,
+                        color = StudioPalette.Muted,
+                        fontSize = 12.5.sp,
+                        lineHeight = 17.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (chat.isPinned) Text("📌", fontSize = 10.sp)
                     if (chat.isMuted) Text("🔕", fontSize = 10.sp)
-                    Text(
-                        relativeTime(chat.lastMessageAtMillis),
-                        color = StudioPalette.Muted,
-                        fontSize = 10.5.sp,
-                        maxLines = 1
-                    )
+                    if (showTimestamp) {
+                        Text(
+                            relativeTime(chat.lastMessageAtMillis),
+                            color = StudioPalette.Muted,
+                            fontSize = 10.5.sp,
+                            maxLines = 1
+                        )
+                    }
                 }
                 if (chat.unreadCount > 0) {
                     Text(

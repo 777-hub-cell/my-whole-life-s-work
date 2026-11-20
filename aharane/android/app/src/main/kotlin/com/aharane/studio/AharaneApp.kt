@@ -1936,30 +1936,10 @@ fun AharaneApp(
                                             emptyList()
                                         }
                                     }
-                                    if (connected && query.trim().length >= 2) {
-                                        runCatching {
-                                            val onlineChats = chatsByAccount[account].orEmpty().take(100)
-                                            val remote = onlineChats.flatMap { chat ->
-                                                repository.searchMessages(chat, query)
-                                            }.filter { message ->
-                                                (fromMillis == 0L || message.timestampMillis >= fromMillis) &&
-                                                    (toMillis == 0L || message.timestampMillis <= toMillis)
-                                            }
-                                            remote.groupBy { it.key }.forEach { (key, rows) ->
-                                                val chat = onlineChats.firstOrNull { it.key == key }
-                                                if (chat != null) localChatRepository?.saveMessages(chat, rows)
-                                            }
-                                            if (requestId == inboxSearchRequestId && selectedAccount == account) {
-                                                inboxMessageSearchResults = (matches + remote).distinctBy { it.key.jid + "|" + it.messageId }
-                                                    .sortedByDescending { it.timestampMillis }.take(100)
-                                            }
-                                        }.onFailure {
-                                            if (requestId == inboxSearchRequestId && selectedAccount == account) {
-                                                serverError = it.message ?: "Server search is unavailable; showing offline matches."
-                                                inboxMessageSearchResults = matches
-                                            }
-                                        }
-                                    } else if (requestId == inboxSearchRequestId && selectedAccount == account) {
+                                    // Inbox-wide search is deliberately local-first and
+                                    // searches only conversations already saved in Room.
+                                    // Avoid fanning one query out into dozens of network requests.
+                                    if (requestId == inboxSearchRequestId && selectedAccount == account) {
                                         inboxMessageSearchResults = matches
                                     }
                                 }

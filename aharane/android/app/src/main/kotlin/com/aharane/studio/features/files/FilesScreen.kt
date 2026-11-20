@@ -50,6 +50,10 @@ fun FilesScreen(
     initialPath: String = "",
     onDirectoryChanged: (String) -> Unit = {},
     previewOnly: Boolean = false,
+    pendingEdits: Boolean = false,
+    changedCount: Int = 0,
+    onApplyEdits: () -> Unit = {},
+    onDiscardEdits: () -> Unit = {},
     onCreateFile: () -> Unit = {},
     onCreateFolder: () -> Unit = {},
     onUpload: () -> Unit = {},
@@ -63,6 +67,7 @@ fun FilesScreen(
     var menuPath by remember { mutableStateOf<String?>(null) }
     val selectedPaths = remember { mutableStateListOf<String>() }
     var packagesOpen by rememberSaveable { mutableStateOf(false) }
+    var draftConfirmation by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
 
     fun serverAction(label: String, action: () -> Unit) {
@@ -95,6 +100,31 @@ fun FilesScreen(
         item {
             StudioPageTitle("Files", "Browse and edit Aharane source files.")
             Spacer(Modifier.height(14.dp))
+        }
+        if (pendingEdits && connected) {
+            item {
+                StudioCard(padding = PaddingValues(13.dp)) {
+                    Text(
+                        "$changedCount saved source change(s) are waiting to be applied.",
+                        color = StudioPalette.Ink,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        "Apply validates the staged project and restarts Aharane. Discard removes the draft and keeps the running release unchanged.",
+                        color = StudioPalette.Muted,
+                        fontSize = 11.5.sp,
+                        lineHeight = 16.sp,
+                        modifier = Modifier.padding(top = 5.dp, bottom = 10.dp)
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        StudioActionButton("Apply changes", compact = true, primary = true, onClick = { draftConfirmation = "apply" })
+                        StudioActionButton("Discard", compact = true, destructive = true, onClick = { draftConfirmation = "discard" })
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
         }
         item {
             StudioSearchField(
@@ -408,4 +438,47 @@ private fun FileEntryRow(
             )
         }
     }
+
+    if (draftConfirmation.isNotBlank()) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { draftConfirmation = "" }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(StudioPalette.Surface).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    if (draftConfirmation == "apply") "Apply saved source changes?"
+                    else "Discard saved source changes?",
+                    color = StudioPalette.Ink,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    if (draftConfirmation == "apply")
+                        "Aharane will validate the project, switch to the staged release and restart. If the health check fails, the previous release is restored."
+                    else
+                        "The staged edits will be deleted. The currently running Aharane release will not be changed.",
+                    color = StudioPalette.Muted,
+                    fontSize = 12.5.sp,
+                    lineHeight = 18.sp
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    StudioActionButton("Cancel", compact = true, onClick = { draftConfirmation = "" })
+                    Spacer(Modifier.width(8.dp))
+                    StudioActionButton(
+                        if (draftConfirmation == "apply") "Apply" else "Discard",
+                        compact = true,
+                        primary = true,
+                        destructive = draftConfirmation == "discard",
+                        onClick = {
+                            val action = draftConfirmation
+                            draftConfirmation = ""
+                            if (action == "apply") onApplyEdits() else onDiscardEdits()
+                        }
+                    )
+                }
+            }
+        }
+    }
+
 }

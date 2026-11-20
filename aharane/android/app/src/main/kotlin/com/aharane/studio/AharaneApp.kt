@@ -52,6 +52,7 @@ import com.aharane.studio.core.model.MessageDirection
 import com.aharane.studio.core.model.MessageKind
 import com.aharane.studio.core.model.MessageStatus
 import com.aharane.studio.core.network.AharaneConnectionManager
+import com.aharane.studio.core.network.AharaneApiException
 import com.aharane.studio.core.storage.EncryptedMediaCache
 import com.aharane.studio.core.storage.ChatSyncScheduler
 import com.aharane.studio.core.storage.LocalChatRepository
@@ -131,13 +132,16 @@ fun AharaneApp(
     var syncingAllChats by remember { mutableStateOf(false) }
 
     LaunchedEffect(context) {
-        runCatching {
-            withContext(Dispatchers.IO) { LocalChatRepository(context.applicationContext) }
-        }.onSuccess {
-            localChatRepository = it
+        try {
+            val local = withContext(Dispatchers.IO) { LocalChatRepository(context.applicationContext) }
+            // A process that died while sending leaves a durable SENDING row.
+            // Move it to FAILED before any automatic flush so retries reuse its
+            // original server idempotency key instead of creating a new message.
+            withContext(Dispatchers.IO) { local.resetInterruptedOutgoingMessages() }
+            localChatRepository = local
             localChatStorageError = ""
-        }.onFailure {
-            localChatStorageError = it.message ?: "Encrypted offline chat storage is unavailable."
+        } catch (error: Exception) {
+            localChatStorageError = error.message ?: "Encrypted offline chat storage is unavailable."
         }
     }
 
@@ -430,6 +434,48 @@ fun AharaneApp(
         } while (true)
         return local?.messages(conversation.key)
             ?: (activeMessages + received).distinctBy { it.messageId }.sortedBy { it.timestampMillis }
+    }
+
+    suspend fun flushQueuedTextMessage(conversation: ChatSummary, clientMessageId: String) {
+        val local = localChatRepository ?: return
+        val queued = local.outgoingMessage(conversation.key, clientMessageId) ?: return
+        if (queued.state == "SENT" || queued.state == "SENDING") return
+
+        local.updateOutgoingMessage(conversation.key, clientMessageId, "SENDING", null)
+        if (activeConversation?.key == conversation.key) {
+            activeMessages = local.messages(conversation.key)
+        }
+
+        val messages = local.messages(conversation.key)
+        val quoted = queued.quotedMessageId?.let { id ->
+            messages.firstOrNull { it.messageId == id && it.key == conversation.key }
+        }
+        val remoteMessageId = try {
+            repository.sendText(conversation, queued.text, quoted, clientMessageId)
+        } catch (error: Exception) {
+            val uncertain = (error as? AharaneApiException)?.statusCode == 409
+            val explanation = if (uncertain) {
+                "WhatsApp may already have received this message. Aharane did not resend it to avoid a duplicate. Check the conversation before retrying."
+            } else {
+                error.message ?: "The message could not be sent. Retry will reuse the same message ID."
+            }
+            local.updateOutgoingMessage(conversation.key, clientMessageId, "FAILED", explanation)
+            if (activeConversation?.key == conversation.key) {
+                activeMessages = local.messages(conversation.key)
+            }
+            return
+        }
+
+        local.updateOutgoingMessage(
+            conversation.key, clientMessageId, "SENT", null,
+            remoteMessageId.takeIf { it.isNotBlank() }
+        )
+        if (activeConversation?.key == conversation.key) {
+            activeMessages = local.messages(conversation.key)
+            runCatching { refreshConversationIncrementally(conversation) }
+                .onSuccess { activeMessages = it }
+                .onFailure { serverError = it.message ?: "Message sent; refreshing history is unavailable." }
+        }
     }
 
     fun stopAndSendVoiceNote() {
@@ -1189,6 +1235,18 @@ fun AharaneApp(
         ChatAccount.PRIVATE -> runtime?.privateAccount
         ChatAccount.PUBLIC -> runtime?.publicAccount
     }
+
+    LaunchedEffect(connected, selectedAccount, currentAccountState?.connected, localChatRepository, chatsByAccount[selectedAccount]) {
+        if (!connected || currentAccountState?.connected != true) return@LaunchedEffect
+        val local = localChatRepository ?: return@LaunchedEffect
+        val conversations = chatsByAccount[selectedAccount].orEmpty()
+        if (conversations.isEmpty()) return@LaunchedEffect
+        val pending = local.pendingOutgoingMessages(selectedAccount)
+        pending.forEach { row ->
+            val conversation = conversations.firstOrNull { it.key.jid == row.jid } ?: return@forEach
+            flushQueuedTextMessage(conversation, row.clientMessageId)
+        }
+    }
     val currentChats = if (previewMode) DesignPreviewFixtures.conversations else chatsByAccount[selectedAccount].orEmpty()
     val sourceFileEntries = if (previewMode) {
         DesignPreviewFixtures.files.map { StudioFileEntry(it.name, it.path, it.isDirectory, it.sizeLabel) }
@@ -1452,10 +1510,11 @@ fun AharaneApp(
                     },
                     onBack = { activeConversation = null },
                     onSend = { text, replyTo ->
-                        if (previewMode) {
+                        val target = activeConversation
+                        if (previewMode && target != null) {
                             previewMessages.add(
                                 ChatMessage(
-                                    key = activeConversation!!.key,
+                                    key = target.key,
                                     messageId = "preview-out-${System.nanoTime()}",
                                     direction = MessageDirection.OUTGOING,
                                     kind = MessageKind.TEXT,
@@ -1464,16 +1523,41 @@ fun AharaneApp(
                                     status = MessageStatus.SENT
                                 )
                             )
+                        } else if (target != null) {
+                            connectionScope.launch {
+                                try {
+                                    val local = localChatRepository
+                                        ?: error("Encrypted offline message storage is unavailable. The message was not sent.")
+                                    val clientMessageId = local.enqueueTextMessage(
+                                        target, text, replyTo?.messageId
+                                    )
+                                    activeMessages = local.messages(target.key)
+                                    if (connected && currentAccountState?.connected == true) {
+                                        flushQueuedTextMessage(target, clientMessageId)
+                                    }
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Message could not be queued.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    onRetryOutgoingMessage = { message ->
+                        val target = activeConversation
+                        val clientMessageId = message.messageId.removePrefix("local-")
+                        if (target == null || !connected || currentAccountState?.connected != true) {
+                            Toast.makeText(context, "Connect this WhatsApp account before retrying the queued message.", Toast.LENGTH_SHORT).show()
                         } else {
                             connectionScope.launch {
                                 try {
-                                    repository.sendText(activeConversation!!, text, replyTo)
-                                    activeMessages = refreshConversationIncrementally(activeConversation!!)
-                                    val refreshedChats = repository.chats(activeConversation!!.key.account)
-                                    chatsByAccount[activeConversation!!.key.account] =
-                                        localChatRepository?.saveConversations(refreshedChats) ?: refreshedChats
+                                    val local = localChatRepository ?: error("Encrypted offline queue is unavailable.")
+                                    val queued = local.outgoingMessage(target.key, clientMessageId)
+                                    if (queued?.state == "FAILED") {
+                                        local.updateOutgoingMessage(target.key, clientMessageId, "PENDING", null)
+                                        activeMessages = local.messages(target.key)
+                                        flushQueuedTextMessage(target, clientMessageId)
+                                    }
                                 } catch (error: Exception) {
-                                    serverError = error.message ?: "Message could not be sent."
+                                    Toast.makeText(context, error.message ?: "Queued message could not be retried.", Toast.LENGTH_LONG).show()
                                 }
                             }
                         }

@@ -54,6 +54,7 @@ fun ChatsScreen(
     savedShowAvatars: Boolean = true,
     savedShowPreviews: Boolean = true,
     savedShowTimestamps: Boolean = true,
+    localStorageError: String = "",
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     val chatTheme = savedChatTheme.replaceFirstChar { it.uppercase() }
@@ -140,6 +141,17 @@ fun ChatsScreen(
                 lineHeight = 18.sp,
                 modifier = Modifier.padding(top = 6.dp, bottom = 12.dp)
             )
+        }
+        if (localStorageError.isNotBlank()) {
+            item {
+                Text(
+                    "Encrypted offline storage unavailable: " + localStorageError,
+                    color = StudioPalette.Bad,
+                    fontSize = 11.5.sp,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+                )
+            }
         }
         item {
             StudioSearchField(

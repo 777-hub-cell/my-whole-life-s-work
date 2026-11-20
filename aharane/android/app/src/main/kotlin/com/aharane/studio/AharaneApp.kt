@@ -418,6 +418,10 @@ fun AharaneApp(
             received += page.messages
             local?.saveMessages(conversation, page.messages, if (cursor.timestampMillis == 0L) page.hasOlder else null)
             local?.applyDeletedMessages(conversation.key, page.deletedMessageIds)
+            local?.applyRemoteDeletedMessages(
+                conversation.key,
+                page.remoteDeletedMessages.map { it.messageId to it.deletedAtMillis }
+            )
             val next = page.messages.maxWithOrNull(compareBy<ChatMessage> { it.timestampMillis }.thenBy { it.messageId })
             if (next != null && cursor.timestampMillis > 0L &&
                 (next.timestampMillis < cursor.timestampMillis ||

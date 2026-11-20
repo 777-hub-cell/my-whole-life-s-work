@@ -252,6 +252,7 @@ fun VisualCommandBuilderScreen(
             "trigger.command" -> mapOf("command" to "hello", "aliases" to "")
             "message.sendText", "message.replyText" -> mapOf("text" to "Hello, {{sender}}!")
             "message.react" -> mapOf("emoji" to "👍")
+            "message.sendPoll" -> mapOf("title" to "Quick question?", "options" to "Option A\nOption B", "selectableCount" to "1")
             "condition.equals" -> mapOf("left" to "", "right" to "")
             "condition.contains" -> mapOf("text" to "{{message.text}}", "search" to "")
             "variable.set" -> mapOf("key" to "value", "value" to "")
@@ -813,6 +814,7 @@ private fun nodeSummary(node: VisualNode): String = when (node.type) {
     "trigger.message" -> "On authorized incoming message"
     "message.sendText", "message.replyText" -> node.config["text"].orEmpty().ifBlank { "Connect text input" }
     "message.react" -> "React " + node.config["emoji"].orEmpty()
+    "message.sendPoll" -> "Poll: " + node.config["title"].orEmpty()
     "condition.equals" -> node.config["left"].orEmpty() + " = " + node.config["right"].orEmpty()
     "condition.contains" -> "Contains " + node.config["search"].orEmpty()
     "condition.isOwner" -> "Account owner check"
@@ -868,6 +870,7 @@ private fun NodeConfigurationDialog(
         "trigger.command" -> listOf("command" to "Command name", "aliases" to "Aliases, comma-separated")
         "message.sendText", "message.replyText" -> listOf("text" to "Message text")
         "message.react" -> listOf("emoji" to "Emoji")
+        "message.sendPoll" -> listOf("title" to "Poll question", "options" to "Options, one per line", "selectableCount" to "Selectable answers (1–12)")
         "condition.equals" -> listOf("left" to "Left value", "right" to "Right value")
         "condition.contains" -> listOf("text" to "Text to inspect", "search" to "Contains")
         "variable.set" -> listOf("key" to "Variable name", "value" to "Value")
@@ -887,7 +890,7 @@ private fun NodeConfigurationDialog(
                 BasicTextField(
                     value = config[key].orEmpty(),
                     onValueChange = { config = config + (key to it) },
-                    singleLine = key != "text",
+                    singleLine = key != "text" && key != "options",
                     textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 11.sp),
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)
                         .clip(RoundedCornerShape(6.dp)).background(StudioPalette.Background)

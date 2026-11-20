@@ -645,6 +645,8 @@ private fun FileEntryRow(
                             FileMenuActionSpec("update_bot", "Update bot"),
                             FileMenuActionSpec("remove_package", "Remove", destructive = true)
                         )
+                    } else if (!entry.isDirectory && entry.name.endsWith(".zip", true)) {
+                        fileMenuActionSpecs() + FileMenuActionSpec("update_bot", "Update bot")
                     } else {
                         fileMenuActionSpecs()
                     }

@@ -232,6 +232,8 @@ fun AharaneApp(
     var starredPreviews by remember { mutableStateOf<List<String>>(emptyList()) }
     var chatAppearance by remember { mutableStateOf(JSONObject()) }
     var activeMessages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
+    var conversationSearchResults by remember { mutableStateOf<List<ChatMessage>?>(null) }
+    var conversationSearchRequestId by remember { mutableIntStateOf(0) }
     var serverError by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
 
@@ -427,6 +429,8 @@ fun AharaneApp(
     }
 
     LaunchedEffect(activeConversation, authenticated, previewMode) {
+        conversationSearchRequestId += 1
+        conversationSearchResults = null
         val conversation = activeConversation ?: return@LaunchedEffect
         if (!previewMode && authenticated) {
             try {
@@ -885,6 +889,29 @@ fun AharaneApp(
                         Toast.makeText(context, "Copied.", Toast.LENGTH_SHORT).show()
                     },
                     forwardTargets = chatsByAccount[activeConversation!!.key.account].orEmpty(),
+                    searchResults = conversationSearchResults,
+                    onSearchChanged = { query ->
+                        conversationSearchRequestId += 1
+                        val requestId = conversationSearchRequestId
+                        val target = activeConversation
+                        if (query.isBlank() || previewMode || target == null) {
+                            conversationSearchResults = null
+                        } else {
+                            connectionScope.launch {
+                                try {
+                                    val matches = repository.searchMessages(target, query)
+                                    if (requestId == conversationSearchRequestId && activeConversation?.key == target.key) {
+                                        conversationSearchResults = matches
+                                    }
+                                } catch (error: Exception) {
+                                    if (requestId == conversationSearchRequestId && activeConversation?.key == target.key) {
+                                        conversationSearchResults = emptyList()
+                                        serverError = error.message ?: "Conversation search failed."
+                                    }
+                                }
+                            }
+                        }
+                    },
                     onViewOnce = { message ->
                         if (message.messageId !in openedViewOnceIds) {
                             connectionScope.launch {

@@ -467,6 +467,9 @@ test('edited messages reconcile duplicate IDs and preserve reactions, stars and 
 
     assert.equal(await store.deleteMessage('private', jid, 'edit-1'), true)
     assert.deepEqual(await store.getMessages('private', jid, { limit: 20 }), [])
+    assert.deepEqual(await store.listDeletedMessageIds('private', jid), ['edit-1'])
+    assert.equal(await store.deleteMessage('private', jid, 'edit-1'), false)
+    assert.deepEqual(await store.listDeletedMessageIds('private', jid), ['edit-1'])
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

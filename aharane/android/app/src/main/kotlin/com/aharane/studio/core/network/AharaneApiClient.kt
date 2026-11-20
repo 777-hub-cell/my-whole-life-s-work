@@ -45,7 +45,7 @@ object ServerEndpointParser {
             else -> path
         }
         val origin = "${parsed.protocol.lowercase()}://${parsed.authority}"
-        return ServerEndpoint(origin = origin, prefix = prefix, studioUrl = origin + path.ifBlank { "" } + "/studio")
+        return ServerEndpoint(origin = origin, prefix = prefix, studioUrl = origin + prefix + "/studio")
     }
 }
 

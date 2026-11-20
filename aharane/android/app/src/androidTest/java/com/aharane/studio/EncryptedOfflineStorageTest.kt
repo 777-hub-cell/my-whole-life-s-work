@@ -148,6 +148,58 @@ class EncryptedOfflineStorageTest {
     }
 
     @Test
+    fun offlineSearchSupportsSenderFilenameAndDateWithoutNetwork() = runBlocking {
+        val jid = "2348333333333@s.whatsapp.net"
+        val firstTimestamp = 1761000000000L
+        val secondTimestamp = firstTimestamp + 86_400_000L
+        val db = EncryptedChatDatabase.open(context)
+        db.database.chatDao().putConversation(
+            ChatConversationRow(
+                account = "private", jid = jid, title = "Offline contact",
+                lastMessagePreview = "report.pdf", lastMessageAtMillis = secondTimestamp,
+                unreadCount = 0, isGroup = false, isArchived = false, isPinned = false,
+                isMuted = false, lastMessageType = "DOCUMENT", lastMessageFromMe = false
+            )
+        )
+        db.database.chatDao().putMessages(
+            listOf(
+                ChatMessageRow(
+                    account = "private", jid = jid, messageId = "offline-search-1",
+                    direction = "INCOMING", kind = "TEXT", text = "clinic follow up",
+                    timestampMillis = firstTimestamp, status = "DELIVERED",
+                    replyToMessageId = null, mediaMimeType = null, mediaFileName = null,
+                    isViewOnce = false, senderName = "Alice", mediaUrl = null,
+                    mediaSizeBytes = null, mediaDurationSeconds = null, viewOnceViewed = false,
+                    mediaUnavailable = null, isStarred = false, isVoiceNote = false,
+                    reactionsJson = "[]"
+                ),
+                ChatMessageRow(
+                    account = "private", jid = jid, messageId = "offline-search-2",
+                    direction = "INCOMING", kind = "DOCUMENT", text = "",
+                    timestampMillis = secondTimestamp, status = "DELIVERED",
+                    replyToMessageId = null, mediaMimeType = "application/pdf", mediaFileName = "report.pdf",
+                    isViewOnce = false, senderName = "Bob", mediaUrl = null,
+                    mediaSizeBytes = 1000L, mediaDurationSeconds = null, viewOnceViewed = false,
+                    mediaUnavailable = null, isStarred = false, isVoiceNote = false,
+                    reactionsJson = "[]"
+                )
+            )
+        )
+        db.database.close()
+
+        val local = LocalChatRepository(context)
+        assertEquals("offline-search-1", local.search(ChatAccount.PRIVATE, "Alice", jid).single().messageId)
+        assertEquals("offline-search-2", local.search(ChatAccount.PRIVATE, "report.pdf", jid).single().messageId)
+        val byDate = local.search(ChatAccount.PRIVATE, "", jid, secondTimestamp, secondTimestamp + 86_399_999L)
+        assertEquals("offline-search-2", byDate.single().messageId)
+        assertTrue(local.search(ChatAccount.PUBLIC, "Alice", jid).isEmpty())
+        val reopened = EncryptedChatDatabase.open(context)
+        reopened.database.chatDao().clearMessages("private", jid)
+        reopened.database.chatDao().clearConversation("private", jid)
+        reopened.database.close()
+    }
+
+    @Test
     fun appearanceInheritanceKeepsPrivatePublicAndChatLayersSeparate() {
         context.getSharedPreferences("aharane-chat-appearance", Context.MODE_PRIVATE).edit().clear().commit()
         val store = ChatAppearanceStore(context)

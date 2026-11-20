@@ -86,3 +86,8 @@ Normal attachments can be encrypted using AES-GCM after downloading. The file is
 ### Remaining release acceptance
 
 This implementation still needs a clean current-head Android build, unit and instrumentation tests, emulator walkthrough and screenshot review, and real Galaxy A16 / Android 16 testing. It is not yet release-complete. There is no durable idempotent outgoing message queue or media-gallery browser yet. Poll options are read-only because the existing server has no voting endpoint; Lottie/TGS vector sticker payloads and full reconciliation of archive/pin/mute state remain incomplete. Encrypted database migrations, Keystore-loss handling and media-tamper tests are now in the instrumentation suite but still need a passing emulator run. No production deployment or merge is authorised by this development work.
+
+
+### Messages deleted by another participant
+
+Incoming WhatsApp messages removed by their sender are retained in the Aharane Hub chat store. The server marks the existing message record as remotely deleted; it does not remove its original text or ordinary downloaded-media reference and does not create a local deletion tombstone for that incoming event. The native encrypted Room model persists the marker and the conversation shows “Deleted by the other person on WhatsApp · retained in Hub”. This is distinct from the account owner's own delete action, which continues to use the existing removal/tombstone path. View-once media remains excluded from offline caching and is not made available by this retention marker.

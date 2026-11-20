@@ -1075,6 +1075,39 @@ fun AharaneApp(
     val selectedFilter = ChatFilter.valueOf(filterName)
     val connected = authenticated && !previewMode && serverReachable
 
+    suspend fun obtainCachedOrRemoteMedia(conversation: ChatSummary, message: ChatMessage): ByteArray {
+        require(!message.isViewOnce) { "View-once media cannot be cached or reopened from local storage." }
+        val local = localChatRepository
+        val cached = local?.cachedMediaInfo(conversation.key, message.messageId)
+        if (!cached?.cachedMediaPath.isNullOrBlank() && !cached?.cachedMediaSha256.isNullOrBlank()) {
+            val stored = runCatching {
+                withContext(Dispatchers.IO) {
+                    encryptedMediaCache.read(
+                        conversation.key.account.apiValue,
+                        conversation.key.jid,
+                        message.messageId,
+                        cached!!.cachedMediaPath!!,
+                        cached.cachedMediaSha256!!
+                    )
+                }
+            }.getOrNull()
+            if (stored != null) return stored
+        }
+        if (!connected) error("This attachment is not saved for offline use. Reconnect to download it.")
+        val bytes = repository.mediaBytes(conversation, message)
+        val record = withContext(Dispatchers.IO) {
+            encryptedMediaCache.store(
+                conversation.key.account.apiValue,
+                conversation.key.jid,
+                message.messageId,
+                bytes,
+                viewOnce = message.isViewOnce
+            )
+        }
+        local?.recordMediaCache(conversation.key, message.messageId, record.relativePath, record.sha256, record.sizeBytes)
+        return bytes
+    }
+
     LaunchedEffect(selectedAccount, connected, previewMode, chatAppearanceRevision) {
         chatAppearance = chatAppearanceStore.resolve(selectedAccount).toJson()
         if (connected) {

@@ -241,6 +241,18 @@ export function validateWorkflow(input) {
   const triggers = workflow.nodes.filter(node => triggerTypes.has(node.type))
   if (triggers.length !== 1) issue(null, 'error', 'A workflow needs exactly one trigger.', 'Keep one Command trigger or Message received node.')
 
+  const inputCounts = new Map()
+  for (const edge of workflow.edges) {
+    const key = edge.to + ':' + edge.toSocket
+    inputCounts.set(key, (inputCounts.get(key) || 0) + 1)
+  }
+  for (const [socketKey, count] of inputCounts) {
+    if (count > 1) {
+      const nodeId = socketKey.slice(0, socketKey.lastIndexOf(':'))
+      issue(nodeId, 'error', 'An input socket has more than one connection.', 'Keep one source connected to each input socket.')
+    }
+  }
+
   for (const edge of workflow.edges) {
     const from = byId.get(edge.from), to = byId.get(edge.to)
     if (!from || !to) {

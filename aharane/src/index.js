@@ -974,43 +974,44 @@ async function handleMessages(sessionId, currentSocket, event) {
     const shouldPersist =
       (sessionId === 'private' && isPrivateVisibleChatJid(remoteJid)) ||
       (sessionId === 'public' && message.key.fromMe !== true && isPrivateVisibleChatJid(remoteJid))
-    // Persist duplicate-ID edits before suppressing duplicate command execution.
-    // The store reconciles changed message content without resetting reactions/stars.
     if (shouldPersist) await chatStore.recordMessage({ sessionId, message, socket: currentSocket })
     if (markMessageSeen(sessionId + ':' + message.key.id)) continue
 
-    const text = textFromMessage(message)
+    const messageText = textFromMessage(message)
     let registry
     let isPublicOwner = false
     let privateControl = false
+    let allowedForAutomation = false
 
     if (sessionId === 'private') {
-      // Record new live messages from supported direct, group and LID chats.
-      // Inbox visibility is a separate user setting; command execution is
-      // still restricted to the exact verified Private Owner self-chat.
       if (!isPrivateVisibleChatJid(remoteJid)) continue
       const privateSelfChat = isPrivateSelfChat({
         sessionId, remoteJid, ownJid: currentSocket.user?.id || '',
         privateOwnerNumber: ownerConfig.privateOwnerNumber,
       })
       await chatStore.recordMessage({ sessionId, message, socket: currentSocket })
-      if (message.key.fromMe !== true && studioSettings.private.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
       if (message.key.fromMe !== true || !privateSelfChat) continue
+      const visualCommandNames = new Set(visualCommandStore.list('private')
+        .filter(workflow => workflow.enabled)
+        .flatMap(workflow => {
+          const trigger = workflow.nodes.find(node => node.type === 'trigger.command')
+          return trigger ? [trigger.config.command, ...(trigger.config.aliases || [])].map(value => String(value).toLowerCase()) : []
+        }))
       privateControl = isPrivateSelfCommand({
         sessionId,
         message,
         remoteJid,
         ownJid: currentSocket.user?.id || '',
         privateOwnerNumber: ownerConfig.privateOwnerNumber,
-        text,
+        text: messageText,
         privateRegistry: privateCommandRegistry,
+        visualCommandNames,
         prefix: PRIVATE_COMMAND_PREFIX,
       })
       if (!privateControl) continue
+      allowedForAutomation = true
       registry = privateCommandRegistry
     } else if (sessionId === 'public') {
-      // Capture supported new direct/group/LID conversations for the inbox.
-      // The sender allowlist remains a separate gate for bot command handling.
       if (message.key.fromMe === true || !isPrivateVisibleChatJid(remoteJid)) continue
       const allowedToUseCommands = isAllowedInbound({
         remoteJid,
@@ -1024,6 +1025,7 @@ async function handleMessages(sessionId, currentSocket, event) {
         const welcome = await currentSocket.sendMessage(remoteJid, { text: studioSettings.public.welcomeMessage })
         await chatStore.recordMessage({ sessionId, message: welcome, socket: currentSocket })
       }
+      allowedForAutomation = true
       registry = publicCommandRegistry
       isPublicOwner = isPublicOwnerSender({
         sessionId,
@@ -1034,20 +1036,81 @@ async function handleMessages(sessionId, currentSocket, event) {
       continue
     }
 
-    if (!text) continue
+    const workflowContext = {
+      sessionId,
+      privateControl,
+      isPublicOwner,
+      allowedPublicSender: sessionId === 'public' && allowedForAutomation,
+      socket: currentSocket,
+      message,
+      messageText,
+      sender: senderNumberFromJid(message.key?.participant || remoteJid) || remoteJid,
+      remoteJid,
+      commandName: '',
+      rawArgs: '',
+      args: [],
+    }
+
+    // Message Received workflows run only after the same account-specific
+    // authorization gates used by the existing command dispatcher.
+    if (allowedForAutomation) {
+      for (const workflow of visualCommandStore.findMessageTriggers(sessionId)) {
+        try {
+          const result = await executeVisualWorkflow(workflow, { store: visualCommandStore, context: workflowContext })
+          if (!result.ok) {
+            logger.warn({ event: 'visual-workflow.failed', workflowId: workflow.id, account: sessionId, error: result.error })
+            publishStudioEvent('visual-workflow.failed', { workflowId: workflow.id, account: sessionId, error: result.error })
+          } else {
+            publishStudioEvent('visual-workflow.completed', { workflowId: workflow.id, account: sessionId })
+          }
+        } catch (error) {
+          logger.warn({ event: 'visual-workflow.failed', workflowId: workflow.id, account: sessionId, error: String(error?.message || error) })
+        }
+      }
+    }
+
+    if (!messageText) continue
     const prefix = sessionId === 'private' ? PRIVATE_COMMAND_PREFIX : PUBLIC_COMMAND_PREFIX
-    const parsedCommand = parseCommand(text, prefix)
-    if (!parsedCommand || !registry?.commands?.has(parsedCommand.name)) continue
+    const parsedCommand = parseCommand(messageText, prefix)
+    if (!parsedCommand) continue
     if (!allowCommand(sessionId + ':' + (sessionId === 'private'
       ? ownerConfig.privateOwnerNumber
       : senderNumberFromJid(remoteJid)))) continue
 
     const command = parsedCommand.name.slice(0, 40)
+    const visualWorkflows = visualCommandStore.findCommand(sessionId, parsedCommand.name)
+    if (visualWorkflows.length) {
+      for (const workflow of visualWorkflows) {
+        try {
+          const result = await executeVisualWorkflow(workflow, {
+            store: visualCommandStore,
+            context: {
+              ...workflowContext,
+              commandName: parsedCommand.name,
+              rawArgs: parsedCommand.rawArgs,
+              args: parsedCommand.args,
+            },
+          })
+          if (!result.ok) {
+            logger.warn({ event: 'visual-workflow.failed', workflowId: workflow.id, account: sessionId, command, error: result.error })
+            publishStudioEvent('visual-workflow.failed', { workflowId: workflow.id, account: sessionId, command, error: result.error })
+          } else {
+            publishStudioEvent('visual-workflow.completed', { workflowId: workflow.id, account: sessionId, command })
+          }
+        } catch (error) {
+          logger.warn({ event: 'visual-workflow.failed', workflowId: workflow.id, account: sessionId, command, error: String(error?.message || error) })
+        }
+      }
+      publishStudioEvent('whatsapp.command.received', { sessionId, scope: sessionId, command, visual: true })
+      continue
+    }
+    if (!registry?.commands?.has(parsedCommand.name)) continue
+
     try {
       const handled = await dispatchCommand({
         registry,
-        rawText: text,
-        prefix: sessionId === 'private' ? PRIVATE_COMMAND_PREFIX : PUBLIC_COMMAND_PREFIX,
+        rawText: messageText,
+        prefix,
         context: {
           sessionId,
           privateControl,

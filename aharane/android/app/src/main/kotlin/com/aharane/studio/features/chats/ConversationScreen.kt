@@ -92,6 +92,7 @@ fun ConversationScreen(
     appearance: ChatAppearance = ChatAppearance(),
     hasOlderMessages: Boolean = false,
     loadingOlderMessages: Boolean = false,
+    lastSyncedAt: Long = 0L,
     onLoadOlderMessages: () -> Unit = {},
     onBack: () -> Unit,
     onSend: (String, ChatMessage?) -> Unit,
@@ -222,10 +223,18 @@ fun ConversationScreen(
                 )
                 Text(
                     (if (conversation.isGroup) "Group conversation" else conversation.key.account.label + " account") +
-                        if (connected) "" else " · Offline · cached",
+                        if (mediaServerAvailable) " · Server online" else " · Offline · cached",
                     color = StudioPalette.Muted,
                     fontSize = 11.5.sp,
                     lineHeight = 15.sp,
+                    maxLines = 1
+                )
+                Text(
+                    if (lastSyncedAt > 0L) "Last synced " + android.text.format.DateUtils.getRelativeTimeSpanString(
+                        lastSyncedAt, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS
+                    ) else "Not synced on this phone yet",
+                    color = StudioPalette.Muted,
+                    fontSize = 10.sp,
                     maxLines = 1
                 )
             }

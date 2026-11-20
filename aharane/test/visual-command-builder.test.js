@@ -311,7 +311,7 @@ test('Public group workflows require explicit group scope and an allow-listed pa
     node.id === draft.nodes[0].id ? { ...node, config: { ...node.config, chatScope: 'direct' } } : node
   ) }, { store, context: allowedGroupContext })
   assert.equal(rejected.ok, false)
-  assert.match(rejected.error, /chat type/i)
+  assert.ok(rejected.validation.errors.some(issue => /chat scope/i.test(issue.message)))
   assert.equal(calls, 1)
 })
 

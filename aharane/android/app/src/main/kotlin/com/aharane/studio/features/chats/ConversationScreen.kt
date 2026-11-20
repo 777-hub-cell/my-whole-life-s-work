@@ -136,6 +136,7 @@ fun ConversationScreen(
     videoFiles: Map<String, File> = emptyMap(),
     videoLoading: Set<String> = emptySet(),
     videoErrors: Map<String, String> = emptyMap(),
+    offlineMediaIds: Set<String> = emptySet(),
     onLoadMediaPreview: (ChatMessage) -> Unit = {},
     onLoadVideo: (ChatMessage) -> Unit = {},
     onLoadAudio: (ChatMessage) -> Unit = {},
@@ -451,8 +452,12 @@ fun ConversationScreen(
                                     )
                                 }
                                 Text(
-                                    if (mediaServerAvailable) "Tap to open" else "Offline · tap to try saved copy",
-                                    color = StudioPalette.Muted,
+                                    when {
+                                        localReady -> "On phone"
+                                        mediaServerAvailable -> "Tap to open"
+                                        else -> "Not saved"
+                                    },
+                                    color = if (localReady) StudioPalette.Accent else StudioPalette.Muted,
                                     fontSize = 9.5.sp,
                                     maxLines = 1
                                 )

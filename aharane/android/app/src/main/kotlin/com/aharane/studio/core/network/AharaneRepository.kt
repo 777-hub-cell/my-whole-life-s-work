@@ -258,8 +258,20 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
         }
     }
 
-    suspend fun sendText(conversation: ChatSummary, text: String): String {
-        val result = api.sendChatMessage(conversation.key.account.apiValue, conversation.key.jid, text)
+    suspend fun sendText(
+        conversation: ChatSummary,
+        text: String,
+        replyTo: ChatMessage? = null
+    ): String {
+        require(replyTo == null || replyTo.key == conversation.key) {
+            "A reply must reference a message in the same conversation."
+        }
+        val result = api.sendChatMessage(
+            conversation.key.account.apiValue,
+            conversation.key.jid,
+            text,
+            replyTo?.messageId
+        )
         return result.optString("message")
     }
 

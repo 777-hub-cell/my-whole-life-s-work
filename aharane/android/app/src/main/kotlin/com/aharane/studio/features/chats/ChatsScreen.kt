@@ -50,14 +50,23 @@ fun ChatsScreen(
     accountDisplayName: String = account.label,
     accountConnected: Boolean = false,
     onConversationSelected: (ChatSummary) -> Unit = {},
-    onChatAction: (ChatSummary, String) -> Unit = { _, _ -> }
+    onChatAction: (ChatSummary, String) -> Unit = { _, _ -> },
+    showIndividuals: Boolean = true,
+    showGroups: Boolean = true,
+    starredItems: List<String> = emptyList(),
+    savedChatTheme: String = "system",
+    savedShowAvatars: Boolean = true,
+    savedShowPreviews: Boolean = true,
+    savedShowTimestamps: Boolean = true,
+    onVisibilityModeChange: (String, Boolean) -> Unit = { _, _ -> },
+    onChatAppearanceChange: (String, Boolean, Boolean, Boolean) -> Unit = { _, _, _, _ -> }
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var activeTool by rememberSaveable { mutableStateOf("") }
-    var chatTheme by rememberSaveable { mutableStateOf("System") }
-    var showAvatars by rememberSaveable { mutableStateOf(true) }
-    var showPreviews by rememberSaveable { mutableStateOf(true) }
-    var showTimestamps by rememberSaveable { mutableStateOf(true) }
+    var chatTheme by rememberSaveable(account) { mutableStateOf(savedChatTheme.replaceFirstChar { it.uppercase() }) }
+    var showAvatars by rememberSaveable(account) { mutableStateOf(savedShowAvatars) }
+    var showPreviews by rememberSaveable(account) { mutableStateOf(savedShowPreviews) }
+    var showTimestamps by rememberSaveable(account) { mutableStateOf(savedShowTimestamps) }
     val switchIcon = if (account == ChatAccount.PRIVATE) Icons.Outlined.Lock else Icons.Outlined.Public
     val accountConversations = conversations.filter { it.key.account == account }
     val unreadCount = accountConversations.sumOf { it.unreadCount }
@@ -179,22 +188,40 @@ fun ChatsScreen(
                     "visibility" -> {
                         Text("Chat visibility", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                         Text(
-                            "Choose which conversations appear in this inbox. Visibility settings will load when the Aharane server is connected.",
+                            "Choose whether individual chats and groups are included in this account's inbox. Changes are saved to the Aharane server.",
                             color = StudioPalette.Muted,
                             fontSize = 13.sp,
                             lineHeight = 19.sp
                         )
-                        Text("Individual chats", color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        Text("All individual chats · Not loaded", color = StudioPalette.Muted, fontSize = 12.sp)
-                        Text("Groups", color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        Text("All groups · Not loaded", color = StudioPalette.Muted, fontSize = 12.sp)
+                        PreferenceToggle("Show individual chats", showIndividuals) {
+                            onVisibilityModeChange("individuals", it)
+                        }
+                        PreferenceToggle("Show groups", showGroups) {
+                            onVisibilityModeChange("groups", it)
+                        }
                     }
                     "starred" -> {
                         Text("Starred messages", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                        StudioEmpty(
-                            title = "No starred messages.",
-                            description = "Starred messages from this account will appear here when the inbox is connected."
-                        )
+                        if (starredItems.isEmpty()) {
+                            StudioEmpty(
+                                title = "No starred messages.",
+                                description = if (accountConnected) "Star a message inside a conversation to keep it here."
+                                else "Connect this WhatsApp account to load starred messages."
+                            )
+                        } else {
+                            Column(Modifier.fillMaxWidth()) {
+                                starredItems.take(40).forEachIndexed { index, item ->
+                                    if (index > 0) StudioDivider()
+                                    Text(
+                                        item,
+                                        color = StudioPalette.Ink,
+                                        fontSize = 12.5.sp,
+                                        lineHeight = 18.sp,
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                     "appearance" -> {
                         Text("Chat appearance", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
@@ -202,13 +229,25 @@ fun ChatsScreen(
                         StudioSegmented(
                             options = listOf("System", "Light", "Dark"),
                             selected = chatTheme,
-                            onSelect = { chatTheme = it }
+                            onSelect = {
+                                chatTheme = it
+                                onChatAppearanceChange(it.lowercase(), showAvatars, showPreviews, showTimestamps)
+                            }
                         )
-                        PreferenceToggle("Show avatars", showAvatars) { showAvatars = it }
-                        PreferenceToggle("Show message previews", showPreviews) { showPreviews = it }
-                        PreferenceToggle("Show timestamps", showTimestamps) { showTimestamps = it }
+                        PreferenceToggle("Show avatars", showAvatars) {
+                            showAvatars = it
+                            onChatAppearanceChange(chatTheme.lowercase(), it, showPreviews, showTimestamps)
+                        }
+                        PreferenceToggle("Show message previews", showPreviews) {
+                            showPreviews = it
+                            onChatAppearanceChange(chatTheme.lowercase(), showAvatars, it, showTimestamps)
+                        }
+                        PreferenceToggle("Show timestamps", showTimestamps) {
+                            showTimestamps = it
+                            onChatAppearanceChange(chatTheme.lowercase(), showAvatars, showPreviews, it)
+                        }
                         Text(
-                            "These preview preferences stay on this screen until native server settings are connected.",
+                            "Saved to your Aharane server and shared by the Studio.",
                             color = StudioPalette.Muted,
                             fontSize = 11.5.sp,
                             lineHeight = 16.sp

@@ -194,12 +194,12 @@ def main():
     tap_label("Console")
     capture("03j-editor-console.png")
     assert_visible_texts(["Preview", "sample"])
-    # The explorer is a panel within the editor. Android Back dismisses only
-    # that panel, so close the editor explicitly before navigating to ENV.
+    # Capture the open editor with its explorer, then use one Android Back
+    # action to return to Files before opening ENV. Do not send a second Back.
     if not any(node.attrib.get("content-desc") == "Hide explorer" for node in nodes()):
         tap_label("Show explorer", content_desc=True)
     capture("03d-editor-explorer.png")
-    tap_label("Close editor")  # Return from the editor to Files.
+    back()  # Close the editor and return to Files.
 
     tap_label("ENV")
     capture("04-env.png")

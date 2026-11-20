@@ -35,6 +35,7 @@ fun HomeScreen(
     onOpenChats: () -> Unit,
     onOpenMore: () -> Unit,
     onOpenConfiguration: () -> Unit,
+    onOpenCommandBuilder: () -> Unit = {},
     onOpenActivity: () -> Unit = onOpenMore,
     serviceConnected: Boolean = false,
     serviceSubtitle: String = "Not connected to Aharane service",
@@ -130,6 +131,15 @@ fun HomeScreen(
                     icon = Icons.Outlined.Tune,
                     trailing = "›",
                     onClick = onOpenConfiguration,
+                    subtitleMaxLines = 1
+                )
+                StudioDivider()
+                StudioRow(
+                    title = "Visual command builder",
+                    subtitle = "Create WhatsApp commands with connected workflow nodes",
+                    icon = null,
+                    trailing = "›",
+                    onClick = onOpenCommandBuilder,
                     subtitleMaxLines = 1
                 )
             }

@@ -151,6 +151,36 @@ class EncryptedOfflineStorageTest {
     }
 
     @Test
+    fun missingKeystoreWrappingKeyFailsClosedWithoutCreatingPlaintextDatabase() = runBlocking {
+        val namespace = "keystore-loss-test"
+        val alias = "com.aharane.chat.database.wrap.v1.$namespace"
+        val isolated = EncryptedChatDatabase.openForTesting(context, namespace)
+        val databaseFile = isolated.databaseFile
+        isolated.database.chatDao().putConversation(
+            ChatConversationRow(
+                account = "private", jid = "2348555555555@s.whatsapp.net",
+                title = "Keep encrypted", lastMessagePreview = "private",
+                lastMessageAtMillis = 1762000000000, unreadCount = 0, isGroup = false,
+                isArchived = false, isPinned = false, isMuted = false,
+                lastMessageType = "TEXT", lastMessageFromMe = false
+            )
+        )
+        isolated.database.close()
+        val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        keyStore.deleteEntry(alias)
+        try {
+            assertThrows(EncryptedChatStorageException::class.java) {
+                EncryptedChatDatabase.openForTesting(context, namespace)
+            }
+            assertTrue("Encrypted user data must be left in place for recovery.", databaseFile.exists())
+            assertTrue("The database must never be silently replaced with plaintext.", databaseFile.length() > 0L)
+        } finally {
+            databaseFile.parentFile?.deleteRecursively()
+            keyStore.deleteEntry(alias)
+        }
+    }
+
+    @Test
     fun roomVersionOneMigrationAddsCompositeCursorColumnsWithoutDroppingHistory() {
         val helper = FrameworkSQLiteOpenHelperFactory().create(
             SupportSQLiteOpenHelper.Configuration.builder(context)

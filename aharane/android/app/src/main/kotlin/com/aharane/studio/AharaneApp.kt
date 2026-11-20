@@ -323,6 +323,7 @@ fun AharaneApp(
     var hasOlderMessages by remember { mutableStateOf(false) }
     var loadingOlderMessages by remember { mutableStateOf(false) }
     var lastConversationSyncAt by remember { mutableStateOf(0L) }
+    var cachedOfflineMediaIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var editorDiagnosticsByPath by remember { mutableStateOf<Map<String, EditorDiagnosticsResult>>(emptyMap()) }
     var editorDiagnosticsStateByPath by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var editorDiagnosticRequestId by remember { mutableIntStateOf(0) }
@@ -776,11 +777,13 @@ fun AharaneApp(
         conversationSearchRequestId += 1
         conversationSearchResults = null
         val conversation = activeConversation ?: return@LaunchedEffect
+        cachedOfflineMediaIds = emptySet()
         if (previewMode) return@LaunchedEffect
         val local = localChatRepository
         if (local != null) {
             runCatching {
                 activeMessages = local.messages(conversation.key)
+                cachedOfflineMediaIds = local.cachedMediaIds(conversation.key)
                 hasOlderMessages = local.hasOlderMessages(conversation.key)
                 lastConversationSyncAt = local.lastSyncedAt(conversation.key)
             }.onFailure {
@@ -1196,7 +1199,10 @@ fun AharaneApp(
                     )
                 }
             }.getOrNull()
-            if (stored != null) return stored
+            if (stored != null) {
+                cachedOfflineMediaIds = cachedOfflineMediaIds + message.messageId
+                return stored
+            }
         }
         if (!connected) error("This attachment is not saved for offline use. Reconnect to download it.")
         val bytes = repository.mediaBytes(conversation, message)
@@ -1211,6 +1217,7 @@ fun AharaneApp(
                 )
             }
             local?.recordMediaCache(conversation.key, message.messageId, record.relativePath, record.sha256, record.sizeBytes)
+            if (local != null) cachedOfflineMediaIds = cachedOfflineMediaIds + message.messageId
         }.onFailure { error ->
             // Media still opens online, but it is not labelled offline-ready unless
             // the authenticated encrypted copy and metadata commit both succeed.
@@ -1704,6 +1711,7 @@ fun AharaneApp(
                     videoFiles = videoFiles,
                     videoLoading = videoLoading,
                     videoErrors = videoErrors,
+                    offlineMediaIds = cachedOfflineMediaIds,
                     onLoadMediaPreview = { message ->
                         val key = mediaCacheKey(message)
                         if (previewMode) {
@@ -2423,6 +2431,7 @@ fun AharaneApp(
                                         encryptedMediaCache.clearAccount(targetAccount.apiValue)
                                     }
                                     localChatRepository?.clearCachedMediaMetadata(targetAccount)
+                                    if (activeConversation?.key?.account == targetAccount) cachedOfflineMediaIds = emptySet()
                                     chatAppearanceRevision += 1
                                 }.onFailure {
                                     Toast.makeText(context, it.message ?: "Could not clear encrypted offline media.", Toast.LENGTH_LONG).show()

@@ -83,11 +83,12 @@ jobs:
             python3 aharane/android/scripts/capture_design_preview.py
 
       - name: Upload real app screenshots
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: aharane-native-android-screenshots
           path: screenshots/*.png
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
 
   web-reference-screenshots:

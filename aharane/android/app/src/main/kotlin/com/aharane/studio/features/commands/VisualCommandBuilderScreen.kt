@@ -53,6 +53,7 @@ fun VisualCommandBuilderScreen(
 ) {
     val scope = rememberCoroutineScope()
     val workspaceScroll = rememberScrollState()
+    val workspaceVerticalScroll = rememberScrollState()
     var account by remember { mutableStateOf("private") }
     var workflow by remember { mutableStateOf(VisualWorkflow.draft()) }
     var library by remember { mutableStateOf<List<VisualNodeCategory>>(emptyList()) }
@@ -349,7 +350,8 @@ fun VisualCommandBuilderScreen(
     val definitions = library.flatMap { it.nodes }
     val selectedCategory = library.filter { category == "All" || it.name == category }
     val visibleNodes = selectedCategory.flatMap { it.nodes }.filter {
-        search.isBlank() || it.name.contains(search, true) || it.description.contains(search, true)
+        (account != "private" || it.type != "trigger.message") &&
+            (search.isBlank() || it.name.contains(search, true) || it.description.contains(search, true))
     }
     val nodeErrorMap = validation.errors.filter { it.nodeId != null }.groupBy { it.nodeId }
     val configuredNode = workflow.nodes.firstOrNull { it.id == configNodeId }
@@ -440,7 +442,7 @@ fun VisualCommandBuilderScreen(
             StudioActionButton("Redo", compact = true, enabled = redo.isNotEmpty(), onClick = { redoChange() })
             StudioActionButton("Fit", compact = true, onClick = {
                 zoom = 0.78f
-                scope.launch { workspaceScroll.animateScrollTo(0) }
+                scope.launch { workspaceScroll.animateScrollTo(0); workspaceVerticalScroll.animateScrollTo(0) }
             })
             StudioActionButton("−", compact = true, onClick = { zoom = (zoom - 0.1f).coerceIn(0.5f, 1.8f) })
             StudioActionButton("+", compact = true, onClick = { zoom = (zoom + 0.1f).coerceIn(0.5f, 1.8f) })
@@ -470,7 +472,7 @@ fun VisualCommandBuilderScreen(
             }
             Box(Modifier.fillMaxSize().clip(RoundedCornerShape(9.dp)).background(Color(0xFFF2F5F2))) {
                 Box(
-                    Modifier.fillMaxSize().horizontalScroll(workspaceScroll).pointerInput(Unit) {
+                    Modifier.fillMaxSize().horizontalScroll(workspaceScroll).verticalScroll(workspaceVerticalScroll).pointerInput(Unit) {
                         awaitEachGesture {
                             awaitFirstDown(requireUnconsumed = false)
                             var lastDistance = 0f
@@ -492,8 +494,9 @@ fun VisualCommandBuilderScreen(
                     }
                 ) {
                     val canvasWidth = maxOf(900.dp, ((workflow.nodes.maxOfOrNull { it.x } ?: 0f) + 300f).dp)
+                    val canvasHeight = maxOf(430.dp, ((workflow.nodes.maxOfOrNull { it.y } ?: 0f) + 260f).dp)
                     Box(
-                        Modifier.width(canvasWidth).fillMaxHeight().graphicsLayer {
+                        Modifier.width(canvasWidth).height(canvasHeight).graphicsLayer {
                             scaleX = zoom
                             scaleY = zoom
                             transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
@@ -522,9 +525,15 @@ fun VisualCommandBuilderScreen(
                                     moveTo(start.x, start.y)
                                     cubicTo(start.x + bend, start.y, end.x - bend, end.y, end.x, end.y)
                                 }
-                                val color = when (edge.fromSocket) {
-                                    "yes" -> Color(0xFF26835D)
-                                    "no" -> Color(0xFFC34D53)
+                                val socketType = definitions.firstOrNull { it.type == from.type }
+                                    ?.outputs?.firstOrNull { it.id == edge.fromSocket }?.type
+                                val color = when {
+                                    edge.fromSocket == "yes" -> Color(0xFF26835D)
+                                    edge.fromSocket == "no" -> Color(0xFFC34D53)
+                                    socketType == "string" -> Color(0xFF3F78B9)
+                                    socketType == "number" -> Color(0xFF99763C)
+                                    socketType == "boolean" -> Color(0xFF8A6099)
+                                    socketType == "message" -> Color(0xFF4A8992)
                                     else -> Color(0xFF64877A)
                                 }
                                 drawPath(path, color, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
@@ -787,13 +796,13 @@ private fun NodeCard(
         Text(nodeSummary(node), color = StudioPalette.Muted, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp))
         if (definition.inputs.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                definition.inputs.take(4).forEach { socket -> SocketAction(socket, false, onSocket = { onSocket(socket, false) }) }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 5.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                definition.inputs.forEach { socket -> SocketAction(socket, false, onSocket = { onSocket(socket, false) }) }
             }
         }
         if (definition.outputs.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 4.dp), horizontalArrangement = Arrangement.End) {
-                definition.outputs.take(5).forEach { socket -> SocketAction(socket, true, onSocket = { onSocket(socket, true) }) }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 5.dp, vertical = 4.dp), horizontalArrangement = Arrangement.End) {
+                definition.outputs.forEach { socket -> SocketAction(socket, true, onSocket = { onSocket(socket, true) }) }
             }
         }
     }
@@ -810,6 +819,7 @@ private fun nodeSummary(node: VisualNode): String = when (node.type) {
     "variable.set" -> "Set " + node.config["key"].orEmpty()
     "variable.get" -> "Get " + node.config["key"].orEmpty()
     "counter.increment" -> "Counter " + node.config["key"].orEmpty()
+    "value.toText" -> "Convert number to text"
     "flow.delay" -> "Wait " + node.config["milliseconds"].orEmpty() + " ms"
     "flow.repeat" -> "Repeat " + node.config["count"].orEmpty() + " times"
     "flow.repeatEnd" -> "Return to Repeat"

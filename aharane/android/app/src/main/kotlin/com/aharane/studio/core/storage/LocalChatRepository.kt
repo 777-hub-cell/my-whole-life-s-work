@@ -29,6 +29,12 @@ class LocalChatRepository(context: Context) {
     suspend fun conversations(account: ChatAccount): List<ChatSummary> =
         dao.conversations(account.apiValue).map { it.toModel() }
 
+    suspend fun applyDeletedMessages(key: ConversationKey, messageIds: List<String>) {
+        messageIds.distinct().take(2000).forEach { id ->
+            if (id.isNotBlank()) dao.deleteMessage(key.account.apiValue, key.jid, id)
+        }
+    }
+
     suspend fun saveMessages(conversation: ChatSummary, messages: List<ChatMessage>, hasOlder: Boolean? = null) {
         require(messages.all { it.key == conversation.key }) { "A message crossed its account or conversation boundary." }
         val rows = messages.map { it.toRow() }

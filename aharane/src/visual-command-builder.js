@@ -96,6 +96,12 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
 
 const definitions = new Map(VISUAL_NODE_LIBRARY.flatMap(group => group.nodes.map(node => [node.type, node])))
 const triggerTypes = new Set(['trigger.command', 'trigger.message'])
+const OWNER_ONLY_NODES = new Set([
+  'group.updateSubject', 'group.updateDescription', 'group.participantsUpdate', 'group.settingUpdate',
+  'moderation.blockContact', 'moderation.unblockContact',
+  'profile.updateName', 'profile.updateStatus',
+  'newsletter.create', 'newsletter.follow', 'newsletter.unfollow', 'newsletter.publishText',
+])
 const textValue = (value, max = 2000) => String(value == null ? '' : value).slice(0, max)
 const isExec = (node, socket) => definitions.get(node && node.type)?.ports.outputs.find(item => item.id === socket)?.type === 'exec'
 
@@ -220,6 +226,13 @@ export function validateWorkflow(input) {
       if (config.requireReply != null && typeof config.requireReply !== 'boolean' && !['true', 'false'].includes(String(config.requireReply))) {
         issue(node.id, 'error', 'The reply requirement setting is invalid.', 'Use the toggle to enable or disable it.')
       }
+      const chatScope = textValue(config.chatScope, 16) || 'direct'
+      if (!['direct', 'groups', 'both'].includes(chatScope)) issue(node.id, 'error', 'The chat scope is invalid.', 'Choose direct chats, groups, or both.')
+      if (workflow.account === 'private' && chatScope !== 'direct') issue(node.id, 'error', 'Private commands cannot run in groups.', 'Keep the Private account scope set to direct chats.')
+    }
+    if (node.type === 'trigger.message') {
+      const chatScope = textValue(config.chatScope, 16) || 'direct'
+      if (!['direct', 'groups', 'both'].includes(chatScope)) issue(node.id, 'error', 'The message-event chat scope is invalid.', 'Choose direct chats, groups, or both.')
     }
     if (['message.sendText', 'message.replyText'].includes(node.type) && !textValue(config.text).trim() && !inputEdge(workflow, node.id, 'text')) {
       issue(node.id, 'error', 'Message text is required.', 'Enter text or connect a text output.')
@@ -236,6 +249,37 @@ export function validateWorkflow(input) {
     if (node.type === 'contact.sendCard') {
       if (!textValue(config.name, 80).trim() || /[\r\n]/.test(textValue(config.name, 80))) issue(node.id, 'error', 'A valid contact name is required.', 'Enter a single-line display name.')
       if (!/^\+?[0-9]{7,15}$/.test(textValue(config.phone, 20).replace(/[\s()-]/g, ''))) issue(node.id, 'error', 'The contact phone number is invalid.', 'Use 7 to 15 digits, optionally beginning with +.')
+    }
+    if (node.type === 'group.getInfo' || node.type === 'group.updateSubject' || node.type === 'group.updateDescription' ||
+        node.type === 'group.participantsUpdate' || node.type === 'group.settingUpdate') {
+      if (workflow.account !== 'public') issue(node.id, 'error', 'Group nodes are available only on the Public account.', 'Use the Public account and a group-enabled command trigger.')
+    }
+    if (node.type === 'group.updateSubject' && !textValue(config.subject, 100).trim()) issue(node.id, 'error', 'A group name is required.', 'Enter the new group subject.')
+    if (node.type === 'group.updateDescription' && !textValue(config.description, 512).trim()) issue(node.id, 'error', 'A group description is required.', 'Enter the new group description.')
+    if (node.type === 'group.participantsUpdate') {
+      const action = textValue(config.action, 16)
+      if (!['add', 'remove', 'promote', 'demote'].includes(action)) issue(node.id, 'error', 'The participant action is invalid.', 'Choose add, remove, promote, or demote.')
+      const phones = textValue(config.participants, 1000).split(/[\\n,]+/).map(value => value.replace(/[\\s()-]/g, '').replace(/^\\+/, '')).filter(Boolean)
+      if (!phones.length || phones.length > 50 || phones.some(phone => !/^[0-9]{7,15}$/.test(phone))) {
+        issue(node.id, 'error', 'Participant numbers are invalid.', 'Enter 1 to 50 phone numbers, one per line, using 7 to 15 digits.')
+      }
+    }
+    if (node.type === 'group.settingUpdate' && !['announcement', 'not_announcement', 'locked', 'unlocked'].includes(textValue(config.setting, 24))) {
+      issue(node.id, 'error', 'The group setting is invalid.', 'Choose announcement, not_announcement, locked, or unlocked.')
+    }
+    if (['moderation.blockContact', 'moderation.unblockContact'].includes(node.type)) {
+      const phone = textValue(config.phone, 20).replace(/[\\s()-]/g, '').replace(/^\\+/, '')
+      if (!/^[0-9]{7,15}$/.test(phone)) issue(node.id, 'error', 'The contact number is invalid.', 'Use a phone number containing 7 to 15 digits.')
+    }
+    if (node.type === 'profile.updateName' && !textValue(config.name, 80).trim()) issue(node.id, 'error', 'A profile name is required.', 'Enter the WhatsApp account name.')
+    if (node.type === 'profile.updateStatus' && !textValue(config.status, 139).trim()) issue(node.id, 'error', 'A profile status is required.', 'Enter the account status text.')
+    if (node.type === 'newsletter.create' && !textValue(config.name, 100).trim()) issue(node.id, 'error', 'A newsletter name is required.', 'Enter a newsletter name.')
+    if (['newsletter.follow', 'newsletter.unfollow', 'newsletter.publishText'].includes(node.type) &&
+        !/^\\d{5,25}@newsletter$/.test(textValue(config.newsletterJid, 80))) {
+      issue(node.id, 'error', 'The newsletter ID is invalid.', 'Use the WhatsApp newsletter JID ending in @newsletter.')
+    }
+    if (node.type === 'newsletter.publishText' && !textValue(config.text, 2000).trim()) {
+      issue(node.id, 'error', 'Newsletter post text is required.', 'Enter the text to publish.')
     }
     if (node.type === 'message.sendButtons') {
       const buttons = textValue(config.buttons, 1000).split(/\r?\n/).map(value => value.trim()).filter(Boolean)
@@ -335,6 +379,10 @@ export function validateWorkflow(input) {
   }
 
   const trigger = triggers[0]
+  const groupNodes = workflow.nodes.filter(node => node.type.startsWith('group.'))
+  if (groupNodes.length && trigger && !triggerAllowsGroups(trigger)) {
+    for (const node of groupNodes) issue(node.id, 'error', 'This group node is not reachable under the trigger chat scope.', 'Set the Public trigger chat scope to Groups or Both.')
+  }
   if (workflow.account === 'private' && trigger?.type === 'trigger.message') {
     issue(trigger.id, 'error', 'Private message-event triggers are not supported.', 'Use Command trigger. The Private account only accepts owner self-chat commands.')
   }
@@ -411,9 +459,20 @@ function readInput(workflow, node, socketId, configKey, context) {
   if (edge) return resolveSource(workflow, edge, context)
   return resolveTemplate(node.config[configKey], { ...context.event, variables: context.variables, counters: context.counters })
 }
-function safeChat(context) {
+function isGroupJid(jid) {
+  return /^\d{5,25}-\d{5,25}@g\.us$/.test(textValue(jid, 100))
+}
+
+function triggerAllowsGroups(trigger) {
+  const scope = textValue(trigger?.config?.chatScope, 16) || 'direct'
+  return scope === 'groups' || scope === 'both'
+}
+
+function safeChat(context, trigger) {
   const jid = textValue(context.remoteJid, 100)
-  return /^\d{7,15}@s\.whatsapp\.net$/.test(jid)
+  if (/^\d{7,15}@s\.whatsapp\.net$/.test(jid)) return true
+  return context.sessionId === 'public' && context.allowedPublicSender === true &&
+    isGroupJid(jid) && triggerAllowsGroups(trigger)
 }
 
 export async function executeVisualWorkflow(input, options = {}) {
@@ -430,9 +489,8 @@ export async function executeVisualWorkflow(input, options = {}) {
     ? event.sessionId === 'private' && event.privateControl === true
     : event.sessionId === 'public' && event.allowedPublicSender === true
   if (!authorized) return { ok: false, dryRun, validation, trace, error: 'This WhatsApp account is not authorized to run the workflow.' }
-  if (!safeChat(event)) return { ok: false, dryRun, validation, trace, error: 'Only verified one-to-one chats are supported.' }
-
   const trigger = workflow.nodes.find(node => triggerTypes.has(node.type))
+  if (!safeChat(event, trigger)) return { ok: false, dryRun, validation, trace, error: 'This workflow is not enabled for the current chat type.' }
   if (trigger.type === 'trigger.command') {
     const prefix = workflow.account === 'private' ? '.' : '!'
     const raw = textValue(event.messageText).trim()
@@ -482,6 +540,10 @@ export async function executeVisualWorkflow(input, options = {}) {
       }
       let next = firstEdge(node, 'next')
       try {
+        if (OWNER_ONLY_NODES.has(node.type)) {
+          const owner = workflow.account === 'private' ? event.privateControl === true : event.isPublicOwner === true
+          if (!owner) throw new Error('This operation is restricted to the authenticated account owner.')
+        }
         if (node.type === 'message.sendText' || node.type === 'message.replyText') {
           const value = textValue(readInput(workflow, node, 'text', 'text', state))
           if (!value.trim()) throw new Error('Message text is empty.')
@@ -558,6 +620,16 @@ export async function executeVisualWorkflow(input, options = {}) {
             outputs.set(node.id, { sent })
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the interactive message.' })
           }
+        } else if (node.type === 'media.forwardOriginal') {
+          if (!event.message?.key?.id || !event.message?.message) throw new Error('There is no original message to forward.')
+          if (dryRun) {
+            trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would forward the original message and its supported media.' })
+          } else {
+            const sent = await event.socket.sendMessage(event.remoteJid, { forward: event.message })
+            if (!sent?.key?.id) throw new Error('WhatsApp did not return the forwarded message.')
+            outputs.set(node.id, { sent })
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the forwarded message.' })
+          }
         } else if (node.type === 'message.sendPoll') {
           const title = textValue(node.config.title, 180).trim()
           const values = textValue(node.config.options, 1000).split(/\r?\n/).map(value => value.trim()).filter(Boolean)
@@ -579,6 +651,74 @@ export async function executeVisualWorkflow(input, options = {}) {
             outputs.set(node.id, { sent })
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the poll.' })
           }
+        } else if (node.type === 'group.getInfo') {
+          if (!isGroupJid(event.remoteJid)) throw new Error('Group information requires a group command trigger.')
+          const metadata = await event.socket.groupMetadata(event.remoteJid)
+          const participantCount = Array.isArray(metadata?.participants) ? metadata.participants.length : Number(metadata?.size || 0)
+          outputs.set(node.id, { subject: textValue(metadata?.subject, 100), participantCount })
+          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'Loaded group information.' })
+        } else if (node.type === 'group.updateSubject') {
+          if (!isGroupJid(event.remoteJid)) throw new Error('Changing a group name requires a group chat.')
+          const subject = textValue(node.config.subject, 100).trim()
+          await event.socket.groupUpdateSubject(event.remoteJid, subject)
+          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the new group name.' })
+        } else if (node.type === 'group.updateDescription') {
+          if (!isGroupJid(event.remoteJid)) throw new Error('Changing a group description requires a group chat.')
+          const description = textValue(node.config.description, 512).trim()
+          await event.socket.groupUpdateDescription(event.remoteJid, description)
+          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the new group description.' })
+        } else if (node.type === 'group.participantsUpdate') {
+          if (!isGroupJid(event.remoteJid)) throw new Error('Participant management requires a group chat.')
+          const action = textValue(node.config.action, 16)
+          const phones = textValue(node.config.participants, 1000).split(/[\\n,]+/).map(value => value.replace(/[\\s()-]/g, '').replace(/^\\+/, '')).filter(Boolean)
+          const participants = phones.map(phone => phone + '@s.whatsapp.net')
+          const results = await event.socket.groupParticipantsUpdate(event.remoteJid, participants, action)
+          const rejected = Array.isArray(results) ? results.filter(item => String(item?.status || '') !== '200') : []
+          if (rejected.length || !Array.isArray(results) || results.length !== participants.length) {
+            throw new Error('WhatsApp did not confirm every participant action: ' + JSON.stringify(rejected.map(item => ({ jid: item.jid, status: item.status })).slice(0, 10)))
+          }
+          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp confirmed ' + results.length + ' participant update(s).' })
+        } else if (node.type === 'group.settingUpdate') {
+          if (!isGroupJid(event.remoteJid)) throw new Error('Changing group settings requires a group chat.')
+          const setting = textValue(node.config.setting, 24)
+          await event.socket.groupSettingUpdate(event.remoteJid, setting)
+          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the group setting.' })
+        } else if (node.type === 'moderation.blockContact' || node.type === 'moderation.unblockContact') {
+          const phone = textValue(node.config.phone, 20).replace(/[\\s()-]/g, '').replace(/^\\+/, '')
+          if (!/^[0-9]{7,15}$/.test(phone)) throw new Error('The contact phone number is invalid.')
+          await event.socket.updateBlockStatus(phone + '@s.whatsapp.net', node.type === 'moderation.blockContact' ? 'block' : 'unblock')
+          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: node.type === 'moderation.blockContact' ? 'Contact blocked.' : 'Contact unblocked.' })
+        } else if (node.type === 'profile.updateName') {
+          const name = textValue(node.config.name, 80).trim()
+          await event.socket.updateProfileName(name)
+          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the profile name.' })
+        } else if (node.type === 'profile.updateStatus') {
+          const status = textValue(node.config.status, 139).trim()
+          await event.socket.updateProfileStatus(status)
+          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the profile status.' })
+        } else if (node.type === 'newsletter.create') {
+          const name = textValue(node.config.name, 100).trim()
+          const description = textValue(node.config.description, 512).trim()
+          const created = await event.socket.newsletterCreate(name, description)
+          const newsletterJid = textValue(created?.id, 80)
+          if (!/^\\d{5,25}@newsletter$/.test(newsletterJid)) throw new Error('WhatsApp did not return a valid newsletter ID.')
+          outputs.set(node.id, { newsletterJid })
+          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'Newsletter created: ' + newsletterJid })
+        } else if (node.type === 'newsletter.follow' || node.type === 'newsletter.unfollow') {
+          const newsletterJid = textValue(node.config.newsletterJid, 80)
+          if (!/^\\d{5,25}@newsletter$/.test(newsletterJid)) throw new Error('The newsletter ID is invalid.')
+          await (node.type === 'newsletter.follow'
+            ? event.socket.newsletterFollow(newsletterJid)
+            : event.socket.newsletterUnfollow(newsletterJid))
+          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: node.type === 'newsletter.follow' ? 'Newsletter followed.' : 'Newsletter unfollowed.' })
+        } else if (node.type === 'newsletter.publishText') {
+          const newsletterJid = textValue(node.config.newsletterJid, 80)
+          const text = textValue(node.config.text, 2000).trim()
+          if (!/^\\d{5,25}@newsletter$/.test(newsletterJid) || !text) throw new Error('Newsletter ID or post text is invalid.')
+          const sent = await event.socket.sendMessage(newsletterJid, { text })
+          if (!sent?.key?.id) throw new Error('WhatsApp did not return the newsletter post.')
+          outputs.set(node.id, { sent })
+          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the newsletter post.' })
         } else if (node.type === 'condition.equals') {
           const left = textValue(readInput(workflow, node, 'left', 'left', state))
           const right = textValue(readInput(workflow, node, 'right', 'right', state))

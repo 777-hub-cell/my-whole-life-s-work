@@ -588,6 +588,44 @@ test('messages deleted by the other participant stay in the Hub store with a del
   }
 })
 
+test('whole-conversation remote delete retains incoming history and does not erase owner or unknown-direction messages', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-remote-clear-retention-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348799999999@s.whatsapp.net'
+    for (const [id, fromMe, text] of [
+      ['incoming-1', false, 'Keep incoming one'],
+      ['incoming-2', false, 'Keep incoming two'],
+      ['outgoing-1', true, 'Keep my own message'],
+      ['unknown-1', undefined, 'Keep unknown direction'],
+    ]) {
+      await store.recordMessage({
+        sessionId: 'private',
+        message: {
+          key: { id, remoteJid: jid, ...(fromMe === undefined ? {} : { fromMe }) },
+          messageTimestamp: 1764200000,
+          message: { conversation: text },
+        },
+      })
+    }
+
+    assert.equal(await store.markConversationIncomingMessagesDeletedRemotely('private', jid), 2)
+    const messages = await store.getMessages('private', jid, { limit: 20 })
+    assert.equal(messages.length, 4)
+    const byId = Object.fromEntries(messages.map(message => [message.id, message]))
+    assert.equal(byId['incoming-1'].text, 'Keep incoming one')
+    assert.equal(byId['incoming-1'].deletedByRemote, true)
+    assert.equal(byId['incoming-2'].deletedByRemote, true)
+    assert.equal(byId['outgoing-1'].deletedByRemote, false)
+    assert.equal(byId['unknown-1'].deletedByRemote, false)
+    assert.deepEqual(await store.listDeletedMessageIds('private', jid), [])
+    assert.equal(await store.markConversationIncomingMessagesDeletedRemotely('private', jid), 0)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('remote deletion retention preserves an already downloaded incoming attachment', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'aharane-remote-delete-media-'))
   try {

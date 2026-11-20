@@ -147,7 +147,7 @@ interface ChatDao {
     @Query("DELETE FROM chat_messages WHERE account = :account AND jid = :jid AND messageId = :messageId")
     suspend fun deleteMessage(account: String, jid: String, messageId: String)
 
-    @Query("UPDATE chat_messages SET deletedByRemote = 1, deletedAtMillis = MAX(deletedAtMillis, :deletedAt) WHERE account = :account AND jid = :jid AND messageId = :messageId AND direction = 'INCOMING' AND isViewOnce = 0")
+    @Query("UPDATE chat_messages SET deletedByRemote = 1, deletedAtMillis = MAX(deletedAtMillis, :deletedAt) WHERE account = :account AND jid = :jid AND messageId = :messageId AND isViewOnce = 0")
     suspend fun markMessageDeletedRemotely(account: String, jid: String, messageId: String, deletedAt: Long)
 
     @Query("DELETE FROM chat_conversations WHERE account = :account AND jid = :jid")

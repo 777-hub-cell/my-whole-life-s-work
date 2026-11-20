@@ -2159,11 +2159,20 @@ app.get('/api/files/download', requireAdmin, async (req, res) => {
   try {
     const target = await safeSourceTarget(req.query.item)
     if (!target.info?.isFile()) return res.status(400).json({ ok: false, error: 'Choose a source file to download.' })
-    if (!SOURCE_EXTENSIONS.has(extname(target.path).toLowerCase()) && !SOURCE_ROOT_FILES.has(target.parts[0])) {
+    const extension = extname(target.path).toLowerCase()
+    const isUpdateArchive = extension === '.zip'
+    if (!SOURCE_EXTENSIONS.has(extension) && !SOURCE_ROOT_FILES.has(target.parts[0]) && !isUpdateArchive) {
       return res.status(403).json({ ok: false, error: 'This file type is not available for download.' })
     }
-    const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024
-    if (target.info.size > MAX_DOWNLOAD_BYTES) return res.status(413).json({ ok: false, error: 'This source file exceeds the 25 MB browser download limit.' })
+    const MAX_DOWNLOAD_BYTES = isUpdateArchive ? 50 * 1024 * 1024 : 25 * 1024 * 1024
+    if (target.info.size > MAX_DOWNLOAD_BYTES) {
+      return res.status(413).json({
+        ok: false,
+        error: isUpdateArchive
+          ? 'This ZIP exceeds the 50 MB update-package limit.'
+          : 'This source file exceeds the 25 MB browser download limit.'
+      })
+    }
     const info = await stat(target.full)
     if (!info.isFile() || info.size > MAX_DOWNLOAD_BYTES) return res.status(413).json({ ok: false, error: 'The source file changed or exceeds the download limit.' })
     res.set('Content-Type', 'application/octet-stream')

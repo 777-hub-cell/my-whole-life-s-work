@@ -225,6 +225,62 @@ test('quoted message text is available to downstream typed text inputs', async t
   assert.deepEqual(sent, ['Please help me'])
 })
 
+test('interactive buttons use the documented fork payload and never execute in dry-run', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft()
+  const trigger = draft.nodes[0]
+  const buttons = {
+    id: 'buttons',
+    type: 'message.sendButtons',
+    x: 280,
+    y: 100,
+    config: { text: 'Choose one', buttons: 'Yes|yes\nNo|no' },
+  }
+  draft.nodes = [trigger, buttons]
+  draft.edges = [{ id: 'buttons-exec', from: trigger.id, fromSocket: 'next', to: buttons.id, toSocket: 'in' }]
+  assert.equal(validateWorkflow(draft).valid, true, JSON.stringify(validateWorkflow(draft).errors))
+  let payload
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({ socket: { sendMessage: async (_jid, body) => { payload = body; return { key: { id: 'buttons-id' } } } } }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.deepEqual(payload, {
+    text: 'Choose one',
+    buttons: [{ text: 'Yes', id: 'yes' }, { text: 'No', id: 'no' }],
+  })
+})
+
+test('location and contact-card nodes validate and produce documented WhatsApp payloads', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft()
+  const trigger = draft.nodes[0]
+  const location = {
+    id: 'location', type: 'message.sendLocation', x: 260, y: 60,
+    config: { latitude: '6.5244', longitude: '3.3792', name: 'Lagos' },
+  }
+  const contact = {
+    id: 'contact', type: 'contact.sendCard', x: 500, y: 60,
+    config: { name: 'Ada', phone: '+234 801 234 5678' },
+  }
+  draft.nodes = [trigger, location, contact]
+  draft.edges = [
+    { id: 'location-exec', from: trigger.id, fromSocket: 'next', to: location.id, toSocket: 'in' },
+    { id: 'contact-exec', from: location.id, fromSocket: 'next', to: contact.id, toSocket: 'in' },
+  ]
+  assert.equal(validateWorkflow(draft).valid, true, JSON.stringify(validateWorkflow(draft).errors))
+  const payloads = []
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({ socket: { sendMessage: async (_jid, body) => { payloads.push(body); return { key: { id: String(payloads.length) } } } } }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.deepEqual(payloads[0], { location: { degreesLatitude: 6.5244, degreesLongitude: 3.3792, name: 'Lagos' } })
+  assert.equal(payloads[1].contacts.displayName, 'Ada')
+  assert.match(payloads[1].contacts.contacts[0].vcard, /FN:Ada/)
+  assert.match(payloads[1].contacts.contacts[0].vcard, /waid=2348012345678:\+2348012345678/)
+})
+
 test('poll node builds a documented WhatsApp poll payload; safe test never sends it', async t => {
   const { store } = await makeStore(t)
   const draft = createWorkflowDraft()

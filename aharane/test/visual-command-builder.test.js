@@ -211,21 +211,16 @@ test('quoted message text is available to downstream typed text inputs', async t
     toSocket: 'text',
   })
   assert.equal(validateWorkflow(draft).valid, true, JSON.stringify(validateWorkflow(draft).errors))
-  const message = context()
-  message.message.message = {
+  const event = context()
+  event.message.message = {
     extendedTextMessage: {
       text: '.hello Ada',
       contextInfo: { quotedMessage: { conversation: 'Please help me' } },
     },
   }
   const sent = []
-  const result = await executeVisualWorkflow(draft, {
-    store,
-    context: context({
-      message,
-      socket: { sendMessage: async (_jid, body) => { sent.push(body.text); return { key: { id: 'quoted-reply' } } } },
-    }),
-  })
+  event.socket = { sendMessage: async (_jid, body) => { sent.push(body.text); return { key: { id: 'quoted-reply' } } } }
+  const result = await executeVisualWorkflow(draft, { store, context: event })
   assert.equal(result.ok, true, result.error)
   assert.deepEqual(sent, ['Please help me'])
 })

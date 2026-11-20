@@ -535,7 +535,7 @@ fun ConversationScreen(
                             mediaPreview = mediaPreviews[mediaKey(message)],
                             mediaPreviewUnavailable = message.messageId in mediaPreviewErrors,
                             onLoadMediaPreview = { onLoadMediaPreview(message) },
-                            mediaConnected = mediaServerAvailable,
+                            mediaConnected = connected,
                             audioFile = audioFiles[mediaKey(message)],
                             audioLoading = message.messageId in audioLoading,
                             audioError = audioErrors[message.messageId],

@@ -742,8 +742,7 @@ fun AharaneApp(
             val failures = mutableListOf<String>()
             runCatching {
                 val rows = repository.chats(account)
-                chatsByAccount[account] = rows
-                localChatRepository?.saveConversations(rows)
+                chatsByAccount[account] = localChatRepository?.saveConversations(rows) ?: rows
             }.onFailure { failures += "Inbox: ${it.message ?: "unavailable"}" }
             if (openConversation != null) {
                 runCatching {
@@ -1443,8 +1442,8 @@ fun AharaneApp(
                                     repository.sendText(activeConversation!!, text, replyTo)
                                     activeMessages = refreshConversationIncrementally(activeConversation!!)
                                     val refreshedChats = repository.chats(activeConversation!!.key.account)
-                                    chatsByAccount[activeConversation!!.key.account] = refreshedChats
-                                    localChatRepository?.saveConversations(refreshedChats)
+                                    chatsByAccount[activeConversation!!.key.account] =
+                                        localChatRepository?.saveConversations(refreshedChats) ?: refreshedChats
                                 } catch (error: Exception) {
                                     serverError = error.message ?: "Message could not be sent."
                                 }
@@ -2196,8 +2195,8 @@ fun AharaneApp(
                                     var failureCount = 0
                                     try {
                                         val conversations = repository.chats(selectedAccount)
-                                        chatsByAccount[selectedAccount] = conversations
-                                        localChatRepository?.saveConversations(conversations)
+                                        chatsByAccount[selectedAccount] =
+                                            localChatRepository?.saveConversations(conversations) ?: conversations
                                         conversations.take(300).forEach { conversation ->
                                             try {
                                                 refreshConversationIncrementally(conversation)

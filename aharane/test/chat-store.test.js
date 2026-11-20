@@ -467,10 +467,18 @@ test('idempotent text send intents survive restart and never resend an uncertain
       'sending'
     )
     await afterProcessRestart.completeIdempotentSend('private', clientMessageId, 'whatsapp-message-1')
-    assert.deepEqual(
-      await afterProcessRestart.beginIdempotentSend('private', { clientMessageId, jid, text: 'hello', quotedMessageId: '' }),
-      { state: 'sent', messageId: 'whatsapp-message-1' }
-    )
+    const completedEntry = JSON.parse(await readFile(join(dir, 'chats', 'private.send-keys.json'), 'utf8'))[clientMessageId]
+    assert.equal(completedEntry.payloadHash, expectedPayloadHash)
+    assert.equal(completedEntry.jid, jid)
+    let completedReplay
+    try {
+      completedReplay = await afterProcessRestart.beginIdempotentSend(
+        'private', { clientMessageId, jid, text: 'hello', quotedMessageId: '' }
+      )
+    } catch (error) {
+      throw new Error('Same-content retry after completion failed: ' + error.message, { cause: error })
+    }
+    assert.deepEqual(completedReplay, { state: 'sent', messageId: 'whatsapp-message-1' })
     let reusedIdError = null
     try {
       await afterProcessRestart.beginIdempotentSend(

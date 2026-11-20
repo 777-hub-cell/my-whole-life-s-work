@@ -60,6 +60,7 @@ class ChatSyncWorker(
                             page.messages,
                             if (cursor.timestampMillis == 0L) page.hasOlder else null
                         )
+                        local.applyDeletedMessages(conversation.key, page.deletedMessageIds)
                     } catch (_: Exception) {
                         failures += 1
                     }

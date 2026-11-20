@@ -139,8 +139,8 @@ class MainActivity : ComponentActivity() {
         val jid = intent?.getStringExtra("aharane.notification.jid").orEmpty()
         if (account.isNotBlank() && jid.isNotBlank()) {
             notificationTarget.value = Triple(account, jid, System.currentTimeMillis())
-            intent.removeExtra("aharane.notification.account")
-            intent.removeExtra("aharane.notification.jid")
+            intent?.removeExtra("aharane.notification.account")
+            intent?.removeExtra("aharane.notification.jid")
         }
     }
 }

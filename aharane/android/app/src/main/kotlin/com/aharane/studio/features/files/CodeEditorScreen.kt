@@ -42,6 +42,8 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.aharane.studio.core.network.EditorDiagnostic
+import com.aharane.studio.core.network.ServerActivityEntry
 import androidx.compose.ui.unit.sp
 import java.util.Locale
 
@@ -98,7 +100,14 @@ fun CodeEditorScreen(
     onSelectDocument: (String) -> Unit = {},
     onCloseDocument: (String) -> Unit = {},
     onContentChange: (String, String) -> Unit = { _, _ -> },
-    onSave: suspend (String, String) -> Boolean = { _, _ -> false }
+    onSave: suspend (String, String) -> Boolean = { _, _ -> false },
+    connected: Boolean = false,
+    diagnostics: List<EditorDiagnostic> = emptyList(),
+    diagnosticsState: String = "not-run",
+    onRunDiagnostics: (String, String) -> Unit = { _, _ -> },
+    consoleEntries: List<ServerActivityEntry> = emptyList(),
+    onRefreshConsole: () -> Unit = {},
+    onClearConsole: () -> Unit = {}
 ) {
     var explorerOpen by rememberSaveable { mutableStateOf(false) }
     var panelOpen by rememberSaveable { mutableStateOf(false) }
@@ -125,8 +134,25 @@ fun CodeEditorScreen(
             }
         }
     }
+    LaunchedEffect(activeDocument?.path, editorValue.text, connected) {
+        val document = activeDocument ?: return@LaunchedEffect
+        if (connected) {
+            kotlinx.coroutines.delay(700)
+            onRunDiagnostics(document.path, editorValue.text)
+        }
+    }
     val verticalScroll = rememberScrollState()
     val horizontalScroll = rememberScrollState()
+
+    fun navigateToLine(line: Int) {
+        if (line < 1) return
+        var offset = 0
+        repeat(line - 1) {
+            val next = editorValue.text.indexOf('\n', offset)
+            if (next >= 0) offset = next + 1
+        }
+        editorValue = editorValue.copy(selection = TextRange(offset.coerceAtMost(editorValue.text.length)))
+    }
 
     BackHandler {
         when {
@@ -262,10 +288,14 @@ fun CodeEditorScreen(
                         tab = panelTab,
                         onTabSelected = { panelTab = it },
                         onClose = { panelOpen = false },
-                        message = when (panelTab) {
-                            "Problems" -> "No problems in this file."
-                            else -> "The live Studio streams the bot’s console here when connected."
-                        }
+                        connected = connected,
+                        diagnostics = diagnostics,
+                        diagnosticsState = diagnosticsState,
+                        consoleEntries = consoleEntries,
+                        onRunDiagnostics = { activeDocument?.let { onRunDiagnostics(it.path, editorValue.text) } },
+                        onRefreshConsole = onRefreshConsole,
+                        onClearConsole = onClearConsole,
+                        onNavigateToLine = ::navigateToLine
                     )
                 }
             }
@@ -332,11 +362,14 @@ fun CodeEditorScreen(
                         tab = panelTab,
                         onTabSelected = { panelTab = it },
                         onClose = { panelOpen = false },
-                        message = when (panelTab) {
-                            "Problems" -> "No problems to display."
-                            "Output" -> "No output is available while the server is disconnected."
-                            else -> "The live bot console appears when a server is connected."
-                        }
+                        connected = connected,
+                        diagnostics = diagnostics,
+                        diagnosticsState = diagnosticsState,
+                        consoleEntries = consoleEntries,
+                        onRunDiagnostics = { activeDocument?.let { onRunDiagnostics(it.path, editorValue.text) } },
+                        onRefreshConsole = onRefreshConsole,
+                        onClearConsole = onClearConsole,
+                        onNavigateToLine = ::navigateToLine
                     )
                 }
             }
@@ -650,11 +683,16 @@ private fun EditorBottomPanel(
     tab: String,
     onTabSelected: (String) -> Unit,
     onClose: () -> Unit,
-    message: String
+    connected: Boolean,
+    diagnostics: List<EditorDiagnostic>,
+    diagnosticsState: String,
+    onRunDiagnostics: () -> Unit,
+    consoleEntries: List<ServerActivityEntry>,
+    onRefreshConsole: () -> Unit,
+    onClearConsole: () -> Unit,
+    onNavigateToLine: (Int) -> Unit
 ) {
-    Column(
-        modifier.fillMaxWidth().fillMaxHeight(.36f).background(EditorPanel)
-    ) {
+    Column(modifier.fillMaxWidth().fillMaxHeight(.42f).background(EditorPanel)) {
         Row(
             Modifier.fillMaxWidth().height(39.dp).padding(start = 8.dp, end = 5.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -663,11 +701,114 @@ private fun EditorBottomPanel(
                 EditorPanelTab(label, tab == label) { onTabSelected(label) }
             }
             Spacer(Modifier.weight(1f))
+            if (tab == "Problems") {
+                EditorPanelAction("Check", connected, onRunDiagnostics)
+            } else {
+                EditorPanelAction("Refresh", connected, onRefreshConsole)
+                EditorPanelAction("Clear", connected && consoleEntries.isNotEmpty(), onClearConsole)
+            }
             EditorTool(Icons.Outlined.Close, "Close bottom panel", onClick = onClose)
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(EditorLine))
-        Text(message, color = EditorMuted, fontSize = 12.5.sp, modifier = Modifier.padding(14.dp))
+        if (tab == "Problems") {
+            val errors = diagnostics.count { it.severity.equals("error", true) }
+            val warnings = diagnostics.count { it.severity.equals("warning", true) }
+            Text(
+                when {
+                    !connected -> "Connect to Aharane to run the server syntax checker."
+                    diagnosticsState == "checking" -> "Checking source…"
+                    diagnosticsState == "unsupported" -> "No server syntax checker is configured for this file type."
+                    diagnosticsState == "failed" -> "The server diagnostics request failed."
+                    diagnosticsState == "ready" && diagnostics.isEmpty() -> "No syntax errors or warnings found."
+                    diagnostics.isNotEmpty() -> "$errors errors · $warnings warnings"
+                    else -> "Run Check to validate this file with the Aharane server."
+                },
+                color = EditorMuted,
+                fontSize = 11.5.sp,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+            )
+            if (diagnostics.isNotEmpty()) {
+                Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
+                    diagnostics.forEach { diagnostic ->
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .then(if (diagnostic.line != null) Modifier.clickable { onNavigateToLine(diagnostic.line) } else Modifier)
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                if (diagnostic.severity.equals("warning", true)) "⚠" else "●",
+                                color = if (diagnostic.severity.equals("warning", true)) Color(0xFFE5B567) else Color(0xFFF07178),
+                                fontSize = 12.sp
+                            )
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(diagnostic.message, color = EditorText, fontSize = 11.5.sp, lineHeight = 16.sp)
+                                Text(
+                                    buildString {
+                                        append(diagnostic.severity.uppercase())
+                                        diagnostic.line?.let { append(" · Line $it") }
+                                        diagnostic.column?.let { append(", column $it") }
+                                    },
+                                    color = EditorMuted,
+                                    fontSize = 10.5.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            if (consoleEntries.isEmpty()) {
+                Text(
+                    if (connected) "No server activity records are currently available."
+                    else "Connect to Aharane to load server runtime activity.",
+                    color = EditorMuted,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(14.dp)
+                )
+            } else {
+                Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
+                    consoleEntries.forEach { entry ->
+                        Column(
+                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    entry.level.uppercase(),
+                                    color = when (entry.level.lowercase()) {
+                                        "error" -> Color(0xFFF07178)
+                                        "warn", "warning" -> Color(0xFFE5B567)
+                                        else -> Color(0xFF6A9955)
+                                    },
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text("  ${entry.timestamp} · ${entry.source}", color = EditorMuted, fontSize = 10.sp)
+                            }
+                            Text(entry.message, color = EditorText, fontSize = 11.5.sp, lineHeight = 16.sp)
+                            if (entry.details.isNotBlank() && entry.details != "{}") {
+                                Text(entry.details, color = EditorMuted, fontSize = 10.sp, lineHeight = 14.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(EditorLine))
+                    }
+                }
+            }
+        }
     }
+}
+
+@Composable
+private fun EditorPanelAction(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Text(
+        label,
+        color = if (enabled) EditorText else EditorMuted.copy(alpha = .45f),
+        fontSize = 10.5.sp,
+        modifier = Modifier.clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 7.dp, vertical = 9.dp)
+    )
 }
 
 @Composable

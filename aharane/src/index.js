@@ -1368,7 +1368,7 @@ app.get('/api/visual-commands', requireAdmin, (req, res) => {
     return res.status(400).json({ ok: false, error: 'Account must be private or public.' })
   }
   const workflows = visualCommandStore.list(account || undefined).map(visualWorkflowPayload)
-  res.json({ ok: true, workflows, library: VISUAL_NODE_LIBRARY })
+  res.json({ ok: true, workflows, library: VISUAL_NODE_LIBRARY, storageWarning: visualCommandStore.storageWarning() })
 })
 
 app.post('/api/visual-commands', requireAdmin, async (req, res) => {

@@ -252,13 +252,24 @@ fun VisualCommandBuilderScreen(
 
     fun addNode(definition: VisualNodeDefinition) {
         val config = when (definition.type) {
-            "trigger.command" -> mapOf("command" to "hello", "aliases" to "", "requireQuoted" to "false", "requireReply" to "false")
+            "trigger.command" -> mapOf("command" to "hello", "aliases" to "", "requireQuoted" to "false", "requireReply" to "false", "chatScope" to "direct")
+            "trigger.message" -> mapOf("chatScope" to "direct")
             "message.sendText", "message.replyText" -> mapOf("text" to "Hello, {{sender}}!")
             "message.react" -> mapOf("emoji" to "👍")
             "message.sendPoll" -> mapOf("title" to "Quick question?", "options" to "Option A\nOption B", "selectableCount" to "1")
             "message.sendLocation" -> mapOf("latitude" to "6.5244", "longitude" to "3.3792", "name" to "Lagos")
             "contact.sendCard" -> mapOf("name" to "Contact name", "phone" to "2348012345678")
             "message.sendButtons" -> mapOf("text" to "Choose an option", "buttons" to "Yes|yes\nNo|no")
+            "group.updateSubject" -> mapOf("subject" to "Group name")
+            "group.updateDescription" -> mapOf("description" to "Group description")
+            "group.participantsUpdate" -> mapOf("action" to "promote", "participants" to "2348012345678")
+            "group.settingUpdate" -> mapOf("setting" to "announcement")
+            "moderation.blockContact", "moderation.unblockContact" -> mapOf("phone" to "2348012345678")
+            "profile.updateName" -> mapOf("name" to "Aharane")
+            "profile.updateStatus" -> mapOf("status" to "Available")
+            "newsletter.create" -> mapOf("name" to "My newsletter", "description" to "Updates")
+            "newsletter.follow", "newsletter.unfollow" -> mapOf("newsletterJid" to "")
+            "newsletter.publishText" -> mapOf("newsletterJid" to "", "text" to "Hello from Aharane")
             "condition.equals" -> mapOf("left" to "", "right" to "")
             "condition.contains" -> mapOf("text" to "{{message.text}}", "search" to "")
             "variable.set" -> mapOf("key" to "value", "value" to "")
@@ -357,7 +368,7 @@ fun VisualCommandBuilderScreen(
     val definitions = library.flatMap { it.nodes }
     val selectedCategory = library.filter { category == "All" || it.name == category }
     val visibleNodes = selectedCategory.flatMap { it.nodes }.filter {
-        (account != "private" || it.type != "trigger.message") &&
+        (account != "private" || (it.type != "trigger.message" && !it.type.startsWith("group."))) &&
             (search.isBlank() || it.name.contains(search, true) || it.description.contains(search, true))
     }
     val nodeErrorMap = validation.errors.filter { it.nodeId != null }.groupBy { it.nodeId }
@@ -846,6 +857,20 @@ private fun nodeSummary(node: VisualNode): String = when (node.type) {
     "message.sendText", "message.replyText" -> node.config["text"].orEmpty().ifBlank { "Connect text input" }
     "message.react" -> "React " + node.config["emoji"].orEmpty()
     "message.sendPoll" -> "Poll: " + node.config["title"].orEmpty()
+    "media.forwardOriginal" -> "Forward original message and media"
+    "group.getInfo" -> "Group metadata"
+    "group.updateSubject" -> "Set group name"
+    "group.updateDescription" -> "Set group description"
+    "group.participantsUpdate" -> node.config["action"].orEmpty() + " participants"
+    "group.settingUpdate" -> "Group setting: " + node.config["setting"].orEmpty()
+    "moderation.blockContact" -> "Block " + node.config["phone"].orEmpty()
+    "moderation.unblockContact" -> "Unblock " + node.config["phone"].orEmpty()
+    "profile.updateName" -> "Profile name: " + node.config["name"].orEmpty()
+    "profile.updateStatus" -> "Profile status"
+    "newsletter.create" -> "Create: " + node.config["name"].orEmpty()
+    "newsletter.follow" -> "Follow newsletter"
+    "newsletter.unfollow" -> "Unfollow newsletter"
+    "newsletter.publishText" -> "Publish newsletter text"
     "message.sendLocation" -> "Location: " + node.config["name"].orEmpty()
     "contact.sendCard" -> "Contact: " + node.config["name"].orEmpty()
     "message.sendButtons" -> "Buttons: " + node.config["buttons"].orEmpty().replace("\n", ", ")
@@ -903,6 +928,16 @@ private fun NodeConfigurationDialog(
     var config by remember(node.id) { mutableStateOf(node.config) }
     val fields = when (node.type) {
         "trigger.command" -> listOf("command" to "Command name", "aliases" to "Aliases, comma-separated")
+        "group.updateSubject" -> listOf("subject" to "New group name")
+        "group.updateDescription" -> listOf("description" to "New group description")
+        "group.participantsUpdate" -> listOf("action" to "Action (add/remove/promote/demote)", "participants" to "Phone numbers, one per line")
+        "group.settingUpdate" -> listOf("setting" to "Setting (announcement/not_announcement/locked/unlocked)")
+        "moderation.blockContact", "moderation.unblockContact" -> listOf("phone" to "Contact phone number")
+        "profile.updateName" -> listOf("name" to "Profile name")
+        "profile.updateStatus" -> listOf("status" to "Profile status")
+        "newsletter.create" -> listOf("name" to "Newsletter name", "description" to "Newsletter description")
+        "newsletter.follow", "newsletter.unfollow" -> listOf("newsletterJid" to "Newsletter JID")
+        "newsletter.publishText" -> listOf("newsletterJid" to "Newsletter JID", "text" to "Post text")
         "message.sendText", "message.replyText" -> listOf("text" to "Message text")
         "message.react" -> listOf("emoji" to "Emoji")
         "message.sendPoll" -> listOf("title" to "Poll question", "options" to "Options, one per line", "selectableCount" to "Selectable answers (1–12)")
@@ -934,6 +969,25 @@ private fun NodeConfigurationDialog(
                         .clip(RoundedCornerShape(6.dp)).background(StudioPalette.Background)
                         .border(1.dp, StudioPalette.Line, RoundedCornerShape(6.dp)).padding(8.dp)
                 )
+            }
+            if (node.type == "trigger.command" || node.type == "trigger.message") {
+                Text("Chat scope", color = StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                val selectedScope = config["chatScope"] ?: "direct"
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    listOf("direct" to "Direct", "groups" to "Groups", "both" to "Both").forEach { (value, label) ->
+                        val active = selectedScope == value
+                        Box(
+                            Modifier.clip(RoundedCornerShape(6.dp))
+                                .background(if (active) StudioPalette.Accent else StudioPalette.Background)
+                                .border(1.dp, if (active) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(6.dp))
+                                .clickable(enabled = node.config["account"] != "private") {
+                                    config = config + ("chatScope" to value)
+                                }.padding(horizontal = 8.dp, vertical = 5.dp)
+                        ) {
+                            Text(label, color = if (active) Color.White else StudioPalette.Ink, fontSize = 9.5.sp)
+                        }
+                    }
+                }
             }
             if (node.type == "trigger.command") {
                 listOf("requireQuoted" to "Require a quoted message", "requireReply" to "Only accept replies").forEach { (key, label) ->

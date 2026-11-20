@@ -4,12 +4,15 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Public
 
@@ -35,7 +38,6 @@ import com.aharane.studio.core.model.ChatFilter
 import com.aharane.studio.core.model.ChatSummary
 import com.aharane.studio.core.model.ChatMessage
 import android.app.DatePickerDialog
-import androidx.compose.material3.TextButton
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
 import java.util.Calendar
@@ -159,43 +161,82 @@ fun ChatsScreen(
             )
         }
         item {
-            StudioSearchField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = "Search chats and saved messages",
-                showIcon = false
-            )
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp))
+                    .background(StudioPalette.Surface)
+                    .border(1.dp, StudioPalette.Line, RoundedCornerShape(11.dp))
+                    .padding(start = 12.dp, end = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = {
-                    val calendar = Calendar.getInstance().apply {
-                        if (fromMillis > 0L) timeInMillis = fromMillis
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(color = StudioPalette.Ink, fontSize = 13.sp),
+                    modifier = Modifier.weight(1f).padding(vertical = 12.dp),
+                    decorationBox = { inner ->
+                        Box {
+                            if (query.isBlank()) {
+                                Text(
+                                    "Search chats and saved messages",
+                                    color = StudioPalette.Muted,
+                                    fontSize = 13.sp
+                                )
+                            }
+                            inner()
+                        }
                     }
-                    DatePickerDialog(
-                        context,
-                        { _, year, month, day ->
-                            val start = Calendar.getInstance().apply {
-                                set(year, month, day, 0, 0, 0)
-                                set(Calendar.MILLISECOND, 0)
-                            }.timeInMillis
-                            fromMillis = start
-                            toMillis = start + 86_399_999L
-                        },
-                        calendar.get(Calendar.YEAR),
-                        calendar.get(Calendar.MONTH),
-                        calendar.get(Calendar.DAY_OF_MONTH)
-                    ).show()
-                }) {
-                    Text(if (fromMillis > 0L) SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(fromMillis)) else "Filter by date")
-                }
+                )
                 if (fromMillis > 0L || toMillis > 0L) {
-                    TextButton(onClick = { fromMillis = 0L; toMillis = 0L }) { Text("Clear date") }
+                    Text(
+                        SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(fromMillis)),
+                        color = StudioPalette.Accent,
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(horizontal = 3.dp)
+                    )
+                    Box(
+                        Modifier.size(32.dp).clip(CircleShape).clickable {
+                            fromMillis = 0L
+                            toMillis = 0L
+                        },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Outlined.Close, contentDescription = "Clear date filter", tint = StudioPalette.Muted, modifier = Modifier.size(17.dp))
+                    }
+                }
+                Box(
+                    Modifier.size(36.dp).clip(CircleShape)
+                        .background(if (fromMillis > 0L || toMillis > 0L) StudioPalette.Soft else Color.Transparent)
+                        .clickable {
+                            val calendar = Calendar.getInstance().apply {
+                                if (fromMillis > 0L) timeInMillis = fromMillis
+                            }
+                            DatePickerDialog(
+                                context,
+                                { _, year, month, day ->
+                                    val start = Calendar.getInstance().apply {
+                                        set(year, month, day, 0, 0, 0)
+                                        set(Calendar.MILLISECOND, 0)
+                                    }.timeInMillis
+                                    fromMillis = start
+                                    toMillis = start + 86_399_999L
+                                },
+                                calendar.get(Calendar.YEAR),
+                                calendar.get(Calendar.MONTH),
+                                calendar.get(Calendar.DAY_OF_MONTH)
+                            ).show()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Outlined.CalendarMonth,
+                        contentDescription = "Filter saved messages by date",
+                        tint = if (fromMillis > 0L || toMillis > 0L) StudioPalette.Accent else StudioPalette.Muted,
+                        modifier = Modifier.size(19.dp)
+                    )
                 }
             }
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(12.dp))
         }
         if (query.trim().length >= 2 || fromMillis > 0L || toMillis > 0L) {
             item {

@@ -422,6 +422,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     const extracted = messageContent(message)
     const ts = timestamp(message.messageTimestamp)
     const fromMe = key.fromMe === true
+    const directionKnown = typeof key.fromMe === 'boolean'
     if (extracted.type === 'reaction') {
       const { body } = unwrap(message.message)
       const reaction = body.reactionMessage || {}
@@ -435,7 +436,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         if (serialized && Buffer.byteLength(serialized, 'utf8') <= 512 * 1024) sourceMessage = serialized
     } catch {}
     const record = {
-      id, jid, fromMe, participant: String(key.participant || ''),
+      id, jid, fromMe, directionKnown, participant: String(key.participant || ''),
       pushName: String(message.pushName || '').slice(0, 120),
       timestamp: ts, type: extracted.type, text: extracted.text,
       mimeType: extracted.mimeType, fileName: extracted.fileName ? safeName(extracted.fileName) : '',
@@ -666,7 +667,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return enqueue(account, async () => {
       const rows = await readRows(account)
       const row = rows.find(item => item.jid === jid && item.id === key)
-      if (!row || row.fromMe === true || row.deletedByRemote === true) return Boolean(row?.deletedByRemote)
+      if (!row || row.directionKnown === false || row.fromMe === true || row.deletedByRemote === true) return Boolean(row?.deletedByRemote)
       row.deletedByRemote = true
       row.deletedAt = Date.now()
       // Keep the original message body and its server-side media reference.
@@ -686,7 +687,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       for (const row of rows) {
         // Only mark messages whose sender is explicitly the other participant.
         // Unknown direction and our own messages are preserved without guessing.
-        if (row.jid !== jid || row.fromMe !== false || row.deletedByRemote === true || row.viewOnce === true) continue
+        if (row.jid !== jid || row.directionKnown === false || row.fromMe !== false || row.deletedByRemote === true || row.viewOnce === true) continue
         row.deletedByRemote = true
         row.deletedAt = deletedAt
         marked += 1

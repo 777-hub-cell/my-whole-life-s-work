@@ -485,6 +485,7 @@ private fun syntaxHighlightFor(path: String): VisualTransformation = when (path.
     "html", "htm", "xml" -> HtmlCodeHighlight
     "css", "scss" -> CssCodeHighlight
     "yaml", "yml" -> YamlCodeHighlight
+    "md", "markdown" -> MarkdownCodeHighlight
     else -> VisualTransformation.None
 }
 
@@ -526,6 +527,19 @@ private val CssCodeHighlight = RegexCodeHighlight(
         token.startsWith("#") -> Color(0xFFB5CEA8)
         token.firstOrNull()?.isDigit() == true -> Color(0xFFB5CEA8)
         else -> Color(0xFF9CDCFE)
+    }
+}
+
+private val MarkdownCodeHighlight = RegexCodeHighlight(
+    Regex("""(?m)^#{1,6}\\s+.*$|^>.*$|^[-*+]\\s+.*$|^\\s*[-*_]{3,}\\s*$|\\x60{1,3}[^\\x60\\n]+\\x60{1,3}|\\*\\*[^*]+\\*\\*|__[^_]+__|\\[[^]]+\\]\\([^)]+\\)""")
+) { token ->
+    when {
+        token.startsWith("#") -> Color(0xFF569CD6)
+        token.startsWith(">") -> Color(0xFF6A9955)
+        token.startsWith("-") || token.startsWith("*") || token.startsWith("+") -> Color(0xFFC586C0)
+        token.startsWith("`") -> Color(0xFFCE9178)
+        token.startsWith("[") -> Color(0xFF4EC9B0)
+        else -> Color(0xFFDCDCAA)
     }
 }
 

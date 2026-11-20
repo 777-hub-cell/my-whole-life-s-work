@@ -759,7 +759,7 @@ fun AharaneApp(
                     messages = if (previewMode) previewMessages.filter { it.key == activeConversation!!.key } else activeMessages,
                     connected = if (previewMode) true else currentAccountState?.connected == true,
                     onBack = { activeConversation = null },
-                    onSend = { text, _ ->
+                    onSend = { text, replyTo ->
                         if (previewMode) {
                             previewMessages.add(
                                 ChatMessage(
@@ -775,7 +775,7 @@ fun AharaneApp(
                         } else {
                             connectionScope.launch {
                                 try {
-                                    repository.sendText(activeConversation!!, text)
+                                    repository.sendText(activeConversation!!, text, replyTo)
                                     activeMessages = repository.messages(activeConversation!!)
                                     chatsByAccount[activeConversation!!.key.account] = repository.chats(activeConversation!!.key.account)
                                 } catch (error: Exception) {

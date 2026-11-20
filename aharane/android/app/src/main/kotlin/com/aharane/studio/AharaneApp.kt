@@ -1361,6 +1361,8 @@ fun AharaneApp(
                     hasOlderMessages = !previewMode && hasOlderMessages,
                     loadingOlderMessages = loadingOlderMessages,
                     lastSyncedAt = lastConversationSyncAt,
+                    autoDownloadImages = chatAppearanceStore.resolve(activeConversation!!.key.account, activeConversation!!.key.jid).autoDownloadImages,
+                    autoDownloadVideoPreviews = chatAppearanceStore.resolve(activeConversation!!.key.account, activeConversation!!.key.jid).autoDownloadVideoPreviews,
                     onSyncConversation = {
                         val target = activeConversation
                         if (target != null && !previewMode) {

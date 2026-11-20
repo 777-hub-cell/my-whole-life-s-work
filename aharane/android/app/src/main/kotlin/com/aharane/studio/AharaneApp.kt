@@ -1361,6 +1361,7 @@ fun AharaneApp(
                     hasOlderMessages = !previewMode && hasOlderMessages,
                     loadingOlderMessages = loadingOlderMessages,
                     lastSyncedAt = lastConversationSyncAt,
+                    storageWarning = localChatStorageError,
                     autoDownloadImages = chatAppearanceStore.resolve(activeConversation!!.key.account, activeConversation!!.key.jid).autoDownloadImages,
                     autoDownloadVideoPreviews = chatAppearanceStore.resolve(activeConversation!!.key.account, activeConversation!!.key.jid).autoDownloadVideoPreviews,
                     onSyncConversation = {
@@ -1830,7 +1831,8 @@ fun AharaneApp(
                         savedChatTheme = chatAppearance.optString("theme", "system"),
                         savedShowAvatars = chatAppearance.optBoolean("showAvatars", true),
                         savedShowPreviews = chatAppearance.optBoolean("showPreviews", true),
-                        savedShowTimestamps = chatAppearance.optBoolean("showTimestamps", true)
+                        savedShowTimestamps = chatAppearance.optBoolean("showTimestamps", true),
+                        localStorageError = localChatStorageError
                     )
                     MainDestination.FILES -> FilesScreen(
                         entries = studioFileEntries,

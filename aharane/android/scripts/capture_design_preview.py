@@ -99,7 +99,7 @@ def main():
     capture("01-home.png", 5)
     tap_label("Link account", occurrence=0)
     capture("01a-link-account.png")
-    back()
+    tap_label("Close")
     tap_label("Configuration", scroll_to_find=True)
     capture("01b-configuration.png")
     tap_label("Edit config.js", scroll_to_find=True)

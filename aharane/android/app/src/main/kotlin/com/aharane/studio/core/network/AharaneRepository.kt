@@ -181,6 +181,11 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
             mapOf("limit" to limit.toString(), "q" to query)
         )
         val rows = response.optJSONArray("chats") ?: JSONArray()
+        val profile = studioSettings().optJSONObject(account.apiValue) ?: JSONObject()
+        val preferences = profile.optJSONObject("chatPreferences") ?: JSONObject()
+        val pinned = preferences.optJSONArray("pinned").toStringSet()
+        val muted = preferences.optJSONArray("muted").toStringSet()
+        val archived = preferences.optJSONArray("archived").toStringSet()
         return buildList {
             for (index in 0 until rows.length()) {
                 val row = rows.optJSONObject(index) ?: continue
@@ -195,9 +200,9 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
                         lastMessageAtMillis = timestamp.coerceAtLeast(0L),
                         unreadCount = row.optInt("unreadCount").coerceAtLeast(0),
                         isGroup = row.optBoolean("group"),
-                        isArchived = row.optBoolean("archived"),
-                        isPinned = row.optBoolean("pinned"),
-                        isMuted = row.optBoolean("muted"),
+                        isArchived = row.optBoolean("archived") || jid in archived,
+                        isPinned = row.optBoolean("pinned") || jid in pinned,
+                        isMuted = row.optBoolean("muted") || jid in muted,
                         lastMessageType = parseMessageKind(row.optString("lastMessageType")),
                         lastMessageFromMe = row.optBoolean("fromMe")
                     )
@@ -281,14 +286,60 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
     }
 
     suspend fun visibility(account: ChatAccount): JSONObject =
-        api.get("chats/${account.apiValue}/visibility")
+        api.get("chats/${account.apiValue}/visibility").optJSONObject("visibility") ?: JSONObject()
 
     suspend fun saveVisibility(account: ChatAccount, visibility: JSONObject) {
         api.put("chats/${account.apiValue}/visibility", JSONObject().put("visibility", visibility))
     }
 
+    suspend fun setVisibilityModes(
+        account: ChatAccount,
+        showIndividuals: Boolean,
+        showGroups: Boolean
+    ) {
+        val current = visibility(account)
+        val individuals = current.optJSONObject("individuals") ?: JSONObject()
+        val groups = current.optJSONObject("groups") ?: JSONObject()
+        individuals.put("mode", if (showIndividuals) "all" else "selected")
+        groups.put("mode", if (showGroups) "all" else "selected")
+        current.put("individuals", individuals).put("groups", groups)
+        saveVisibility(account, current)
+    }
+
     suspend fun starredMessages(account: ChatAccount): JSONArray =
         api.get("chats/${account.apiValue}/starred").optJSONArray("messages") ?: JSONArray()
+
+    suspend fun starredPreviews(account: ChatAccount): List<String> {
+        val messages = starredMessages(account)
+        return buildList {
+            for (index in 0 until messages.length()) {
+                val row = messages.optJSONObject(index) ?: continue
+                val body = row.optString("text").ifBlank { row.optString("type").replaceFirstChar { it.uppercase() } }
+                add("${row.optString("pushName").ifBlank { row.optString("jid") }} · $body")
+            }
+        }
+    }
+
+    suspend fun setChatPreferences(
+        account: ChatAccount,
+        jid: String,
+        pinned: Boolean? = null,
+        muted: Boolean? = null
+    ) {
+        val body = JSONObject().put("jid", jid)
+        pinned?.let { body.put("pinned", it) }
+        muted?.let { body.put("muted", it) }
+        api.put("chats/${account.apiValue}/preferences", body)
+    }
+
+    suspend fun chatAppearance(): JSONObject =
+        studioSettings().optJSONObject("chatAppearance") ?: JSONObject()
+
+    suspend fun saveChatAppearance(appearance: JSONObject) {
+        val settings = studioSettings()
+        settings.put("chatAppearance", appearance)
+        saveStudioSettings(settings)
+    }
 
     suspend fun pairCode(account: ChatAccount): String =
         api.post("accounts/${account.apiValue}/pair-code", JSONObject()).optString("pairingCode")
@@ -551,6 +602,11 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
             freeBytes = disk.optLong("freeBytes"),
             mediaBytes = media.optLong("bytes")
         )
+    }
+
+    private fun JSONArray?.toStringSet(): Set<String> {
+        if (this == null) return emptySet()
+        return buildSet { for (index in 0 until length()) add(optString(index)) }
     }
 
     private fun parseAccount(account: ChatAccount, json: JSONObject): ServerAccountState =

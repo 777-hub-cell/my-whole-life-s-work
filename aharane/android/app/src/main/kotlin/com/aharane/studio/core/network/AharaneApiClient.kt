@@ -152,7 +152,7 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
     suspend fun reactToMessage(account: String, jid: String, messageId: String, reaction: String): JSONObject =
         post(
             "chats/$account/${encodePath(jid)}/reaction",
-            JSONObject().put("messageId", messageId).put("reaction", reaction)
+            chatApiBody(ChatApiRequestFields.reaction(messageId, reaction))
         )
 
     suspend fun starMessage(account: String, jid: String, messageId: String, starred: Boolean): JSONObject =
@@ -185,7 +185,7 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
     suspend fun forwardMessage(account: String, jid: String, messageId: String, destinationJid: String): JSONObject =
         post(
             "chats/$account/${encodePath(jid)}/forward",
-            JSONObject().put("messageId", messageId).put("destinationJid", destinationJid)
+            chatApiBody(ChatApiRequestFields.forward(messageId, destinationJid))
         )
 
     suspend fun sendChatMedia(

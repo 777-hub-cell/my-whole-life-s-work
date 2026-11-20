@@ -38,9 +38,11 @@ dependencies {
     implementation(libs.room.ktx)
     implementation(libs.androidx.sqlite)
     implementation(libs.sqlcipher)
+    implementation(libs.work.ktx)
     ksp(libs.room.compiler)
     testImplementation(libs.junit)
     testImplementation(libs.room.testing)
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.work.testing)
 }

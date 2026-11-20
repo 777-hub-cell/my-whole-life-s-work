@@ -69,6 +69,13 @@ import android.media.PlaybackParams
 import android.os.Build
 import java.io.File
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
+import android.graphics.drawable.Animatable
+import android.graphics.drawable.Drawable
+import android.widget.ImageView
+import android.widget.MediaController
+import android.widget.VideoView
+import androidx.compose.ui.viewinterop.AndroidView
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -119,7 +126,12 @@ fun ConversationScreen(
     audioLoading: Set<String> = emptySet(),
     audioErrors: Map<String, String> = emptyMap(),
     audioWaveforms: Map<String, List<Float>> = emptyMap(),
+    animatedMediaFiles: Map<String, File> = emptyMap(),
+    videoFiles: Map<String, File> = emptyMap(),
+    videoLoading: Set<String> = emptySet(),
+    videoErrors: Map<String, String> = emptyMap(),
     onLoadMediaPreview: (ChatMessage) -> Unit = {},
+    onLoadVideo: (ChatMessage) -> Unit = {},
     onLoadAudio: (ChatMessage) -> Unit = {},
     onDownloadMedia: (ChatMessage) -> Unit = {},
     onOpenLocation: (ChatMessage) -> Unit = {}
@@ -386,6 +398,11 @@ fun ConversationScreen(
                             audioLoading = message.messageId in audioLoading,
                             audioError = audioErrors[message.messageId],
                             audioWaveform = audioWaveforms[mediaKey(message)].orEmpty(),
+                            animatedMediaFile = animatedMediaFiles[mediaKey(message)],
+                            videoFile = videoFiles[mediaKey(message)],
+                            videoLoading = message.messageId in videoLoading,
+                            videoError = videoErrors[message.messageId],
+                            onLoadVideo = { onLoadVideo(message) },
                             onLoadAudio = { onLoadAudio(message) },
                             onDownloadMedia = { onDownloadMedia(message) },
                             onOpenLocation = { onOpenLocation(message) }
@@ -723,6 +740,11 @@ private fun MessageBubble(
     audioLoading: Boolean,
     audioError: String?,
     audioWaveform: List<Float>,
+    animatedMediaFile: File?,
+    videoFile: File?,
+    videoLoading: Boolean,
+    videoError: String?,
+    onLoadVideo: () -> Unit,
     onLoadAudio: () -> Unit,
     onDownloadMedia: () -> Unit,
     onOpenLocation: () -> Unit
@@ -839,6 +861,11 @@ private fun MessageBubble(
                     audioLoading = audioLoading,
                     audioError = audioError,
                     audioWaveform = if (appearance.audioStyle == "minimal") emptyList() else audioWaveform,
+                    animatedMediaFile = animatedMediaFile,
+                    videoFile = videoFile,
+                    videoLoading = videoLoading,
+                    videoError = videoError,
+                    onLoadVideo = onLoadVideo,
                     appearance = appearance,
                     autoDownloadImages = autoDownloadImages,
                     autoDownloadVideoPreviews = autoDownloadVideoPreviews,
@@ -893,6 +920,11 @@ private fun MessageContent(
     audioLoading: Boolean,
     audioError: String?,
     audioWaveform: List<Float>,
+    animatedMediaFile: File?,
+    videoFile: File?,
+    videoLoading: Boolean,
+    videoError: String?,
+    onLoadVideo: () -> Unit,
     appearance: ChatAppearance,
     autoDownloadImages: Boolean,
     autoDownloadVideoPreviews: Boolean,
@@ -925,7 +957,14 @@ private fun MessageContent(
                 if (mediaConnected && autoDownloadImages && mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
             }
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                if (mediaPreview != null) {
+                if (animatedMediaFile != null) {
+                    AnimatedMediaPreview(
+                        file = animatedMediaFile,
+                        fallback = mediaPreview,
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp)
+                            .clip(RoundedCornerShape(appearance.mediaRadius.dp)).clickable(onClick = onLoadMedia)
+                    )
+                } else if (mediaPreview != null) {
                     Image(
                         bitmap = mediaPreview,
                         contentDescription = message.mediaFileName ?: "WhatsApp image",
@@ -968,38 +1007,47 @@ private fun MessageContent(
             LaunchedEffect(message.messageId, mediaPreview, mediaPreviewUnavailable) {
                 if (mediaConnected && autoDownloadVideoPreviews && mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
             }
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(appearance.mediaRadius.dp)).background(soft).clickable(onClick = onLoadMedia)) {
-                if (mediaPreview != null) {
-                    Box(Modifier.fillMaxWidth().heightIn(max = 210.dp), contentAlignment = Alignment.Center) {
-                        Image(bitmap = mediaPreview, contentDescription = "Video thumbnail", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().heightIn(max = 210.dp))
-                        Box(Modifier.size(46.dp).clip(CircleShape).background(Color.Black.copy(alpha = .62f)), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Outlined.PlayArrow, "Play video", tint = Color.White, modifier = Modifier.size(30.dp))
+            if (videoFile != null) {
+                InlineVideoPlayer(videoFile, appearance.mediaRadius)
+            } else {
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(appearance.mediaRadius.dp))
+                        .background(soft).clickable(enabled = !videoLoading, onClick = onLoadVideo)
+                ) {
+                    if (mediaPreview != null) {
+                        Box(Modifier.fillMaxWidth().heightIn(max = 210.dp), contentAlignment = Alignment.Center) {
+                            Image(bitmap = mediaPreview, contentDescription = "Video thumbnail", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().heightIn(max = 210.dp))
+                            Box(Modifier.size(46.dp).clip(CircleShape).background(Color.Black.copy(alpha = .62f)), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Outlined.PlayArrow, "Play video", tint = Color.White, modifier = Modifier.size(30.dp))
+                            }
+                        }
+                    } else {
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.Videocam, null, tint = foreground, modifier = Modifier.size(24.dp))
+                            Column(Modifier.weight(1f).padding(start = 9.dp)) {
+                                Text(message.mediaFileName ?: "Video", color = foreground, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    when {
+                                        videoError != null -> videoError
+                                        videoLoading -> "Preparing video playback…"
+                                        mediaPreviewUnavailable -> message.mediaUnavailable ?: "Video preview unavailable"
+                                        !mediaConnected -> "Not saved offline · reconnect to load."
+                                        !autoDownloadVideoPreviews -> "Preview not auto-downloaded · tap to play"
+                                        else -> "Tap to load and play"
+                                    },
+                                    color = if (videoError != null) StudioPalette.Bad else foreground.copy(alpha = .7f),
+                                    fontSize = 10.5.sp
+                                )
+                            }
+                            Icon(Icons.Outlined.PlayArrow, null, tint = foreground, modifier = Modifier.size(22.dp))
                         }
                     }
-                } else {
-                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Videocam, null, tint = foreground, modifier = Modifier.size(24.dp))
-                        Column(Modifier.weight(1f).padding(start = 9.dp)) {
-                            Text(message.mediaFileName ?: "Video", color = foreground, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                when {
-                                    mediaPreviewUnavailable -> message.mediaUnavailable ?: "Video preview unavailable"
-                                    !mediaConnected -> "Not saved offline · reconnect to load."
-                                    !autoDownloadVideoPreviews -> "Preview not auto-downloaded · tap to play"
-                                    else -> "Preparing video preview…"
-                                },
-                                color = foreground.copy(alpha = .7f),
-                                fontSize = 10.5.sp
-                            )
-                        }
-                        Icon(Icons.Outlined.PlayArrow, null, tint = foreground, modifier = Modifier.size(22.dp))
-                    }
+                    Text(
+                        "${message.mediaMimeType ?: "Video"} · ${message.mediaSizeBytes?.let(::formatMediaBytes) ?: "Size unavailable"} · Tap to play",
+                        color = foreground.copy(alpha = .72f), fontSize = 10.5.sp,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
                 }
-                Text(
-                    "${message.mediaMimeType ?: "Video"} · ${message.mediaSizeBytes?.let(::formatMediaBytes) ?: "Size unavailable"} · Tap to play",
-                    color = foreground.copy(alpha = .72f), fontSize = 10.5.sp,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                )
             }
         }
         MessageKind.AUDIO -> AudioMessagePlayer(
@@ -1321,3 +1369,73 @@ private fun readableAppearanceText(background: Color): Color {
 
 private fun appearanceLuminance(color: Color): Float =
     .2126f * color.red + .7152f * color.green + .0722f * color.blue
+
+
+@Composable
+private fun AnimatedMediaPreview(file: File, fallback: ImageBitmap?, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    var drawable by remember(file) { mutableStateOf<Drawable?>(null) }
+    LaunchedEffect(file) {
+        drawable = if (Build.VERSION.SDK_INT >= 28) withContext(Dispatchers.IO) {
+            runCatching {
+                ImageDecoder.decodeDrawable(ImageDecoder.createSource(file))
+            }.getOrNull()
+        } else null
+    }
+    val animation = drawable as? Animatable
+    DisposableEffect(animation) {
+        animation?.start()
+        onDispose { animation?.stop() }
+    }
+    if (drawable != null) {
+        AndroidView(
+            factory = { viewContext ->
+                ImageView(viewContext).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    contentDescription = "Animated WhatsApp media"
+                }
+            },
+            update = { it.setImageDrawable(drawable) },
+            modifier = modifier
+        )
+    } else if (fallback != null) {
+        Image(fallback, "WhatsApp media preview", modifier, contentScale = ContentScale.Fit)
+    } else {
+        Text("Animated preview is not supported on this Android version.", modifier = modifier)
+    }
+}
+
+@Composable
+private fun InlineVideoPlayer(file: File, radius: Int) {
+    val context = LocalContext.current
+    var playbackError by remember(file) { mutableStateOf("") }
+    val player = remember(file) {
+        VideoView(context).apply {
+            val controller = MediaController(context)
+            controller.setAnchorView(this)
+            setMediaController(controller)
+            setVideoPath(file.absolutePath)
+            setOnPreparedListener { mediaPlayer ->
+                mediaPlayer.isLooping = false
+                start()
+            }
+            setOnErrorListener { _, _, _ ->
+                playbackError = "This video codec is not supported by this device."
+                true
+            }
+        }
+    }
+    DisposableEffect(file, player) {
+        onDispose { player.stopPlayback() }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        AndroidView(
+            factory = { player },
+            modifier = Modifier.fillMaxWidth().height(210.dp)
+                .clip(RoundedCornerShape(radius.dp))
+        )
+        if (playbackError.isNotBlank()) {
+            Text(playbackError, color = StudioPalette.Bad, fontSize = 11.sp)
+        }
+    }
+}

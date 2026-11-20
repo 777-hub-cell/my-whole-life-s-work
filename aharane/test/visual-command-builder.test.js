@@ -373,6 +373,45 @@ test('repeat stops immediately when an action inside its body fails', async t =>
   assert.match(result.error, /simulated WhatsApp failure/)
 })
 
+test('Repeat validation rejects a branch that does not reach End repeat body', () => {
+  const draft = createWorkflowDraft()
+  const trigger = draft.nodes[0]
+  const repeat = { id: 'repeat', type: 'flow.repeat', x: 260, y: 100, config: { count: 2 } }
+  const condition = { id: 'condition', type: 'condition.equals', x: 480, y: 100, config: { left: 'yes', right: 'yes' } }
+  const send = { id: 'send', type: 'message.sendText', x: 720, y: 30, config: { text: 'OK' } }
+  const missingTerminator = { id: 'missing', type: 'message.sendText', x: 720, y: 180, config: { text: 'Also OK' } }
+  const repeatEnd = { id: 'repeat-end', type: 'flow.repeatEnd', x: 960, y: 30, config: {} }
+  const end = { id: 'end', type: 'flow.end', x: 960, y: 180, config: {} }
+  draft.nodes = [trigger, repeat, condition, send, missingTerminator, repeatEnd, end]
+  draft.edges = [
+    { id: 'trigger', from: trigger.id, fromSocket: 'next', to: repeat.id, toSocket: 'in' },
+    { id: 'body', from: repeat.id, fromSocket: 'body', to: condition.id, toSocket: 'in' },
+    { id: 'yes', from: condition.id, fromSocket: 'yes', to: send.id, toSocket: 'in' },
+    { id: 'no', from: condition.id, fromSocket: 'no', to: missingTerminator.id, toSocket: 'in' },
+    { id: 'yes-next', from: send.id, fromSocket: 'next', to: repeatEnd.id, toSocket: 'in' },
+    { id: 'no-next', from: missingTerminator.id, fromSocket: 'next', to: end.id, toSocket: 'in' },
+    { id: 'after-repeat', from: repeat.id, fromSocket: 'next', to: end.id, toSocket: 'in' },
+  ]
+  const validation = validateWorkflow(draft)
+  assert.equal(validation.valid, false)
+  assert.ok(validation.errors.some(item => item.nodeId === repeat.id && /every repeat path/i.test(item.message)))
+})
+
+test('oversized workflows are rejected instead of silently truncated', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft()
+  draft.nodes = Array.from({ length: 101 }, (_, index) => ({
+    id: 'node-' + index,
+    type: 'flow.end',
+    x: index * 10,
+    y: 0,
+    config: {},
+  }))
+  const validation = validateWorkflow(draft)
+  assert.ok(validation.errors.some(item => /100 nodes/i.test(item.message)))
+  await assert.rejects(() => store.save(draft), /100-node limit/i)
+})
+
 test('persistent counters are saved atomically and survive a fresh store instance', async t => {
   const { store, path } = await makeStore(t)
   assert.equal(await store.incrementCounter('workflow-1', 'daily'), 1)

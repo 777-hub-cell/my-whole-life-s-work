@@ -4,6 +4,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+import androidx.compose.ui.platform.LocalContext
+import com.aharane.studio.core.network.AharaneConnectionManager
+import com.aharane.studio.core.network.AharaneApiException
+import com.aharane.studio.features.connection.ConnectionScreen
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import com.aharane.studio.core.design.*
@@ -29,6 +35,7 @@ import com.aharane.studio.features.more.MoreScreen
 
 @Composable
 fun AharaneApp(
+    connectionManager: AharaneConnectionManager,
     previewMode: Boolean = false,
     themeMode: String,
     onThemeModeChanged: (String) -> Unit,
@@ -47,6 +54,95 @@ fun AharaneApp(
     editorLineNumbers: Boolean,
     onEditorLineNumbersChanged: (Boolean) -> Unit
 ) {
+    val connectionScope = rememberCoroutineScope()
+    var authenticated by remember(previewMode) { mutableStateOf(previewMode) }
+    var connectionUrl by rememberSaveable { mutableStateOf(connectionManager.savedStudioUrl) }
+    var connectionPassword by remember { mutableStateOf("") }
+    var serverVerified by remember { mutableStateOf(false) }
+    var connectionBusy by remember { mutableStateOf(false) }
+    var setupRequired by remember { mutableStateOf(false) }
+    var connectionError by remember { mutableStateOf("") }
+
+    LaunchedEffect(connectionManager, previewMode) {
+        if (!previewMode && connectionUrl.isNotBlank()) {
+            connectionBusy = true
+            try {
+                authenticated = connectionManager.restoreSession()
+                if (!authenticated) {
+                    val auth = connectionManager.api?.authStatus()
+                    serverVerified = auth != null
+                    setupRequired = auth?.optBoolean("setupRequired") == true
+                }
+            } catch (error: Exception) {
+                connectionError = error.message ?: "Could not reach your Aharane server."
+                serverVerified = false
+            } finally {
+                connectionBusy = false
+            }
+        }
+    }
+
+    if (!authenticated) {
+        ConnectionScreen(
+            studioUrl = connectionUrl,
+            password = connectionPassword,
+            serverVerified = serverVerified,
+            busy = connectionBusy,
+            errorMessage = connectionError,
+            setupRequired = setupRequired,
+            onStudioUrlChange = {
+                connectionUrl = it
+                serverVerified = false
+                setupRequired = false
+                connectionError = ""
+            },
+            onPasswordChange = { connectionPassword = it },
+            onConnect = {
+                connectionScope.launch {
+                    connectionBusy = true
+                    connectionError = ""
+                    try {
+                        val result = connectionManager.connect(connectionUrl)
+                        val auth = result.optJSONObject("auth") ?: JSONObject()
+                        serverVerified = true
+                        setupRequired = auth.optBoolean("setupRequired")
+                        connectionUrl = connectionManager.savedStudioUrl
+                    } catch (error: Exception) {
+                        connectionError = error.message ?: "Could not connect to this Aharane server."
+                        serverVerified = false
+                    } finally {
+                        connectionBusy = false
+                    }
+                }
+            },
+            onSignIn = {
+                connectionScope.launch {
+                    connectionBusy = true
+                    connectionError = ""
+                    try {
+                        connectionManager.login(connectionPassword)
+                        connectionPassword = ""
+                        authenticated = true
+                        setupRequired = false
+                    } catch (error: Exception) {
+                        connectionError = error.message ?: "Sign-in failed."
+                    } finally {
+                        connectionBusy = false
+                    }
+                }
+            },
+            onUseDifferentServer = {
+                connectionManager.forgetServer()
+                connectionUrl = ""
+                connectionPassword = ""
+                serverVerified = false
+                setupRequired = false
+                connectionError = ""
+            }
+        )
+        return
+    }
+
     var destinationName by rememberSaveable { mutableStateOf(MainDestination.HOME.name) }
     var accountName by rememberSaveable { mutableStateOf(ChatAccount.PRIVATE.name) }
     var filterName by rememberSaveable { mutableStateOf(ChatFilter.ALL.name) }

@@ -31,6 +31,13 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
     { type: 'message.sendText', name: 'Send text', description: 'Send text to the chat that triggered this workflow.', ports: ports([execIn, { id: 'text', label: 'Text', type: 'string' }], [execOut, { id: 'sent', label: 'Sent message', type: 'message' }]) },
     { type: 'message.replyText', name: 'Reply to message', description: 'Reply to the triggering WhatsApp message with a quote.', ports: ports([execIn, { id: 'text', label: 'Text', type: 'string' }], [execOut, { id: 'sent', label: 'Sent message', type: 'message' }]) },
     { type: 'message.react', name: 'React to message', description: 'React to the triggering message with an emoji.', ports: ports([execIn, { id: 'emoji', label: 'Emoji', type: 'string' }], [execOut]) },
+    { type: 'message.sendLocation', name: 'Send location', description: 'Send a WhatsApp location pin with validated coordinates.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Location message', type: 'message' }]) },
+  ] },
+  { category: 'Contacts and chats', nodes: [
+    { type: 'contact.sendCard', name: 'Send contact card', description: 'Send a WhatsApp vCard using a display name and phone number.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Contact message', type: 'message' }]) },
+  ] },
+  { category: 'Interactive messages', nodes: [
+    { type: 'message.sendButtons', name: 'Send buttons', description: 'Send up to three interactive reply buttons.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Interactive message', type: 'message' }]) },
   ] },
   { category: 'Polls and reactions', nodes: [
     { type: 'message.sendPoll', name: 'Create poll', description: 'Send a WhatsApp poll with two to twelve answer options.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Poll message', type: 'message' }]) },
@@ -189,6 +196,25 @@ export function validateWorkflow(input) {
     }
     if (node.type === 'message.react' && !textValue(config.emoji, 24).trim() && !inputEdge(workflow, node.id, 'emoji')) {
       issue(node.id, 'error', 'A reaction emoji is required.', 'Enter an emoji or connect a text output.')
+    }
+    if (node.type === 'message.sendLocation') {
+      const latitude = Number(config.latitude)
+      const longitude = Number(config.longitude)
+      if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) issue(node.id, 'error', 'Latitude is invalid.', 'Enter a coordinate between -90 and 90.')
+      if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) issue(node.id, 'error', 'Longitude is invalid.', 'Enter a coordinate between -180 and 180.')
+    }
+    if (node.type === 'contact.sendCard') {
+      if (!textValue(config.name, 80).trim() || /[\r\n]/.test(textValue(config.name, 80))) issue(node.id, 'error', 'A valid contact name is required.', 'Enter a single-line display name.')
+      if (!/^\+?[0-9]{7,15}$/.test(textValue(config.phone, 20).replace(/[\s()-]/g, ''))) issue(node.id, 'error', 'The contact phone number is invalid.', 'Use 7 to 15 digits, optionally beginning with +.')
+    }
+    if (node.type === 'message.sendButtons') {
+      const buttons = textValue(config.buttons, 1000).split(/\r?\n/).map(value => value.trim()).filter(Boolean)
+      const parsed = buttons.map(value => value.split('|').map(part => part.trim()))
+      if (!textValue(config.text, 1000).trim()) issue(node.id, 'error', 'Button message text is required.', 'Enter the prompt shown above the buttons.')
+      if (parsed.length < 1 || parsed.length > 3 || parsed.some(parts => parts.length !== 2 || !parts[0] || !/^[a-zA-Z0-9_.#-]{1,64}$/.test(parts[1]))) {
+        issue(node.id, 'error', 'Button configuration is invalid.', 'Add 1 to 3 lines in Label|id format; each id must be unique and use letters, numbers, dots, underscores or hyphens.')
+      }
+      if (new Set(parsed.map(parts => parts[1]?.toLowerCase())).size !== parsed.length) issue(node.id, 'error', 'Button IDs must be unique.', 'Give each button a different ID.')
     }
     if (node.type === 'message.sendPoll') {
       const options = textValue(config.options, 1000).split(/\r?\n/).map(value => value.trim()).filter(Boolean)
@@ -448,6 +474,59 @@ export async function executeVisualWorkflow(input, options = {}) {
             const sent = await event.socket.sendMessage(event.remoteJid, { react: { text: emoji, key } })
             if (!sent?.key?.id) throw new Error('WhatsApp did not return a reaction message result.')
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the reaction.' })
+          }
+        } else if (node.type === 'message.sendLocation') {
+          const latitude = Number(node.config.latitude)
+          const longitude = Number(node.config.longitude)
+          const name = textValue(node.config.name || 'Shared location', 100).replace(/[\r\n]/g, ' ').trim()
+          if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+            throw new Error('Location coordinates are outside the supported range.')
+          }
+          if (dryRun) {
+            trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would send location: ' + name })
+          } else {
+            const sent = await event.socket.sendMessage(event.remoteJid, {
+              location: { degreesLatitude: latitude, degreesLongitude: longitude, name },
+            })
+            if (!sent?.key?.id) throw new Error('WhatsApp did not return a location message.')
+            outputs.set(node.id, { sent })
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the location.' })
+          }
+        } else if (node.type === 'contact.sendCard') {
+          const name = textValue(node.config.name, 80).replace(/[\r\n]/g, ' ').trim()
+          const phone = textValue(node.config.phone, 20).replace(/[\s()-]/g, '').replace(/^\+/, '')
+          if (!name || !/^[0-9]{7,15}$/.test(phone)) throw new Error('Contact name or phone number is invalid.')
+          const vcard = 'BEGIN:VCARD\nVERSION:3.0\nFN:' + name + '\nTEL;type=CELL;type=VOICE;waid=' + phone + ':+'
+            + phone + '\nEND:VCARD'
+          if (dryRun) {
+            trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would share contact: ' + name })
+          } else {
+            const sent = await event.socket.sendMessage(event.remoteJid, {
+              contacts: { displayName: name, contacts: [{ vcard }] },
+            })
+            if (!sent?.key?.id) throw new Error('WhatsApp did not return a contact message.')
+            outputs.set(node.id, { sent })
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the contact card.' })
+          }
+        } else if (node.type === 'message.sendButtons') {
+          const messageText = textValue(node.config.text, 1000).trim()
+          const values = textValue(node.config.buttons, 1000).split(/\r?\n/).map(value => value.trim()).filter(Boolean)
+          const buttons = values.map(value => {
+            const [label, id] = value.split('|').map(part => part.trim())
+            return { text: label, id }
+          })
+          if (!messageText || buttons.length < 1 || buttons.length > 3 ||
+              buttons.some(button => !button.text || !/^[a-zA-Z0-9_.#-]{1,64}$/.test(button.id)) ||
+              new Set(buttons.map(button => button.id.toLowerCase())).size !== buttons.length) {
+            throw new Error('Interactive buttons need text and 1 to 3 unique Label|id entries.')
+          }
+          if (dryRun) {
+            trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would send interactive buttons.' })
+          } else {
+            const sent = await event.socket.sendMessage(event.remoteJid, { text: messageText, buttons })
+            if (!sent?.key?.id) throw new Error('WhatsApp did not return an interactive message.')
+            outputs.set(node.id, { sent })
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the interactive message.' })
           }
         } else if (node.type === 'message.sendPoll') {
           const title = textValue(node.config.title, 180).trim()

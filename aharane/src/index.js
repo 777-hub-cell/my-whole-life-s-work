@@ -1163,7 +1163,7 @@ accountRuntime = createAccountRuntime({
       const messageId = String(key?.id || '')
       if (!jid || !messageId) continue
       const existing = await chatStore.getMessage(sessionId, jid, messageId)
-      if (!existing) continue
+      if (!existing || existing.deletedByRemote === true) continue
       if (key?.fromMe === false || (existing.directionKnown !== false && existing.fromMe === false)) {
         // A message deleted by the other participant stays in Aharane Hub.
         // Preserve its body and media reference, with a visible deleted marker.

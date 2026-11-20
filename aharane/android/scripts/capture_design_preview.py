@@ -129,9 +129,9 @@ def main():
     tap_label("Mira")
     capture("02a-conversation.png", 2)
     back()
-    tap_label("Switch WhatsApp account", content_desc=True, required=False)
+    tap_label("Switch to Public WhatsApp", content_desc=True, required=False)
     capture("02b-public-chats.png", 1)
-    tap_label("Switch WhatsApp account", content_desc=True, required=False)
+    tap_label("Switch to Private WhatsApp", content_desc=True, required=False)
     
     tap_label("Files")
     capture("03-files.png")

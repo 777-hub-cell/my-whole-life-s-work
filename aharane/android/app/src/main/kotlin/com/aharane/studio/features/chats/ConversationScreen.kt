@@ -953,6 +953,11 @@ private fun MessageContent(
                 }
             )
         MessageKind.IMAGE, MessageKind.STICKER -> {
+            val animatedMime = message.mediaMimeType.equals("image/gif", true) ||
+                (message.kind == MessageKind.STICKER && message.mediaMimeType.equals("image/webp", true))
+            val openImage = if (animatedMime && Build.VERSION.SDK_INT >= 28 && animatedMediaFile == null) {
+                onLoadMediaPreview
+            } else onLoadMedia
             LaunchedEffect(message.messageId, mediaPreview, mediaPreviewUnavailable) {
                 if (mediaConnected && autoDownloadImages && mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
             }
@@ -970,12 +975,12 @@ private fun MessageContent(
                         contentDescription = message.mediaFileName ?: "WhatsApp image",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp)
-                            .clip(RoundedCornerShape(appearance.mediaRadius.dp)).clickable(onClick = onLoadMedia)
+                            .clip(RoundedCornerShape(appearance.mediaRadius.dp)).clickable(onClick = openImage)
                     )
                 } else {
                     Row(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(appearance.mediaRadius.dp))
-                            .background(soft).clickable(onClick = onLoadMedia).padding(12.dp),
+                            .background(soft).clickable(onClick = openImage).padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(9.dp)
                     ) {

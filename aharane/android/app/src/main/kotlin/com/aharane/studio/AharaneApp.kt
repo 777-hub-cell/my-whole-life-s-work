@@ -307,6 +307,7 @@ fun AharaneApp(
     var activeMessages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
     var hasOlderMessages by remember { mutableStateOf(false) }
     var loadingOlderMessages by remember { mutableStateOf(false) }
+    var lastConversationSyncAt by remember { mutableStateOf(0L) }
     var editorDiagnosticsByPath by remember { mutableStateOf<Map<String, EditorDiagnosticsResult>>(emptyMap()) }
     var editorDiagnosticsStateByPath by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var editorDiagnosticRequestId by remember { mutableIntStateOf(0) }
@@ -679,6 +680,7 @@ fun AharaneApp(
             runCatching {
                 activeMessages = local.messages(conversation.key)
                 hasOlderMessages = local.hasOlderMessages(conversation.key)
+                lastConversationSyncAt = local.lastSyncedAt(conversation.key)
             }.onFailure {
                 localChatStorageError = it.message ?: "Could not load the encrypted conversation cache."
             }
@@ -687,6 +689,7 @@ fun AharaneApp(
             runCatching {
                 activeMessages = refreshConversationIncrementally(conversation)
                 hasOlderMessages = localChatRepository?.hasOlderMessages(conversation.key) ?: hasOlderMessages
+                lastConversationSyncAt = localChatRepository?.lastSyncedAt(conversation.key) ?: lastConversationSyncAt
             }.onFailure {
                 // Preserve the valid cached history when a sync request fails.
                 serverError = it.message ?: "Could not sync this conversation."
@@ -722,6 +725,7 @@ fun AharaneApp(
                 runCatching {
                     activeMessages = refreshConversationIncrementally(openConversation)
                     hasOlderMessages = localChatRepository?.hasOlderMessages(openConversation.key) ?: hasOlderMessages
+                    lastConversationSyncAt = localChatRepository?.lastSyncedAt(openConversation.key) ?: lastConversationSyncAt
                 }.onFailure { failures += "Conversation sync: ${it.message ?: "unavailable"}" }
             }
             runCatching { repository.updateStatus() }
@@ -1332,6 +1336,7 @@ fun AharaneApp(
                     appearance = chatAppearanceStore.resolve(activeConversation!!.key.account, activeConversation!!.key.jid),
                     hasOlderMessages = !previewMode && hasOlderMessages,
                     loadingOlderMessages = loadingOlderMessages,
+                    lastSyncedAt = lastConversationSyncAt,
                     onLoadOlderMessages = {
                         val target = activeConversation
                         if (target != null && !previewMode) {

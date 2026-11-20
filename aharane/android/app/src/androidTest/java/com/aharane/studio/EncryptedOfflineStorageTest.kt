@@ -214,7 +214,7 @@ class EncryptedOfflineStorageTest {
 
     @Test
     fun missingKeystoreWrappingKeyFailsClosedWithoutCreatingPlaintextDatabase() = runBlocking {
-        val namespace = "keystore-loss-test"
+        val namespace = java.util.UUID.randomUUID().toString().replace("-", "").take(24)
         val alias = "com.aharane.chat.database.wrap.v1.$namespace"
         val isolated = EncryptedChatDatabase.openForTesting(context, namespace)
         val databaseFile = isolated.databaseFile

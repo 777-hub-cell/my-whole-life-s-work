@@ -1,17 +1,35 @@
 package com.aharane.studio
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.provider.OpenableColumns
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import kotlinx.coroutines.launch
-import org.json.JSONObject
-import androidx.compose.ui.platform.LocalContext
-import com.aharane.studio.core.network.AharaneConnectionManager
-import com.aharane.studio.core.network.AharaneApiException
-import com.aharane.studio.features.connection.ConnectionScreen
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.aharane.studio.core.design.*
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatSummary
@@ -21,17 +39,33 @@ import com.aharane.studio.core.model.DesignPreviewFixtures
 import com.aharane.studio.core.model.MessageDirection
 import com.aharane.studio.core.model.MessageKind
 import com.aharane.studio.core.model.MessageStatus
+import com.aharane.studio.core.network.AharaneConnectionManager
+import com.aharane.studio.core.network.AharaneRepository
+import com.aharane.studio.core.network.ServerAccountState
+import com.aharane.studio.core.network.ServerActivityEntry
+import com.aharane.studio.core.network.ServerEnvironmentValue
+import com.aharane.studio.core.network.ServerFileEntry
+import com.aharane.studio.core.network.ServerOwnerSettings
+import com.aharane.studio.core.network.ServerRuntimeSnapshot
 import com.aharane.studio.core.navigation.MainDestination
 import com.aharane.studio.features.chats.ChatsScreen
 import com.aharane.studio.features.chats.ConversationScreen
 import com.aharane.studio.features.configuration.ConfigurationScreen
+import com.aharane.studio.features.connection.ConnectionScreen
 import com.aharane.studio.features.environment.EnvironmentScreen
+import com.aharane.studio.features.environment.EnvironmentValue
 import com.aharane.studio.features.files.CodeEditorScreen
 import com.aharane.studio.features.files.FilesScreen
 import com.aharane.studio.features.files.StudioEditorDocument
 import com.aharane.studio.features.files.StudioFileEntry
 import com.aharane.studio.features.home.HomeScreen
 import com.aharane.studio.features.more.MoreScreen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.util.Locale
 
 @Composable
 fun AharaneApp(
@@ -54,7 +88,10 @@ fun AharaneApp(
     editorLineNumbers: Boolean,
     onEditorLineNumbersChanged: (Boolean) -> Unit
 ) {
+    val context = LocalContext.current
     val connectionScope = rememberCoroutineScope()
+    val repository = remember(connectionManager) { AharaneRepository(connectionManager) }
+
     var authenticated by remember(previewMode) { mutableStateOf(previewMode) }
     var connectionUrl by rememberSaveable { mutableStateOf(connectionManager.savedStudioUrl) }
     var connectionPassword by remember { mutableStateOf("") }
@@ -63,26 +100,31 @@ fun AharaneApp(
     var setupRequired by remember { mutableStateOf(false) }
     var connectionError by remember { mutableStateOf("") }
 
-    LaunchedEffect(connectionManager, previewMode) {
-        if (!previewMode && connectionUrl.isNotBlank()) {
-            connectionBusy = true
-            try {
-                authenticated = connectionManager.restoreSession()
-                if (!authenticated) {
-                    val auth = connectionManager.api?.authStatus()
-                    serverVerified = auth != null
-                    setupRequired = auth?.optBoolean("setupRequired") == true
+    if (!authenticated) {
+        LaunchedEffect(connectionManager, connectionUrl) {
+            if (connectionUrl.isNotBlank() && connectionManager.api == null) {
+                connectionBusy = true
+                try {
+                    val result = connectionManager.connect(connectionUrl)
+                    val auth = result.optJSONObject("auth") ?: JSONObject()
+                    serverVerified = true
+                    setupRequired = auth.optBoolean("setupRequired")
+                    connectionUrl = connectionManager.savedStudioUrl
+                    if (connectionManager.api?.hasSavedSession() == true) {
+                        runCatching {
+                            connectionManager.api?.get("status")
+                            authenticated = true
+                        }
+                    }
+                } catch (error: Exception) {
+                    connectionError = error.message ?: "Could not reach your Aharane server."
+                    serverVerified = false
+                } finally {
+                    connectionBusy = false
                 }
-            } catch (error: Exception) {
-                connectionError = error.message ?: "Could not reach your Aharane server."
-                serverVerified = false
-            } finally {
-                connectionBusy = false
             }
         }
-    }
 
-    if (!authenticated) {
         ConnectionScreen(
             studioUrl = connectionUrl,
             password = connectionPassword,
@@ -107,6 +149,12 @@ fun AharaneApp(
                         serverVerified = true
                         setupRequired = auth.optBoolean("setupRequired")
                         connectionUrl = connectionManager.savedStudioUrl
+                        if (connectionManager.api?.hasSavedSession() == true) {
+                            runCatching {
+                                connectionManager.api?.get("status")
+                                authenticated = true
+                            }
+                        }
                     } catch (error: Exception) {
                         connectionError = error.message ?: "Could not connect to this Aharane server."
                         serverVerified = false
@@ -152,13 +200,112 @@ fun AharaneApp(
     var morePage by rememberSaveable { mutableStateOf("more") }
     var activeConversation by remember { mutableStateOf<ChatSummary?>(null) }
     var activeEditorPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var fileDirectory by rememberSaveable { mutableStateOf("") }
+
+    var runtime by remember { mutableStateOf<ServerRuntimeSnapshot?>(null) }
+    var owners by remember { mutableStateOf(ServerOwnerSettings()) }
+    var environmentRows by remember { mutableStateOf<List<ServerEnvironmentValue>>(emptyList()) }
+    var activityRows by remember { mutableStateOf<List<ServerActivityEntry>>(emptyList()) }
+    var serverFiles by remember { mutableStateOf<List<ServerFileEntry>>(emptyList()) }
+    val chatsByAccount = remember { mutableStateMapOf<ChatAccount, List<ChatSummary>>() }
+    var activeMessages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
+    var serverError by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+
     val previewMessages = remember { mutableStateListOf<ChatMessage>().apply {
         if (previewMode) addAll(DesignPreviewFixtures.messages)
     } }
     val editorDocuments = remember { mutableStateListOf<StudioEditorDocument>() }
 
+    var pairingAccount by remember { mutableStateOf<ChatAccount?>(null) }
+    var pairingCode by remember { mutableStateOf("") }
+    var fileDialogMode by remember { mutableStateOf("") }
+    var fileDialogName by remember { mutableStateOf("") }
+    var fileDialogError by remember { mutableStateOf("") }
+    var selectedFile by remember { mutableStateOf<ServerFileEntry?>(null) }
+    var pendingDeletePaths by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pendingExportBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var mediaImage by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    var mediaTitle by remember { mutableStateOf("") }
+    var mediaMessageError by remember { mutableStateOf("") }
+    val openedViewOnceIds = remember { mutableStateListOf<String>() }
+
+    val zipExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        val bytes = pendingExportBytes
+        pendingExportBytes = null
+        if (uri != null && bytes != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    ?: error("Could not open the selected destination.")
+            }.onSuccess {
+                Toast.makeText(context, "ZIP saved.", Toast.LENGTH_SHORT).show()
+            }.onFailure {
+                Toast.makeText(context, it.message ?: "Could not save ZIP.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    val uploadLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            connectionScope.launch {
+                try {
+                    val name = queryDisplayName(context, uri)
+                    val bytes = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                            ?: error("Could not read the selected file.")
+                    }
+                    if (bytes.size > 512 * 1024) error("Source files must be 512 KB or smaller.")
+                    repository.createFile(fileDirectory, name, bytes.toString(Charsets.UTF_8))
+                    serverFiles = repository.allFiles()
+                    Toast.makeText(context, "File uploaded.", Toast.LENGTH_SHORT).show()
+                } catch (error: Exception) {
+                    Toast.makeText(context, error.message ?: "Upload failed.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    suspend fun reloadServerData() {
+        runtime = repository.runtimeSnapshot()
+        owners = repository.ownerSettings()
+        environmentRows = repository.environment()
+        activityRows = repository.activity(30)
+        serverFiles = repository.allFiles()
+        chatsByAccount[ChatAccount.PRIVATE] = repository.chats(ChatAccount.PRIVATE)
+        chatsByAccount[ChatAccount.PUBLIC] = repository.chats(ChatAccount.PUBLIC)
+    }
+
+    LaunchedEffect(authenticated, previewMode) {
+        if (authenticated && !previewMode) {
+            busy = true
+            serverError = ""
+            try {
+                reloadServerData()
+            } catch (error: Exception) {
+                serverError = error.message ?: "Could not load Aharane data."
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    LaunchedEffect(activeConversation, authenticated, previewMode) {
+        val conversation = activeConversation ?: return@LaunchedEffect
+        if (!previewMode && authenticated) {
+            try {
+                activeMessages = repository.messages(conversation)
+            } catch (error: Exception) {
+                serverError = error.message ?: "Could not load this conversation."
+                activeMessages = emptyList()
+            }
+        }
+    }
+
     fun openPreviewDocument(path: String) {
-        if (!previewMode) return
         val existing = editorDocuments.firstOrNull { it.path == path }
         if (existing == null) {
             val source = DesignPreviewFixtures.sourceFiles[path] ?: return
@@ -169,9 +316,156 @@ fun AharaneApp(
         activeConversation = null
     }
 
-    val destination = MainDestination.valueOf(destinationName)
-    val account = ChatAccount.valueOf(accountName)
-    val filter = ChatFilter.valueOf(filterName)
+    fun openSourceDocument(path: String) {
+        if (previewMode) {
+            openPreviewDocument(path)
+            return
+        }
+        connectionScope.launch {
+            try {
+                val source = repository.previewFile(path)
+                val existingIndex = editorDocuments.indexOfFirst { it.path == path }
+                val document = StudioEditorDocument(
+                    path = source.path,
+                    content = source.content,
+                    languageLabel = source.language.replaceFirstChar { it.uppercase(Locale.ROOT) },
+                    sha256 = source.sha256
+                )
+                if (existingIndex >= 0) editorDocuments[existingIndex] = document
+                else editorDocuments.add(document)
+                activeEditorPath = path
+                editorOpen = true
+                activeConversation = null
+            } catch (error: Exception) {
+                Toast.makeText(context, error.message ?: "Could not open source file.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    fun refreshFiles() {
+        if (previewMode) return
+        connectionScope.launch {
+            runCatching { repository.allFiles() }
+                .onSuccess { serverFiles = it }
+                .onFailure { Toast.makeText(context, it.message ?: "Could not refresh files.", Toast.LENGTH_LONG).show() }
+        }
+    }
+
+    fun exportSource() {
+        if (previewMode) return
+        connectionScope.launch {
+            try {
+                pendingExportBytes = repository.exportSourceZip()
+                zipExportLauncher.launch("aharane-source.zip")
+            } catch (error: Exception) {
+                Toast.makeText(context, error.message ?: "Source export failed.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    fun exportSelection(paths: List<String>) {
+        if (previewMode || paths.isEmpty()) return
+        connectionScope.launch {
+            try {
+                pendingExportBytes = repository.exportFiles(paths)
+                zipExportLauncher.launch("aharane-selection.zip")
+            } catch (error: Exception) {
+                Toast.makeText(context, error.message ?: "ZIP export failed.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    fun runFileDialogAction() {
+        val mode = fileDialogMode
+        val name = fileDialogName.trim()
+        val entry = selectedFile
+        connectionScope.launch {
+            busy = true
+            fileDialogError = ""
+            try {
+                when (mode) {
+                    "create-file" -> repository.createFile(fileDirectory, name, "")
+                    "create-folder" -> repository.createFolder(fileDirectory, name)
+                    "rename" -> repository.renameFile(entry?.path ?: error("Select a file first."), name)
+                    "duplicate" -> repository.duplicateSourceEntry(
+                        entry ?: error("Select a file first."),
+                        name
+                    )
+                    "move" -> repository.moveFile(entry?.path ?: error("Select a file first."), name)
+                    "delete" -> repository.deleteFiles(pendingDeletePaths)
+                }
+                fileDialogMode = ""
+                selectedFile = null
+                pendingDeletePaths = emptyList()
+                serverFiles = repository.allFiles()
+                Toast.makeText(context, "File changes saved.", Toast.LENGTH_SHORT).show()
+            } catch (error: Exception) {
+                fileDialogError = error.message ?: "File operation failed."
+                Toast.makeText(context, fileDialogError, Toast.LENGTH_LONG).show()
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    fun onFileEntryAction(entry: StudioFileEntry, action: String) {
+        if (previewMode) {
+            if (action == "open" && !entry.isDirectory) openPreviewDocument(entry.path)
+            return
+        }
+        val serverEntry = serverFiles.firstOrNull { it.path == entry.path }
+            ?: ServerFileEntry(entry.name, entry.path, entry.isDirectory, null, null, false)
+        when (action) {
+            "open" -> if (!entry.isDirectory) openSourceDocument(entry.path)
+            "rename", "duplicate", "move" -> {
+                selectedFile = serverEntry
+                fileDialogMode = action
+                fileDialogName = when (action) {
+                    "move" -> fileDirectory
+                    else -> entry.name
+                }
+                fileDialogError = ""
+            }
+            "delete" -> {
+                if (entry.isDirectory) {
+                    Toast.makeText(context, "Delete files inside this folder individually. Folder deletion is not supported by the server.", Toast.LENGTH_LONG).show()
+                } else {
+                    selectedFile = serverEntry
+                    pendingDeletePaths = listOf(entry.path)
+                    fileDialogMode = "delete"
+                    fileDialogError = ""
+                }
+            }
+            "download-zip" -> exportSelection(listOf(entry.path))
+            else -> Toast.makeText(context, "This file action is not available.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val currentDestination = MainDestination.valueOf(destinationName)
+    val selectedAccount = ChatAccount.valueOf(accountName)
+    val selectedFilter = ChatFilter.valueOf(filterName)
+    val connected = authenticated && !previewMode
+    val currentAccountState = when (selectedAccount) {
+        ChatAccount.PRIVATE -> runtime?.privateAccount
+        ChatAccount.PUBLIC -> runtime?.publicAccount
+    }
+    val currentChats = if (previewMode) DesignPreviewFixtures.conversations else chatsByAccount[selectedAccount].orEmpty()
+    val studioFileEntries = if (previewMode) {
+        DesignPreviewFixtures.files.map { StudioFileEntry(it.name, it.path, it.isDirectory, it.sizeLabel) }
+    } else {
+        serverFiles.map { entry ->
+            StudioFileEntry(
+                name = entry.name,
+                path = entry.path,
+                isDirectory = entry.isDirectory,
+                sizeLabel = entry.sizeBytes?.let(::formatBytes),
+                modifiedLabel = entry.modifiedAt
+            )
+        }
+    }
+    val environmentValues = if (previewMode) emptyList() else environmentRows.map {
+        EnvironmentValue(it.key, it.value, it.readOnly, it.type, it.secret)
+    }
 
     Column(
         Modifier.fillMaxSize()
@@ -180,6 +474,15 @@ fun AharaneApp(
     ) {
         if (!editorOpen && activeConversation == null) {
             StudioHeader(onStatusClick = { destinationName = MainDestination.HOME.name })
+        }
+
+        if (serverError.isNotBlank() && connected) {
+            Text(
+                serverError,
+                color = StudioPalette.Bad,
+                fontSize = 11.5.sp,
+                modifier = Modifier.fillMaxWidth().background(StudioPalette.Surface).padding(horizontal = 14.dp, vertical = 5.dp)
+            )
         }
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -193,12 +496,12 @@ fun AharaneApp(
                     },
                     openDocuments = editorDocuments.toList(),
                     activeDocumentPath = activeEditorPath,
-                    availableFiles = if (previewMode) DesignPreviewFixtures.sourceFiles.keys.toList() else emptyList(),
-                    editable = previewMode,
+                    availableFiles = if (previewMode) DesignPreviewFixtures.sourceFiles.keys.toList() else serverFiles.filterNot { it.isDirectory }.map { it.path },
+                    editable = true,
                     lineNumbers = editorLineNumbers,
                     fontSizeSp = editorFontSize,
                     editorTheme = editorTheme,
-                    onOpenFile = ::openPreviewDocument,
+                    onOpenFile = ::openSourceDocument,
                     onSelectDocument = { activeEditorPath = it },
                     onCloseDocument = { path ->
                         editorDocuments.removeAll { it.path == path }
@@ -209,21 +512,32 @@ fun AharaneApp(
                         if (index >= 0) editorDocuments[index] = editorDocuments[index].copy(content = content)
                     },
                     onSave = { path, content ->
-                        if (!previewMode) false else {
+                        if (previewMode) {
                             val index = editorDocuments.indexOfFirst { it.path == path }
                             if (index >= 0) {
                                 editorDocuments[index] = editorDocuments[index].copy(content = content)
                                 true
                             } else false
+                        } else {
+                            try {
+                                val index = editorDocuments.indexOfFirst { it.path == path }
+                                if (index < 0) return@CodeEditorScreen false
+                                val latestSha = repository.saveFile(path, content, editorDocuments[index].sha256)
+                                editorDocuments[index] = editorDocuments[index].copy(content = content, sha256 = latestSha)
+                                true
+                            } catch (error: Exception) {
+                                serverError = error.message ?: "Could not save this file."
+                                false
+                            }
                         }
                     }
                 )
                 activeConversation != null -> ConversationScreen(
                     conversation = activeConversation!!,
-                    messages = previewMessages.filter { it.key == activeConversation!!.key },
-                    connected = previewMode,
+                    messages = if (previewMode) previewMessages.filter { it.key == activeConversation!!.key } else activeMessages,
+                    connected = if (previewMode) true else currentAccountState?.connected == true,
                     onBack = { activeConversation = null },
-                    onSend = { text, reply ->
+                    onSend = { text, _ ->
                         if (previewMode) {
                             previewMessages.add(
                                 ChatMessage(
@@ -233,14 +547,54 @@ fun AharaneApp(
                                     kind = MessageKind.TEXT,
                                     text = text,
                                     timestampMillis = System.currentTimeMillis(),
-                                    status = MessageStatus.SENT,
-                                    replyToMessageId = reply?.messageId
+                                    status = MessageStatus.SENT
                                 )
                             )
+                        } else {
+                            connectionScope.launch {
+                                try {
+                                    repository.sendText(activeConversation!!, text)
+                                    activeMessages = repository.messages(activeConversation!!)
+                                    chatsByAccount[activeConversation!!.key.account] = repository.chats(activeConversation!!.key.account)
+                                } catch (error: Exception) {
+                                    serverError = error.message ?: "Message could not be sent."
+                                }
+                            }
                         }
                     },
-                    onAttach = {},
-                    onRecordVoice = {}
+                    onAttach = {
+                        if (connected && currentAccountState?.connected == true) {
+                            uploadLauncher.launch(arrayOf("*/*"))
+                        }
+                    },
+                    onRecordVoice = {
+                        Toast.makeText(context, "Voice-note recording is not enabled yet.", Toast.LENGTH_SHORT).show()
+                    },
+                    onOpenMedia = { message ->
+                        connectionScope.launch {
+                            try {
+                                val bytes = repository.mediaBytes(message.key.account, message)
+                                showImageBytes(bytes, message.mediaFileName.orEmpty())
+                            } catch (error: Exception) {
+                                serverError = error.message ?: "Media could not be opened."
+                            }
+                        }
+                    },
+                    onViewOnce = { message ->
+                        if (message.messageId !in openedViewOnceIds) {
+                            connectionScope.launch {
+                                try {
+                                    val bytes = repository.viewOnceMedia(message.key.account, message)
+                                    openedViewOnceIds.add(message.messageId)
+                                    showImageBytes(bytes, "View-once media")
+                                } catch (error: Exception) {
+                                    serverError = error.message ?: "View-once media is no longer available."
+                                }
+                            }
+                        } else {
+                            Toast.makeText(context, "This view-once media was already opened.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 )
                 configurationOpen -> ConfigurationScreen(
                     previewMode = previewMode,
@@ -248,40 +602,104 @@ fun AharaneApp(
                     onEditConfig = {
                         editorFromConfiguration = true
                         configurationOpen = false
-                        if (previewMode) openPreviewDocument("config.js") else editorOpen = true
+                        if (previewMode) openPreviewDocument("config.js")
+                        else openSourceDocument("config.js")
                     }
                 )
-                else -> when (destination) {
+                else -> when (currentDestination) {
                     MainDestination.HOME -> HomeScreen(
                         onOpenChats = { destinationName = MainDestination.CHATS.name },
                         onOpenMore = { destinationName = MainDestination.MORE.name; morePage = "more" },
                         onOpenConfiguration = { configurationOpen = true },
-                        onOpenActivity = { destinationName = MainDestination.MORE.name; morePage = "activity" }
+                        onOpenActivity = { destinationName = MainDestination.MORE.name; morePage = "activity" },
+                        serviceConnected = previewMode || runtime != null,
+                        serviceSubtitle = if (previewMode) "Preview only" else if (runtime != null) "Connected to Aharane server" else "Not connected to Aharane service",
+                        privateAccountStatus = if (previewMode) "Preview session" else runtime?.privateAccount?.let(::accountStateLabel) ?: "Status not loaded",
+                        publicAccountStatus = if (previewMode) "Preview session" else runtime?.publicAccount?.let(::accountStateLabel) ?: "Status not loaded",
+                        privateActionLabel = runtime?.privateAccount?.let(::accountActionLabel) ?: "Link account",
+                        publicActionLabel = runtime?.publicAccount?.let(::accountActionLabel) ?: "Link account",
+                        onAccountAction = { target ->
+                            connectionScope.launch {
+                                try {
+                                    val state = when (target) {
+                                        ChatAccount.PRIVATE -> runtime?.privateAccount
+                                        ChatAccount.PUBLIC -> runtime?.publicAccount
+                                    }
+                                    if (state?.connected == true) {
+                                        Toast.makeText(context, "${target.label} WhatsApp is already connected.", Toast.LENGTH_SHORT).show()
+                                    } else if (state?.registered == true) {
+                                        repository.reconnect(target)
+                                        runtime = repository.runtimeSnapshot()
+                                    } else {
+                                        pairingAccount = target
+                                        pairingCode = repository.pairCode(target)
+                                    }
+                                } catch (error: Exception) {
+                                    pairingAccount = null
+                                    Toast.makeText(context, error.message ?: "Account action failed.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        recentActivity = if (previewMode) emptyList() else activityRows.take(3).map { it.message }
                     )
                     MainDestination.CHATS -> ChatsScreen(
-                        account = account,
+                        account = selectedAccount,
                         onAccountSelected = { accountName = it.name },
-                        filter = filter,
+                        filter = selectedFilter,
                         onFilterSelected = { filterName = it.name },
-                        conversations = if (previewMode) DesignPreviewFixtures.conversations else emptyList(),
-                        accountConnected = previewMode,
+                        conversations = currentChats,
+                        accountConnected = if (previewMode) true else runtime?.let { if (selectedAccount == ChatAccount.PRIVATE) it.privateAccount.connected else it.publicAccount.connected } == true,
                         onConversationSelected = { activeConversation = it }
                     )
                     MainDestination.FILES -> FilesScreen(
-                        entries = if (previewMode) DesignPreviewFixtures.files.map { StudioFileEntry(it.name, it.path, it.isDirectory, it.sizeLabel) } else emptyList(),
-                        connected = false,
+                        entries = studioFileEntries,
+                        connected = connected,
+                        initialPath = fileDirectory,
+                        onDirectoryChanged = { fileDirectory = it },
                         previewOnly = previewMode,
                         onEditorVisibility = {
                             editorFromConfiguration = false
                             editorOpen = it
                         },
-                        onEntryAction = { entry, action ->
-                            if (previewMode && action == "open" && !entry.isDirectory) {
-                                openPreviewDocument(entry.path)
+                        onCreateFile = {
+                            fileDialogMode = "create-file"
+                            fileDialogName = ""
+                            fileDialogError = ""
+                        },
+                        onCreateFolder = {
+                            fileDialogMode = "create-folder"
+                            fileDialogName = ""
+                            fileDialogError = ""
+                        },
+                        onUpload = { uploadLauncher.launch(arrayOf("text/*", "application/json")) },
+                        onExportSource = ::exportSource,
+                        onEntryAction = ::onFileEntryAction,
+                        onBulkAction = { entries, action ->
+                            when (action) {
+                                "delete" -> {
+                                    pendingDeletePaths = entries.filterNot { it.isDirectory }.map { it.path }
+                                    selectedFile = null
+                                    fileDialogMode = "delete"
+                                }
+                                "move" -> {
+                                    Toast.makeText(context, "Select a destination folder from the file menu.", Toast.LENGTH_SHORT).show()
+                                }
+                                "zip" -> exportSelection(entries.map { it.path })
                             }
                         }
                     )
-                    MainDestination.ENVIRONMENT -> EnvironmentScreen(previewMode = previewMode)
+                    MainDestination.ENVIRONMENT -> EnvironmentScreen(
+                        values = environmentValues,
+                        connected = connected,
+                        onSave = { values ->
+                            repository.saveEnvironment(values.map {
+                                ServerEnvironmentValue(it.key, it.value, it.readOnly, it.secret, it.valueType)
+                            })
+                            environmentRows = repository.environment()
+                            true
+                        },
+                        previewMode = previewMode
+                    )
                     MainDestination.MORE -> MoreScreen(
                         themeMode = themeMode,
                         onThemeModeChanged = onThemeModeChanged,
@@ -309,7 +727,7 @@ fun AharaneApp(
 
         if (!editorOpen && activeConversation == null) {
             StudioBottomNavigation(
-                selected = destination,
+                selected = currentDestination,
                 onNavigate = {
                     configurationOpen = false
                     if (it != MainDestination.MORE) morePage = "more"
@@ -318,4 +736,157 @@ fun AharaneApp(
             )
         }
     }
+
+    if (pairingAccount != null && pairingCode.isNotBlank()) {
+        Dialog(onDismissRequest = { pairingAccount = null; pairingCode = "" }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(StudioPalette.Surface).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Link ${pairingAccount!!.label} account", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text("Pair this account in WhatsApp → Linked devices → Link a device, then enter this code:", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
+                Text(pairingCode, color = StudioPalette.Accent, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StudioActionButton("Copy code", compact = true, onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Aharane pairing code", pairingCode))
+                        Toast.makeText(context, "Pairing code copied.", Toast.LENGTH_SHORT).show()
+                    })
+                    StudioActionButton("Close", compact = true, primary = true, onClick = {
+                        pairingAccount = null
+                        pairingCode = ""
+                    })
+                }
+            }
+        }
+    }
+
+    if (fileDialogMode.isNotBlank()) {
+        Dialog(onDismissRequest = { fileDialogMode = ""; selectedFile = null; pendingDeletePaths = emptyList() }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(StudioPalette.Surface).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(11.dp)
+            ) {
+                val title = when (fileDialogMode) {
+                    "create-file" -> "New file"
+                    "create-folder" -> "New folder"
+                    "rename" -> "Rename"
+                    "duplicate" -> "Duplicate"
+                    "move" -> "Move"
+                    else -> "Delete selected files?"
+                }
+                Text(title, color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                if (fileDialogMode != "delete") {
+                    Text(
+                        when (fileDialogMode) {
+                            "move" -> "Enter the destination folder path. Leave empty to move to the source root."
+                            else -> "Enter the new name."
+                        },
+                        color = StudioPalette.Muted,
+                        fontSize = 12.5.sp,
+                        lineHeight = 18.sp
+                    )
+                    BasicTextField(
+                        value = fileDialogName,
+                        onValueChange = { fileDialogName = it },
+                        singleLine = true,
+                        textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 14.sp),
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+                            .background(StudioPalette.Background)
+                            .border(1.dp, StudioPalette.Line, RoundedCornerShape(9.dp))
+                            .padding(horizontal = 11.dp, vertical = 12.dp)
+                    )
+                } else {
+                    Text("This permanently deletes the selected source files from the Aharane workspace.", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
+                }
+                if (fileDialogError.isNotBlank()) Text(fileDialogError, color = StudioPalette.Bad, fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.align(Alignment.End)) {
+                    StudioActionButton("Cancel", compact = true, onClick = {
+                        fileDialogMode = ""
+                        selectedFile = null
+                        pendingDeletePaths = emptyList()
+                    })
+                    StudioActionButton(
+                        if (busy) "Working…" else if (fileDialogMode == "delete") "Delete" else "Save",
+                        compact = true,
+                        primary = true,
+                        destructive = fileDialogMode == "delete",
+                        enabled = !busy && (fileDialogMode == "delete" || fileDialogName.isNotBlank() || fileDialogMode == "move"),
+                        onClick = ::runFileDialogAction
+                    )
+                }
+            }
+        }
+    }
+
+    if (mediaImage != null || mediaMessageError.isNotBlank()) {
+        Dialog(onDismissRequest = { mediaImage = null; mediaTitle = ""; mediaMessageError = "" }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(StudioPalette.Surface).padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                Text(mediaTitle, color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                if (mediaImage != null) {
+                    Image(
+                        bitmap = mediaImage!!,
+                        contentDescription = mediaTitle,
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp)
+                    )
+                }
+                if (mediaMessageError.isNotBlank()) Text(mediaMessageError, color = StudioPalette.Bad, fontSize = 12.5.sp)
+                StudioActionButton("Close", compact = true, primary = true, onClick = {
+                    mediaImage = null
+                    mediaTitle = ""
+                    mediaMessageError = ""
+                })
+            }
+        }
+    }
+}
+
+private suspend fun showImageBytes(
+    bytes: ByteArray,
+    title: String,
+    onBitmap: (androidx.compose.ui.graphics.ImageBitmap?) -> Unit,
+    onError: (String) -> Unit
+) {
+    val image = withContext(Dispatchers.IO) {
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+    }
+    if (image == null) onError("This attachment is not an image. It has been downloaded, but this viewer does not display this media type yet.")
+    else onBitmap(image)
+}
+
+private fun queryDisplayName(context: Context, uri: Uri): String {
+    val cursor = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+    cursor?.use {
+        if (it.moveToFirst()) {
+            val index = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (index >= 0) return it.getString(index)
+        }
+    }
+    return uri.lastPathSegment?.substringAfterLast('/') ?: "upload.txt"
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024L -> String.format(Locale.ROOT, "%.1f MB", bytes / (1024f * 1024f))
+    bytes >= 1024L -> String.format(Locale.ROOT, "%.1f KB", bytes / 1024f)
+    else -> "$bytes B"
+}
+
+private fun accountStateLabel(state: ServerAccountState): String = when {
+    state.connected -> "Connected"
+    state.registered && state.state == "reconnecting" -> "Reconnecting"
+    state.registered -> "Paired · ${state.state.replace('-', ' ')}"
+    state.state == "not-paired" -> "Not paired"
+    else -> state.state.replace('-', ' ').replaceFirstChar { it.uppercase(Locale.ROOT) }
+}
+
+private fun accountActionLabel(state: ServerAccountState): String = when {
+    state.connected -> "Manage"
+    state.registered -> "Reconnect"
+    else -> "Link account"
 }

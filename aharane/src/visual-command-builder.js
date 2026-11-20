@@ -203,8 +203,8 @@ export function validateWorkflow(input) {
   const byId = new Map()
   if (!workflow.account) issue(null, 'error', 'Choose a WhatsApp account.', 'Select Private or Public in workflow settings.')
   if (!workflow.nodes.length) issue(null, 'error', 'The workspace is empty.', 'Add one trigger and an action.')
-  if (rawNodeCount > MAX_NODES) issue(null, 'error', 'Too many nodes.', 'Keep the workflow at 100 nodes or fewer.')
-  if (rawEdgeCount > MAX_EDGES) issue(null, 'error', 'Too many connections.', 'Keep the workflow at 300 connections or fewer.')
+  if (rawNodeCount > MAX_NODES) issue(null, 'error', 'The workflow exceeds the 100-node limit.', 'Remove nodes until the workflow contains 100 nodes or fewer.')
+  if (rawEdgeCount > MAX_EDGES) issue(null, 'error', 'The workflow exceeds the 300-connection limit.', 'Remove connections until the workflow contains 300 or fewer.')
 
   for (const node of workflow.nodes) {
     if (!node.id || byId.has(node.id)) issue(node.id, 'error', 'Node IDs must be unique.', 'Remove the duplicate node.')
@@ -335,7 +335,7 @@ export function validateWorkflow(input) {
     if (node.type !== 'flow.repeat') continue
     const body = outputEdges(workflow, node.id, 'body')[0]
     if (!body) issue(node.id, 'error', 'The repeat body is not connected.', 'Connect Body to a sequence ending at End repeat body.')
-    else if (!allRepeatPathsTerminate(body.to, byId, workflow.edges)) issue(node.id, 'error', 'The repeat body has no End repeat body node.', 'Connect the body to End repeat body.')
+    else if (!allRepeatPathsTerminate(body.to, byId, workflow.edges)) issue(node.id, 'error', 'Not every repeat path reaches End repeat body.', 'Connect every YES and NO path to End repeat body.')
   }
 
   const triggers = workflow.nodes.filter(node => triggerTypes.has(node.type))

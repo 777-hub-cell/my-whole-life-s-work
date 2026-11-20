@@ -78,6 +78,7 @@ fun ConversationScreen(
     conversation: ChatSummary,
     messages: List<ChatMessage>,
     connected: Boolean,
+    mediaServerAvailable: Boolean = connected,
     onBack: () -> Unit,
     onSend: (String, ChatMessage?) -> Unit,
     onAttach: () -> Unit = {},
@@ -287,7 +288,7 @@ fun ConversationScreen(
                             mediaPreview = mediaPreviews[mediaKey(message)],
                             mediaPreviewUnavailable = message.messageId in mediaPreviewErrors,
                             onLoadMediaPreview = { onLoadMediaPreview(message) },
-                            mediaConnected = connected,
+                            mediaConnected = mediaServerAvailable,
                             audioFile = audioFiles[mediaKey(message)],
                             audioLoading = message.messageId in audioLoading,
                             audioError = audioErrors[message.messageId],
@@ -802,7 +803,7 @@ private fun MessageContent(
                             Text(
                                 when {
                                     mediaPreviewUnavailable -> message.mediaUnavailable?.ifBlank { "Preview unavailable · tap to open" } ?: "Preview unavailable · tap to open"
-                                    !mediaConnected -> "Reconnect the WhatsApp account to load this image."
+                                    !mediaConnected -> "Connect to your Aharane server to load this image."
                                     else -> "Loading preview · tap to open"
                                 },
                                 color = foreground.copy(alpha = .72f),
@@ -834,7 +835,7 @@ private fun MessageContent(
                             Text(
                                 when {
                                     mediaPreviewUnavailable -> message.mediaUnavailable ?: "Video preview unavailable"
-                                    !mediaConnected -> "Reconnect the WhatsApp account to load this video."
+                                    !mediaConnected -> "Connect to your Aharane server to load this video."
                                     else -> "Preparing video preview…"
                                 },
                                 color = foreground.copy(alpha = .7f),
@@ -854,7 +855,7 @@ private fun MessageContent(
         MessageKind.AUDIO -> AudioMessagePlayer(
             message = message, file = audioFile, loading = audioLoading, error = audioError,
             waveform = audioWaveform,
-            connected = mediaConnected,
+            serverAvailable = mediaConnected,
             foreground = foreground, surface = soft, onLoad = onLoadAudio
         )
         MessageKind.DOCUMENT -> {
@@ -951,7 +952,7 @@ private fun AudioMessagePlayer(
     loading: Boolean,
     error: String?,
     waveform: List<Float>,
-    connected: Boolean,
+    serverAvailable: Boolean,
     foreground: Color,
     surface: Color,
     onLoad: () -> Unit
@@ -1021,7 +1022,7 @@ private fun AudioMessagePlayer(
                     else { player?.start(); playing = true }
                 }
             },
-            enabled = connected && !loading && (file != null || error == null)
+            enabled = !loading && (file != null || (serverAvailable && error == null))
         ) {
             Icon(if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, if (playing) "Pause audio" else "Play audio", tint = foreground)
         }
@@ -1035,7 +1036,7 @@ private fun AudioMessagePlayer(
                 Text(
                     error ?: when {
                         loading -> "Loading audio…"
-                        !connected -> "Reconnect the WhatsApp account to play this audio."
+                        !serverAvailable -> "Connect to your Aharane server to load this audio."
                         else -> "${message.mediaMimeType ?: "Audio"} · Tap play to load"
                     },
                     color = foreground.copy(alpha = .72f),

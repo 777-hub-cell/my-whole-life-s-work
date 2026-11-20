@@ -698,7 +698,10 @@ fun AharaneApp(
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
         if (!editorOpen && activeConversation == null) {
-            StudioHeader(onStatusClick = { destinationName = MainDestination.HOME.name })
+            StudioHeader(
+                onStatusClick = { destinationName = MainDestination.HOME.name },
+                online = runtime != null && !previewMode
+            )
         }
 
         if (serverError.isNotBlank() && connected) {
@@ -982,7 +985,7 @@ fun AharaneApp(
                         onOpenMore = { destinationName = MainDestination.MORE.name; morePage = "more" },
                         onOpenConfiguration = { configurationOpen = true },
                         onOpenActivity = { destinationName = MainDestination.MORE.name; morePage = "activity" },
-                        serviceConnected = previewMode || runtime != null,
+                        serviceConnected = runtime != null && !previewMode,
                         serviceSubtitle = if (previewMode) "Preview only" else if (runtime != null) "Connected to Aharane server" else "Not connected to Aharane service",
                         privateAccountStatus = if (previewMode) "Preview session" else runtime?.privateAccount?.let(::accountStateLabel) ?: "Status not loaded",
                         publicAccountStatus = if (previewMode) "Preview session" else runtime?.publicAccount?.let(::accountStateLabel) ?: "Status not loaded",

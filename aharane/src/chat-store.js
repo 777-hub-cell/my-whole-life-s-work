@@ -344,6 +344,18 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       })
   }
 
+  async function listRemoteDeletedMessages(id, jidValue, limit = 1000) {
+    const account = accountId(id), jid = safeJid(jidValue)
+    if (!jid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
+    await ensureReady(account)
+    const rows = await readRows(account)
+    return rows
+      .filter(row => row.jid === jid && row.fromMe === false && row.deletedByRemote === true && row.viewOnce !== true)
+      .sort((a, b) => (Number(a.deletedAt) || 0) - (Number(b.deletedAt) || 0))
+      .slice(-Math.max(1, Math.min(2000, Number(limit) || 1000)))
+      .map(row => ({ id: row.id, deletedAt: Number(row.deletedAt) || 0 }))
+  }
+
   async function writeReadMarkers(id, markers) {
     const account = accountId(id)
     const file = readMarkers[account]
@@ -935,5 +947,5 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return { bytes: total, files: count }
   }
 
-  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, updateMessageStatus, markMessageDeletedRemotely, markConversationIncomingMessagesDeletedRemotely, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, deleteConversationMessages, listDeletedMessageIds, beginIdempotentSend, completeIdempotentSend, getIdempotentSend, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
+  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, updateMessageStatus, markMessageDeletedRemotely, markConversationIncomingMessagesDeletedRemotely, listRemoteDeletedMessages, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, deleteConversationMessages, listDeletedMessageIds, beginIdempotentSend, completeIdempotentSend, getIdempotentSend, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
 }

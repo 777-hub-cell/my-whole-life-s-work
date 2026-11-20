@@ -350,7 +350,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     await ensureReady(account)
     const rows = await readRows(account)
     return rows
-      .filter(row => row.jid === jid && row.directionKnown === true && row.fromMe === false && row.deletedByRemote === true && row.viewOnce !== true)
+      .filter(row => row.jid === jid && row.deletedByRemote === true && row.viewOnce !== true)
       .sort((a, b) => (Number(a.deletedAt) || 0) - (Number(b.deletedAt) || 0))
       .slice(-Math.max(1, Math.min(2000, Number(limit) || 1000)))
       .map(row => ({ id: row.id, deletedAt: Number(row.deletedAt) || 0 }))
@@ -681,6 +681,23 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     })
   }
 
+  async function markMessageDeletedByOther(id, jidValue, messageId) {
+    const account = accountId(id), jid = safeJid(jidValue), key = String(messageId || '')
+    if (!jid || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw Object.assign(new Error('Invalid message reference.'), { status: 400 })
+    return enqueue(account, async () => {
+      const rows = await readRows(account)
+      const row = rows.find(item => item.jid === jid && item.id === key)
+      if (!row || row.viewOnce === true || row.deletedByRemote === true) return Boolean(row?.deletedByRemote)
+      row.deletedByRemote = true
+      row.deletedAt = Date.now()
+      // The caller only invokes this for a REVOKE event explicitly sent by
+      // the other WhatsApp participant. The deleted message itself may be
+      // incoming or outgoing; retain the original in either case.
+      await rewriteRows(account, rows)
+      return true
+    })
+  }
+
   async function markConversationIncomingMessagesDeletedRemotely(id, jidValue) {
     const account = accountId(id), jid = safeJid(jidValue)
     if (!jid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
@@ -952,5 +969,5 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return { bytes: total, files: count }
   }
 
-  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, updateMessageStatus, markMessageDeletedRemotely, markConversationIncomingMessagesDeletedRemotely, listRemoteDeletedMessages, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, deleteConversationMessages, listDeletedMessageIds, beginIdempotentSend, completeIdempotentSend, getIdempotentSend, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
+  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, updateMessageStatus, markMessageDeletedRemotely, markMessageDeletedByOther, markConversationIncomingMessagesDeletedRemotely, listRemoteDeletedMessages, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, deleteConversationMessages, listDeletedMessageIds, beginIdempotentSend, completeIdempotentSend, getIdempotentSend, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
 }

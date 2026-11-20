@@ -79,7 +79,8 @@ private val EditorBlue: Color @Composable get() = LocalEditorPalette.current.blu
 data class StudioEditorDocument(
     val path: String,
     val content: String,
-    val languageLabel: String = path.substringAfterLast('.', "Plain text").replaceFirstChar { it.uppercase() }
+    val languageLabel: String = path.substringAfterLast('.', "Plain text").replaceFirstChar { it.uppercase() },
+    val sha256: String = ""
 )
 
 @Composable
@@ -97,7 +98,7 @@ fun CodeEditorScreen(
     onSelectDocument: (String) -> Unit = {},
     onCloseDocument: (String) -> Unit = {},
     onContentChange: (String, String) -> Unit = { _, _ -> },
-    onSave: (String, String) -> Boolean = { _, _ -> false }
+    onSave: suspend (String, String) -> Boolean = { _, _ -> false }
 ) {
     var explorerOpen by rememberSaveable { mutableStateOf(false) }
     var panelOpen by rememberSaveable { mutableStateOf(false) }

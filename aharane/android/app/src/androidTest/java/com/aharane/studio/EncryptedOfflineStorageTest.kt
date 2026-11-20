@@ -6,6 +6,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import com.aharane.studio.core.model.ChatAccount
+import com.aharane.studio.core.model.ChatMessage
+import com.aharane.studio.core.model.ConversationKey
+import com.aharane.studio.core.model.MessageDirection
+import com.aharane.studio.core.model.MessageKind
+import com.aharane.studio.core.model.MessageStatus
 import com.aharane.studio.core.storage.ChatConversationRow
 import com.aharane.studio.core.storage.ChatMessageRow
 import com.aharane.studio.core.storage.EncryptedChatDatabase

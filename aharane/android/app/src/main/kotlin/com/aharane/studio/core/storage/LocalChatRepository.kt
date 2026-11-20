@@ -8,7 +8,7 @@ class LocalChatRepository(context: Context) {
     private val secureDatabase = EncryptedChatDatabase.open(context.applicationContext)
     private val dao = secureDatabase.database.chatDao()
 
-    suspend fun saveConversations(rows: List<ChatSummary>) {
+    suspend fun saveConversations(rows: List<ChatSummary>): List<ChatSummary> {
         val preserved = rows.map { summary ->
             val previous = dao.conversation(summary.key.account.apiValue, summary.key.jid)
             summary.toRow().copy(
@@ -21,6 +21,9 @@ class LocalChatRepository(context: Context) {
             )
         }
         dao.putConversations(preserved)
+        return preserved.mapNotNull { row ->
+            dao.conversation(row.account, row.jid)?.toModel()
+        }
     }
 
     suspend fun conversations(account: ChatAccount): List<ChatSummary> =

@@ -159,14 +159,23 @@ class EncryptedChatDatabase private constructor(
             }
         }
 
-        fun open(context: Context): EncryptedChatDatabase {
+        fun open(context: Context): EncryptedChatDatabase = openInternal(context, null)
+
+        internal fun openForTesting(context: Context, namespace: String): EncryptedChatDatabase {
+            require(namespace.matches(Regex("[A-Za-z0-9_-]{1,32}"))) { "Invalid isolated test namespace." }
+            return openInternal(context, namespace)
+        }
+
+        private fun openInternal(context: Context, testNamespace: String?): EncryptedChatDatabase {
             System.loadLibrary("sqlcipher")
-            val root = File(context.noBackupFilesDir, "aharane-secure-chat").apply {
+            val directory = if (testNamespace == null) "aharane-secure-chat" else "aharane-secure-chat-test-" + testNamespace
+            val wrappingKeyAlias = if (testNamespace == null) KEY_ALIAS else "$KEY_ALIAS.$testNamespace"
+            val root = File(context.noBackupFilesDir, directory).apply {
                 if (!exists() && !mkdirs()) error("Could not create the private chat storage directory.")
             }
             val file = File(root, "chat-v1.db")
             val keyFile = File(root, KEY_FILE)
-            val passphrase = loadOrCreatePassphrase(keyFile, file.exists())
+            val passphrase = loadOrCreatePassphrase(keyFile, file.exists(), wrappingKeyAlias)
             val factory = SupportOpenHelperFactory(passphrase)
             val db = Room.databaseBuilder(context.applicationContext, AharaneChatDatabase::class.java, file.absolutePath)
                 .openHelperFactory(factory)
@@ -185,10 +194,10 @@ class EncryptedChatDatabase private constructor(
             return EncryptedChatDatabase(db, file)
         }
 
-        private fun loadOrCreatePassphrase(keyFile: File, databaseExists: Boolean): ByteArray {
+        private fun loadOrCreatePassphrase(keyFile: File, databaseExists: Boolean, wrappingKeyAlias: String): ByteArray {
             val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             if (keyFile.exists()) {
-                val wrappingKey = keyStore.getKey(KEY_ALIAS, null)
+                val wrappingKey = keyStore.getKey(wrappingKeyAlias, null)
                     ?: throw EncryptedChatStorageException("The Android Keystore wrapping key is missing. Encrypted chats are locked; no unencrypted fallback was created.")
                 val blob = keyFile.readBytes()
                 if (blob.size <= 12) throw EncryptedChatStorageException("The encrypted chat-key file is incomplete.")
@@ -211,7 +220,7 @@ class EncryptedChatDatabase private constructor(
             val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
             generator.init(
                 KeyGenParameterSpec.Builder(
-                    KEY_ALIAS,
+                    wrappingKeyAlias,
                     KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
                 ).setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                     .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)

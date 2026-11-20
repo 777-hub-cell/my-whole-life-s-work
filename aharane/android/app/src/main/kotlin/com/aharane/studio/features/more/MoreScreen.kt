@@ -457,7 +457,7 @@ fun MoreScreen(
                             mediaCache?.clearAccount(accountKey)
                             onAppearanceChanged()
                         })
-                        StudioActionButton("Sync all chats", primary = true, enabled = connected && !syncingAllChats, loading = syncingAllChats, onClick = onSyncAllChats)
+                        StudioActionButton(if (syncingAllChats) "Syncing…" else "Sync all chats", primary = true, enabled = connected && !syncingAllChats, onClick = onSyncAllChats)
                     }
                     Text(
                         "Only completed, verified attachments are marked offline-ready. View-once media is never cached.",

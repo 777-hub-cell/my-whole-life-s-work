@@ -149,6 +149,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
   const files = Object.fromEntries(['private', 'public'].map(id => [id, join(root, id + '.jsonl')]))
   const readMarkers = Object.fromEntries(['private', 'public'].map(id => [id, join(root, id + '.read.json')]))
   const deletedFiles = Object.fromEntries(['private', 'public'].map(id => [id, join(root, id + '.deleted.jsonl')]))
+  const sendKeyFiles = Object.fromEntries(['private', 'public'].map(id => [id, join(root, id + '.send-keys.json')]))
   const queues = new Map()
   const ready = new Set()
   const initializing = new Map()
@@ -223,6 +224,87 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       }
     }
     return rows
+  }
+
+  async function readSendKeys(account) {
+    return readFile(sendKeyFiles[account], 'utf8')
+      .then(JSON.parse)
+      .catch(error => {
+        if (error?.code === 'ENOENT') return {}
+        throw error
+      })
+  }
+
+  async function writeSendKeys(account, value) {
+    const temporary = sendKeyFiles[account] + '.' + randomUUID() + '.tmp'
+    try {
+      await writeFile(temporary, JSON.stringify(value), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+      await rename(temporary, sendKeyFiles[account])
+      await chmod(sendKeyFiles[account], 0o600)
+    } finally {
+      await unlink(temporary).catch(() => {})
+    }
+  }
+
+  async function beginIdempotentSend(id, { clientMessageId, jid: jidValue, text, quotedMessageId = '' } = {}) {
+    const account = accountId(id)
+    const jid = safeJid(jidValue)
+    const key = String(clientMessageId || '')
+    if (!jid || !/^[A-Za-z0-9_-]{8,128}$/.test(key)) {
+      throw Object.assign(new Error('A valid client message id and conversation are required.'), { status: 400 })
+    }
+    const content = String(text || '')
+    const quote = String(quotedMessageId || '')
+    const payloadHash = createHash('sha256').update(JSON.stringify({ jid, text: content, quotedMessageId: quote })).digest('hex')
+    await ensureReady(account)
+    return enqueue(account, async () => {
+      const entries = await readSendKeys(account)
+      const existing = entries[key]
+      if (existing) {
+        if (existing.payloadHash !== payloadHash || existing.jid !== jid) {
+          throw Object.assign(new Error('This client message id was already used for different message content.'), { status: 409 })
+        }
+        if (existing.state === 'sent') return { state: 'sent', messageId: existing.messageId || '' }
+        return { state: 'uncertain', messageId: existing.messageId || '' }
+      }
+      entries[key] = {
+        clientMessageId: key,
+        jid,
+        payloadHash,
+        state: 'sending',
+        messageId: '',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }
+      await writeSendKeys(account, entries)
+      return { state: 'sending', messageId: '' }
+    })
+  }
+
+  async function completeIdempotentSend(id, clientMessageId, messageId) {
+    const account = accountId(id), key = String(clientMessageId || '')
+    if (!/^[A-Za-z0-9_-]{8,128}$/.test(key)) throw Object.assign(new Error('Invalid client message id.'), { status: 400 })
+    return enqueue(account, async () => {
+      const entries = await readSendKeys(account)
+      const existing = entries[key]
+      if (!existing) throw Object.assign(new Error('The send intent was not found.'), { status: 404 })
+      if (existing.state === 'sent' && existing.messageId && existing.messageId !== String(messageId || '')) {
+        throw Object.assign(new Error('The client message id resolved to a different WhatsApp message.'), { status: 409 })
+      }
+      existing.state = 'sent'
+      existing.messageId = String(messageId || '').slice(0, 256)
+      existing.updatedAt = Date.now()
+      await writeSendKeys(account, entries)
+      return { state: 'sent', messageId: existing.messageId }
+    })
+  }
+
+  async function getIdempotentSend(id, clientMessageId) {
+    const account = accountId(id), key = String(clientMessageId || '')
+    if (!/^[A-Za-z0-9_-]{8,128}$/.test(key)) return null
+    const entries = await readSendKeys(account)
+    const row = entries[key]
+    return row ? { state: row.state, messageId: row.messageId || '' } : null
   }
 
   async function recordDeleted(id, jid, messageId) {
@@ -811,5 +893,5 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return { bytes: total, files: count }
   }
 
-  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, updateMessageStatus, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, deleteConversationMessages, listDeletedMessageIds, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
+  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, updateMessageStatus, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, deleteConversationMessages, listDeletedMessageIds, beginIdempotentSend, completeIdempotentSend, getIdempotentSend, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
 }

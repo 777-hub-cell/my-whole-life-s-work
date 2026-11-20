@@ -33,12 +33,22 @@ export function isPrivateVisibleChatJid(value) {
     || /^\d{5,25}@lid$/.test(jid)
 }
 
-export function isAllowedInbound({ remoteJid, fromMe = false, allowedSenders = new Set() } = {}) {
+export function isAllowedInbound({
+  remoteJid,
+  participantJid,
+  allowGroups = false,
+  fromMe = false,
+  allowedSenders = new Set(),
+} = {}) {
   if (fromMe === true) return false
   const jid = String(remoteJid ?? '')
   if (!jid || jid === 'status@broadcast' || jid.endsWith('@broadcast')) return false
-  if (jid.endsWith('@g.us')) return false
-  const sender = senderNumberFromJid(jid)
+  let senderJid = jid
+  if (jid.endsWith('@g.us')) {
+    if (!allowGroups || !/^\d{5,25}-\d{5,25}@g\.us$/.test(jid)) return false
+    senderJid = String(participantJid ?? '')
+  }
+  const sender = senderNumberFromJid(senderJid)
   return Boolean(sender && allowedSenders instanceof Set && allowedSenders.has(sender))
 }
 

@@ -3,7 +3,6 @@ package com.aharane.studio.core.storage
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -11,7 +10,6 @@ import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.SecureRandom
 import javax.crypto.Cipher
-import javax.crypto.CipherInputStream
 import javax.crypto.CipherOutputStream
 import javax.crypto.KeyGenerator
 import javax.crypto.spec.GCMParameterSpec
@@ -103,16 +101,16 @@ class EncryptedMediaCache(context: Context) {
 
     private fun readEncryptedFile(file: File, aad: String): ByteArray {
         require(file.isFile && file.length() > 12) { "Encrypted media file is missing or incomplete." }
-        FileInputStream(file).use { input ->
-            val iv = ByteArray(12)
-            check(input.read(iv) == iv.size) { "Encrypted media header is incomplete." }
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, mediaKey(), GCMParameterSpec(128, iv))
-            cipher.updateAAD(aad.toByteArray(Charsets.UTF_8))
-            val output = ByteArrayOutputStream()
-            CipherInputStream(input, cipher).use { it.copyTo(output) }
-            return output.toByteArray()
-        }
+        val stored = file.readBytes()
+        check(stored.size > 12) { "Encrypted media header is incomplete." }
+        val iv = stored.copyOfRange(0, 12)
+        val encrypted = stored.copyOfRange(12, stored.size)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, mediaKey(), GCMParameterSpec(128, iv))
+        cipher.updateAAD(aad.toByteArray(Charsets.UTF_8))
+        // Use doFinal directly so AES-GCM authentication/tag failures propagate
+        // instead of being masked by a streaming wrapper.
+        return cipher.doFinal(encrypted)
     }
 
     private fun mediaKey(): java.security.Key {

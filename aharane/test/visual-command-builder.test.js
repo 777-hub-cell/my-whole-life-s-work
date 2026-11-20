@@ -1,0 +1,203 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+  createVisualCommandStore,
+  createWorkflowDraft,
+  executeVisualWorkflow,
+  normalizeWorkflow,
+  validateWorkflow,
+} from '../src/visual-command-builder.js'
+
+async function makeStore(t) {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-visual-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const store = createVisualCommandStore(join(dir, 'visual-commands.json'))
+  await store.init()
+  return { store, path: join(dir, 'visual-commands.json') }
+}
+
+function context(overrides = {}) {
+  return {
+    sessionId: 'private',
+    privateControl: true,
+    isPublicOwner: false,
+    allowedPublicSender: false,
+    remoteJid: '2348012345678@s.whatsapp.net',
+    sender: '2348012345678@s.whatsapp.net',
+    messageText: '.hello Ada',
+    rawArgs: 'Ada',
+    args: ['Ada'],
+    message: { key: { id: 'msg-1', remoteJid: '2348012345678@s.whatsapp.net', fromMe: true }, message: { conversation: '.hello Ada' } },
+    socket: { sendMessage: async () => ({ key: { id: 'sent-1' } }) },
+    ...overrides,
+  }
+}
+
+test('new workflow draft has one connected command trigger and reply', () => {
+  const draft = createWorkflowDraft('private')
+  const validation = validateWorkflow(draft)
+  assert.equal(draft.nodes.length, 2)
+  assert.equal(draft.edges.length, 1)
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors))
+})
+
+test('validation rejects missing text, incompatible ports, missing triggers and cycles', () => {
+  const draft = createWorkflowDraft()
+  draft.nodes[1].config.text = ''
+  assert.equal(validateWorkflow(draft).valid, false)
+
+  const mismatch = createWorkflowDraft()
+  mismatch.edges[0].fromSocket = 'message'
+  assert.ok(validateWorkflow(mismatch).errors.some(item => item.message.includes('Cannot connect')))
+
+  const noTrigger = createWorkflowDraft()
+  noTrigger.nodes[0].type = 'message.text'
+  assert.ok(validateWorkflow(noTrigger).errors.some(item => item.message.includes('exactly one trigger')))
+
+  const cycle = createWorkflowDraft()
+  cycle.nodes.push({ id: 'end', type: 'flow.delay', x: 500, y: 100, config: { milliseconds: 1 } })
+  cycle.edges.push({ id: 'cycle-1', from: cycle.nodes[1].id, fromSocket: 'next', to: 'end', toSocket: 'in' })
+  cycle.edges.push({ id: 'cycle-2', from: 'end', fromSocket: 'next', to: cycle.nodes[1].id, toSocket: 'in' })
+  assert.ok(validateWorkflow(cycle).errors.some(item => item.message.includes('cycle')))
+})
+
+test('message text data output flows through a typed connection into Send text', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft()
+  draft.nodes[1] = { id: 'send', type: 'message.sendText', x: 270, y: 100, config: { text: '' } }
+  draft.edges = [
+    { id: 'exec', from: draft.nodes[0].id, fromSocket: 'next', to: 'send', toSocket: 'in' },
+    { id: 'data', from: draft.nodes[0].id, fromSocket: 'messageText', to: 'send', toSocket: 'text' },
+  ]
+  assert.equal(validateWorkflow(draft).valid, true)
+  const sent = []
+  const result = await executeVisualWorkflow(draft, {
+    store, context: context({ socket: { sendMessage: async (_jid, body) => { sent.push(body.text); return { key: { id: 'sent-1' } } } } }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.deepEqual(sent, ['.hello Ada'])
+})
+
+test('dry-run simulates send nodes and never calls WhatsApp', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft()
+  let sends = 0
+  const result = await executeVisualWorkflow(draft, {
+    store, dryRun: true,
+    context: context({ socket: { sendMessage: async () => { sends += 1; throw new Error('must not send') } } }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.equal(result.dryRun, true)
+  assert.equal(sends, 0)
+  assert.ok(result.trace.some(item => item.status === 'simulated' && item.message.includes('Would send')))
+})
+
+test('private workflow cannot execute from the public account or non-owner chat', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('private')
+  let sends = 0
+  const unauthorized = await executeVisualWorkflow(draft, {
+    store, context: context({ sessionId: 'public', privateControl: false, allowedPublicSender: true }),
+  })
+  assert.equal(unauthorized.ok, false)
+  assert.match(unauthorized.error, /not authorized/i)
+  assert.equal(sends, 0)
+
+  const fromOther = await executeVisualWorkflow(draft, {
+    store, context: context({ privateControl: false }),
+  })
+  assert.equal(fromOther.ok, false)
+})
+
+test('public workflow requires the existing authorized sender gate', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('public')
+  draft.nodes[0].config.command = 'hello'
+  const rejected = await executeVisualWorkflow(draft, {
+    store, context: context({ sessionId: 'public', privateControl: false, allowedPublicSender: false, messageText: '!hello' }),
+  })
+  assert.equal(rejected.ok, false)
+  const accepted = await executeVisualWorkflow(draft, {
+    store, dryRun: true,
+    context: context({ sessionId: 'public', privateControl: false, allowedPublicSender: true, messageText: '!hello' }),
+  })
+  assert.equal(accepted.ok, true, accepted.error)
+})
+
+test('conditional nodes select the correct YES and NO execution branch', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft()
+  const trigger = draft.nodes[0]
+  const reply = draft.nodes[1]
+  const condition = { id: 'condition', type: 'condition.equals', x: 250, y: 100, config: { left: 'yes', right: 'yes' } }
+  const yes = { id: 'yes', type: 'message.sendText', x: 500, y: 20, config: { text: 'matched' } }
+  const no = { id: 'no', type: 'message.sendText', x: 500, y: 190, config: { text: 'not matched' } }
+  draft.nodes = [trigger, condition, yes, no]
+  draft.edges = [
+    { id: 'a', from: trigger.id, fromSocket: 'next', to: condition.id, toSocket: 'in' },
+    { id: 'b', from: condition.id, fromSocket: 'yes', to: yes.id, toSocket: 'in' },
+    { id: 'c', from: condition.id, fromSocket: 'no', to: no.id, toSocket: 'in' },
+  ]
+  assert.equal(validateWorkflow(draft).valid, true)
+  const sent = []
+  const result = await executeVisualWorkflow(draft, {
+    store, context: context({ socket: { sendMessage: async (_jid, body) => { sent.push(body.text); return { key: { id: 'sent' } } } } }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.deepEqual(sent, ['matched'])
+})
+
+test('Repeat is bounded and executes its body exactly the configured count', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft()
+  const trigger = draft.nodes[0]
+  const repeat = { id: 'repeat', type: 'flow.repeat', x: 260, y: 100, config: { count: 3 } }
+  const send = { id: 'send', type: 'message.sendText', x: 490, y: 100, config: { text: 'again' } }
+  const repeatEnd = { id: 'repeat-end', type: 'flow.repeatEnd', x: 720, y: 100, config: {} }
+  const end = { id: 'end', type: 'flow.end', x: 490, y: 250, config: {} }
+  draft.nodes = [trigger, repeat, send, repeatEnd, end]
+  draft.edges = [
+    { id: 'a', from: trigger.id, fromSocket: 'next', to: repeat.id, toSocket: 'in' },
+    { id: 'b', from: repeat.id, fromSocket: 'body', to: send.id, toSocket: 'in' },
+    { id: 'c', from: send.id, fromSocket: 'next', to: repeatEnd.id, toSocket: 'in' },
+    { id: 'd', from: repeat.id, fromSocket: 'next', to: end.id, toSocket: 'in' },
+  ]
+  assert.equal(validateWorkflow(draft).valid, true, JSON.stringify(validateWorkflow(draft).errors))
+  const result = await executeVisualWorkflow(draft, { store, dryRun: true, context: context() })
+  assert.equal(result.ok, true, result.error)
+  assert.equal(result.trace.filter(item => item.type === 'message.sendText').length, 3)
+})
+
+test('persistent counters are saved atomically and survive a fresh store instance', async t => {
+  const { store, path } = await makeStore(t)
+  assert.equal(await store.incrementCounter('workflow-1', 'daily'), 1)
+  assert.equal(await store.incrementCounter('workflow-1', 'daily'), 2)
+  const saved = JSON.parse(await readFile(path, 'utf8'))
+  assert.equal(saved.counters['workflow-1'].daily, 2)
+  const reloaded = createVisualCommandStore(path)
+  await reloaded.init()
+  assert.equal(await reloaded.incrementCounter('workflow-1', 'daily'), 3)
+})
+
+test('only valid workflows can be activated, while invalid drafts remain editable', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft()
+  draft.nodes[1].config.text = ''
+  const saved = await store.save(draft)
+  assert.equal(saved.validation.valid, false)
+  assert.equal(store.get(draft.id).enabled, false)
+  await assert.rejects(() => store.save({ ...draft, enabled: true }), /pass validation/i)
+})
+
+test('message triggers can be found only for their selected account', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('public')
+  draft.nodes[0].type = 'trigger.message'
+  draft.nodes[0].config = {}
+  await store.save(draft)
+  assert.equal(store.findMessageTriggers('public').length, 1)
+  assert.equal(store.findMessageTriggers('private').length, 0)
+})

@@ -2163,6 +2163,19 @@ fun AharaneApp(
                         cachedConversations = chatsByAccount[selectedAccount].orEmpty(),
                         mediaCache = encryptedMediaCache,
                         syncingAllChats = syncingAllChats,
+                        onClearMediaCache = { targetAccount ->
+                            connectionScope.launch {
+                                runCatching {
+                                    withContext(Dispatchers.IO) {
+                                        encryptedMediaCache.clearAccount(targetAccount.apiValue)
+                                    }
+                                    localChatRepository?.clearCachedMediaMetadata(targetAccount)
+                                    chatAppearanceRevision += 1
+                                }.onFailure {
+                                    Toast.makeText(context, it.message ?: "Could not clear encrypted offline media.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
                         onSyncAllChats = {
                             if (!connected) {
                                 Toast.makeText(context, "Reconnect to your Aharane server to sync conversations.", Toast.LENGTH_SHORT).show()

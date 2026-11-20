@@ -165,6 +165,9 @@ interface ChatDao {
     @Query("SELECT * FROM chat_outgoing_messages WHERE account = :account AND jid = :jid ORDER BY queuedAtMillis ASC")
     suspend fun outgoingMessages(account: String, jid: String): List<ChatOutgoingMessageRow>
 
+    @Query("SELECT * FROM chat_outgoing_messages WHERE state = 'SENDING'")
+    suspend fun interruptedOutgoingMessages(): List<ChatOutgoingMessageRow>
+
     @Query("SELECT * FROM chat_outgoing_messages WHERE account = :account AND state = 'PENDING' ORDER BY queuedAtMillis ASC LIMIT :limit")
     suspend fun pendingOutgoingMessages(account: String, limit: Int): List<ChatOutgoingMessageRow>
 
@@ -290,7 +293,7 @@ class EncryptedChatDatabase private constructor(
             if (databaseExists) {
                 throw EncryptedChatStorageException("The encrypted database exists but its wrapped key is missing. Aharane refused to replace it with a new database.")
             }
-            if (keyStore.getKey(KEY_ALIAS, null) != null) {
+            if (keyStore.getKey(wrappingKeyAlias, null) != null) {
                 throw EncryptedChatStorageException("A chat database key already exists but its wrapped copy is missing.")
             }
             val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")

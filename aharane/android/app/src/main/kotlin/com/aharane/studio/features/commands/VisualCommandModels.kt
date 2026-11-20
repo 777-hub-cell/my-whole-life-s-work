@@ -16,7 +16,7 @@ data class VisualNode(
         config.forEach { (key, value) ->
             when (key) {
                 "aliases" -> values.put(key, JSONArray(value.split(',').map(String::trim).filter(String::isNotBlank)))
-                "milliseconds", "count" -> values.put(key, value.toIntOrNull() ?: 0)
+                "milliseconds", "count", "selectableCount" -> values.put(key, value.toIntOrNull() ?: 0)
                 else -> values.put(key, value)
             }
         }

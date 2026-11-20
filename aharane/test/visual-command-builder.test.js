@@ -281,6 +281,123 @@ test('location and contact-card nodes validate and produce documented WhatsApp p
   assert.match(payloads[1].contacts.contacts[0].vcard, /waid=2348012345678:\+2348012345678/)
 })
 
+test('Public group workflows require explicit group scope and an allow-listed participant', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('public')
+  draft.nodes[0].config.chatScope = 'groups'
+  draft.nodes[0].config.command = 'hello'
+  const update = { id: 'subject', type: 'group.updateSubject', x: 300, y: 100, config: { subject: 'Aharane Builders' } }
+  draft.nodes.push(update)
+  draft.edges.push({ id: 'group-exec', from: draft.nodes[0].id, fromSocket: 'next', to: update.id, toSocket: 'in' })
+  assert.equal(validateWorkflow(draft).valid, true, JSON.stringify(validateWorkflow(draft).errors))
+
+  let calls = 0
+  const allowedGroupContext = context({
+    sessionId: 'public',
+    privateControl: false,
+    isPublicOwner: true,
+    allowedPublicSender: true,
+    remoteJid: '120363012345678901-1234567890@g.us',
+    sender: '2348012345678@s.whatsapp.net',
+    senderJid: '2348012345678@s.whatsapp.net',
+    messageText: '!hello',
+    socket: { groupUpdateSubject: async (jid, subject) => { calls += 1; assert.match(jid, /@g\.us$/); assert.equal(subject, 'Aharane Builders') } },
+  })
+  const accepted = await executeVisualWorkflow(draft, { store, context: allowedGroupContext })
+  assert.equal(accepted.ok, true, accepted.error)
+  assert.equal(calls, 1)
+
+  const rejected = await executeVisualWorkflow({ ...draft, nodes: draft.nodes.map(node =>
+    node.id === draft.nodes[0].id ? { ...node, config: { ...node.config, chatScope: 'direct' } } : node
+  ) }, { store, context: allowedGroupContext })
+  assert.equal(rejected.ok, false)
+  assert.match(rejected.error, /chat type/i)
+  assert.equal(calls, 1)
+})
+
+test('Public group administration actions require the verified Public Owner', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('public')
+  draft.nodes[0].config.chatScope = 'groups'
+  draft.nodes[0].config.command = 'hello'
+  const admin = {
+    id: 'participants', type: 'group.participantsUpdate', x: 300, y: 100,
+    config: { action: 'promote', participants: '2348098765432' },
+  }
+  draft.nodes.push(admin)
+  draft.edges.push({ id: 'admin-exec', from: draft.nodes[0].id, fromSocket: 'next', to: admin.id, toSocket: 'in' })
+  let calls = 0
+  const nonOwner = context({
+    sessionId: 'public', privateControl: false, isPublicOwner: false, allowedPublicSender: true,
+    remoteJid: '120363012345678901-1234567890@g.us',
+    sender: '2348012345678@s.whatsapp.net',
+    senderJid: '2348012345678@s.whatsapp.net',
+    messageText: '!hello',
+    socket: { groupParticipantsUpdate: async () => { calls += 1; return [{ status: '200' }] } },
+  })
+  const denied = await executeVisualWorkflow(draft, { store, context: nonOwner })
+  assert.equal(denied.ok, false)
+  assert.match(denied.error, /account owner/i)
+  assert.equal(calls, 0)
+
+  const owner = await executeVisualWorkflow(draft, {
+    store,
+    context: { ...nonOwner, isPublicOwner: true, socket: { groupParticipantsUpdate: async (jid, participants, action) => {
+      calls += 1
+      assert.match(jid, /@g\.us$/)
+      assert.deepEqual(participants, ['2348098765432@s.whatsapp.net'])
+      assert.equal(action, 'promote')
+      return [{ status: '200' }]
+    } } },
+  })
+  assert.equal(owner.ok, true, owner.error)
+  assert.equal(calls, 1)
+})
+
+test('group metadata output can feed a downstream message and non-owner profile updates are denied', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('public')
+  draft.nodes[0].config.chatScope = 'groups'
+  draft.nodes[0].config.command = 'hello'
+  const info = { id: 'info', type: 'group.getInfo', x: 250, y: 100, config: {} }
+  const send = { id: 'send', type: 'message.sendText', x: 500, y: 100, config: { text: '' } }
+  draft.nodes[1] = info
+  draft.nodes.push(send)
+  draft.edges = [
+    { id: 'exec-1', from: draft.nodes[0].id, fromSocket: 'next', to: info.id, toSocket: 'in' },
+    { id: 'exec-2', from: info.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
+    { id: 'data', from: info.id, fromSocket: 'subject', to: send.id, toSocket: 'text' },
+  ]
+  const sent = []
+  const event = context({
+    sessionId: 'public', privateControl: false, isPublicOwner: false, allowedPublicSender: true,
+    remoteJid: '120363012345678901-1234567890@g.us',
+    sender: '2348012345678@s.whatsapp.net',
+    senderJid: '2348012345678@s.whatsapp.net',
+    messageText: '!hello',
+  })
+  event.socket = {
+    groupMetadata: async () => ({ subject: 'Aharane Builders', participants: [{ id: 'one' }, { id: 'two' }] }),
+    sendMessage: async (_jid, body) => { sent.push(body.text); return { key: { id: 'group-info-reply' } } },
+  }
+  const result = await executeVisualWorkflow(draft, { store, context: event })
+  assert.equal(result.ok, true, result.error)
+  assert.deepEqual(sent, ['Aharane Builders'])
+
+  const profile = createWorkflowDraft('public')
+  profile.nodes[0].config.command = 'hello'
+  profile.nodes.push({ id: 'profile', type: 'profile.updateName', x: 300, y: 100, config: { name: 'Not allowed' } })
+  profile.edges.push({ id: 'profile-edge', from: profile.nodes[0].id, fromSocket: 'next', to: 'profile', toSocket: 'in' })
+  let profileCalls = 0
+  const noOwner = await executeVisualWorkflow(profile, {
+    store,
+    context: context({ sessionId: 'public', privateControl: false, isPublicOwner: false, allowedPublicSender: true,
+      socket: { updateProfileName: async () => { profileCalls += 1 } } }),
+  })
+  assert.equal(noOwner.ok, false)
+  assert.equal(profileCalls, 0)
+})
+
 test('poll node builds a documented WhatsApp poll payload; safe test never sends it', async t => {
   const { store } = await makeStore(t)
   const draft = createWorkflowDraft()

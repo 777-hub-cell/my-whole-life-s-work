@@ -67,8 +67,8 @@ class EncryptedMediaCache(context: Context) {
             CipherOutputStream(raw, cipher).use { encrypted -> encrypted.write(bytes) }
         }
         val digest = sha256(bytes)
-        val check = readEncryptedFile(temporary, ownership)
-        check(sha256(check) == digest && check.size == bytes.size) { "Encrypted media verification failed." }
+        val verifiedBytes = readEncryptedFile(temporary, ownership)
+        check(sha256(verifiedBytes) == digest && verifiedBytes.size == bytes.size) { "Encrypted media verification failed." }
         if (target.exists() && !target.delete()) throw IllegalStateException("Could not replace the older media cache entry.")
         if (!temporary.renameTo(target)) throw IllegalStateException("Could not commit the encrypted media file.")
         return EncryptedMediaRecord(root.toPath().relativize(target.toPath()).toString(), digest, bytes.size.toLong())

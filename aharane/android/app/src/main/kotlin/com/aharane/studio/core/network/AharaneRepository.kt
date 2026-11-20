@@ -394,19 +394,32 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
         }
         val targetRoot = if (parent.isBlank()) newName else "$parent/$newName"
         createFolder(parent, newName)
-        val descendants = allFiles().filter { it.path.startsWith(entry.path.trimEnd('/') + "/") }
+        val sourcePrefix = entry.path.trimEnd('/') + "/"
+        val descendants = allFiles().filter { it.path.startsWith(sourcePrefix) }
             .sortedBy { it.path.count { character -> character == '/' } }
+        val createdFolders = mutableSetOf(targetRoot)
         descendants.filter { it.isDirectory }.forEach { folder ->
-            val relative = folder.path.removePrefix(entry.path.trimEnd('/') + "/")
-            createFolder(targetRoot, relative)
+            val relative = folder.path.removePrefix(sourcePrefix)
+            var destination = targetRoot
+            relative.split('/').filter(String::isNotBlank).forEach { segment ->
+                val nextPath = "$destination/$segment"
+                if (createdFolders.add(nextPath)) createFolder(destination, segment)
+                destination = nextPath
+            }
         }
         descendants.filterNot { it.isDirectory }.forEach { file ->
-            val relative = file.path.removePrefix(entry.path.trimEnd('/') + "/")
-            val targetParent = relative.substringBeforeLast('/', "")
-            val targetName = relative.substringAfterLast('/')
-            val targetDir = if (targetParent.isBlank()) targetRoot else "$targetRoot/$targetParent"
+            val relative = file.path.removePrefix(sourcePrefix)
+            val segments = relative.split('/').filter(String::isNotBlank)
+            if (segments.isEmpty()) return@forEach
+            val targetName = segments.last()
+            var targetParent = targetRoot
+            segments.dropLast(1).forEach { segment ->
+                val nextPath = "$targetParent/$segment"
+                if (createdFolders.add(nextPath)) createFolder(targetParent, segment)
+                targetParent = nextPath
+            }
             val source = previewFile(file.path)
-            createFile(targetDir, targetName, source.content)
+            createFile(targetParent, targetName, source.content)
         }
     }
 
@@ -429,6 +442,12 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
     suspend fun discardFileEdits() {
         api.post("files/discard", JSONObject().put("confirm", true))
     }
+
+    suspend fun exportSourceZip(): ByteArray =
+        api.getBytes("files/export")
+
+    suspend fun downloadSourceFile(path: String): ByteArray =
+        api.getBytes("files/download?item=" + java.net.URLEncoder.encode(path, "UTF-8"))
 
     suspend fun exportFiles(paths: List<String>): ByteArray =
         api.postBytes("files/export-selection", JSONObject().put("paths", JSONArray(paths)))

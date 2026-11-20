@@ -205,6 +205,26 @@ def main():
     tap_label("Appearance", scroll_to_find=True)
     capture("06-appearance.png")
     back()
+    tap_label("Chat settings", scroll_to_find=True)
+    capture("06a-chat-settings.png", 1)
+    tap_label("Open Appearance Studio", scroll_to_find=True)
+    capture("06b-chat-appearance-studio.png", 1)
+    tap_label("Photo", required=False)
+    tap_label("Choose photo", scroll_to_find=True, required=False)
+    if tap_label("Choose photo", required=False):
+        capture("06c-android-photo-picker.png", 1)
+        back()
+    tap_label("Message bubbles", scroll_to_find=True)
+    capture("06d-message-bubble-customisation.png")
+    tap_label("Typography", scroll_to_find=True)
+    capture("06e-typography-settings.png")
+    tap_label("Apply to", scroll_to_find=True)
+    tap_label("Conversation", scroll_to_find=True)
+    capture("06f-conversation-override-selector.png")
+    tap_label("Mira", required=False)
+    capture("06g-per-conversation-override.png")
+    back()
+    back()
 
     # A normal first launch now requires secure HTTPS sign-in before any Studio
     # content is available. Capture that gate separately; never bypass auth in

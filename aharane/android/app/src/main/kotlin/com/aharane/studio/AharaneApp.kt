@@ -1908,14 +1908,15 @@ fun AharaneApp(
                             val account = selectedAccount
                             inboxSearchRequestId += 1
                             val requestId = inboxSearchRequestId
-                            if (query.isBlank()) {
+                            if (query.isBlank() && fromMillis == 0L && toMillis == 0L) {
                                 inboxMessageSearchResults = emptyList()
                             } else {
                                 connectionScope.launch {
                                     val matches = if (previewMode) {
                                         previewMessages.filter { message ->
                                             message.key.account == account &&
-                                                (message.text.contains(query, true) ||
+                                                (query.isBlank() ||
+                                                    message.text.contains(query, true) ||
                                                     message.senderName.orEmpty().contains(query, true) ||
                                                     message.mediaFileName.orEmpty().contains(query, true)) &&
                                                 (fromMillis == 0L || message.timestampMillis >= fromMillis) &&
@@ -1935,7 +1936,32 @@ fun AharaneApp(
                                             emptyList()
                                         }
                                     }
-                                    if (requestId == inboxSearchRequestId && selectedAccount == account) {
+                                    if (connected && query.trim().length >= 2) {
+                                        runCatching {
+                                            val remote = repository.chats(account).flatMap { chat ->
+                                                repository.searchMessages(chat, query)
+                                            }.filter { message ->
+                                                (fromMillis == 0L || message.timestampMillis >= fromMillis) &&
+                                                    (toMillis == 0L || message.timestampMillis <= toMillis)
+                                            }
+                                            localChatRepository?.saveMessages(
+                                                remote.groupBy { it.key }.flatMap { (key, rows) ->
+                                                    val chat = chatsByAccount[account].orEmpty().firstOrNull { it.key == key }
+                                                    if (chat != null) localChatRepository?.saveMessages(chat, rows)
+                                                    rows
+                                                }.let { emptyList() }
+                                            )
+                                            if (requestId == inboxSearchRequestId && selectedAccount == account) {
+                                                inboxMessageSearchResults = (matches + remote).distinctBy { it.key.jid + "|" + it.messageId }
+                                                    .sortedByDescending { it.timestampMillis }.take(100)
+                                            }
+                                        }.onFailure {
+                                            if (requestId == inboxSearchRequestId && selectedAccount == account) {
+                                                serverError = it.message ?: "Server search is unavailable; showing offline matches."
+                                                inboxMessageSearchResults = matches
+                                            }
+                                        }
+                                    } else if (requestId == inboxSearchRequestId && selectedAccount == account) {
                                         inboxMessageSearchResults = matches
                                     }
                                 }

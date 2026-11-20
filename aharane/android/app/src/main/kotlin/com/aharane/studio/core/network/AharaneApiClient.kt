@@ -146,8 +146,17 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
         return response.third
     }
 
-    suspend fun sendChatMessage(account: String, jid: String, text: String): JSONObject =
-        post("chats/$account/${encodePath(jid)}/send", JSONObject().put("text", text))
+    suspend fun sendChatMessage(
+        account: String,
+        jid: String,
+        text: String,
+        quotedMessageId: String? = null
+    ): JSONObject = post(
+        "chats/$account/${encodePath(jid)}/send",
+        JSONObject().put("text", text).apply {
+            quotedMessageId?.takeIf { it.isNotBlank() }?.let { put("quotedMessageId", it) }
+        }
+    )
 
     suspend fun reactToMessage(account: String, jid: String, messageId: String, reaction: String): JSONObject =
         post(

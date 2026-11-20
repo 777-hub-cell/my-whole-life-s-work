@@ -31,8 +31,6 @@ class VisualCommandBuilderScreenTest {
         }
         compose.waitUntil(5_000) { source.readCount > 0 }
 
-        compose.onNodeWithTag("workflow-name").performTextClearance()
-        compose.onNodeWithTag("workflow-name").performTextInput("Greeting flow")
         compose.onNodeWithTag("node-card-trigger.command").performClick()
         compose.onNodeWithTag("node-config-field-command").performTextClearance()
         compose.onNodeWithTag("node-config-field-command").performTextInput("welcome")
@@ -49,17 +47,24 @@ class VisualCommandBuilderScreenTest {
 
         compose.onNodeWithTag("workflow-save").performClick()
         compose.waitUntil(5_000) { source.createCount == 1 }
-        compose.onNodeWithTag("workflow-name").performTextClearance()
-        compose.onNodeWithTag("workflow-name").performTextInput("Unsaved local name")
+        // The command name belongs to the trigger node; there is no separate
+        // workflow-name text field. Change it locally, then reload the saved
+        // version to verify the command name comes back from that node.
+        compose.onNodeWithTag("node-card-trigger.command").performClick()
+        compose.onNodeWithTag("node-config-field-command").performTextClearance()
+        compose.onNodeWithTag("node-config-field-command").performTextInput("unsaved-local")
+        compose.onNodeWithText("Apply").performClick()
         compose.onNodeWithTag("workflow-load").performClick()
-        compose.onNodeWithText("Greeting flow").performClick()
-        compose.onNodeWithTag("workflow-name").assertTextEquals("Greeting flow")
+        compose.onNodeWithText("welcome").performClick()
+        compose.onNodeWithTag("node-card-trigger.command").performClick()
+        compose.onNodeWithTag("node-config-field-command").assertTextEquals("welcome")
         compose.onNodeWithTag("workflow-node-count").assertTextEquals("3 nodes · 2 wires")
 
         compose.onNodeWithText("Test safely").performClick()
         compose.waitUntil(5_000) { source.safeTestCount == 1 }
         compose.onNodeWithText("Passed · no live WhatsApp actions were performed").assertIsDisplayed()
 
+        assertEquals("welcome", source.savedWorkflow()?.optString("name"))
         assertEquals("welcome", source.savedWorkflow()?.optJSONArray("nodes")
             ?.optJSONObject(0)?.optJSONObject("config")?.optString("command"))
         assertEquals("Hello from the builder", source.savedWorkflow()?.optJSONArray("nodes")

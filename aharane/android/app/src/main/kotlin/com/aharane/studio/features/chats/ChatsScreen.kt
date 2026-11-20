@@ -337,6 +337,18 @@ private fun ChatListRow(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+                if (chat.lastSyncedAtMillis > 0L) {
+                    Text(
+                        "Saved offline · synced " + android.text.format.DateUtils.getRelativeTimeSpanString(
+                            chat.lastSyncedAtMillis, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS
+                        ),
+                        color = StudioPalette.Muted,
+                        fontSize = 9.5.sp,
+                        maxLines = 1
+                    )
+                } else {
+                    Text("Not saved offline on this phone", color = StudioPalette.Muted, fontSize = 9.5.sp, maxLines = 1)
+                }
             }
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {

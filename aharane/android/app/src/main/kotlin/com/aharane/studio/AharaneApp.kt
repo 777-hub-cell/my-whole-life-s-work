@@ -3,6 +3,7 @@ package com.aharane.studio
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.Manifest
@@ -27,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -70,6 +72,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.Locale
 
 @Composable
@@ -234,6 +237,7 @@ fun AharaneApp(
     var pendingExportBytes by remember { mutableStateOf<ByteArray?>(null) }
     var mediaImage by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     var mediaTitle by remember { mutableStateOf("") }
+    var sharedMediaFile by remember { mutableStateOf<File?>(null) }
     var mediaMessageError by remember { mutableStateOf("") }
     val openedViewOnceIds = remember { mutableStateListOf<String>() }
     var voiceRecorder by remember { mutableStateOf<VoiceNoteRecorder?>(null) }
@@ -455,6 +459,29 @@ fun AharaneApp(
                 .onSuccess { serverFiles = it }
                 .onFailure { Toast.makeText(context, it.message ?: "Could not refresh files.", Toast.LENGTH_LONG).show() }
         }
+    }
+
+    fun openExternalAttachment(bytes: ByteArray, fileName: String, mimeType: String) {
+        runCatching {
+            val directory = File(context.cacheDir, "shared-media").apply { mkdirs() }
+            sharedMediaFile?.delete()
+            val safeName = fileName.substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "attachment" }
+            val file = File(directory, safeName)
+            file.writeBytes(bytes)
+            val uri = FileProvider.getUriForFile(context, context.packageName + ".files", file)
+            val view = Intent(Intent.ACTION_VIEW)
+                .setDataAndType(uri, mimeType.ifBlank { "application/octet-stream" })
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            view.clipData = ClipData.newUri(context.contentResolver, safeName, uri)
+            context.startActivity(Intent.createChooser(view, "Open attachment"))
+            sharedMediaFile = file
+        }.onFailure {
+            Toast.makeText(context, it.message ?: "No app could open this attachment.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { sharedMediaFile?.delete() }
     }
 
     fun exportSource() {
@@ -690,12 +717,17 @@ fun AharaneApp(
                         connectionScope.launch {
                             try {
                                 val bytes = repository.mediaBytes(message.key.account, message)
-                                showImageBytes(
-                                    bytes,
-                                    message.mediaFileName.orEmpty(),
-                                    onBitmap = { mediaTitle = message.mediaFileName.orEmpty(); mediaImage = it; mediaMessageError = "" },
-                                    onError = { mediaTitle = message.mediaFileName.orEmpty(); mediaMessageError = it }
-                                )
+                                val mime = message.mediaMimeType.orEmpty()
+                                if (mime.startsWith("image/")) {
+                                    showImageBytes(
+                                        bytes,
+                                        message.mediaFileName.orEmpty(),
+                                        onBitmap = { mediaTitle = message.mediaFileName.orEmpty(); mediaImage = it; mediaMessageError = "" },
+                                        onError = { mediaTitle = message.mediaFileName.orEmpty(); mediaMessageError = it }
+                                    )
+                                } else {
+                                    openExternalAttachment(bytes, message.mediaFileName ?: "attachment", mime)
+                                }
                             } catch (error: Exception) {
                                 serverError = error.message ?: "Media could not be opened."
                             }

@@ -130,6 +130,9 @@ interface ChatDao {
 
     @Query("SELECT SUM(cachedMediaBytes) FROM chat_messages WHERE account = :account")
     suspend fun cachedMediaBytes(account: String): Long?
+
+    @Query("UPDATE chat_messages SET cachedMediaPath = NULL, cachedMediaSha256 = NULL, cachedMediaBytes = 0 WHERE account = :account")
+    suspend fun clearCachedMediaMetadata(account: String)
 }
 
 @Database(

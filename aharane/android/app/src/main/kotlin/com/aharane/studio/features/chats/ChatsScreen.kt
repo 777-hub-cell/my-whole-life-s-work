@@ -213,6 +213,7 @@ private fun ChatHeaderButton(
     }
 }
 
+@Composable
 private fun ChatListRow(
     chat: ChatSummary,
     connected: Boolean,

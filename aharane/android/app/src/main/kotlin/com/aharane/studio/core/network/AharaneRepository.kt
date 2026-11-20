@@ -290,7 +290,24 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
     suspend fun repair(account: ChatAccount): JSONObject =
         api.post("accounts/${account.apiValue}/repair", JSONObject())
 
-    suspend fun fileTree(path: String = ""): ServerFileTree {
+    suspend fun allFiles(): List<ServerFileEntry> {
+        val result = linkedMapOf<String, ServerFileEntry>()
+        val pending = ArrayDeque<String>()
+        val visited = mutableSetOf<String>()
+        pending.addLast("")
+        while (pending.isNotEmpty() && visited.size < 1000) {
+            val directory = pending.removeFirst()
+            if (!visited.add(directory)) continue
+            val tree = fileTree(directory)
+            tree.children.forEach { entry ->
+                result[entry.path] = entry
+                if (entry.isDirectory) pending.addLast(entry.path)
+            }
+        }
+        return result.values.toList()
+    }
+
+    suspend fun fileTree(path: String = "") {
         val response = api.get("files/tree", mapOf("item" to path))
         val children = response.optJSONArray("children") ?: JSONArray()
         return ServerFileTree(

@@ -161,7 +161,7 @@ export function validateWorkflow(input) {
       issue(node.id, 'error', 'A reaction emoji is required.', 'Enter an emoji or connect a text output.')
     }
     if (node.type === 'message.sendPoll') {
-      const options = textValue(config.options, 1000).split(/\\r?\\n/).map(value => value.trim()).filter(Boolean)
+      const options = textValue(config.options, 1000).split(/\r?\n/).map(value => value.trim()).filter(Boolean)
       const uniqueOptions = new Set(options.map(value => value.toLocaleLowerCase()))
       if (!textValue(config.title, 180).trim()) issue(node.id, 'error', 'A poll question is required.', 'Enter a short poll question.')
       if (options.length < 2 || options.length > 12 || uniqueOptions.size !== options.length) {
@@ -397,7 +397,7 @@ export async function executeVisualWorkflow(input, options = {}) {
           }
         } else if (node.type === 'message.sendPoll') {
           const title = textValue(node.config.title, 180).trim()
-          const values = textValue(node.config.options, 1000).split(/\\r?\\n/).map(value => value.trim()).filter(Boolean)
+          const values = textValue(node.config.options, 1000).split(/\r?\n/).map(value => value.trim()).filter(Boolean)
           const selectableCount = Number(node.config.selectableCount == null ? 1 : node.config.selectableCount)
           if (!title || values.length < 2 || values.length > 12 || new Set(values.map(value => value.toLowerCase())).size !== values.length) {
             throw new Error('A poll needs a question and 2 to 12 unique options.')

@@ -163,7 +163,7 @@ def main():
     ])
     capture("03e-update-packages.png")
     tap_label("Close")
-    tap_label("Update packages", scroll_to_find=True)
+    tap_label("Update packages, Open folder", scroll_to_find=True)
     capture("03f-update-package-folder.png")
     tap_label("File actions", content_desc=True)
     assert_visible_texts(["Update bot", "Remove"])

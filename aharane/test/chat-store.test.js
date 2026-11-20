@@ -431,6 +431,42 @@ test('contact cards retain vCards, locations retain coordinates and polls retain
 
 
 
+test('idempotent text send intents survive restart and never resend an uncertain request', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-send-idempotency-'))
+  try {
+    const clientMessageId = 'native-client-message-0001'
+    const jid = '2348777777777@s.whatsapp.net'
+    const first = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await first.init()
+    assert.deepEqual(
+      await first.beginIdempotentSend('private', { clientMessageId, jid, text: 'hello', quotedMessageId: '' }),
+      { state: 'sending', messageId: '' }
+    )
+
+    const afterProcessRestart = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await afterProcessRestart.init()
+    assert.deepEqual(
+      await afterProcessRestart.beginIdempotentSend('private', { clientMessageId, jid, text: 'hello', quotedMessageId: '' }),
+      { state: 'uncertain', messageId: '' }
+    )
+    assert.equal(
+      (await afterProcessRestart.getIdempotentSend('private', clientMessageId)).state,
+      'sending'
+    )
+    await afterProcessRestart.completeIdempotentSend('private', clientMessageId, 'whatsapp-message-1')
+    assert.deepEqual(
+      await afterProcessRestart.beginIdempotentSend('private', { clientMessageId, jid, text: 'hello', quotedMessageId: '' }),
+      { state: 'sent', messageId: 'whatsapp-message-1' }
+    )
+    await assert.rejects(
+      afterProcessRestart.beginIdempotentSend('private', { clientMessageId, jid, text: 'different text', quotedMessageId: '' }),
+      error => error.status === 409
+    )
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('edited messages reconcile duplicate IDs and preserve reactions, stars and delivery state', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-edits-'))
   try {

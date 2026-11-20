@@ -455,7 +455,7 @@ fun AharaneApp(
         } catch (error: Exception) {
             val uncertain = (error as? AharaneApiException)?.statusCode == 409
             val explanation = if (uncertain) {
-                "WhatsApp may already have received this message. Aharane did not resend it to avoid a duplicate. Check the conversation before retrying."
+                "WhatsApp delivery is uncertain: the server may already have received this message. Aharane did not resend it to avoid a duplicate. Check the conversation before retrying."
             } else {
                 error.message ?: "The message could not be sent. Retry will reuse the same message ID."
             }

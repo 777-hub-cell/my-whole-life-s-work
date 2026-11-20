@@ -1,5 +1,6 @@
 package com.aharane.studio.features.configuration
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Public
@@ -18,18 +20,90 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aharane.studio.core.design.*
 
+private data class PreviewConfiguration(
+    val botName: String,
+    val prefix: String,
+    val ownerNumber: String,
+    val autoRead: Boolean,
+    val showTyping: Boolean,
+    val rejectCalls: Boolean,
+    val alwaysOnline: Boolean,
+    val cooldown: String,
+    val welcomeMessage: String
+)
+
+private fun previewConfiguration(profile: String) = if (profile == "Public") {
+    PreviewConfiguration(
+        botName = "Aharane Public",
+        prefix = "!",
+        ownerNumber = "15557654321",
+        autoRead = false,
+        showTyping = true,
+        rejectCalls = true,
+        alwaysOnline = false,
+        cooldown = "5",
+        welcomeMessage = "Hi! Send !menu to see what I can do."
+    )
+} else {
+    PreviewConfiguration(
+        botName = "Aharane",
+        prefix = ".",
+        ownerNumber = "15551234567",
+        autoRead = true,
+        showTyping = true,
+        rejectCalls = true,
+        alwaysOnline = false,
+        cooldown = "3",
+        welcomeMessage = "Welcome, @user! Type .menu to see what I can do."
+    )
+}
+
 @Composable
 fun ConfigurationScreen(
     onBack: () -> Unit,
-    onEditConfig: () -> Unit
+    onEditConfig: () -> Unit,
+    previewMode: Boolean = false
 ) {
     var profile by rememberSaveable { mutableStateOf("Private") }
+    val initial = remember(profile, previewMode) {
+        if (previewMode) previewConfiguration(profile)
+        else PreviewConfiguration("", "", "", false, false, false, false, "", "")
+    }
+    var botName by rememberSaveable(profile, previewMode) { mutableStateOf(initial.botName) }
+    var prefix by rememberSaveable(profile, previewMode) { mutableStateOf(initial.prefix) }
+    var ownerNumber by rememberSaveable(profile, previewMode) { mutableStateOf(initial.ownerNumber) }
+    var autoRead by rememberSaveable(profile, previewMode) { mutableStateOf(initial.autoRead) }
+    var showTyping by rememberSaveable(profile, previewMode) { mutableStateOf(initial.showTyping) }
+    var rejectCalls by rememberSaveable(profile, previewMode) { mutableStateOf(initial.rejectCalls) }
+    var alwaysOnline by rememberSaveable(profile, previewMode) { mutableStateOf(initial.alwaysOnline) }
+    var cooldown by rememberSaveable(profile, previewMode) { mutableStateOf(initial.cooldown) }
+    var welcomeMessage by rememberSaveable(profile, previewMode) { mutableStateOf(initial.welcomeMessage) }
+    var dirty by rememberSaveable(profile, previewMode) { mutableStateOf(false) }
+    val context = LocalContext.current
+    val editable = previewMode
+
+    fun resetDraft() {
+        botName = initial.botName
+        prefix = initial.prefix
+        ownerNumber = initial.ownerNumber
+        autoRead = initial.autoRead
+        showTyping = initial.showTyping
+        rejectCalls = initial.rejectCalls
+        alwaysOnline = initial.alwaysOnline
+        cooldown = initial.cooldown
+        welcomeMessage = initial.welcomeMessage
+        dirty = false
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -60,7 +134,9 @@ fun ConfigurationScreen(
                 Box(
                     Modifier.size(42.dp).clip(CircleShape).background(StudioPalette.Surface)
                         .border(1.dp, StudioPalette.Line, CircleShape)
-                        .clickable { profile = if (profile == "Private") "Public" else "Private" },
+                        .clickable {
+                            profile = if (profile == "Private") "Public" else "Private"
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -78,75 +154,83 @@ fun ConfigurationScreen(
                 lineHeight = 18.sp,
                 modifier = Modifier.padding(top = 5.dp)
             )
+            if (previewMode) {
+                Text(
+                    "Debug preview · example values stay on this device and are not sent to a server.",
+                    color = StudioPalette.Accent,
+                    fontSize = 11.5.sp,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.padding(top = 7.dp)
+                )
+            } else {
+                Text(
+                    "Connect your Aharane server to load the current values. No settings have been changed.",
+                    color = StudioPalette.Muted,
+                    fontSize = 11.5.sp,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.padding(top = 7.dp)
+                )
+            }
             Spacer(Modifier.height(3.dp))
         }
 
         item { StudioSectionHeading("General") }
         item {
             StudioCard {
-                ConfigField("Bot name", "BOT_NAME")
+                ConfigField("Bot name", "BOT_NAME", botName, editable, onValueChange = { botName = it; dirty = true })
                 StudioDivider()
-                ConfigField("Command prefix", "PREFIX")
+                ConfigField("Command prefix", "PREFIX", prefix, editable, onValueChange = { prefix = it; dirty = true }, singleLine = true)
                 StudioDivider()
-                ConfigField(if (profile == "Public") "Account number" else "Owner number",
-                    if (profile == "Public") "PUBLIC_NUMBER" else "OWNER_NUMBER")
+                ConfigField(
+                    if (profile == "Public") "Account number" else "Owner number",
+                    if (profile == "Public") "PUBLIC_NUMBER" else "OWNER_NUMBER",
+                    ownerNumber,
+                    editable,
+                    onValueChange = { ownerNumber = it; dirty = true },
+                    keyboardType = KeyboardType.Phone
+                )
             }
         }
 
         item { StudioSectionHeading("Behavior") }
         item {
             StudioCard {
-                ConfigToggle("Mark messages as read", "Show blue ticks when the bot sees a message.", "AUTO_READ")
+                ConfigToggle("Mark messages as read", "Show blue ticks when the bot sees a message.", "AUTO_READ",
+                    autoRead, editable) { autoRead = it; dirty = true }
                 StudioDivider()
-                ConfigToggle("Show typing", "Display “typing…” while the bot prepares a reply.", "SHOW_TYPING")
+                ConfigToggle("Show typing", "Display “typing…” while the bot prepares a reply.", "SHOW_TYPING",
+                    showTyping, editable) { showTyping = it; dirty = true }
                 StudioDivider()
-                ConfigToggle("Decline calls", "Automatically reject incoming calls.", "REJECT_CALLS")
+                ConfigToggle("Decline calls", "Automatically reject incoming calls.", "REJECT_CALLS",
+                    rejectCalls, editable) { rejectCalls = it; dirty = true }
                 StudioDivider()
-                ConfigToggle("Always online", "Keep the bot’s status as online.", "ALWAYS_ONLINE")
+                ConfigToggle("Always online", "Keep the bot’s status as online.", "ALWAYS_ONLINE",
+                    alwaysOnline, editable) { alwaysOnline = it; dirty = true }
                 StudioDivider()
-                Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Command cooldown", color = StudioPalette.Ink,
-                                fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            Text("Wait time between commands from the same person.",
-                                color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 17.sp)
-                        }
-                        Text("—", color = StudioPalette.Muted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                    Box(
-                        Modifier.fillMaxWidth().padding(top = 15.dp)
-                            .height(4.dp).clip(RoundedCornerShape(99.dp)).background(StudioPalette.Line)
-                    )
-                    Text("COMMAND_COOLDOWN · Not loaded", color = StudioPalette.Muted,
-                        fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        modifier = Modifier.padding(top = 7.dp))
-                }
+                ConfigField(
+                    "Command cooldown",
+                    "COMMAND_COOLDOWN · seconds between commands from the same person",
+                    cooldown,
+                    editable,
+                    onValueChange = { cooldown = it.filter(Char::isDigit).take(3); dirty = true },
+                    keyboardType = KeyboardType.Number,
+                    singleLine = true
+                )
             }
         }
 
         item { StudioSectionHeading("Messages") }
         item {
             StudioCard {
-                Column(Modifier.fillMaxWidth().padding(14.dp)) {
-                    Text("Welcome message", color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Text("WELCOME_MESSAGE", color = StudioPalette.Muted,
-                        fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        modifier = Modifier.padding(top = 2.dp, bottom = 7.dp))
-                    Box(
-                        Modifier.fillMaxWidth().heightIn(min = 88.dp)
-                            .clip(RoundedCornerShape(10.dp)).background(StudioPalette.Background)
-                            .border(1.dp, StudioPalette.Line, RoundedCornerShape(10.dp))
-                            .padding(12.dp)
-                    ) {
-                        Text(
-                            "Connect to load the welcome message",
-                            color = StudioPalette.Muted,
-                            fontSize = 13.sp,
-                            lineHeight = 19.sp
-                        )
-                    }
-                }
+                ConfigField(
+                    "Welcome message",
+                    "WELCOME_MESSAGE",
+                    welcomeMessage,
+                    editable,
+                    onValueChange = { welcomeMessage = it; dirty = true },
+                    singleLine = false,
+                    minLines = 3
+                )
             }
         }
 
@@ -162,43 +246,116 @@ fun ConfigurationScreen(
                 )
             }
             Spacer(Modifier.height(13.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Connect your Aharane server to load and change live settings.",
-                    color = StudioPalette.Muted,
-                    fontSize = 12.5.sp,
-                    lineHeight = 18.sp,
-                    modifier = Modifier.weight(1f)
+            if (previewMode) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (dirty) "Unsaved preview draft" else "Preview values · local only",
+                        color = StudioPalette.Muted,
+                        fontSize = 12.5.sp,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (dirty) {
+                        StudioActionButton("Discard", compact = true, onClick = ::resetDraft)
+                    }
+                }
+                Spacer(Modifier.height(9.dp))
+                StudioActionButton(
+                    "Save preview draft",
+                    modifier = Modifier.fillMaxWidth(),
+                    primary = true,
+                    enabled = dirty,
+                    onClick = {
+                        dirty = false
+                        Toast.makeText(context, "Preview draft updated; nothing was sent to a server.", Toast.LENGTH_SHORT).show()
+                    }
                 )
-                StudioTag("Not connected")
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Live settings are unavailable while the server is disconnected.",
+                        color = StudioPalette.Muted,
+                        fontSize = 12.5.sp,
+                        lineHeight = 18.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    StudioTag("Not connected")
+                }
+                Spacer(Modifier.height(9.dp))
+                StudioActionButton(
+                    "Save changes",
+                    modifier = Modifier.fillMaxWidth(),
+                    primary = true,
+                    enabled = false,
+                    onClick = {}
+                )
             }
-            Spacer(Modifier.height(12.dp))
-            StudioActionButton("Save changes", modifier = Modifier.fillMaxWidth(),
-                primary = true, enabled = false, onClick = {})
         }
         item { Spacer(Modifier.height(12.dp)) }
     }
 }
 
 @Composable
-private fun ConfigField(label: String, key: String) {
+private fun ConfigField(
+    label: String,
+    key: String,
+    value: String,
+    enabled: Boolean,
+    onValueChange: (String) -> Unit,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    singleLine: Boolean = true,
+    minLines: Int = 1
+) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp)) {
         Text(label, color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-        Text(key, color = StudioPalette.Muted, fontSize = 11.sp,
-            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-            modifier = Modifier.padding(top = 2.dp, bottom = 7.dp))
-        Box(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                .background(StudioPalette.Background).border(1.dp, StudioPalette.Line, RoundedCornerShape(10.dp))
-                .padding(horizontal = 12.dp, vertical = 10.dp)
-        ) {
-            Text("Connect to load", color = StudioPalette.Muted, fontSize = 13.sp)
-        }
+        Text(
+            key,
+            color = StudioPalette.Muted,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            lineHeight = 15.sp,
+            modifier = Modifier.padding(top = 2.dp, bottom = 7.dp)
+        )
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            singleLine = singleLine,
+            minLines = minLines,
+            textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 13.sp, lineHeight = 19.sp),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = keyboardType,
+                autoCorrectEnabled = false
+            ),
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                .background(StudioPalette.Background)
+                .border(1.dp, StudioPalette.Line, RoundedCornerShape(10.dp))
+                .padding(horizontal = 12.dp, vertical = 11.dp),
+            decorationBox = { innerTextField ->
+                Box {
+                    if (value.isEmpty()) {
+                        Text(
+                            if (enabled) "Enter $label.lowercase()" else "Connect to load",
+                            color = StudioPalette.Muted,
+                            fontSize = 13.sp
+                        )
+                    }
+                    innerTextField()
+                }
+            }
+        )
     }
 }
 
 @Composable
-private fun ConfigToggle(title: String, description: String, key: String) {
+private fun ConfigToggle(
+    title: String,
+    description: String,
+    key: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 66.dp).padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -208,18 +365,24 @@ private fun ConfigToggle(title: String, description: String, key: String) {
             Text(title, color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             Text(description, color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 17.sp)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(key, color = StudioPalette.Muted, fontSize = 10.5.sp,
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    modifier = Modifier.weight(1f))
-                StudioTag("Not loaded")
+                Text(
+                    key,
+                    color = StudioPalette.Muted,
+                    fontSize = 10.5.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.weight(1f)
+                )
+                if (!enabled) StudioTag("Not loaded")
             }
         }
+        val track = if (checked) StudioPalette.Accent else StudioPalette.Line
         Box(
             Modifier.size(width = 38.dp, height = 22.dp).clip(RoundedCornerShape(99.dp))
-                .background(StudioPalette.Line),
-            contentAlignment = Alignment.CenterStart
+                .background(if (enabled) track else StudioPalette.Line)
+                .clickable(enabled = enabled) { onCheckedChange(!checked) },
+            contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
         ) {
-            Box(Modifier.padding(start = 3.dp).size(16.dp).clip(CircleShape).background(StudioPalette.Surface))
+            Box(Modifier.padding(horizontal = 3.dp).size(16.dp).clip(CircleShape).background(StudioPalette.Surface))
         }
     }
 }

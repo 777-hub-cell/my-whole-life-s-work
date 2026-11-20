@@ -1,5 +1,12 @@
 package com.aharane.studio.features.home
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,10 +82,7 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(7.dp)
                     ) {
-                        Box(
-                            Modifier.size(8.dp).clip(CircleShape)
-                                .background(if (serviceConnected) StudioPalette.Accent else StudioPalette.Bad)
-                        )
+                        HomeConnectionIndicator(connected = serviceConnected, size = 20.dp)
                         Text(
                             if (serviceConnected) "Online" else "Offline",
                             color = if (serviceConnected) StudioPalette.Accent else StudioPalette.Bad,
@@ -183,7 +188,45 @@ fun HomeScreen(
 }
 
 @Composable
-private fun AccountRow(
+private fun HomeConnectionIndicator(
+    connected: Boolean,
+    size: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier
+) {
+    val tint = if (connected) Color(0xFF16865F) else Color(0xFFD84A45)
+    val transition = rememberInfiniteTransition(label = "home-connection-pulse")
+    val progress = transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1900, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "home-connection-ring"
+    ).value
+    Canvas(modifier.size(size)) {
+        val center = androidx.compose.ui.geometry.Offset(this.size.width / 2f, this.size.height / 2f)
+        val maxRadius = this.size.minDimension * .43f
+        drawCircle(
+            color = tint.copy(alpha = (1f - progress) * .34f),
+            radius = this.size.minDimension * (.23f + progress * .18f),
+            center = center,
+            style = Stroke(width = this.size.minDimension * .075f)
+        )
+        drawCircle(color = tint, radius = maxRadius * .55f, center = center)
+        val stroke = this.size.minDimension * .09f
+        if (connected) {
+            drawLine(Color.White, androidx.compose.ui.geometry.Offset(this.size.width * .34f, this.size.height * .51f), androidx.compose.ui.geometry.Offset(this.size.width * .46f, this.size.height * .64f), strokeWidth = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            drawLine(Color.White, androidx.compose.ui.geometry.Offset(this.size.width * .46f, this.size.height * .64f), androidx.compose.ui.geometry.Offset(this.size.width * .69f, this.size.height * .37f), strokeWidth = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        } else {
+            drawLine(Color.White, androidx.compose.ui.geometry.Offset(this.size.width * .39f, this.size.height * .39f), androidx.compose.ui.geometry.Offset(this.size.width * .61f, this.size.height * .61f), strokeWidth = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            drawLine(Color.White, androidx.compose.ui.geometry.Offset(this.size.width * .61f, this.size.height * .39f), androidx.compose.ui.geometry.Offset(this.size.width * .39f, this.size.height * .61f), strokeWidth = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        }
+    }
+}
+
+@Composable
+private fun AccountRow
     account: ChatAccount,
     state: String,
     actionLabel: String,
@@ -208,11 +251,10 @@ private fun AccountRow(
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            Box(
-                Modifier.align(Alignment.BottomEnd).size(12.dp)
-                    .clip(CircleShape)
-                    .background(if (state.equals("Connected", true)) StudioPalette.Accent else StudioPalette.Bad)
-                    .border(1.5.dp, StudioPalette.Surface, CircleShape)
+            HomeConnectionIndicator(
+                connected = state.equals("Connected", true),
+                size = 22.dp,
+                modifier = Modifier.align(Alignment.BottomEnd)
             )
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {

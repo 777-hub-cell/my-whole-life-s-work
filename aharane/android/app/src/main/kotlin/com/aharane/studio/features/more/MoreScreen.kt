@@ -17,6 +17,8 @@ import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material3.Icon
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -94,6 +96,8 @@ fun MoreScreen(
     showChatPreviews: Boolean = true,
     showChatTimestamps: Boolean = true,
     chatMessageSize: Int = 14,
+    launcherIcon: String = "classic",
+    onLauncherIconChanged: (String) -> Unit = {},
     onChatAccountSelected: (ChatAccount) -> Unit = {},
     onVisibilityModeChange: (String, Boolean) -> Unit = { _, _ -> },
     onChatAppearanceChange: (String, Boolean, Boolean, Boolean) -> Unit = { _, _, _, _ -> },
@@ -228,6 +232,21 @@ fun MoreScreen(
                     }
                 }
             }
+            item { StudioSectionHeading("App icon") }
+            item {
+                StudioCard(padding = PaddingValues(10.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LauncherIconOption("Classic", com.aharane.studio.R.drawable.ic_aharane_mark_classic, launcherIcon == "classic") { onLauncherIconChanged("classic") }
+                        LauncherIconOption("Mono", com.aharane.studio.R.drawable.ic_aharane_mark_mono, launcherIcon == "mono") { onLauncherIconChanged("mono") }
+                        LauncherIconOption("Night", com.aharane.studio.R.drawable.ic_aharane_mark_night, launcherIcon == "night") { onLauncherIconChanged("night") }
+                    }
+                    Text(
+                        "Choose how Aharane appears on your phone’s home screen. Your selection stays on this device.",
+                        color = StudioPalette.Muted, fontSize = 12.sp, lineHeight = 17.sp,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 8.dp)
+                    )
+                }
+            }
             item { StudioSectionHeading("Code editor") }
             item {
                 StudioCard {
@@ -273,6 +292,7 @@ fun MoreScreen(
                         onClick = {
                             onThemeModeChanged("system")
                             onAccentColorChanged("#0E7A5C")
+                            onLauncherIconChanged("classic")
                             onInterfaceSizeChanged("default")
                             onCornerStyleChanged("default")
                             onRowSpacingChanged("comfortable")
@@ -927,6 +947,32 @@ fun MoreScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun RowScope.LauncherIconOption(
+    label: String,
+    iconRes: Int,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+            .background(if (selected) StudioPalette.Soft else StudioPalette.Background)
+            .border(
+                if (selected) 1.5.dp else 1.dp,
+                if (selected) StudioPalette.Accent else StudioPalette.Line,
+                RoundedCornerShape(12.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp, horizontal = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        Image(painterResource(iconRes), contentDescription = "$label Aharane app icon", modifier = Modifier.size(52.dp))
+        Text(label, color = if (selected) StudioPalette.Accent else StudioPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        if (selected) Text("Selected", color = StudioPalette.Accent, fontSize = 10.sp)
     }
 }
 

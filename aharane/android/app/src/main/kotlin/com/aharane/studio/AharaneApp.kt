@@ -104,6 +104,8 @@ fun AharaneApp(
     onEditorFontSizeChanged: (Int) -> Unit,
     chatMessageSize: Int,
     onChatMessageSizeChanged: (Int) -> Unit,
+    launcherIcon: String,
+    onLauncherIconChanged: (String) -> Unit,
     editorLineNumbers: Boolean,
     onEditorLineNumbersChanged: (Boolean) -> Unit
 ) {
@@ -1261,6 +1263,8 @@ fun AharaneApp(
                         showChatPreviews = chatAppearance.optBoolean("showPreviews", true),
                         showChatTimestamps = chatAppearance.optBoolean("showTimestamps", true),
                         chatMessageSize = chatMessageSize,
+                        launcherIcon = launcherIcon,
+                        onLauncherIconChanged = onLauncherIconChanged,
                         onChatAccountSelected = { accountName = it.name },
                         onVisibilityModeChange = { kind, show ->
                             if (connected) {

@@ -1,7 +1,10 @@
 package com.aharane.studio
 
 import android.os.Bundle
+import android.content.ComponentName
+import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -23,6 +26,7 @@ class MainActivity : ComponentActivity() {
         val isDebuggable = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
         val previewMode = isDebuggable && intent?.getBooleanExtra("aharane_preview_mode", false) == true
         val preferences = getSharedPreferences("aharane-studio-ui", MODE_PRIVATE)
+        applyLauncherIcon(this, preferences.getString("launcherIcon", "classic") ?: "classic")
         readNotificationIntent(intent)
 
         setContent {
@@ -50,6 +54,9 @@ class MainActivity : ComponentActivity() {
             }
             var chatMessageSize by rememberSaveable {
                 mutableStateOf(preferences.getInt("chatMessageSize", 14))
+            }
+            var launcherIcon by rememberSaveable {
+                mutableStateOf(preferences.getString("launcherIcon", "classic") ?: "classic")
             }
             var editorLineNumbers by rememberSaveable {
                 mutableStateOf(preferences.getBoolean("editorLineNumbers", true))
@@ -126,11 +133,38 @@ class MainActivity : ComponentActivity() {
                         chatMessageSize = it
                         preferences.edit().putInt("chatMessageSize", it).apply()
                     },
+                    launcherIcon = launcherIcon,
+                    onLauncherIconChanged = {
+                        launcherIcon = it
+                        preferences.edit().putString("launcherIcon", it).apply()
+                        applyLauncherIcon(this@MainActivity, it)
+                    },
                     editorLineNumbers = editorLineNumbers,
                     onEditorLineNumbersChanged = {
                         editorLineNumbers = it
                         preferences.edit().putBoolean("editorLineNumbers", it).apply()
                     }
+                )
+            }
+        }
+    }
+
+    companion object {
+        private val launcherComponents = listOf("LauncherClassic", "LauncherMono", "LauncherNight")
+
+        fun applyLauncherIcon(context: Context, style: String) {
+            val selected = when (style.lowercase()) {
+                "mono" -> "LauncherMono"
+                "night" -> "LauncherNight"
+                else -> "LauncherClassic"
+            }
+            val packageManager = context.packageManager
+            launcherComponents.forEach { alias ->
+                packageManager.setComponentEnabledSetting(
+                    ComponentName(context.packageName, "${context.packageName}.$alias"),
+                    if (alias == selected) PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                    else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    PackageManager.DONT_KILL_APP
                 )
             }
         }

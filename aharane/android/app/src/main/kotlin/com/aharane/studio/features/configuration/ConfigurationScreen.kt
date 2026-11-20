@@ -332,7 +332,7 @@ fun ConfigurationScreen(
                                 prefixKey + "ALWAYS_ONLINE" to alwaysOnline.toString(),
                                 prefixKey + "COMMAND_COOLDOWN" to cooldown,
                                 prefixKey + "WELCOME_MESSAGE" to welcomeMessage,
-                                if (profile == "Private") "PRIVATE_OWNER_NUMBER" else "PUBLIC_BOT_NUMBER" to ownerNumber
+                                (if (profile == "Private") "PRIVATE_OWNER_NUMBER" else "PUBLIC_BOT_NUMBER") to ownerNumber
                             )
                             if (previewMode) {
                                 Toast.makeText(context, "Preview settings are local only.", Toast.LENGTH_SHORT).show()

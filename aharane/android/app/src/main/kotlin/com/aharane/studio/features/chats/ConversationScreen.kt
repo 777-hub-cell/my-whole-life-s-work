@@ -985,7 +985,7 @@ private fun MessageContent(
                             Text(
                                 when {
                                     mediaPreviewUnavailable -> message.mediaUnavailable?.ifBlank { "Preview unavailable · tap to open" } ?: "Preview unavailable · tap to open"
-                                    !mediaConnected -> "Not saved offline · reconnect to load."
+                                    !mediaConnected -> "Tap to check a saved offline copy or reconnect to download."
                                     !autoDownloadImages -> "Preview not auto-downloaded · tap to open"
                                     else -> "Loading preview · tap to open"
                                 },
@@ -1031,7 +1031,7 @@ private fun MessageContent(
                                         videoError != null -> videoError
                                         videoLoading -> "Preparing video playback…"
                                         mediaPreviewUnavailable -> message.mediaUnavailable ?: "Video preview unavailable"
-                                        !mediaConnected -> "Not saved offline · reconnect to load."
+                                        !mediaConnected -> "Tap to check a saved offline copy or reconnect to download."
                                         !autoDownloadVideoPreviews -> "Preview not auto-downloaded · tap to play"
                                         else -> "Tap to load and play"
                                     },
@@ -1251,7 +1251,7 @@ private fun AudioMessagePlayer(
                     else { player?.start(); playing = true }
                 }
             },
-            enabled = !loading && (file != null || serverAvailable)
+            enabled = !loading
         ) {
             Icon(if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, if (playing) "Pause audio" else "Play audio", tint = foreground)
         }
@@ -1265,7 +1265,7 @@ private fun AudioMessagePlayer(
                 Text(
                     error ?: when {
                         loading -> "Loading audio…"
-                        !serverAvailable -> "Connect to your Aharane server to load this audio."
+                        !serverAvailable -> "Tap play to check a saved offline copy or reconnect to download."
                         else -> "${message.mediaMimeType ?: "Audio"} · Tap play to load"
                     },
                     color = foreground.copy(alpha = .72f),

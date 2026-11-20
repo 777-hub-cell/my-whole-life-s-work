@@ -137,3 +137,8 @@ This remains a development branch, not a completed release. Current-head CI, enc
 ### Remote deletion retention
 
 When WhatsApp reports that another participant deleted an incoming message, the native Hub retains the original message content and marks it as deleted on WhatsApp. The marker is persisted in SQLCipher-backed Room using the 3→4 schema migration and appears in the conversation UI. The account owner's own deletion path remains unchanged. This does not bypass view-once protections; view-once media is not cached or restored by the retained-message marker.
+
+
+## Remote message deletion retention
+
+When WhatsApp reports that the other participant deleted an incoming message, Aharane retains the original saved message content and any already-downloaded non-view-once attachment in the Hub. The conversation displays “Deleted by the other person on WhatsApp · retained in Hub.” The server stores a remote-deletion marker and timestamp without creating a deletion tombstone. Outgoing messages, unknown-direction messages and view-once media are not converted by this incoming-message retention path. Whole-conversation remote clear events mark known incoming messages rather than wiping the Hub's saved history. Incremental sync includes a separate remote-deletion marker feed so an already-cached message receives the marker even when its original message timestamp is old; Android updates the encrypted Room row and retains its content. The explicit owner-side Delete message action remains separate and keeps its existing delete semantics.

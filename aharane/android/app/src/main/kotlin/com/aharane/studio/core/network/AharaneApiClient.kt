@@ -194,7 +194,9 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
         bytes: ByteArray,
         mimeType: String,
         fileName: String,
-        caption: String
+        caption: String,
+        isVoiceNote: Boolean = false,
+        durationSeconds: Int = 0
     ): JSONObject = uploadBytes(
         "chats/$account/${encodePath(jid)}/media",
         bytes,
@@ -202,7 +204,9 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
         mapOf(
             "X-Media-Type" to mimeType,
             "X-File-Name" to fileName,
-            "X-Caption" to caption
+            "X-Caption" to caption,
+            "X-Voice-Note" to isVoiceNote.toString(),
+            "X-Duration-Seconds" to durationSeconds.toString()
         )
     )
 

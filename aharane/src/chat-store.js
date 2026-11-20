@@ -44,6 +44,19 @@ function unwrap(content) {
   }
   return { body: current, viewOnce }
 }
+function quotedMessageId(message) {
+  const { body } = unwrap(message?.message)
+  for (const value of Object.values(body || {})) {
+    const context = value?.contextInfo
+    const id = String(context?.stanzaId || context?.quotedMessage?.key?.id || '').trim()
+    if (id) return id.slice(0, 256)
+  }
+  return ''
+}
+function quotedMessageIdFromSource(serialized) {
+  if (!serialized) return ''
+  try { return quotedMessageId(JSON.parse(serialized)) } catch { return '' }
+}
 function messageContent(message) {
   const { body, viewOnce } = unwrap(message?.message)
   const pairs = [
@@ -220,6 +233,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       timestamp: ts, type: extracted.type, text: extracted.text,
       mimeType: extracted.mimeType, fileName: extracted.fileName ? safeName(extracted.fileName) : '',
       size: extracted.size, duration: extracted.duration || 0, mediaFile: '', mediaUrl: '', sourceMessage,
+      quotedMessageId: quotedMessageId(message),
       viewOnce: extracted.viewOnce, viewOnceViewed: false, status: '',
       reactions: [], starred: false,
     }
@@ -282,6 +296,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         mediaUrl: row.viewOnce ? '' : row.mediaFile ? row.mediaUrl || mediaUrl(account, row.id) : '',
         viewOnce: row.viewOnce === true, viewOnceViewed: row.viewOnceViewed === true,
         mediaUnavailable: row.mediaUnavailable || '', mediaAvailable: Boolean(row.sourceMessage && MEDIA_TYPES.has(row.type) && !row.mediaUnavailable),
+        quotedMessageId: row.quotedMessageId || quotedMessageIdFromSource(row.sourceMessage),
         reactions: Array.isArray(row.reactions) ? row.reactions : [], starred: row.starred === true, ptt: row.ptt === true, status: row.status || '',
       }))
   }

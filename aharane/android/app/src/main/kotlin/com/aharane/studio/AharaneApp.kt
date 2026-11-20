@@ -327,6 +327,9 @@ fun AharaneApp(
     var inboxSearchRequestId by remember { mutableIntStateOf(0) }
     var serverError by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var appLockEnabled by remember(context) {
+        mutableStateOf(context.getSharedPreferences("aharane-app-lock", Context.MODE_PRIVATE).getBoolean("enabled", false))
+    }
 
     val previewMessages = remember { mutableStateListOf<ChatMessage>().apply {
         if (previewMode) addAll(DesignPreviewFixtures.messages)
@@ -2292,6 +2295,15 @@ fun AharaneApp(
                         appearanceRevision = chatAppearanceRevision,
                         cachedConversations = chatsByAccount[selectedAccount].orEmpty(),
                         mediaCache = encryptedMediaCache,
+                        appLockEnabled = appLockEnabled,
+                        onAppLockToggle = { enabled ->
+                            val activity = context as? MainActivity
+                            if (activity?.setAppLockEnabled(enabled) == true) {
+                                appLockEnabled = enabled
+                            } else if (enabled) {
+                                Toast.makeText(context, "Set a PIN, pattern or password in Android settings before enabling app lock.", Toast.LENGTH_LONG).show()
+                            }
+                        },
                         syncingAllChats = syncingAllChats,
                         onClearMediaCache = { targetAccount ->
                             connectionScope.launch {

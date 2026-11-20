@@ -226,7 +226,7 @@ private fun HomeConnectionIndicator(
 }
 
 @Composable
-private fun AccountRow
+private fun AccountRow(
     account: ChatAccount,
     state: String,
     actionLabel: String,

@@ -301,15 +301,23 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
     suspend fun syncMessages(
         conversation: ChatSummary,
         afterMillis: Long = 0L,
+        afterMessageId: String = "",
         beforeMillis: Long? = null,
+        beforeMessageId: String = "",
         limit: Int = 200
     ): ChatSyncPage {
         require(afterMillis <= 0L || beforeMillis == null) { "Use either an after or before cursor." }
         val query = mutableMapOf("limit" to limit.coerceIn(1, 500).toString())
-        if (afterMillis > 0L) query["after"] = afterMillis.toString()
-        beforeMillis?.let { query["before"] = it.toString() }
+        if (afterMillis > 0L) {
+            query["after"] = afterMillis.toString()
+            if (afterMessageId.isNotBlank()) query["afterId"] = afterMessageId.take(256)
+        }
+        beforeMillis?.let {
+            query["before"] = it.toString()
+            if (beforeMessageId.isNotBlank()) query["beforeId"] = beforeMessageId.take(256)
+        }
         val response = api.get(
-            "chats/${conversation.key.account.apiValue}/${conversation.key.jid}/sync",
+            "chats/${conversation.key.account.apiValue}/${encodePath(conversation.key.jid)}/sync",
             query
         )
         val rows = response.optJSONArray("messages") ?: JSONArray()

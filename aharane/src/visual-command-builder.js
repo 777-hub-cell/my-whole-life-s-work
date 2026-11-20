@@ -484,6 +484,11 @@ export async function executeVisualWorkflow(input, options = {}) {
 export function createVisualCommandStore(filePath) {
   let data = { version: 1, workflows: [], counters: {} }
   let tail = Promise.resolve()
+  let storageError = ''
+
+  function ensureHealthy() {
+    if (storageError) throw new Error(storageError)
+  }
 
   async function persist() {
     await mkdir(dirname(filePath), { recursive: true, mode: 0o700 })
@@ -493,6 +498,7 @@ export function createVisualCommandStore(filePath) {
   }
   function mutate(work) {
     const operation = tail.then(async () => {
+      ensureHealthy()
       const result = await work()
       await persist()
       return result
@@ -506,14 +512,19 @@ export function createVisualCommandStore(filePath) {
       await mkdir(dirname(filePath), { recursive: true, mode: 0o700 })
       try {
         const loaded = JSON.parse(await readFile(filePath, 'utf8'))
-        if (loaded?.version === 1 && Array.isArray(loaded.workflows) && loaded.counters && typeof loaded.counters === 'object') {
+        if (loaded?.version === 1 && Array.isArray(loaded.workflows) && loaded.counters && typeof loaded.counters === 'object' && !Array.isArray(loaded.counters)) {
           data = { version: 1, workflows: loaded.workflows.map(normalizeWorkflow), counters: loaded.counters }
+        } else if (loaded != null) {
+          storageError = 'Visual command storage has an unsupported or invalid format. Saved data was preserved; repair the file before editing workflows.'
         }
       } catch (error) {
-        if (error?.code !== 'ENOENT') throw new Error('Visual command storage is invalid; saved data was not overwritten.')
+        if (error?.code !== 'ENOENT') {
+          storageError = 'Visual command storage could not be read. Saved data was preserved; repair the file before editing workflows.'
+        }
       }
       return this.list()
     },
+    storageWarning() { return storageError },
     list(account) { return data.workflows.filter(item => !account || item.account === account).map(item => structuredClone(item)) },
     get(id) { const item = data.workflows.find(workflow => workflow.id === id); return item ? structuredClone(item) : null },
     async save(input) {

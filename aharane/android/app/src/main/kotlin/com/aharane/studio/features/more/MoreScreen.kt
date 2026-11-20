@@ -40,7 +40,6 @@ import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatSummary
 import com.aharane.studio.features.chats.ChatAppearanceStore
 import com.aharane.studio.features.chats.ChatAppearanceStudioScreen
-import kotlinx.coroutines.delay
 
 private val AccentChoices = listOf(
     "#0E7A5C", "#3867D6", "#8752C7", "#B34D76", "#B56C22", "#4D7779"
@@ -482,10 +481,10 @@ fun MoreScreen(
                 onBack = { onPageChange("chat-settings") }
             )
         } else {
-            StudioEmpty(
-                title = "Appearance preferences are unavailable.",
-                description = "The local appearance store could not be opened."
-            )
+            Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Appearance preferences are unavailable.", color = StudioPalette.Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text("The local appearance store could not be opened.", color = StudioPalette.Muted, fontSize = 12.sp)
+            }
         }
     } else if (page == "starred") {
         LazyColumn(

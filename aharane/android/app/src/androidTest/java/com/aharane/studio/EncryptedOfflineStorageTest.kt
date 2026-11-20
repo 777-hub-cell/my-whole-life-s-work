@@ -82,6 +82,8 @@ class EncryptedOfflineStorageTest {
         assertEquals(marker, restored?.title)
         assertEquals(marker, reopened.database.chatDao().messages("private", jid).single().text)
         assertTrue(reopened.database.chatDao().messages("public", jid).isEmpty())
+        reopened.database.chatDao().clearMessages("private", jid)
+        reopened.database.chatDao().clearConversation("private", jid)
         reopened.database.close()
     }
 
@@ -103,6 +105,7 @@ class EncryptedOfflineStorageTest {
             cache.store("private", jid, "view-once:one-time", bytes, viewOnce = true)
         }
         cache.delete("private", jid, messageId)
+        cache.clearConversation("private", jid)
         assertFalse(path.exists())
     }
 
@@ -127,5 +130,6 @@ class EncryptedOfflineStorageTest {
         store.reset(ChatAccount.PRIVATE, "2348222222222@s.whatsapp.net")
         assertEquals(14, store.resolve(ChatAccount.PRIVATE, "2348222222222@s.whatsapp.net").messageSize)
         assertEquals("#DCEFE5", store.resolve(ChatAccount.PUBLIC).outgoingBubble)
+        context.getSharedPreferences("aharane-chat-appearance", Context.MODE_PRIVATE).edit().clear().commit()
     }
 }

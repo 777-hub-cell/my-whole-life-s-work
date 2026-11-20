@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import express from 'express'
 import { WebSocket, WebSocketServer } from 'ws'
 import pino from 'pino'
-import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys'
+import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState, WAMessageStubType } from '@whiskeysockets/baileys'
 import {
   isAllowedInbound,
   isPrivateVisibleChatJid,
@@ -1091,12 +1091,54 @@ accountRuntime = createAccountRuntime({
   loggedOutCode: DisconnectReason.loggedOut,
   onMessages: ({ sessionId, socket: currentSocket, event }) =>
     handleMessages(sessionId, currentSocket, event),
-  onMessageUpdates: async ({ sessionId, updates }) => {
+  onMessageUpdates: async ({ sessionId, socket, updates }) => {
     if (!Array.isArray(updates)) return
     for (const item of updates) {
       const jid = String(item?.key?.remoteJid || '')
       const messageId = String(item?.key?.id || '')
-      const raw = item?.update?.status
+      if (!jid || !messageId) continue
+      const update = item?.update || {}
+
+      // Baileys v7 emits a delete-for-everyone protocol message as a
+      // messages.update entry with message=null and messageStubType=REVOKE.
+      if (update.message === null && update.messageStubType === WAMessageStubType.REVOKE) {
+        if (item.key?.fromMe === false) {
+          // Another participant revoked it. Preserve the original content,
+          // including our own message if the other participant revoked it.
+          await chatStore.markMessageDeletedByOther(sessionId, jid, messageId)
+        } else if (item.key?.fromMe === true) {
+          // Our linked account revoked its own message; retain the existing
+          // explicit owner-side deletion semantics.
+          await chatStore.deleteMessage(sessionId, jid, messageId)
+        }
+        continue
+      }
+
+      // Protocol MESSAGE_EDIT updates are also emitted here, not as upserts.
+      // Rebuild the original message key from its stored record so its sender,
+      // group participant and timestamp remain attached to the edited payload.
+      if (update.message?.editedMessage) {
+        const existing = await chatStore.getMessage(sessionId, jid, messageId)
+        if (existing) {
+          await chatStore.recordMessage({
+            sessionId,
+            socket,
+            message: {
+              key: {
+                remoteJid: jid,
+                id: messageId,
+                fromMe: existing.fromMe === true,
+                ...(existing.participant ? { participant: existing.participant } : {}),
+              },
+              message: update.message,
+              messageTimestamp: update.messageTimestamp || existing.timestamp,
+              pushName: existing.pushName || '',
+            },
+          })
+        }
+      }
+
+      const raw = update.status
       let status = ''
       if (typeof raw === 'number' && Number.isFinite(raw)) {
         status = raw <= 0 ? 'failed' : raw === 1 ? 'pending' : raw === 2 ? 'sent' : raw === 3 ? 'delivered' : raw >= 4 ? 'read' : ''
@@ -1104,9 +1146,7 @@ accountRuntime = createAccountRuntime({
         const value = String(raw || '').toLowerCase()
         status = ['pending', 'sent', 'delivered', 'read', 'failed'].includes(value) ? value : ''
       }
-      if (jid && messageId && status) {
-        await chatStore.updateMessageStatus(sessionId, jid, messageId, status)
-      }
+      if (status) await chatStore.updateMessageStatus(sessionId, jid, messageId, status)
     }
   },
   onMessageDeletes: async ({ sessionId, update }) => {

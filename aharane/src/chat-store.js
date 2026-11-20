@@ -530,6 +530,8 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         id: row.id, jid: row.jid, fromMe: row.fromMe, pushName: row.pushName,
         timestamp: row.timestamp, type: row.type, text: row.text,
         fileName: row.fileName,
+        deletedByRemote: row.deletedByRemote === true,
+        deletedAt: Number(row.deletedAt) || 0,
       }))
   }
 

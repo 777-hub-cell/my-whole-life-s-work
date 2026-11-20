@@ -285,19 +285,19 @@ export function validateWorkflow(input) {
   if (trigger && !outputEdges(workflow, trigger.id, 'next').length) issue(trigger.id, 'error', 'The trigger has no next action.', 'Connect its Next output to an action.')
 
   const reached = new Set()
-  const visitData = (id, seen = new Set()) => {
+  const visitDataInputs = (id, seen = new Set()) => {
     if (seen.has(id)) return
     seen.add(id)
     for (const edge of workflow.edges) {
-      if (edge.from !== id || isExec(byId.get(id), edge.fromSocket)) continue
-      reached.add(edge.to)
-      visitData(edge.to, seen)
+      if (edge.to !== id || isExec(byId.get(edge.from), edge.fromSocket)) continue
+      reached.add(edge.from)
+      visitDataInputs(edge.from, seen)
     }
   }
   const visit = id => {
     if (reached.has(id)) return
     reached.add(id)
-    visitData(id)
+    visitDataInputs(id)
     for (const edge of workflow.edges) if (edge.from === id && isExec(byId.get(id), edge.fromSocket)) visit(edge.to)
   }
   if (trigger) visit(trigger.id)
@@ -445,7 +445,8 @@ export async function executeVisualWorkflow(input, options = {}) {
           if (!emoji || !key?.id || !key?.remoteJid) throw new Error('A reaction requires an emoji and the original message key.')
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would react with ' + emoji + '.' })
           else {
-            await event.socket.sendMessage(event.remoteJid, { react: { text: emoji, key } })
+            const sent = await event.socket.sendMessage(event.remoteJid, { react: { text: emoji, key } })
+            if (!sent?.key?.id) throw new Error('WhatsApp did not return a reaction message result.')
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the reaction.' })
           }
         } else if (node.type === 'message.sendPoll') {

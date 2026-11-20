@@ -662,7 +662,9 @@ fun AharaneApp(
         var rounds = 0
         do {
             local?.saveMessages(conversation, page.messages, if (cursor == 0L) page.hasOlder else null)
-            cursor = maxOf(cursor, page.messages.maxOfOrNull { it.timestampMillis } ?: cursor)
+            val nextCursor = page.messages.maxOfOrNull { it.timestampMillis } ?: cursor
+            if (cursor > 0L && nextCursor <= cursor) break
+            cursor = maxOf(cursor, nextCursor)
             rounds += 1
             if (!page.hasNewer || page.messages.isEmpty() || rounds >= 5) break
             page = repository.syncMessages(conversation, afterMillis = cursor, limit = 200)

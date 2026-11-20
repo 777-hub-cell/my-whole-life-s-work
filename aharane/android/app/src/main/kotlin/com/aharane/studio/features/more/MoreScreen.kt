@@ -112,6 +112,8 @@ fun MoreScreen(
     onSyncAllChats: () -> Unit = {},
     syncingAllChats: Boolean = false,
     onClearMediaCache: (ChatAccount) -> Unit = {},
+    appLockEnabled: Boolean = false,
+    onAppLockToggle: (Boolean) -> Unit = {},
     onAppearanceChanged: () -> Unit = {}
 ) {
     var dialog by rememberSaveable { mutableStateOf("") }
@@ -845,6 +847,14 @@ fun MoreScreen(
                         icon = null,
                         trailing = "›",
                         onClick = { onPageChange("appearance") }
+                    )
+                    StudioDivider()
+                    PreferenceSwitch(
+                        title = "Require device unlock",
+                        description = "Protect Aharane with this phone’s screen lock when you leave the app.",
+                        checked = appLockEnabled,
+                        enabled = true,
+                        onCheckedChange = onAppLockToggle
                     )
                     StudioDivider()
                     StudioRow(

@@ -45,6 +45,7 @@ import com.aharane.studio.core.model.MessageDirection
 import com.aharane.studio.core.model.MessageKind
 import com.aharane.studio.core.model.MessageStatus
 import com.aharane.studio.core.network.AharaneConnectionManager
+import com.aharane.studio.core.notifications.AharaneNotificationScheduler
 import com.aharane.studio.core.network.AharaneRepository
 import com.aharane.studio.core.network.ServerAccountState
 import com.aharane.studio.core.network.ServerActivityEntry
@@ -311,6 +312,10 @@ fun AharaneApp(
         }
     }
 
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+
     val zipExportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
     ) { uri ->
@@ -388,6 +393,12 @@ fun AharaneApp(
 
     LaunchedEffect(authenticated, previewMode) {
         if (authenticated && !previewMode) {
+            AharaneNotificationScheduler.schedule(context)
+            if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
             busy = true
             serverError = ""
             try {
@@ -977,6 +988,7 @@ fun AharaneApp(
                             connectionScope.launch {
                                 runCatching { connectionManager.logout() }
                                     .onFailure { Toast.makeText(context, it.message ?: "Could not sign out.", Toast.LENGTH_LONG).show() }
+                                AharaneNotificationScheduler.cancel(context)
                                 authenticated = false
                                 connectionPassword = ""
                                 serverVerified = true

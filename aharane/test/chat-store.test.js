@@ -489,6 +489,13 @@ test('idempotent text send intents survive restart and never resend an uncertain
       reusedIdError = error
     }
     assert.equal(reusedIdError?.status, 409)
+    assert.deepEqual(
+      await afterProcessRestart.beginIdempotentSend(
+        'private',
+        { clientMessageId: 'native-client-message-0002', jid, text: 'next valid message', quotedMessageId: '' }
+      ),
+      { state: 'sending', messageId: '' }
+    )
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

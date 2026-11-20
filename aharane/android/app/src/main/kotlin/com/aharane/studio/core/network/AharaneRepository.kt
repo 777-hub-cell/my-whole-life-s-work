@@ -259,6 +259,43 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
         }
     }
 
+    suspend fun searchMessages(
+        conversation: ChatSummary,
+        query: String,
+        limit: Int = 100
+    ): List<ChatMessage> {
+        val term = query.trim()
+        if (term.length < 2) return emptyList()
+        require(term.length <= 100) { "Search text must be 100 characters or fewer." }
+        val response = api.get(
+            "chats/${conversation.key.account.apiValue}/${encodePath(conversation.key.jid)}/search",
+            mapOf("q" to term, "limit" to limit.coerceIn(1, 100).toString())
+        )
+        val rows = response.optJSONArray("results") ?: JSONArray()
+        return buildList {
+            for (index in 0 until rows.length()) {
+                val row = rows.optJSONObject(index) ?: continue
+                val messageId = row.optString("id")
+                if (messageId.isBlank()) continue
+                val timestamp = row.optLong("timestamp").let {
+                    if (it > 0 && it < 10_000_000_000L) it * 1000L else it
+                }
+                add(
+                    ChatMessage(
+                        key = conversation.key,
+                        messageId = messageId,
+                        direction = if (row.optBoolean("fromMe")) MessageDirection.OUTGOING else MessageDirection.INCOMING,
+                        kind = parseMessageKind(row.optString("type")),
+                        text = row.optString("text"),
+                        timestampMillis = timestamp.coerceAtLeast(0L),
+                        senderName = row.optString("pushName").takeIf { it.isNotBlank() },
+                        mediaFileName = row.optString("fileName").takeIf { it.isNotBlank() }
+                    )
+                )
+            }
+        }.sortedBy { it.timestampMillis }
+    }
+
     suspend fun sendText(
         conversation: ChatSummary,
         text: String,

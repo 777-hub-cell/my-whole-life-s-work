@@ -92,22 +92,19 @@ import java.util.Locale
  * Full-screen native conversation surface. The screen consumes only server-backed
  * summaries/messages supplied by its caller; it never creates sample chat content.
  *
- * The composer remains editable while offline so the user can prepare a draft, but
- * sending and server-dependent attachment actions stay unavailable until connected.
+ * The composer remains editable so the user can prepare a draft; sending and
+ * server-dependent attachment actions require an available connection.
  */
 @Composable
 fun ConversationScreen(
     conversation: ChatSummary,
     messages: List<ChatMessage>,
     connected: Boolean,
-    mediaServerAvailable: Boolean = connected,
     appearance: ChatAppearance = ChatAppearance(),
     hasOlderMessages: Boolean = false,
     loadingOlderMessages: Boolean = false,
-    lastSyncedAt: Long = 0L,
     autoDownloadImages: Boolean = true,
     autoDownloadVideoPreviews: Boolean = true,
-    storageWarning: String = "",
     onSyncConversation: () -> Unit = {},
     onLoadOlderMessages: () -> Unit = {},
     onBack: () -> Unit,
@@ -136,7 +133,6 @@ fun ConversationScreen(
     videoFiles: Map<String, File> = emptyMap(),
     videoLoading: Set<String> = emptySet(),
     videoErrors: Map<String, String> = emptyMap(),
-    offlineMediaIds: Set<String> = emptySet(),
     onLoadMediaPreview: (ChatMessage) -> Unit = {},
     onLoadVideo: (ChatMessage) -> Unit = {},
     onLoadAudio: (ChatMessage) -> Unit = {},
@@ -252,19 +248,10 @@ fun ConversationScreen(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    (if (conversation.isGroup) "Group conversation" else conversation.key.account.label + " account") +
-                        if (mediaServerAvailable) " · Server online" else " · Offline · cached",
+                    if (conversation.isGroup) "Group conversation" else conversation.key.account.label + " account",
                     color = StudioPalette.Muted,
                     fontSize = 11.5.sp,
                     lineHeight = 15.sp,
-                    maxLines = 1
-                )
-                Text(
-                    if (lastSyncedAt > 0L) "Last synced " + android.text.format.DateUtils.getRelativeTimeSpanString(
-                        lastSyncedAt, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS
-                    ) else "Not synced on this phone yet",
-                    color = StudioPalette.Muted,
-                    fontSize = 10.sp,
                     maxLines = 1
                 )
             }
@@ -398,8 +385,8 @@ fun ConversationScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        Text("No saved ${mediaGalleryFilter.lowercase()} in this conversation", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Media appears here as messages are synchronised. View-once media is excluded.", color = StudioPalette.Muted, fontSize = 11.5.sp, lineHeight = 17.sp)
+                        Text(if (mediaGalleryFilter == "All") "No media in this conversation yet" else "No ${mediaGalleryFilter.lowercase()} in this conversation yet", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Shared photos, videos and files appear here. View-once media is excluded.", color = StudioPalette.Muted, fontSize = 11.5.sp, lineHeight = 17.sp)
                     }
                 } else {
                     LazyColumn(
@@ -408,7 +395,6 @@ fun ConversationScreen(
                         verticalArrangement = Arrangement.spacedBy(1.dp)
                     ) {
                         items(galleryItems, key = { it.messageId }) { item ->
-                            val localReady = item.messageId in offlineMediaIds
                             Row(
                                 Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
                                     .clickable {
@@ -452,16 +438,6 @@ fun ConversationScreen(
                                         maxLines = 1, overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                                Text(
-                                    when {
-                                        localReady -> "On phone"
-                                        mediaServerAvailable -> "Tap to open"
-                                        else -> "Not saved"
-                                    },
-                                    color = if (localReady) StudioPalette.Accent else StudioPalette.Muted,
-                                    fontSize = 9.5.sp,
-                                    maxLines = 1
-                                )
                             }
                         }
                     }
@@ -577,17 +553,6 @@ fun ConversationScreen(
                 }
             }
             }
-        }
-
-        if (!connected) {
-            Text(
-                "Offline · Your draft stays here until Aharane reconnects.",
-                color = StudioPalette.Muted,
-                fontSize = 11.5.sp,
-                lineHeight = 15.sp,
-                modifier = Modifier.fillMaxWidth().background(StudioPalette.Surface)
-                    .padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 0.dp)
-            )
         }
 
         if (replyTo != null) {
@@ -734,7 +699,7 @@ fun ConversationScreen(
                     MessageKind.IMAGE, MessageKind.VIDEO, MessageKind.AUDIO,
                     MessageKind.STICKER, MessageKind.DOCUMENT
                 )) {
-                    StudioPaletteAction("Keep media offline") {
+                    StudioPaletteAction("Save media to this phone") {
                         onKeepMediaOffline(selected)
                         actionMessage = null
                     }
@@ -1206,8 +1171,8 @@ private fun MessageContent(
                             Text(
                                 when {
                                     mediaPreviewUnavailable -> message.mediaUnavailable?.ifBlank { "Preview unavailable · tap to open" } ?: "Preview unavailable · tap to open"
-                                    !mediaConnected -> "Tap to check a saved offline copy or reconnect to download."
-                                    !autoDownloadImages -> "Preview not auto-downloaded · tap to open"
+                                    !mediaConnected -> "Tap to open"
+                                    !autoDownloadImages -> "Automatic preview is off · tap to open"
                                     else -> "Loading preview · tap to open"
                                 },
                                 color = foreground.copy(alpha = .72f),
@@ -1253,7 +1218,7 @@ private fun MessageContent(
                                         videoLoading -> "Preparing video playback…"
                                         mediaPreviewUnavailable -> message.mediaUnavailable ?: "Video preview unavailable"
                                         !mediaConnected -> "Tap to check a saved offline copy or reconnect to download."
-                                        !autoDownloadVideoPreviews -> "Preview not auto-downloaded · tap to play"
+                                        !autoDownloadVideoPreviews -> "Automatic preview is off · tap to play"
                                         else -> "Tap to load and play"
                                     },
                                     color = if (videoError != null) StudioPalette.Bad else foreground.copy(alpha = .7f),
@@ -1274,7 +1239,6 @@ private fun MessageContent(
         MessageKind.AUDIO -> AudioMessagePlayer(
             message = message, file = audioFile, loading = audioLoading, error = audioError,
             waveform = audioWaveform,
-            serverAvailable = mediaConnected,
             foreground = foreground, surface = soft, onLoad = onLoadAudio
         )
         MessageKind.DOCUMENT -> {
@@ -1402,7 +1366,6 @@ private fun AudioMessagePlayer(
     loading: Boolean,
     error: String?,
     waveform: List<Float>,
-    serverAvailable: Boolean,
     foreground: Color,
     surface: Color,
     onLoad: () -> Unit
@@ -1486,7 +1449,6 @@ private fun AudioMessagePlayer(
                 Text(
                     error ?: when {
                         loading -> "Loading audio…"
-                        !serverAvailable -> "Tap play to check a saved offline copy or reconnect to download."
                         else -> "${message.mediaMimeType ?: "Audio"} · Tap play to load"
                     },
                     color = foreground.copy(alpha = .72f),

@@ -1089,23 +1089,29 @@ fun AharaneApp(
                         }
                     },
                     onOpenMedia = { message ->
-                        connectionScope.launch {
-                            try {
-                                val bytes = repository.mediaBytes(message.key.account, message)
-                                val mime = message.mediaMimeType.orEmpty()
-                                if (mime.startsWith("image/")) {
-                                    showImageBytes(
-                                        bytes,
-                                        message.mediaFileName.orEmpty(),
-                                        onBitmap = { mediaTitle = message.mediaFileName.orEmpty(); mediaImage = it; mediaMessageError = "" },
-                                        onError = { mediaTitle = message.mediaFileName.orEmpty(); mediaMessageError = it }
-                                    )
-                                } else {
-                                    openExternalAttachment(bytes, message.mediaFileName ?: "attachment", mime)
+                        if (previewMode) {
+                            Toast.makeText(context, "Preview mode does not contain the original attachment bytes.", Toast.LENGTH_SHORT).show()
+                        } else if (connected) {
+                            connectionScope.launch {
+                                try {
+                                    val bytes = repository.mediaBytes(message.key.account, message)
+                                    val mime = message.mediaMimeType.orEmpty()
+                                    if (mime.startsWith("image/")) {
+                                        showImageBytes(
+                                            bytes,
+                                            message.mediaFileName.orEmpty(),
+                                            onBitmap = { mediaTitle = message.mediaFileName.orEmpty(); mediaImage = it; mediaMessageError = "" },
+                                            onError = { mediaTitle = message.mediaFileName.orEmpty(); mediaMessageError = it }
+                                        )
+                                    } else {
+                                        openExternalAttachment(bytes, message.mediaFileName ?: "attachment", mime)
+                                    }
+                                } catch (error: Exception) {
+                                    serverError = error.message ?: "Media could not be opened."
                                 }
-                            } catch (error: Exception) {
-                                serverError = error.message ?: "Media could not be opened."
                             }
+                        } else {
+                            Toast.makeText(context, "Reconnect the selected WhatsApp account to open this media.", Toast.LENGTH_SHORT).show()
                         }
                     },
                     onStarMessage = { message ->
@@ -1296,7 +1302,11 @@ fun AharaneApp(
                         }
                     },
                     onViewOnce = { message ->
-                        if (message.messageId !in openedViewOnceIds) {
+                        if (previewMode) {
+                            Toast.makeText(context, "Preview mode does not contain view-once media bytes.", Toast.LENGTH_SHORT).show()
+                        } else if (!connected) {
+                            Toast.makeText(context, "Reconnect the selected WhatsApp account to open view-once media.", Toast.LENGTH_SHORT).show()
+                        } else if (message.messageId !in openedViewOnceIds) {
                             connectionScope.launch {
                                 try {
                                     val bytes = repository.viewOnceMedia(message.key.account, message)
@@ -1964,6 +1974,9 @@ fun AharaneApp(
         }
     }
 }
+
+private fun mediaCacheKey(message: ChatMessage): String =
+    "${message.key.account.apiValue}:${message.messageId}"
 
 private suspend fun showImageBytes(
     bytes: ByteArray,

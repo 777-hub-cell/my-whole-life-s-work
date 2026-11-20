@@ -408,6 +408,7 @@ fun ConversationScreen(
                         verticalArrangement = Arrangement.spacedBy(1.dp)
                     ) {
                         items(galleryItems, key = { it.messageId }) { item ->
+                            val localReady = item.messageId in offlineMediaIds
                             Row(
                                 Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
                                     .clickable {

@@ -1497,6 +1497,11 @@ fun AharaneApp(
                                                 limit = 100
                                             )
                                             localChatRepository?.recordOlderPage(target.key, page.messages, page.hasOlder)
+                                            localChatRepository?.applyDeletedMessages(target.key, page.deletedMessageIds)
+                                            localChatRepository?.applyRemoteDeletedMessages(
+                                                target.key,
+                                                page.remoteDeletedMessages.map { it.messageId to it.deletedAtMillis }
+                                            )
                                             activeMessages = localChatRepository?.messages(target.key)
                                                 ?: (page.messages + activeMessages).distinctBy { it.messageId }.sortedBy { it.timestampMillis }
                                             hasOlderMessages = page.hasOlder

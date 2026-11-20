@@ -439,13 +439,13 @@ fun AharaneApp(
     // Keep the visible native dashboard/inbox fresh while the app is open.
     // This uses the existing authenticated API and does not open a WhatsApp
     // socket or send presence/read-receipt events.
-    LaunchedEffect(authenticated, previewMode, selectedAccount, activeConversation?.key) {
+    LaunchedEffect(authenticated, previewMode, accountName, activeConversation?.key) {
         if (!authenticated || previewMode) return@LaunchedEffect
         while (true) {
             delay(20_000)
             try {
                 val openConversation = activeConversation
-                val account = openConversation?.key?.account ?: selectedAccount
+                val account = openConversation?.key?.account ?: ChatAccount.valueOf(accountName)
                 chatsByAccount[account] = repository.chats(account)
                 if (openConversation != null) {
                     activeMessages = repository.messages(openConversation)

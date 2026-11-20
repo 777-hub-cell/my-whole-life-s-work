@@ -123,3 +123,12 @@ The current PR is a development candidate, not a production release. UI parity i
 - [ ] Confirm no fake server data, no mock conversations and no fake save/start/stop success.
 - [ ] Run unit tests, debug APK build, and real Android emulator screenshot capture.
 - [ ] Review every screenshot for clipping, overflows, text mismatch and layout drift before treating the UI as accepted.
+
+
+## Chat Appearance Studio and encrypted offline chat (development status)
+
+The native Chat settings expand into a Chat Appearance Studio with layered global/account/conversation inheritance, live sample preview, Photo Picker wallpapers, presets, bubble and typography settings, layout and media appearance, and importable/exportable custom profiles. Private and Public settings are independent. The full-screen Compose conversation resolves and applies these appearance settings.
+
+Room plus SQLCipher provides the local database foundation. The random database passphrase is wrapped with Android Keystore, and the encrypted database plus media cache use app-private no-backup storage. A read-only server sync API supports timestamp-based deltas and older message pages; native chat loading reads local history first, then updates it without wiping history on failure. Offline search operates on saved messages. Normal media can be stored with AES-GCM and integrity verification, while view-once media is never cached.
+
+This remains a development branch, not a completed release. The current-head CI, instrumented encryption/media tests, emulator screenshots and visual parity review must pass before acceptance. Remaining work includes durable idempotent offline outgoing messages, app-lock, constrained background sync, broad search UI, reconciliation of all message state changes, migration/key-loss recovery tests, and complete animated media/video/poll parity. Galaxy A16 / Android 16 live testing is required.

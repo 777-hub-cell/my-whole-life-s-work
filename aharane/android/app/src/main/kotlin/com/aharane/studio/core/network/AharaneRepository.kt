@@ -112,6 +112,13 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
         )
     }
 
+    suspend fun changePassword(currentPassword: String, newPassword: String) {
+        require(newPassword.toByteArray(Charsets.UTF_8).size in 12..128) {
+            "Choose a new password between 12 and 128 bytes."
+        }
+        api.changePassword(currentPassword, newPassword)
+    }
+
     suspend fun ownerSettings(): ServerOwnerSettings {
         val result = api.get("owners").optJSONObject("owners") ?: JSONObject()
         return ServerOwnerSettings(

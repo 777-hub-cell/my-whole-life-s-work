@@ -2,7 +2,7 @@ name: Aharane Android
 
 on:
   pull_request:
-    branches: [mscc-azure]
+    branches: [mscc-azure, feat/aharane-kotlin-native-foundation-20261119]
     paths: ['aharane/android/**', '.github/workflows/aharane-android.yml']
   push:
     branches: [mscc-azure]

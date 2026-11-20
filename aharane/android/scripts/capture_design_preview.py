@@ -99,6 +99,19 @@ def assert_visible_texts(labels):
         time.sleep(0.35)
     raise RuntimeError(f"File popup is missing expected actions: {missing!r}")
 
+def assert_absent_texts(labels):
+    """Ensure removed Android-app source editing does not reappear in More."""
+    visible = {
+        node.attrib.get("text", "") or node.attrib.get("content-desc", "")
+        for node in nodes()
+    }
+    found = [
+        label for label in labels
+        if any(label.casefold() in value.casefold() for value in visible)
+    ]
+    if found:
+        raise RuntimeError(f"Unexpected removed UI entries are visible: {found!r}")
+
 
 def back():
     run("adb", "shell", "input", "keyevent", "4")
@@ -135,6 +148,32 @@ def main():
     
     tap_label("Files")
     capture("03-files.png")
+
+    # The saved-package manager is populated only with explicit Preview fixtures
+    # here; upload/deploy controls are demonstrated but cannot change a server.
+    tap_label("View all", scroll_to_find=True)
+    assert_visible_texts([
+        "Update packages",
+        "Upload ZIP",
+        "Refresh",
+        "aharane-preview-update.zip",
+        "Update bot",
+        "Remove",
+        "Preview package library",
+    ])
+    capture("03e-update-packages.png")
+    tap_label("Close")
+    tap_label("Update packages", scroll_to_find=True)
+    capture("03f-update-package-folder.png")
+    tap_label("File actions", content_desc=True)
+    assert_visible_texts(["Update bot", "Remove"])
+    capture("03g-update-package-menu.png")
+    tap_label("Update bot")
+    assert_visible_texts(["Confirm update", "Cancel"])
+    capture("03h-update-confirmation.png")
+    tap_label("Cancel")
+    tap_label("root", scroll_to_find=True)
+
     tap_label("admin")
     capture("03b-admin-folder.png")
     tap_label("File actions", content_desc=True)
@@ -143,6 +182,13 @@ def main():
     back()
     tap_label("auth.js")
     capture("03a-editor.png", 2)
+    tap_label("Problems & Console")
+    capture("03i-editor-problems.png")
+    assert_visible_texts(["Preview sample", "warning"])
+    tap_label("Console")
+    capture("03j-editor-console.png")
+    assert_visible_texts(["Preview", "sample", "Preview mode is isolated"])
+    back()
     tap_label("Show explorer", content_desc=True)
     capture("03d-editor-explorer.png")
     back()
@@ -152,6 +198,7 @@ def main():
     capture("04-env.png")
     tap_label("More")
     capture("05-more.png")
+    assert_absent_texts(["Development", "Studio source"])
     tap_label("Accounts & owners")
     capture("05a-accounts-owners.png")
     back()

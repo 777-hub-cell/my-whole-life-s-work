@@ -19,7 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.aharane.studio.R
 
-private val InstrumentSans = FontFamily(
+val AharaneInstrumentSans = FontFamily(
     Font(R.font.instrument_sans, FontWeight.Normal),
     Font(R.font.instrument_sans, FontWeight.Medium),
     Font(R.font.instrument_sans, FontWeight.SemiBold),
@@ -72,7 +72,7 @@ private val StudioTypography = Typography(
         fontSize = 26.sp, lineHeight = 30.sp, letterSpacing = (-0.55).sp),
     titleLarge = TextStyle(fontFamily = BricolageGrotesque, fontWeight = FontWeight.Bold,
         fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.15).sp),
-    titleMedium = TextStyle(fontFamily = InstrumentSans, fontWeight = FontWeight.SemiBold,
+    titleMedium = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp, lineHeight = 19.sp),
     bodyLarge = TextStyle(fontFamily = InstrumentSans, fontWeight = FontWeight.Normal,
         fontSize = 15.sp, lineHeight = 21.sp),

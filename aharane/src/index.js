@@ -1111,7 +1111,10 @@ accountRuntime = createAccountRuntime({
   },
   onMessageDeletes: async ({ sessionId, update }) => {
     if (update?.jid && update?.all === true) {
-      await chatStore.deleteConversationMessages(sessionId, update.jid)
+      // A remote clear/delete-all event must not erase the Hub's incoming history.
+      // Mark only messages known to be from the other participant; preserve the
+      // owner's own messages and any rows whose direction is unknown.
+      await chatStore.markConversationIncomingMessagesDeletedRemotely(sessionId, update.jid)
       return
     }
     const keys = Array.isArray(update?.keys) ? update.keys : (update?.key ? [update.key] : [])

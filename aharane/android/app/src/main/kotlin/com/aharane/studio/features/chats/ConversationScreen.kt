@@ -739,6 +739,15 @@ private fun MessageBubble(
                 )
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
+            if (!outgoing && appearance.showSenderLabels && !message.senderName.isNullOrBlank()) {
+                Text(
+                    message.senderName,
+                    color = if (bubble.luminance() > 0.45f) StudioPalette.Accent else foreground.copy(alpha = .85f),
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
             if (reply != null) {
                 Column(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
@@ -793,35 +802,40 @@ private fun MessageBubble(
                     audioFile = audioFile,
                     audioLoading = audioLoading,
                     audioError = audioError,
-                    audioWaveform = audioWaveform,
+                    audioWaveform = if (appearance.audioStyle == "minimal") emptyList() else audioWaveform,
+                    appearance = appearance,
                     onLoadMedia = onOpenMedia,
                     onLoadAudio = onLoadAudio,
                     onDownloadMedia = onDownloadMedia,
                     onOpenLocation = onOpenLocation
                 )
             }
-            Row(
-                Modifier.fillMaxWidth().padding(top = 4.dp),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(timestamp, color = foreground.copy(alpha = if (outgoing) .72f else .55f), fontSize = 9.5.sp)
-                if (message.isStarred) {
-                    Text("★  ", color = foreground.copy(alpha = .9f), fontSize = 10.sp)
-                }
-                if (outgoing) {
-                    Text(
-                        when (message.status) {
-                            MessageStatus.READ, MessageStatus.DELIVERED -> "  ✓✓"
-                            MessageStatus.SENT -> "  ✓"
-                            MessageStatus.PENDING -> "  ◷"
-                            MessageStatus.FAILED -> "  !"
-                            MessageStatus.UNKNOWN -> ""
-                        },
-                        color = if (message.status == MessageStatus.READ) Color(0xFFBDEBDA) else foreground.copy(alpha = .75f),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+            if (showTimestamp || message.isStarred || (outgoing && message.status != MessageStatus.UNKNOWN)) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (showTimestamp) {
+                        Text(timestamp, color = foreground.copy(alpha = if (outgoing) .72f else .55f), fontSize = 9.5.sp)
+                    }
+                    if (message.isStarred) {
+                        Text("★  ", color = foreground.copy(alpha = .9f), fontSize = 10.sp)
+                    }
+                    if (outgoing) {
+                        Text(
+                            when (message.status) {
+                                MessageStatus.READ, MessageStatus.DELIVERED -> "  ✓✓"
+                                MessageStatus.SENT -> "  ✓"
+                                MessageStatus.PENDING -> "  ◷"
+                                MessageStatus.FAILED -> "  !"
+                                MessageStatus.UNKNOWN -> ""
+                            },
+                            color = if (message.status == MessageStatus.READ) Color(0xFFBDEBDA) else foreground.copy(alpha = .75f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }
@@ -841,6 +855,7 @@ private fun MessageContent(
     audioLoading: Boolean,
     audioError: String?,
     audioWaveform: List<Float>,
+    appearance: ChatAppearance,
     onLoadMedia: () -> Unit,
     onLoadAudio: () -> Unit,
     onDownloadMedia: () -> Unit,
@@ -849,7 +864,21 @@ private fun MessageContent(
     val soft = if (outgoing) Color.White.copy(alpha = .13f) else StudioPalette.Background
     when (message.kind) {
         MessageKind.TEXT, MessageKind.RESPONSE, MessageKind.REACTION ->
-            Text(message.text, color = foreground, fontSize = 14.sp, lineHeight = 19.sp)
+            Text(
+                message.text,
+                color = foreground,
+                fontSize = appearance.messageSize.sp,
+                lineHeight = (appearance.messageSize + appearance.lineSpacing).sp,
+                fontWeight = when (appearance.fontWeight) {
+                    "bold" -> FontWeight.Bold
+                    "medium" -> FontWeight.Medium
+                    else -> FontWeight.Normal
+                },
+                fontFamily = when (appearance.fontFamily) {
+                    "Mono" -> androidx.compose.ui.text.font.FontFamily.Monospace
+                    else -> androidx.compose.ui.text.font.FontFamily.SansSerif
+                }
+            )
         MessageKind.IMAGE, MessageKind.STICKER -> {
             LaunchedEffect(message.messageId, mediaPreview, mediaPreviewUnavailable) {
                 if (mediaConnected && mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
@@ -861,11 +890,11 @@ private fun MessageContent(
                         contentDescription = message.mediaFileName ?: "WhatsApp image",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp)
-                            .clip(RoundedCornerShape(9.dp)).clickable(onClick = onLoadMedia)
+                            .clip(RoundedCornerShape(appearance.mediaRadius.dp)).clickable(onClick = onLoadMedia)
                     )
                 } else {
                     Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(appearance.mediaRadius.dp))
                             .background(soft).clickable(onClick = onLoadMedia).padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(9.dp)
@@ -885,14 +914,19 @@ private fun MessageContent(
                         }
                     }
                 }
-                if (message.text.isNotBlank()) Text(message.text, color = foreground, fontSize = 13.sp, lineHeight = 18.sp)
+                if (message.text.isNotBlank()) Text(
+                    message.text,
+                    color = foreground,
+                    fontSize = (appearance.messageSize - 1).sp,
+                    lineHeight = (appearance.messageSize + appearance.lineSpacing).sp
+                )
             }
         }
         MessageKind.VIDEO -> {
             LaunchedEffect(message.messageId, mediaPreview, mediaPreviewUnavailable) {
                 if (mediaConnected && mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
             }
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(soft).clickable(onClick = onLoadMedia)) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(appearance.mediaRadius.dp)).background(soft).clickable(onClick = onLoadMedia)) {
                 if (mediaPreview != null) {
                     Box(Modifier.fillMaxWidth().heightIn(max = 210.dp), contentAlignment = Alignment.Center) {
                         Image(bitmap = mediaPreview, contentDescription = "Video thumbnail", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().heightIn(max = 210.dp))
@@ -1200,4 +1234,12 @@ private fun StudioPaletteAction(label: String, onClick: () -> Unit) {
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp)
     )
+}
+
+private fun appearanceColor(value: String): Color =
+    runCatching { Color(android.graphics.Color.parseColor(value)) }.getOrDefault(StudioPalette.Background)
+
+private fun readableAppearanceText(background: Color): Color {
+    val luminance = .2126f * background.red + .7152f * background.green + .0722f * background.blue
+    return if (luminance > .52f) Color(0xFF17201C) else Color.White
 }

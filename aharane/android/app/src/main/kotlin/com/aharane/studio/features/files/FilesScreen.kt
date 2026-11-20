@@ -64,6 +64,7 @@ fun FilesScreen(
     onEntryAction: (StudioFileEntry, String) -> Unit = { _, _ -> },
     onBulkAction: (List<StudioFileEntry>, String) -> Unit = { _, _ -> },
     updatePackages: List<AharaneUpdatePackage> = emptyList(),
+    packageLibraryLoaded: Boolean = false,
     updateStatusLabel: String = "",
     packageProgressLabel: String = "",
     packageProgress: Float = 0f,
@@ -371,7 +372,12 @@ fun FilesScreen(
                 })
             }
             Text(
-                "${updatePackages.size} saved ZIP package(s)",
+                when {
+                    previewOnly -> "${updatePackages.size} demo ZIP package(s)"
+                    packageLibraryLoaded -> "${updatePackages.size} saved ZIP package(s)"
+                    connected -> "Loading saved ZIP packages…"
+                    else -> "Connect to load saved ZIP packages."
+                },
                 color = StudioPalette.Muted,
                 fontSize = 12.5.sp,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -426,9 +432,16 @@ fun FilesScreen(
                 }
                 if (updatePackages.isEmpty()) {
                     StudioEmpty(
-                        "No saved ZIP packages.",
-                        if (connected) "Upload a ZIP containing aharane-update.json. The server will verify the manifest and archive before listing it here."
-                        else "Connect to the Aharane server to load the saved package library."
+                        when {
+                            previewOnly -> "No demo ZIP packages."
+                            packageLibraryLoaded -> "No saved ZIP packages."
+                            else -> "Package library not loaded."
+                        },
+                        when {
+                            previewOnly -> "Aharane update packages shown here are local demo data only."
+                            packageLibraryLoaded -> "Upload a ZIP containing aharane-update.json. The server verifies the manifest and archive before listing it here."
+                            else -> "Connect to the Aharane server to load the saved package library."
+                        }
                     )
                 } else {
                     androidx.compose.foundation.lazy.LazyColumn(

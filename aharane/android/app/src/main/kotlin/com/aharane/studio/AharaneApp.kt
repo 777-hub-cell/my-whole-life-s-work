@@ -249,6 +249,7 @@ fun AharaneApp(
     var storageSnapshot by remember { mutableStateOf<ServerStorageSnapshot?>(null) }
     var serverFiles by remember { mutableStateOf<List<ServerFileEntry>>(emptyList()) }
     var fileDraft by remember { mutableStateOf<ServerFileTree?>(null) }
+    var packageLibraryLoaded by remember(previewMode) { mutableStateOf(false) }
     var updatePackages by remember(previewMode) {
         mutableStateOf(
             if (previewMode) listOf(
@@ -492,6 +493,7 @@ fun AharaneApp(
                         packageProgress = progress
                     }
                     updatePackages = repository.updatePackages()
+                    packageLibraryLoaded = true
                     updateStatus = repository.updateStatus()
                     val manifest = result.optJSONObject("manifest") ?: JSONObject()
                     packageProgressLabel = "Validated ${filename} · version ${manifest.optString("bot_version")}"
@@ -542,6 +544,7 @@ fun AharaneApp(
         chatsByAccount[ChatAccount.PRIVATE] = repository.chats(ChatAccount.PRIVATE)
         chatsByAccount[ChatAccount.PUBLIC] = repository.chats(ChatAccount.PUBLIC)
         updatePackages = repository.updatePackages()
+        packageLibraryLoaded = true
         updateStatus = repository.updateStatus()
         serverReachable = true
     }
@@ -794,6 +797,7 @@ fun AharaneApp(
             try {
                 repository.removeUpdatePackage(pkg.updateId)
                 updatePackages = repository.updatePackages()
+                packageLibraryLoaded = true
                 updateStatus = repository.updateStatus()
                 packageProgressLabel = "Package removed. The running bot was not changed."
             } catch (error: Exception) {
@@ -912,6 +916,7 @@ fun AharaneApp(
                                 packageProgress = progress
                             }
                             updatePackages = repository.updatePackages()
+                            packageLibraryLoaded = true
                             updateStatus = repository.updateStatus()
                             val manifest = result.optJSONObject("manifest") ?: JSONObject()
                             packageProgressLabel = "Validated ${entry.name} · version ${manifest.optString("bot_version")}"
@@ -1589,6 +1594,7 @@ fun AharaneApp(
                         onExportSource = ::exportSource,
                         onEntryAction = ::onFileEntryAction,
                         updatePackages = updatePackages,
+                        packageLibraryLoaded = packageLibraryLoaded,
                         updateStatusLabel = updateStatus.optJSONObject("update")?.let { state ->
                             when (state.optString("status", "idle")) {
                                 "idle" -> "Current bot version: ${updateStatus.optString("currentVersion").ifBlank { "not reported" }}"

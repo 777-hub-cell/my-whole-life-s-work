@@ -17,6 +17,12 @@ object DesignPreviewFixtures {
     val privateKey = ConversationKey(ChatAccount.PRIVATE, "15551234567@s.whatsapp.net")
     val publicKey = ConversationKey(ChatAccount.PUBLIC, "15557654321@s.whatsapp.net")
 
+    val activity = listOf(
+        "Preview · Private WhatsApp sample session ready",
+        "Preview · Files workspace loaded",
+        "Preview · Appearance preferences available"
+    )
+
     val conversations = listOf(
         ChatSummary(
             key = privateKey,

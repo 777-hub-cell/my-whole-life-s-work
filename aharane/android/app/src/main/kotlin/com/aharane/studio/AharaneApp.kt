@@ -705,7 +705,7 @@ fun AharaneApp(
     LaunchedEffect(authenticated, previewMode, accountName, activeConversation?.key, localChatRepository) {
         if (!authenticated || previewMode) return@LaunchedEffect
         while (true) {
-            delay(60_000)
+            delay(5 * 60_000L)
             try {
                 runtime = repository.runtimeSnapshot()
                 serverReachable = true

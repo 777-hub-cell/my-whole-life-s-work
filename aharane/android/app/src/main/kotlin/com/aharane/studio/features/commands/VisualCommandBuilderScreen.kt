@@ -645,6 +645,7 @@ fun VisualCommandBuilderScreen(
                         }
                     }
                 }
+                }
                 Text(
                     "Swipe sideways to pan · pinch to zoom · drag nodes",
                     color = StudioPalette.Muted,

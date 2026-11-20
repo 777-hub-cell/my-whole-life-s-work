@@ -87,7 +87,7 @@ fun ConfigurationScreen(
             PreviewConfiguration(
                 botName = serverValues[prefix + "BOT_NAME"].orEmpty(),
                 prefix = serverValues[prefix + "COMMAND_PREFIX"].orEmpty(),
-                ownerNumber = ownerNumberValue,
+                ownerNumber = if (profile == "Private") serverValues["PRIVATE_OWNER_NUMBER"] ?: ownerNumberValue else serverValues["PUBLIC_BOT_NUMBER"] ?: ownerNumberValue,
                 autoRead = serverValues[prefix + "AUTO_READ"].equals("true", true),
                 showTyping = serverValues[prefix + "SHOW_TYPING"].equals("true", true),
                 rejectCalls = serverValues[prefix + "REJECT_CALLS"].equals("true", true),

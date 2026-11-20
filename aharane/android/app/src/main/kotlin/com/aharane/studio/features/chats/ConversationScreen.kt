@@ -287,6 +287,7 @@ fun ConversationScreen(
                             mediaPreview = mediaPreviews[mediaKey(message)],
                             mediaPreviewUnavailable = message.messageId in mediaPreviewErrors,
                             onLoadMediaPreview = { onLoadMediaPreview(message) },
+                            mediaConnected = connected,
                             audioFile = audioFiles[mediaKey(message)],
                             audioLoading = message.messageId in audioLoading,
                             audioError = audioErrors[message.messageId],
@@ -618,6 +619,7 @@ private fun MessageBubble(
     mediaPreview: ImageBitmap?,
     mediaPreviewUnavailable: Boolean,
     onLoadMediaPreview: () -> Unit,
+    mediaConnected: Boolean,
     audioFile: File?,
     audioLoading: Boolean,
     audioError: String?,
@@ -713,6 +715,7 @@ private fun MessageBubble(
                     mediaPreview = mediaPreview,
                     mediaPreviewUnavailable = mediaPreviewUnavailable,
                     onLoadMediaPreview = onLoadMediaPreview,
+                    mediaConnected = mediaConnected,
                     audioFile = audioFile,
                     audioLoading = audioLoading,
                     audioError = audioError,
@@ -758,6 +761,7 @@ private fun MessageContent(
     mediaPreview: ImageBitmap?,
     mediaPreviewUnavailable: Boolean,
     onLoadMediaPreview: () -> Unit,
+    mediaConnected: Boolean,
     audioFile: File?,
     audioLoading: Boolean,
     audioError: String?,
@@ -772,7 +776,7 @@ private fun MessageContent(
             Text(message.text, color = foreground, fontSize = 14.sp, lineHeight = 19.sp)
         MessageKind.IMAGE, MessageKind.STICKER -> {
             LaunchedEffect(message.messageId, mediaPreview, mediaPreviewUnavailable) {
-                if (mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
+                if (mediaConnected && mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
             }
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 if (mediaPreview != null) {
@@ -794,8 +798,11 @@ private fun MessageContent(
                         Column(Modifier.weight(1f)) {
                             Text(message.mediaFileName ?: messageAttachmentLabel(message.kind), color = foreground, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                             Text(
-                                if (mediaPreviewUnavailable) message.mediaUnavailable?.ifBlank { "Preview unavailable · tap to open" } ?: "Preview unavailable · tap to open"
-                                else "Loading preview · tap to open",
+                                when {
+                                    mediaPreviewUnavailable -> message.mediaUnavailable?.ifBlank { "Preview unavailable · tap to open" } ?: "Preview unavailable · tap to open"
+                                    !mediaConnected -> "Reconnect the WhatsApp account to load this image."
+                                    else -> "Loading preview · tap to open"
+                                },
                                 color = foreground.copy(alpha = .72f),
                                 fontSize = 10.5.sp
                             )
@@ -807,7 +814,7 @@ private fun MessageContent(
         }
         MessageKind.VIDEO -> {
             LaunchedEffect(message.messageId, mediaPreview, mediaPreviewUnavailable) {
-                if (mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
+                if (mediaConnected && mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
             }
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(soft).clickable(onClick = onLoadMedia)) {
                 if (mediaPreview != null) {
@@ -822,7 +829,15 @@ private fun MessageContent(
                         Icon(Icons.Outlined.Videocam, null, tint = foreground, modifier = Modifier.size(24.dp))
                         Column(Modifier.weight(1f).padding(start = 9.dp)) {
                             Text(message.mediaFileName ?: "Video", color = foreground, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-                            Text(if (mediaPreviewUnavailable) message.mediaUnavailable ?: "Video preview unavailable" else "Preparing video preview…", color = foreground.copy(alpha = .7f), fontSize = 10.5.sp)
+                            Text(
+                                when {
+                                    mediaPreviewUnavailable -> message.mediaUnavailable ?: "Video preview unavailable"
+                                    !mediaConnected -> "Reconnect the WhatsApp account to load this video."
+                                    else -> "Preparing video preview…"
+                                },
+                                color = foreground.copy(alpha = .7f),
+                                fontSize = 10.5.sp
+                            )
                         }
                         Icon(Icons.Outlined.PlayArrow, null, tint = foreground, modifier = Modifier.size(22.dp))
                     }
@@ -837,6 +852,7 @@ private fun MessageContent(
         MessageKind.AUDIO -> AudioMessagePlayer(
             message = message, file = audioFile, loading = audioLoading, error = audioError,
             waveform = audioWaveform,
+            connected = mediaConnected,
             foreground = foreground, surface = soft, onLoad = onLoadAudio
         )
         MessageKind.DOCUMENT -> {
@@ -907,6 +923,7 @@ private fun AudioMessagePlayer(
     loading: Boolean,
     error: String?,
     waveform: List<Float>,
+    connected: Boolean,
     foreground: Color,
     surface: Color,
     onLoad: () -> Unit
@@ -964,7 +981,7 @@ private fun AudioMessagePlayer(
                     else { player?.start(); playing = true }
                 }
             },
-            enabled = !loading && (file != null || error == null)
+            enabled = connected && !loading && (file != null || error == null)
         ) {
             Icon(if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, if (playing) "Pause audio" else "Play audio", tint = foreground)
         }
@@ -975,7 +992,15 @@ private fun AudioMessagePlayer(
                 maxLines = 1, overflow = TextOverflow.Ellipsis
             )
             if (file == null) {
-                Text(error ?: if (loading) "Loading audio…" else "${message.mediaMimeType ?: "Audio"} · Tap play to load", color = foreground.copy(alpha = .72f), fontSize = 10.5.sp)
+                Text(
+                    error ?: when {
+                        loading -> "Loading audio…"
+                        !connected -> "Reconnect the WhatsApp account to play this audio."
+                        else -> "${message.mediaMimeType ?: "Audio"} · Tap play to load"
+                    },
+                    color = foreground.copy(alpha = .72f),
+                    fontSize = 10.5.sp
+                )
             } else if (!prepared) {
                 Text("Preparing audio…", color = foreground.copy(alpha = .72f), fontSize = 10.5.sp)
             } else {

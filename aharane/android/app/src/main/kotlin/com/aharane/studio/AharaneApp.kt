@@ -1409,10 +1409,11 @@ fun AharaneApp(
                     onOpenMedia = { message ->
                         if (previewMode) {
                             Toast.makeText(context, "Preview mode does not contain the original attachment bytes.", Toast.LENGTH_SHORT).show()
-                        } else if (connected) {
+                        } else {
                             connectionScope.launch {
                                 try {
-                                    val bytes = repository.mediaBytes(activeConversation!!, message)
+                                    val target = activeConversation ?: return@launch
+                                    val bytes = obtainCachedOrRemoteMedia(target, message)
                                     val mime = message.mediaMimeType.orEmpty()
                                     if (mime.startsWith("image/")) {
                                         showImageBytes(
@@ -1428,8 +1429,6 @@ fun AharaneApp(
                                     serverError = error.message ?: "Media could not be opened."
                                 }
                             }
-                        } else {
-                            Toast.makeText(context, "Reconnect the selected WhatsApp account to open this media.", Toast.LENGTH_SHORT).show()
                         }
                     },
                     onStarMessage = { message ->
@@ -1506,10 +1505,11 @@ fun AharaneApp(
                         val key = mediaCacheKey(message)
                         if (previewMode) {
                             inlineMediaPreviewErrors = inlineMediaPreviewErrors + message.messageId
-                        } else if (connected && key !in inlineMediaPreviews && message.messageId !in inlineMediaPreviewErrors) {
+                        } else if (key !in inlineMediaPreviews && message.messageId !in inlineMediaPreviewErrors) {
                             connectionScope.launch {
                                 try {
-                                    val bytes = repository.mediaBytes(activeConversation!!, message)
+                                    val target = activeConversation ?: return@launch
+                                    val bytes = obtainCachedOrRemoteMedia(target, message)
                                     val mime = message.mediaMimeType.orEmpty()
                                     val bitmap = withContext(Dispatchers.IO) {
                                         if (mime.startsWith("video/")) {
@@ -1549,11 +1549,12 @@ fun AharaneApp(
                         val key = mediaCacheKey(message)
                         if (previewMode) {
                             audioErrors = audioErrors + (message.messageId to "Preview audio bytes are not bundled.")
-                        } else if (connected && key !in audioFiles && message.messageId !in audioLoading) {
+                        } else if (key !in audioFiles && message.messageId !in audioLoading) {
                             audioLoading = audioLoading + message.messageId
                             connectionScope.launch {
                                 try {
-                                    val bytes = repository.mediaBytes(activeConversation!!, message)
+                                    val target = activeConversation ?: return@launch
+                                    val bytes = obtainCachedOrRemoteMedia(target, message)
                                     val extension = message.mediaFileName?.substringAfterLast('.', "")
                                         ?.takeIf { it.matches(Regex("[A-Za-z0-9]{2,5}")) }
                                         ?: if (message.isVoiceNote) "ogg" else "audio"
@@ -1574,10 +1575,11 @@ fun AharaneApp(
                     onDownloadMedia = { message ->
                         if (previewMode) {
                             Toast.makeText(context, "Preview mode does not contain downloadable sample attachments.", Toast.LENGTH_SHORT).show()
-                        } else if (connected) {
+                        } else {
                             connectionScope.launch {
                                 try {
-                                    pendingMediaDownload = repository.mediaBytes(activeConversation!!, message)
+                                    val target = activeConversation ?: return@launch
+                                    pendingMediaDownload = obtainCachedOrRemoteMedia(target, message)
                                     pendingMediaDownloadName = message.mediaFileName ?: "aharane-attachment"
                                     downloadMediaLauncher.launch(pendingMediaDownloadName)
                                 } catch (error: Exception) {

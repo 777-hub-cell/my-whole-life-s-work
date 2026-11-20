@@ -502,7 +502,18 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
     }
 
     suspend fun moveFile(path: String, destination: String) {
-        api.post("files/move", JSONObject().put("path", path).put("destination", destination))
+        moveFiles(listOf(path), destination)
+    }
+
+    suspend fun moveFiles(paths: List<String>, destination: String) {
+        require(paths.isNotEmpty()) { "Select at least one source item to move." }
+        require(paths.size <= 50) { "Move up to 50 items at a time." }
+        api.post(
+            "files/move",
+            JSONObject()
+                .put("paths", JSONArray(paths))
+                .put("destination", destination.trim())
+        )
     }
 
     suspend fun deleteFiles(paths: List<String>) {

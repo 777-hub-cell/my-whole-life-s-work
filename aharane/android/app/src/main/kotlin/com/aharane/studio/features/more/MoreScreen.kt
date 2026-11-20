@@ -851,7 +851,7 @@ fun MoreScreen(
                     StudioDivider()
                     PreferenceSwitch(
                         title = "Require device unlock",
-                        description = "Protect Aharane with this phone’s screen lock when you leave the app.",
+                        description = "Use this phone’s PIN, pattern or password when you return to Aharane.",
                         checked = appLockEnabled,
                         enabled = true,
                         onCheckedChange = onAppLockToggle

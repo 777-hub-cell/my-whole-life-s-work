@@ -1338,6 +1338,24 @@ fun AharaneApp(
                     hasOlderMessages = !previewMode && hasOlderMessages,
                     loadingOlderMessages = loadingOlderMessages,
                     lastSyncedAt = lastConversationSyncAt,
+                    onSyncConversation = {
+                        val target = activeConversation
+                        if (target != null && !previewMode) {
+                            if (!connected) {
+                                Toast.makeText(context, "Offline · showing saved messages.", Toast.LENGTH_SHORT).show()
+                            } else {
+                                connectionScope.launch {
+                                    try {
+                                        activeMessages = refreshConversationIncrementally(target)
+                                        lastConversationSyncAt = localChatRepository?.lastSyncedAt(target.key) ?: System.currentTimeMillis()
+                                        serverError = ""
+                                    } catch (error: Exception) {
+                                        serverError = error.message ?: "Conversation sync failed."
+                                    }
+                                }
+                            }
+                        }
+                    },
                     onLoadOlderMessages = {
                         val target = activeConversation
                         if (target != null && !previewMode) {

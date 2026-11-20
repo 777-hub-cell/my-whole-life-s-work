@@ -1217,7 +1217,7 @@ private fun MessageContent(
                                         videoError != null -> videoError
                                         videoLoading -> "Preparing video playback…"
                                         mediaPreviewUnavailable -> message.mediaUnavailable ?: "Video preview unavailable"
-                                        !mediaConnected -> "Tap to check a saved offline copy or reconnect to download."
+                                        !mediaConnected -> "Tap to play"
                                         !autoDownloadVideoPreviews -> "Automatic preview is off · tap to play"
                                         else -> "Tap to load and play"
                                     },

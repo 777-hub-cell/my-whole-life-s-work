@@ -172,6 +172,9 @@ interface ChatDao {
     @Query("DELETE FROM chat_outgoing_messages WHERE account = :account AND jid = :jid AND clientMessageId = :clientMessageId")
     suspend fun deleteOutgoingMessage(account: String, jid: String, clientMessageId: String)
 
+    @Query("DELETE FROM chat_outgoing_messages WHERE account = :account AND jid = :jid")
+    suspend fun clearOutgoingMessages(account: String, jid: String)
+
     @Query("DELETE FROM chat_outgoing_messages WHERE account = :account AND jid = :jid AND remoteMessageId = :remoteMessageId")
     suspend fun reconcileOutgoingMessage(account: String, jid: String, remoteMessageId: String)
 }

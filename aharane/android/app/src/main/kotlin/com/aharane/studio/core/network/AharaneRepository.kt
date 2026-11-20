@@ -251,7 +251,8 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
                         viewOnceViewed = row.optBoolean("viewOnceViewed"),
                         mediaUnavailable = row.optString("mediaUnavailable").takeIf { it.isNotBlank() },
                         isStarred = row.optBoolean("starred"),
-                        isVoiceNote = row.optBoolean("ptt")
+                        isVoiceNote = row.optBoolean("ptt"),
+                        replyToMessageId = row.optString("quotedMessageId").takeIf { it.isNotBlank() }
                     )
                 )
             }

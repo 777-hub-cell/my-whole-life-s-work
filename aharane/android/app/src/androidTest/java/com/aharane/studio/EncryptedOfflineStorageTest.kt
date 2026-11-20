@@ -334,6 +334,90 @@ class EncryptedOfflineStorageTest {
     }
 
     @Test
+    fun roomVersionThreeMigrationAddsRemoteDeleteMarkerWithoutDroppingCachedContent() {
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(null)
+                .callback(object : SupportSQLiteOpenHelper.Callback(3) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        db.execSQL(
+                            """CREATE TABLE chat_messages (
+                                account TEXT NOT NULL,
+                                jid TEXT NOT NULL,
+                                messageId TEXT NOT NULL,
+                                text TEXT NOT NULL,
+                                PRIMARY KEY(account, jid, messageId)
+                            )"""
+                        )
+                        db.execSQL(
+                            "INSERT INTO chat_messages VALUES ('private','2348888888888@s.whatsapp.net','retained-1','Keep this deleted message')"
+                        )
+                    }
+                    override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build()
+        )
+        try {
+            val db = helper.writableDatabase
+            EncryptedChatDatabase.MIGRATION_3_4.migrate(db)
+            val columns = mutableSetOf<String>()
+            db.query("PRAGMA table_info(chat_messages)").use { cursor ->
+                val index = cursor.getColumnIndexOrThrow("name")
+                while (cursor.moveToNext()) columns += cursor.getString(index)
+            }
+            assertTrue(columns.contains("deletedByRemote"))
+            assertTrue(columns.contains("deletedAtMillis"))
+            db.query("SELECT text, deletedByRemote FROM chat_messages WHERE messageId='retained-1'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Keep this deleted message", cursor.getString(0))
+                assertEquals(0, cursor.getInt(1))
+            }
+        } finally {
+            helper.close()
+        }
+    }
+
+    @Test
+    fun remoteDeletedMessageRemainsReadableFromEncryptedOfflineHistory() = runBlocking {
+        val key = com.aharane.studio.core.model.ConversationKey(
+            ChatAccount.PRIVATE, "2348999999999@s.whatsapp.net"
+        )
+        val conversation = com.aharane.studio.core.model.ChatSummary(
+            key = key, title = "Saved conversation", lastMessagePreview = "Keep this",
+            lastMessageAtMillis = 1765000000000L
+        )
+        val local = LocalChatRepository(context)
+        try {
+            local.saveConversations(listOf(conversation))
+            local.saveMessages(
+                conversation,
+                listOf(
+                    com.aharane.studio.core.model.ChatMessage(
+                        key = key,
+                        messageId = "retained-remote-delete",
+                        direction = com.aharane.studio.core.model.MessageDirection.INCOMING,
+                        kind = com.aharane.studio.core.model.MessageKind.TEXT,
+                        text = "Original content remains in Hub.",
+                        timestampMillis = 1765000000000L,
+                        deletedByRemote = true,
+                        deletedAtMillis = 1765000001000L
+                    )
+                )
+            )
+            val loaded = local.messages(key).single()
+            assertEquals("Original content remains in Hub.", loaded.text)
+            assertTrue(loaded.deletedByRemote)
+            assertEquals(1765000001000L, loaded.deletedAtMillis)
+        } finally {
+            local.close()
+            val clean = EncryptedChatDatabase.open(context)
+            clean.database.chatDao().clearMessages("private", key.jid)
+            clean.database.chatDao().clearConversation("private", key.jid)
+            clean.database.close()
+        }
+    }
+
+    @Test
     fun appearanceInheritanceKeepsPrivatePublicAndChatLayersSeparate() {
         context.getSharedPreferences("aharane-chat-appearance", Context.MODE_PRIVATE).edit().clear().commit()
         val store = ChatAppearanceStore(context)

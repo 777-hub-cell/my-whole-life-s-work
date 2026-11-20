@@ -545,7 +545,7 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
             totalBytes = disk.optLong("totalBytes"),
             usedBytes = disk.optLong("usedBytes"),
             freeBytes = disk.optLong("freeBytes"),
-            mediaBytes = media.optLong("totalBytes")
+            mediaBytes = media.optLong("bytes")
         )
     }
 

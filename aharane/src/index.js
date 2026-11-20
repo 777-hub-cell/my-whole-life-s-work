@@ -1879,11 +1879,13 @@ app.get('/api/chats/:accountId/:jid/sync', requireAdmin, async (req, res) => {
     if (beforeId && !before) return res.status(400).json({ ok: false, error: 'A before message id requires a before timestamp.' })
     const messages = await chatStore.getMessages(accountId, jid, { limit, after, before, afterId, beforeId })
     const deletedMessageIds = before > 0 ? [] : await chatStore.listDeletedMessageIds(accountId, jid)
+    const remoteDeletedMessages = await chatStore.listRemoteDeletedMessages(accountId, jid)
     const timestamps = messages.map(message => Number(message.timestamp) || 0).filter(value => value > 0)
     res.json({
       ok: true,
       messages,
       deletedMessageIds,
+      remoteDeletedMessages,
       hasOlder: before > 0 ? messages.length >= limit : after === 0 && messages.length >= limit,
       hasNewer: after > 0 && messages.length >= limit,
       oldestTimestamp: timestamps.length ? Math.min(...timestamps) : 0,

@@ -133,6 +133,12 @@ class EncryptedOfflineStorageTest {
         assertThrows(Exception::class.java) {
             cache.read("public", jid, messageId, record.relativePath, record.sha256)
         }
+        val corrupted = path.readBytes()
+        corrupted[corrupted.lastIndex] = (corrupted.last().toInt() xor 0x40).toByte()
+        path.writeBytes(corrupted)
+        assertThrows(Exception::class.java) {
+            cache.read("private", jid, messageId, record.relativePath, record.sha256)
+        }
         assertThrows(IllegalArgumentException::class.java) {
             cache.store("private", jid, "view-once:one-time", bytes, viewOnce = true)
         }

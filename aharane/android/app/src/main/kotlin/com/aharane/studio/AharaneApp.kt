@@ -475,14 +475,15 @@ fun AharaneApp(
         else Toast.makeText(context, "Microphone permission is required to record a voice note.", Toast.LENGTH_LONG).show()
     }
 
+    val activeTemporaryMediaFiles by rememberUpdatedState(
+        audioFiles.values.toList() + animatedMediaFiles.values.toList() + videoFiles.values.toList()
+    )
     DisposableEffect(activeConversation) {
         onDispose {
             voiceRecorder?.cancel()
             voiceRecorder = null
             voiceRecording = false
-            audioFiles.values.forEach { it.delete() }
-            animatedMediaFiles.values.forEach { it.delete() }
-            videoFiles.values.forEach { it.delete() }
+            activeTemporaryMediaFiles.distinct().forEach { it.delete() }
             audioFiles = emptyMap()
             audioWaveforms = emptyMap()
             audioLoading = emptySet()

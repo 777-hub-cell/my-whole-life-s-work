@@ -5,6 +5,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.Manifest
+import android.content.pm.PackageManager
 import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -31,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.aharane.studio.core.design.*
+import com.aharane.studio.core.media.VoiceNoteRecorder
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatSummary
 import com.aharane.studio.core.model.ChatMessage
@@ -233,6 +236,76 @@ fun AharaneApp(
     var mediaTitle by remember { mutableStateOf("") }
     var mediaMessageError by remember { mutableStateOf("") }
     val openedViewOnceIds = remember { mutableStateListOf<String>() }
+    var voiceRecorder by remember { mutableStateOf<VoiceNoteRecorder?>(null) }
+    var voiceRecording by remember { mutableStateOf(false) }
+    var pendingVoiceStart by remember { mutableStateOf(false) }
+
+    fun startVoiceRecording() {
+        if (activeConversation == null) return
+        try {
+            val recorder = VoiceNoteRecorder(context)
+            recorder.start()
+            voiceRecorder = recorder
+            voiceRecording = true
+            Toast.makeText(context, "Recording voice note. Tap the microphone again to send.", Toast.LENGTH_SHORT).show()
+        } catch (error: Exception) {
+            voiceRecorder = null
+            voiceRecording = false
+            Toast.makeText(context, error.message ?: "Could not start voice recording.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun stopAndSendVoiceNote() {
+        val active = voiceRecorder ?: return
+        val conversation = activeConversation ?: return
+        val recorded = try {
+            active.stop()
+        } catch (error: Exception) {
+            voiceRecorder = null
+            voiceRecording = false
+            Toast.makeText(context, error.message ?: "Voice recording was too short.", Toast.LENGTH_LONG).show()
+            return
+        }
+        voiceRecorder = null
+        voiceRecording = false
+        connectionScope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) { recorded.file.readBytes() }
+                repository.sendMedia(
+                    conversation,
+                    bytes,
+                    "audio/ogg",
+                    "voice-note.ogg",
+                    "",
+                    isVoiceNote = true,
+                    durationSeconds = recorded.durationSeconds
+                )
+                activeMessages = repository.messages(conversation)
+                chatsByAccount[conversation.key.account] = repository.chats(conversation.key.account)
+                Toast.makeText(context, "Voice note sent.", Toast.LENGTH_SHORT).show()
+            } catch (error: Exception) {
+                Toast.makeText(context, error.message ?: "Voice note could not be sent.", Toast.LENGTH_LONG).show()
+            } finally {
+                recorded.file.delete()
+            }
+        }
+    }
+
+    val microphonePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        pendingVoiceStart = false
+        if (granted) startVoiceRecording()
+        else Toast.makeText(context, "Microphone permission is required to record a voice note.", Toast.LENGTH_LONG).show()
+    }
+
+    DisposableEffect(activeConversation) {
+        onDispose {
+            voiceRecorder?.cancel()
+            voiceRecorder = null
+            voiceRecording = false
+        }
+    }
 
     val zipExportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
@@ -602,7 +675,16 @@ fun AharaneApp(
                         }
                     },
                     onRecordVoice = {
-                        Toast.makeText(context, "Voice-note recording is not enabled yet.", Toast.LENGTH_SHORT).show()
+                        if (!connected || currentAccountState?.connected != true) {
+                            Toast.makeText(context, "Connect the selected WhatsApp account to send a voice note.", Toast.LENGTH_SHORT).show()
+                        } else if (voiceRecording) {
+                            stopAndSendVoiceNote()
+                        } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            startVoiceRecording()
+                        } else {
+                            pendingVoiceStart = true
+                            microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
                     },
                     onOpenMedia = { message ->
                         connectionScope.launch {

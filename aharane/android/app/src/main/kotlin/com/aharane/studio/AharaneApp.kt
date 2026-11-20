@@ -793,6 +793,24 @@ fun AharaneApp(
                             }
                         }
                     },
+                    onStarMessage = { message ->
+                        if (!previewMode) {
+                            connectionScope.launch {
+                                try {
+                                    repository.star(activeConversation!!, message, !message.isStarred)
+                                    activeMessages = repository.messages(activeConversation!!)
+                                    starredPreviews = repository.starredPreviews(activeConversation!!.key.account)
+                                    Toast.makeText(
+                                        context,
+                                        if (message.isStarred) "Message unstarred." else "Message starred.",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Could not update starred message.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
                     onViewOnce = { message ->
                         if (message.messageId !in openedViewOnceIds) {
                             connectionScope.launch {

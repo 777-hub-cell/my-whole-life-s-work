@@ -169,7 +169,7 @@ class EncryptedOfflineStorageTest {
         assertEquals("Original content incoming-retained", incoming?.text)
         assertTrue(incoming?.deletedByRemote == true)
         assertEquals(1765000001000L, incoming?.deletedAtMillis)
-        assertFalse(outgoing?.deletedByRemote == true)
+        assertTrue("A remotely revoked outgoing message is retained too.", outgoing?.deletedByRemote == true)
         assertFalse(viewOnce?.deletedByRemote == true)
 
         dao.clearMessages("private", jid)

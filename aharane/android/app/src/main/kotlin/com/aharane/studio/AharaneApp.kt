@@ -1176,7 +1176,11 @@ fun AharaneApp(
     val selectedFilter = ChatFilter.valueOf(filterName)
     val connected = authenticated && !previewMode && serverReachable
 
-    suspend fun obtainCachedOrRemoteMedia(conversation: ChatSummary, message: ChatMessage): ByteArray {
+    suspend fun obtainCachedOrRemoteMedia(
+        conversation: ChatSummary,
+        message: ChatMessage,
+        requireSavedCopy: Boolean = false
+    ): ByteArray {
         require(!message.isViewOnce) { "View-once media cannot be cached or reopened from local storage." }
         val local = localChatRepository
         val cached = local?.cachedMediaInfo(conversation.key, message.messageId)
@@ -1198,7 +1202,8 @@ fun AharaneApp(
         }
         if (!connected) error("Attachment could not be loaded.")
         val bytes = repository.mediaBytes(conversation, message)
-        runCatching {
+        val cacheWrite = runCatching {
+            val localRepository = local ?: error("Local media storage is unavailable.")
             val record = withContext(Dispatchers.IO) {
                 encryptedMediaCache.store(
                     conversation.key.account.apiValue,
@@ -1208,11 +1213,10 @@ fun AharaneApp(
                     viewOnce = message.isViewOnce
                 )
             }
-            local?.recordMediaCache(conversation.key, message.messageId, record.relativePath, record.sha256, record.sizeBytes)
-        }.onFailure { error ->
-            // Media still opens online, but it is not labelled offline-ready unless
-            // the authenticated encrypted copy and metadata commit both succeed.
-            serverError = "Attachment opened, but this phone could not keep a local copy: " + (error.message ?: "storage unavailable")
+            localRepository.recordMediaCache(conversation.key, message.messageId, record.relativePath, record.sha256, record.sizeBytes)
+        }
+        if (requireSavedCopy && cacheWrite.isFailure) {
+            error("Media could not be saved on this phone.")
         }
         return bytes
     }
@@ -1580,12 +1584,12 @@ fun AharaneApp(
                             Toast.makeText(context, "This media cannot be saved in Preview or from a view-once message.", Toast.LENGTH_SHORT).show()
                         } else {
                             connectionScope.launch {
-                                runCatching { obtainCachedOrRemoteMedia(target, message) }
+                                runCatching { obtainCachedOrRemoteMedia(target, message, requireSavedCopy = true) }
                                     .onSuccess {
                                         Toast.makeText(context, "Media saved on this phone.", Toast.LENGTH_SHORT).show()
                                     }
                                     .onFailure {
-                                        Toast.makeText(context, it.message ?: "Media could not be saved on this phone.", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, "Media could not be saved on this phone.", Toast.LENGTH_LONG).show()
                                     }
                             }
                         }
@@ -1855,7 +1859,7 @@ fun AharaneApp(
                                         }
                                     } catch (error: Exception) {
                                         if (requestId == conversationSearchRequestId && activeConversation?.key == target.key) {
-                                            serverError = error.message ?: "Server search failed; showing saved messages."
+                                            serverError = error.message ?: "Search is unavailable right now."
                                         }
                                     }
                                 }
@@ -2031,7 +2035,7 @@ fun AharaneApp(
                                                 limit = 100
                                             ).orEmpty()
                                         }.getOrElse {
-                                            localChatStorageError = it.message ?: "Offline message search is unavailable."
+                                            localChatStorageError = it.message ?: "Local message search is unavailable."
                                             emptyList()
                                         }
                                     }

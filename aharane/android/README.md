@@ -33,10 +33,10 @@ The WhatsApp sessions, bot commands, persistent chat history and workspace files
 
 - The app uses HTTPS only; cleartext traffic is disabled.
 - The password is used for the sign-in request only. The received session cookie is encrypted with an Android Keystore key.
-- Opening a conversation updates Aharane's local inbox read marker; it does not call WhatsApp's read-receipt or presence APIs.
+- Opening a conversation reads cached history and calls the read-only incremental sync endpoint when connected. It does not update Aharane's inbox read marker, call WhatsApp's read-receipt API, or expose online presence.
 - View-once media is requested through the server's single-use endpoint. View-once video is played from a temporary app-cache file and that file is deleted when its viewer closes.
 - The built-in syntax checker currently supports JavaScript (Node --check) and JSON (JSON.parse); other source types receive a clear unsupported-checker state even when they have syntax highlighting. Full language-server diagnostics are not implemented.
-- Animated GIF playback, full WhatsApp sticker-vector rendering, rich contact-card extraction and structured map payloads that do not contain readable coordinates are not yet at full Web Studio parity.
+- Animated GIF and animated WebP playback use Android's animated image decoder on supported Android versions. Lottie/TGS vector stickers and some proprietary sticker payloads remain unsupported. Contact cards expose available vCard name/phone/email/address fields; location messages with coordinates can open a map. Poll options render read-only because the server has no voting endpoint.
 - Audio waveform bars are only drawn when Android successfully decodes actual PCM samples. If the codec does not expose samples, the player omits the waveform rather than fabricating it.
 - The editor Console reads the server's persisted ActivityStore feed; raw process stdout/stderr and system journal streaming are not exposed by the existing server API.
 - Background notification checks are periodic, not push delivery. Android Doze, battery saver and network policy can delay them.
@@ -45,7 +45,7 @@ The WhatsApp sessions, bot commands, persistent chat history and workspace files
 ## Known limits
 
 - The first admin password must be created in the web Studio; initial one-time setup is not part of the Android sign-in UI.
-- The app refreshes live server data while open and uses periodic Android jobs for background notification checks; it does not yet use a persistent WebSocket connection or a Room-backed offline copy of the workspace.
+- Chats use an encrypted Room/SQLCipher offline cache and timestamp/message-ID delta sync. A WorkManager job checks for sync every 12 hours on unmetered networks; it is OS-scheduled and can be delayed. The bot/server Files workspace itself is still server-backed and is not mirrored offline.
 - Regular audio/video playback uses installed Android apps. This is separate from the in-app, temporary view-once video player.
 - The debug APK produced by CI is for testing. A production-signed release requires a release signing key and separate release validation.
 - The final acceptance step is installation and end-to-end use on the target Samsung Galaxy A16 against the actual Aharane HTTPS server. An emulator build cannot prove device-specific permissions, media codecs, notifications, or server connectivity. The current PR remains a development candidate until the latest commit passes unit/build and emulator screenshot capture, then package/media/editor/live/offline/Preview acceptance checks are performed.
@@ -58,7 +58,7 @@ Requirements: JDK 17 and Android SDK platform 36 (Android 16).
 ./gradlew testDebugUnitTest assembleDebug
 ```
 
-The build fetches pinned Bricolage Grotesque and Instrument Sans font assets and their OFL notices. The machine performing a clean build therefore needs network access.
+The bundled Bricolage Grotesque and Instrument Sans font assets and OFL notices are checked into the Android source. Gradle does not download fonts during a build.
 
 APK output:
 

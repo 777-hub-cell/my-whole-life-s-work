@@ -83,6 +83,7 @@ android {
     namespace = "com.aharane.studio"
     compileSdk = 36
     defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         applicationId = "com.aharane.studio"
         minSdk = 26
         targetSdk = 36
@@ -137,4 +138,6 @@ dependencies {
     ksp(libs.room.compiler)
     testImplementation(libs.junit)
     testImplementation(libs.room.testing)
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }

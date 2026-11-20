@@ -63,6 +63,7 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
     { type: 'condition.equals', name: 'Text equals', description: 'Compare two values and follow YES or NO.', ports: ports([execIn, { id: 'left', label: 'Left value', type: 'string' }, { id: 'right', label: 'Right value', type: 'string' }], [{ id: 'yes', label: 'YES', type: 'exec' }, { id: 'no', label: 'NO', type: 'exec' }]) },
     { type: 'condition.contains', name: 'Text contains', description: 'Check whether text contains another value.', ports: ports([execIn, { id: 'text', label: 'Text', type: 'string' }, { id: 'search', label: 'Search for', type: 'string' }], [{ id: 'yes', label: 'YES', type: 'exec' }, { id: 'no', label: 'NO', type: 'exec' }]) },
     { type: 'condition.isOwner', name: 'Is account owner', description: 'Check the authenticated Private Owner or Public Owner.', ports: ports([execIn], [{ id: 'yes', label: 'YES', type: 'exec' }, { id: 'no', label: 'NO', type: 'exec' }]) },
+    { type: 'condition.isGroupAdmin', name: 'Is group admin', description: 'Check the triggering Public group participant against actual WhatsApp group metadata.', ports: ports([execIn], [{ id: 'yes', label: 'YES', type: 'exec' }, { id: 'no', label: 'NO', type: 'exec' }]) },
   ] },
   { category: 'Variables and counters', nodes: [
     { type: 'variable.set', name: 'Set variable', description: 'Set a temporary text variable for this workflow run.', ports: ports([execIn, { id: 'value', label: 'Value', type: 'string' }], [execOut]) },
@@ -379,7 +380,7 @@ export function validateWorkflow(input) {
   }
 
   const trigger = triggers[0]
-  const groupNodes = workflow.nodes.filter(node => node.type.startsWith('group.'))
+  const groupNodes = workflow.nodes.filter(node => node.type.startsWith('group.') || node.type === 'condition.isGroupAdmin')
   if (groupNodes.length && trigger && !triggerAllowsGroups(trigger)) {
     for (const node of groupNodes) issue(node.id, 'error', 'This group node is not reachable under the trigger chat scope.', 'Set the Public trigger chat scope to Groups or Both.')
   }
@@ -772,6 +773,22 @@ export async function executeVisualWorkflow(input, options = {}) {
           const owner = workflow.account === 'private' ? event.privateControl === true : event.isPublicOwner === true
           next = firstEdge(node, owner ? 'yes' : 'no')
           trace.push({ nodeId: node.id, type: node.type, status: 'success', message: owner ? 'YES branch selected.' : 'NO branch selected.' })
+        } else if (node.type === 'condition.isGroupAdmin') {
+          if (workflow.account !== 'public' || !isGroupJid(event.remoteJid)) throw new Error('Group admin checks require an enabled Public group trigger.')
+          const metadata = dryRun
+            ? (event.groupMetadata || { participants: [{ id: event.senderJid, admin: event.isPublicOwner ? 'admin' : null }] })
+            : await event.socket.groupMetadata(event.remoteJid)
+          const senderJid = textValue(event.senderJid || event.sender, 100)
+          const participant = (Array.isArray(metadata?.participants) ? metadata.participants : []).find(item =>
+            textValue(item?.id, 100) === senderJid ||
+            textValue(item?.phoneNumber, 100) === senderJid
+          )
+          const isAdmin = Boolean(participant && (
+            participant.admin === 'admin' || participant.admin === 'superadmin' ||
+            participant.isAdmin === true || participant.isSuperAdmin === true
+          ))
+          next = firstEdge(node, isAdmin ? 'yes' : 'no')
+          trace.push({ nodeId: node.id, type: node.type, status: dryRun ? 'simulated' : 'success', message: isAdmin ? 'YES branch selected: participant is a group admin.' : 'NO branch selected: participant is not a group admin.' })
         } else if (node.type === 'variable.set') {
           const key = textValue(node.config.key, 48)
           variables[key] = textValue(readInput(workflow, node, 'value', 'value', state))

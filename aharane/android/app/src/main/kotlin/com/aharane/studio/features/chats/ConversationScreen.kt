@@ -1082,10 +1082,41 @@ private fun MessageContent(
                 }
             }
         }
-        MessageKind.POLL -> Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Poll, null, tint = foreground, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(message.text.ifBlank { "Poll" }, color = foreground, fontSize = 14.sp)
+        MessageKind.POLL -> {
+            val lines = message.text.lineSequence().map(String::trim).filter(String::isNotBlank).toList()
+            val question = lines.firstOrNull()?.takeIf { !it.startsWith("•") } ?: "Poll"
+            val options = lines.drop(if (lines.firstOrNull() == question) 1 else 0)
+                .map { it.removePrefix("•").trim() }.filter(String::isNotBlank)
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(soft).padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Icon(Icons.Outlined.Poll, null, tint = foreground, modifier = Modifier.size(18.dp))
+                    Text("POLL", color = foreground.copy(alpha = .72f), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                }
+                Text(question, color = foreground, fontSize = appearance.messageSize.sp, fontWeight = FontWeight.SemiBold)
+                if (options.isEmpty()) {
+                    Text(message.text.ifBlank { "Poll options are not available in this saved message." }, color = foreground, fontSize = 12.sp)
+                } else {
+                    options.forEach { option ->
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(7.dp))
+                                .background(foreground.copy(alpha = .06f)).padding(horizontal = 9.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(Modifier.size(14.dp).border(1.dp, foreground.copy(alpha = .65f), CircleShape))
+                            Text(option, color = foreground, fontSize = 12.sp)
+                        }
+                    }
+                }
+                Text(
+                    "Poll voting is not supported by the connected Aharane API.",
+                    color = foreground.copy(alpha = .65f),
+                    fontSize = 10.sp
+                )
+            }
         }
         MessageKind.UNSUPPORTED -> Text(
             message.text.ifBlank { "This WhatsApp message type is not supported by the native viewer." },

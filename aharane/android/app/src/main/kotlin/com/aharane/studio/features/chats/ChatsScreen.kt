@@ -213,6 +213,143 @@ private fun ChatHeaderButton(
     }
 }
 
+private fun ChatListRow(
+    chat: ChatSummary,
+    connected: Boolean,
+    showAvatar: Boolean,
+    showPreview: Boolean,
+    showTimestamp: Boolean,
+    onClick: () -> Unit,
+    onAction: (String) -> Unit
+) {
+    var swipeOpen by rememberSaveable(chat.key.jid) { mutableStateOf(false) }
+    var dragDistance by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current
+    val offset by animateDpAsState(
+        targetValue = if (swipeOpen) (-228).dp else 0.dp,
+        label = "chat-row-swipe"
+    )
+    val rowScale = LocalStudioRowScale.current
+    val avatarInitials = chat.title.trim().split(Regex("\\s+"))
+        .filter { it.isNotEmpty() }.take(2).joinToString("") { it.take(1) }.uppercase()
+
+    Box(
+        Modifier.fillMaxWidth().heightIn(min = 66.dp * rowScale).clip(RoundedCornerShape(0.dp))
+    ) {
+        Row(
+            Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(228.dp),
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            listOf("Pin", "Mute", "Archive", "Unread").forEachIndexed { index, label ->
+                val color = when (index) {
+                    0 -> StudioPalette.Accent
+                    1 -> StudioPalette.Muted
+                    2 -> Color(0xFF52645F)
+                    else -> Color(0xFF8A6A24)
+                }
+                Box(
+                    Modifier.weight(1f).fillMaxHeight().background(color)
+                        .clickable(enabled = connected) {
+                            swipeOpen = false
+                            onAction(label.lowercase())
+                        }.padding(horizontal = 2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(label, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                }
+            }
+        }
+
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 66.dp * rowScale)
+                .offset(x = offset, y = 0.dp)
+                .background(StudioPalette.Surface)
+                .pointerInput(connected, swipeOpen) {
+                    val threshold = with(density) { 38.dp.toPx() }
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            if (dragDistance < -threshold) swipeOpen = true
+                            if (dragDistance > threshold) swipeOpen = false
+                            dragDistance = 0f
+                        },
+                        onHorizontalDrag = { change, amount ->
+                            dragDistance += amount
+                            change.consume()
+                        }
+                    )
+                }
+                .clickable {
+                    if (swipeOpen) swipeOpen = false else onClick()
+                }
+                .padding(horizontal = 13.dp, vertical = 10.dp * rowScale),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(11.dp)
+        ) {
+            if (showAvatar) {
+                Box(
+                    Modifier.size(40.dp).clip(CircleShape).background(StudioPalette.Soft),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        if (chat.isGroup) "◎" else avatarInitials.ifBlank { "?" },
+                        color = StudioPalette.Accent,
+                        fontSize = if (chat.isGroup) 21.sp else 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    chat.title,
+                    color = StudioPalette.Ink,
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (showPreview) {
+                    Text(
+                        chat.lastMessagePreview,
+                        color = StudioPalette.Muted,
+                        fontSize = 12.5.sp,
+                        lineHeight = 17.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (chat.isPinned) Text("📌", fontSize = 10.sp)
+                    if (chat.isMuted) Text("🔕", fontSize = 10.sp)
+                    if (showTimestamp) {
+                        Text(
+                            relativeTime(chat.lastMessageAtMillis),
+                            color = StudioPalette.Muted,
+                            fontSize = 10.5.sp,
+                            maxLines = 1
+                        )
+                    }
+                }
+                if (chat.unreadCount > 0) {
+                    Text(
+                        chat.unreadCount.coerceAtMost(99).toString(),
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        lineHeight = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clip(RoundedCornerShape(20.dp))
+                            .background(StudioPalette.Accent)
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
 private fun relativeTime(timestamp: Long): String {
     if (timestamp <= 0L) return ""
     val now = System.currentTimeMillis()

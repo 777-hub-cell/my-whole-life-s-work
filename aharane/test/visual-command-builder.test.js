@@ -432,7 +432,7 @@ test('group, moderation, profile and newsletter actions remain non-destructive i
   })
   assert.equal(result.ok, true, result.error)
   assert.equal(externalCalls, 0)
-  assert.equal(result.trace.filter(item => item.status === 'simulated').length, definitions.length)
+  assert.equal(result.trace.filter(item => item.status === 'simulated' && item.nodeId !== trigger.id).length, definitions.length)
 })
 
 test('group metadata output can feed a downstream message and non-owner profile updates are denied', async t => {

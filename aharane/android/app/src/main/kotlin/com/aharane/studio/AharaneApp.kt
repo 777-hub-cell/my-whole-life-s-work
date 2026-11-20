@@ -45,6 +45,7 @@ import com.aharane.studio.core.network.ServerAccountState
 import com.aharane.studio.core.network.ServerActivityEntry
 import com.aharane.studio.core.network.ServerEnvironmentValue
 import com.aharane.studio.core.network.ServerFileEntry
+import com.aharane.studio.core.network.ServerFileTree
 import com.aharane.studio.core.network.ServerOwnerSettings
 import com.aharane.studio.core.network.ServerRuntimeSnapshot
 import com.aharane.studio.core.network.ServerStorageSnapshot
@@ -209,6 +210,7 @@ fun AharaneApp(
     var activityRows by remember { mutableStateOf<List<ServerActivityEntry>>(emptyList()) }
     var storageSnapshot by remember { mutableStateOf<ServerStorageSnapshot?>(null) }
     var serverFiles by remember { mutableStateOf<List<ServerFileEntry>>(emptyList()) }
+    var fileDraft by remember { mutableStateOf<ServerFileTree?>(null) }
     val chatsByAccount = remember { mutableStateMapOf<ChatAccount, List<ChatSummary>>() }
     var activeMessages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
     var serverError by remember { mutableStateOf("") }
@@ -301,6 +303,7 @@ fun AharaneApp(
         environmentRows = repository.environment()
         activityRows = repository.activity(30)
         storageSnapshot = repository.storage()
+        fileDraft = repository.fileTree()
         serverFiles = repository.allFiles()
         chatsByAccount[ChatAccount.PRIVATE] = repository.chats(ChatAccount.PRIVATE)
         chatsByAccount[ChatAccount.PUBLIC] = repository.chats(ChatAccount.PUBLIC)
@@ -372,7 +375,10 @@ fun AharaneApp(
     fun refreshFiles() {
         if (previewMode) return
         connectionScope.launch {
-            runCatching { repository.allFiles() }
+            runCatching {
+                fileDraft = repository.fileTree()
+                repository.allFiles()
+            }
                 .onSuccess { serverFiles = it }
                 .onFailure { Toast.makeText(context, it.message ?: "Could not refresh files.", Toast.LENGTH_LONG).show() }
         }
@@ -551,6 +557,7 @@ fun AharaneApp(
                                 if (index < 0) return@CodeEditorScreen false
                                 val latestSha = repository.saveFile(path, content, editorDocuments[index].sha256)
                                 editorDocuments[index] = editorDocuments[index].copy(content = content, sha256 = latestSha)
+                                fileDraft = repository.fileTree()
                                 true
                             } catch (error: Exception) {
                                 serverError = error.message ?: "Could not save this file."
@@ -716,6 +723,29 @@ fun AharaneApp(
                         initialPath = fileDirectory,
                         onDirectoryChanged = { fileDirectory = it },
                         previewOnly = previewMode,
+                        pendingEdits = fileDraft?.pendingEdits == true,
+                        changedCount = fileDraft?.changedCount ?: 0,
+                        onApplyEdits = {
+                            connectionScope.launch {
+                                try {
+                                    repository.applyFileEdits()
+                                    Toast.makeText(context, "Source changes are being applied. Aharane is restarting.", Toast.LENGTH_LONG).show()
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Could not apply source changes.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        onDiscardEdits = {
+                            connectionScope.launch {
+                                try {
+                                    repository.discardFileEdits()
+                                    fileDraft = repository.fileTree()
+                                    Toast.makeText(context, "Saved source draft discarded.", Toast.LENGTH_SHORT).show()
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Could not discard source changes.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
                         onEditorVisibility = {
                             editorFromConfiguration = false
                             editorOpen = it

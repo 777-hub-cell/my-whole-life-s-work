@@ -46,6 +46,7 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
     { type: 'variable.set', name: 'Set variable', description: 'Set a temporary text variable for this workflow run.', ports: ports([execIn, { id: 'value', label: 'Value', type: 'string' }], [execOut]) },
     { type: 'variable.get', name: 'Get variable', description: 'Read a variable set earlier in this run.', ports: ports([], [{ id: 'value', label: 'Value', type: 'string' }]) },
     { type: 'counter.increment', name: 'Increment counter', description: 'Increase a persistent counter for this command.', ports: ports([execIn], [execOut, { id: 'value', label: 'Count', type: 'number' }]) },
+    { type: 'value.toText', name: 'Number to text', description: 'Convert a numeric output, such as a counter, into text.', ports: ports([{ id: 'value', label: 'Number', type: 'number' }], [{ id: 'value', label: 'Text', type: 'string' }]) },
   ] },
   { category: 'Flow control', nodes: [
     { type: 'flow.delay', name: 'Wait', description: 'Wait for up to 10 seconds before continuing.', ports: ports([execIn], [execOut]) },
@@ -162,6 +163,9 @@ export function validateWorkflow(input) {
     if (node.type === 'variable.set' && !textValue(config.value).trim() && !inputEdge(workflow, node.id, 'value')) {
       issue(node.id, 'error', 'A variable value is required.', 'Enter a value or connect a text output.')
     }
+    if (node.type === 'value.toText' && !inputEdge(workflow, node.id, 'value')) {
+      issue(node.id, 'error', 'The number input is not connected.', 'Connect a numeric output, such as Increment counter.')
+    }
     if (node.type === 'flow.delay') {
       const ms = Number(config.milliseconds == null ? 1000 : config.milliseconds)
       if (!Number.isInteger(ms) || ms < 0 || ms > MAX_DELAY_MS) issue(node.id, 'error', 'Wait duration is outside the supported range.', 'Choose a whole number from 0 to 10000 milliseconds.')
@@ -268,6 +272,11 @@ function resolveSource(workflow, edge, context) {
   if (sourceNode.type === 'message.sender') return context.event.sender || ''
   if (sourceNode.type === 'message.arguments') return context.event.rawArgs || ''
   if (sourceNode.type === 'variable.get') return context.variables[textValue(sourceNode.config.key, 48)] ?? ''
+  if (sourceNode.type === 'value.toText') {
+    const valueEdge = inputEdge(workflow, sourceNode.id, 'value')
+    const numeric = valueEdge ? resolveSource(workflow, valueEdge, context) : undefined
+    return numeric === undefined ? '' : String(numeric)
+  }
   return undefined
 }
 function readInput(workflow, node, socketId, configKey, context) {

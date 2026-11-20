@@ -547,31 +547,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "source") {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
-        ) {
-            item {
-                BackToMore { onPageChange("more") }
-                Spacer(Modifier.height(12.dp))
-                StudioPageTitle("Studio source", "The native Android app is built from Kotlin source files.")
-                Spacer(Modifier.height(14.dp))
-            }
-            item {
-                StudioCard(padding = PaddingValues(16.dp)) {
-                    Text(
-                        "Native source is bundled into the installed application and cannot be edited at runtime. Changes to the Android UI are made in the Aharane project source and installed through a new app build.",
-                        color = StudioPalette.Muted,
-                        fontSize = 13.sp,
-                        lineHeight = 19.sp
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    StudioTag("Managed in the project repository")
-                }
-            }
-        }
-    } else if (page == "activity") {
+    } else if (page == "activity") {    } else if (page == "activity") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -818,18 +794,6 @@ fun MoreScreen(
                         icon = null,
                         trailing = "›",
                         onClick = { dialog = "about" }
-                    )
-                }
-            }
-            item { StudioSectionHeading("Development") }
-            item {
-                StudioCard {
-                    StudioRow(
-                        "Studio source",
-                        "Edit the native Android source in the Aharane project",
-                        icon = null,
-                        trailing = "›",
-                        onClick = { onPageChange("source") }
                     )
                 }
             }

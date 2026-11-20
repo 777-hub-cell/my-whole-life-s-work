@@ -608,16 +608,22 @@ fun AharaneApp(
             .onFailure { failures += "Files: ${it.message ?: "unavailable"}" }
         runCatching { repository.chats(ChatAccount.PRIVATE) }
             .onSuccess {
-                chatsByAccount[ChatAccount.PRIVATE] = it
-                runCatching { localChatRepository?.saveConversations(it) }
-                    .onFailure { error -> localChatStorageError = error.message ?: "Private chats could not be cached." }
+                runCatching {
+                    chatsByAccount[ChatAccount.PRIVATE] = localChatRepository?.saveConversations(it) ?: it
+                }.onFailure { error ->
+                    chatsByAccount[ChatAccount.PRIVATE] = it
+                    localChatStorageError = error.message ?: "Private chats could not be cached."
+                }
             }
             .onFailure { failures += "Private inbox: ${it.message ?: "unavailable"}" }
         runCatching { repository.chats(ChatAccount.PUBLIC) }
             .onSuccess {
-                chatsByAccount[ChatAccount.PUBLIC] = it
-                runCatching { localChatRepository?.saveConversations(it) }
-                    .onFailure { error -> localChatStorageError = error.message ?: "Public chats could not be cached." }
+                runCatching {
+                    chatsByAccount[ChatAccount.PUBLIC] = localChatRepository?.saveConversations(it) ?: it
+                }.onFailure { error ->
+                    chatsByAccount[ChatAccount.PUBLIC] = it
+                    localChatStorageError = error.message ?: "Public chats could not be cached."
+                }
             }
             .onFailure { failures += "Public inbox: ${it.message ?: "unavailable"}" }
         runCatching { repository.updatePackages() }

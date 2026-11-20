@@ -45,7 +45,7 @@ val LocalStudioCornerScale = staticCompositionLocalOf { 1f }
 val LocalStudioRowScale = staticCompositionLocalOf { 1f }
 
 @Composable
-fun StudioHeader(onStatusClick: () -> Unit, online: Boolean = false) {
+fun StudioHeader() {
     Row(
         modifier = Modifier.fillMaxWidth().background(StudioPalette.Background)
             .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 18.dp)
@@ -79,15 +79,6 @@ fun StudioHeader(onStatusClick: () -> Unit, online: Boolean = false) {
             )
         }
         Spacer(Modifier.weight(1f))
-        Box(
-            modifier = Modifier.size(30.dp).clip(CircleShape)
-                .background(StudioPalette.Surface)
-                .border(1.dp, StudioPalette.Line, CircleShape)
-                .clickable(onClick = onStatusClick),
-            contentAlignment = Alignment.Center
-        ) {
-            StudioStatusDot(online = online, size = 8)
-        }
     }
 }
 

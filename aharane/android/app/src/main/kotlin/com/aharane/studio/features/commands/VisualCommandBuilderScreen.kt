@@ -879,6 +879,7 @@ private fun nodeSummary(node: VisualNode): String = when (node.type) {
     "condition.equals" -> node.config["left"].orEmpty() + " = " + node.config["right"].orEmpty()
     "condition.contains" -> "Contains " + node.config["search"].orEmpty()
     "condition.isOwner" -> "Account owner check"
+    "condition.isGroupAdmin" -> "Group administrator check"
     "variable.set" -> "Set " + node.config["key"].orEmpty()
     "variable.get" -> "Get " + node.config["key"].orEmpty()
     "counter.increment" -> "Counter " + node.config["key"].orEmpty()

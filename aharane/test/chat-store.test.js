@@ -365,6 +365,17 @@ test('contact cards retain vCards, locations retain coordinates and polls retain
         },
       },
       {
+        key: { id: 'voice-note-1', remoteJid: jid, fromMe: false },
+        message: {
+          audioMessage: {
+            mimetype: 'audio/ogg; codecs=opus',
+            ptt: true,
+            seconds: 4,
+            fileLength: 2048,
+          },
+        },
+      },
+      {
         key: { id: 'poll-1', remoteJid: jid, fromMe: false },
         message: {
           pollCreationMessage: {
@@ -384,6 +395,7 @@ test('contact cards retain vCards, locations retain coordinates and polls retain
     const contactArray = rows.find(row => row.id === 'contact-array-1')
     const location = rows.find(row => row.id === 'location-1')
     const locationWithoutCoordinates = rows.find(row => row.id === 'location-no-coordinates')
+    const voiceNote = rows.find(row => row.id === 'voice-note-1')
     const poll = rows.find(row => row.id === 'poll-1')
 
     assert.equal(contact.type, 'contact')
@@ -402,6 +414,11 @@ test('contact cards retain vCards, locations retain coordinates and polls retain
 
     assert.equal(locationWithoutCoordinates.type, 'location')
     assert.doesNotMatch(locationWithoutCoordinates.text, /Coordinates:/)
+
+    assert.equal(voiceNote.type, 'audio')
+    assert.equal(voiceNote.ptt, true)
+    assert.equal(voiceNote.duration, 4)
+    assert.equal(voiceNote.mimeType, 'audio/ogg; codecs=opus')
 
     assert.equal(poll.type, 'poll')
     assert.match(poll.text, /Where should we meet\?/)

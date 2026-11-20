@@ -655,72 +655,108 @@ export async function executeVisualWorkflow(input, options = {}) {
           }
         } else if (node.type === 'group.getInfo') {
           if (!isGroupJid(event.remoteJid)) throw new Error('Group information requires a group command trigger.')
-          const metadata = await event.socket.groupMetadata(event.remoteJid)
+          const metadata = dryRun
+            ? { subject: 'Preview group', participants: [{ id: 'one' }, { id: 'two' }] }
+            : await event.socket.groupMetadata(event.remoteJid)
           const participantCount = Array.isArray(metadata?.participants) ? metadata.participants.length : Number(metadata?.size || 0)
           outputs.set(node.id, { subject: textValue(metadata?.subject, 100), participantCount })
-          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'Loaded group information.' })
+          trace.push({ nodeId: node.id, type: node.type, status: dryRun ? 'simulated' : 'success', message: dryRun ? 'Would read group information.' : 'Loaded group information.' })
         } else if (node.type === 'group.updateSubject') {
           if (!isGroupJid(event.remoteJid)) throw new Error('Changing a group name requires a group chat.')
           const subject = textValue(node.config.subject, 100).trim()
-          await event.socket.groupUpdateSubject(event.remoteJid, subject)
-          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the new group name.' })
+          if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would change group name to: ' + subject })
+          else {
+            await event.socket.groupUpdateSubject(event.remoteJid, subject)
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the new group name.' })
+          }
         } else if (node.type === 'group.updateDescription') {
           if (!isGroupJid(event.remoteJid)) throw new Error('Changing a group description requires a group chat.')
           const description = textValue(node.config.description, 512).trim()
-          await event.socket.groupUpdateDescription(event.remoteJid, description)
-          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the new group description.' })
+          if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would change the group description.' })
+          else {
+            await event.socket.groupUpdateDescription(event.remoteJid, description)
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the new group description.' })
+          }
         } else if (node.type === 'group.participantsUpdate') {
           if (!isGroupJid(event.remoteJid)) throw new Error('Participant management requires a group chat.')
           const action = textValue(node.config.action, 16)
           const phones = textValue(node.config.participants, 1000).split(/[\n,]+/).map(value => value.replace(/[\s()-]/g, '').replace(/^\+/, '')).filter(Boolean)
           const participants = phones.map(phone => phone + '@s.whatsapp.net')
-          const results = await event.socket.groupParticipantsUpdate(event.remoteJid, participants, action)
-          const rejected = Array.isArray(results) ? results.filter(item => String(item?.status || '') !== '200') : []
-          if (rejected.length || !Array.isArray(results) || results.length !== participants.length) {
-            throw new Error('WhatsApp did not confirm every participant action: ' + JSON.stringify(rejected.map(item => ({ jid: item.jid, status: item.status })).slice(0, 10)))
+          if (dryRun) {
+            trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would ' + action + ' ' + participants.length + ' participant(s).' })
+          } else {
+            const results = await event.socket.groupParticipantsUpdate(event.remoteJid, participants, action)
+            const rejected = Array.isArray(results) ? results.filter(item => String(item?.status || '') !== '200') : []
+            if (rejected.length || !Array.isArray(results) || results.length !== participants.length) {
+              throw new Error('WhatsApp did not confirm every participant action: ' + JSON.stringify(rejected.map(item => ({ jid: item.jid, status: item.status })).slice(0, 10)))
+            }
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp confirmed ' + results.length + ' participant update(s).' })
           }
-          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp confirmed ' + results.length + ' participant update(s).' })
         } else if (node.type === 'group.settingUpdate') {
           if (!isGroupJid(event.remoteJid)) throw new Error('Changing group settings requires a group chat.')
           const setting = textValue(node.config.setting, 24)
-          await event.socket.groupSettingUpdate(event.remoteJid, setting)
-          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the group setting.' })
+          if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would set group option: ' + setting })
+          else {
+            await event.socket.groupSettingUpdate(event.remoteJid, setting)
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the group setting.' })
+          }
         } else if (node.type === 'moderation.blockContact' || node.type === 'moderation.unblockContact') {
           const phone = textValue(node.config.phone, 20).replace(/[\s()-]/g, '').replace(/^\+/, '')
           if (!/^[0-9]{7,15}$/.test(phone)) throw new Error('The contact phone number is invalid.')
-          await event.socket.updateBlockStatus(phone + '@s.whatsapp.net', node.type === 'moderation.blockContact' ? 'block' : 'unblock')
-          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: node.type === 'moderation.blockContact' ? 'Contact blocked.' : 'Contact unblocked.' })
+          const action = node.type === 'moderation.blockContact' ? 'block' : 'unblock'
+          if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would ' + action + ' the contact.' })
+          else {
+            await event.socket.updateBlockStatus(phone + '@s.whatsapp.net', action)
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: action === 'block' ? 'Contact blocked.' : 'Contact unblocked.' })
+          }
         } else if (node.type === 'profile.updateName') {
           const name = textValue(node.config.name, 80).trim()
-          await event.socket.updateProfileName(name)
-          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the profile name.' })
+          if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would update the profile name.' })
+          else {
+            await event.socket.updateProfileName(name)
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the profile name.' })
+          }
         } else if (node.type === 'profile.updateStatus') {
           const status = textValue(node.config.status, 139).trim()
-          await event.socket.updateProfileStatus(status)
-          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the profile status.' })
+          if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would update the profile status.' })
+          else {
+            await event.socket.updateProfileStatus(status)
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the profile status.' })
+          }
         } else if (node.type === 'newsletter.create') {
           const name = textValue(node.config.name, 100).trim()
           const description = textValue(node.config.description, 512).trim()
-          const created = await event.socket.newsletterCreate(name, description)
-          const newsletterJid = textValue(created?.id, 80)
-          if (!/^\d{5,25}@newsletter$/.test(newsletterJid)) throw new Error('WhatsApp did not return a valid newsletter ID.')
-          outputs.set(node.id, { newsletterJid })
-          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'Newsletter created: ' + newsletterJid })
+          if (dryRun) {
+            outputs.set(node.id, { newsletterJid: '12345678901@newsletter' })
+            trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would create the newsletter.' })
+          } else {
+            const created = await event.socket.newsletterCreate(name, description)
+            const newsletterJid = textValue(created?.id, 80)
+            if (!/^\d{5,25}@newsletter$/.test(newsletterJid)) throw new Error('WhatsApp did not return a valid newsletter ID.')
+            outputs.set(node.id, { newsletterJid })
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'Newsletter created: ' + newsletterJid })
+          }
         } else if (node.type === 'newsletter.follow' || node.type === 'newsletter.unfollow') {
           const newsletterJid = textValue(node.config.newsletterJid, 80)
           if (!/^\d{5,25}@newsletter$/.test(newsletterJid)) throw new Error('The newsletter ID is invalid.')
-          await (node.type === 'newsletter.follow'
-            ? event.socket.newsletterFollow(newsletterJid)
-            : event.socket.newsletterUnfollow(newsletterJid))
-          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: node.type === 'newsletter.follow' ? 'Newsletter followed.' : 'Newsletter unfollowed.' })
+          if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: node.type === 'newsletter.follow' ? 'Would follow the newsletter.' : 'Would unfollow the newsletter.' })
+          else {
+            await (node.type === 'newsletter.follow'
+              ? event.socket.newsletterFollow(newsletterJid)
+              : event.socket.newsletterUnfollow(newsletterJid))
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: node.type === 'newsletter.follow' ? 'Newsletter followed.' : 'Newsletter unfollowed.' })
+          }
         } else if (node.type === 'newsletter.publishText') {
           const newsletterJid = textValue(node.config.newsletterJid, 80)
           const text = textValue(node.config.text, 2000).trim()
           if (!/^\d{5,25}@newsletter$/.test(newsletterJid) || !text) throw new Error('Newsletter ID or post text is invalid.')
-          const sent = await event.socket.sendMessage(newsletterJid, { text })
-          if (!sent?.key?.id) throw new Error('WhatsApp did not return the newsletter post.')
-          outputs.set(node.id, { sent })
-          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the newsletter post.' })
+          if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would publish text to the newsletter.' })
+          else {
+            const sent = await event.socket.sendMessage(newsletterJid, { text })
+            if (!sent?.key?.id) throw new Error('WhatsApp did not return the newsletter post.')
+            outputs.set(node.id, { sent })
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the newsletter post.' })
+          }
         } else if (node.type === 'condition.equals') {
           const left = textValue(readInput(workflow, node, 'left', 'left', state))
           const right = textValue(readInput(workflow, node, 'right', 'right', state))

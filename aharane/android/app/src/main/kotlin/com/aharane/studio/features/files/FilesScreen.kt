@@ -16,6 +16,7 @@ import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -31,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aharane.studio.core.design.*
+import com.aharane.studio.core.network.AharaneUpdatePackage
 
 data class StudioFileEntry(
     val name: String,
@@ -59,7 +61,17 @@ fun FilesScreen(
     onUpload: () -> Unit = {},
     onExportSource: () -> Unit = {},
     onEntryAction: (StudioFileEntry, String) -> Unit = { _, _ -> },
-    onBulkAction: (List<StudioFileEntry>, String) -> Unit = { _, _ -> }
+    onBulkAction: (List<StudioFileEntry>, String) -> Unit = { _, _ -> },
+    updatePackages: List<AharaneUpdatePackage> = emptyList(),
+    updateStatusLabel: String = "",
+    packageProgressLabel: String = "",
+    packageProgress: Float = 0f,
+    packageError: String = "",
+    activePackageId: String? = null,
+    onRefreshPackages: () -> Unit = {},
+    onUploadPackage: () -> Unit = {},
+    onDeployPackage: (AharaneUpdatePackage) -> Unit = {},
+    onRemovePackage: (AharaneUpdatePackage) -> Unit = {}
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var currentPath by rememberSaveable { mutableStateOf(initialPath) }
@@ -67,6 +79,8 @@ fun FilesScreen(
     var menuPath by remember { mutableStateOf<String?>(null) }
     val selectedPaths = remember { mutableStateListOf<String>() }
     var packagesOpen by rememberSaveable { mutableStateOf(false) }
+    var pendingPackageDeployment by remember { mutableStateOf<AharaneUpdatePackage?>(null) }
+    var pendingPackageRemoval by remember { mutableStateOf<AharaneUpdatePackage?>(null) }
     var draftConfirmation by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
 
@@ -319,7 +333,7 @@ fun FilesScreen(
         }
         item {
             Row(
-                Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 10.dp),
+                Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 7.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -332,27 +346,160 @@ fun FilesScreen(
                     letterSpacing = (-0.15).sp
                 )
                 Spacer(Modifier.weight(1f))
-                StudioActionButton("View all", compact = true, onClick = { packagesOpen = true })
+                StudioActionButton("View all", compact = true, onClick = {
+                    packagesOpen = true
+                    onRefreshPackages()
+                })
             }
             Text(
-                "0 saved ZIP package(s)",
+                "${updatePackages.size} saved ZIP package(s)",
                 color = StudioPalette.Muted,
                 fontSize = 12.5.sp,
-                modifier = Modifier.padding(top = 1.dp, bottom = 12.dp)
+                modifier = Modifier.padding(bottom = 8.dp)
             )
+            if (updatePackages.isNotEmpty()) {
+                updatePackages.take(2).forEach { pkg ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text(pkg.filename, color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("v${pkg.version} · ${pkg.sizeLabel} · ${pkg.fileCount} files", color = StudioPalette.Muted, fontSize = 11.sp)
+                        }
+                        StudioActionButton("Update bot", compact = true, enabled = activePackageId == null, onClick = { pendingPackageDeployment = pkg })
+                    }
+                }
+            }
+            if (updateStatusLabel.isNotBlank()) {
+                Text(updateStatusLabel, color = StudioPalette.Muted, fontSize = 11.5.sp, modifier = Modifier.padding(top = 3.dp, bottom = 10.dp))
+            }
         }
     }
     if (packagesOpen) {
         androidx.compose.ui.window.Dialog(onDismissRequest = { packagesOpen = false }) {
             Column(
+                Modifier.fillMaxWidth().heightIn(max = 650.dp).clip(RoundedCornerShape(18.dp))
+                    .background(StudioPalette.Surface).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                Text("Update packages", color = StudioPalette.Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    if (previewOnly) "Demo package library · no server changes are made in Preview mode."
+                    else "Saved Aharane ZIP updates. Validation is required before a package can be deployed.",
+                    color = StudioPalette.Muted, fontSize = 12.sp, lineHeight = 17.sp
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    StudioActionButton("Upload ZIP", compact = true, primary = true, enabled = connected || previewOnly, onClick = onUploadPackage)
+                    StudioActionButton("Refresh", compact = true, enabled = connected || previewOnly, onClick = onRefreshPackages)
+                }
+                if (packageProgressLabel.isNotBlank()) {
+                    Text(packageProgressLabel, color = if (packageError.isBlank()) StudioPalette.Muted else StudioPalette.Bad, fontSize = 12.sp)
+                    if (packageProgress in 0f..1f && packageProgressLabel.contains("Uploading", true)) {
+                        LinearProgressIndicator(progress = packageProgress, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+                if (packageError.isNotBlank()) {
+                    Text(packageError, color = StudioPalette.Bad, fontSize = 12.sp, lineHeight = 17.sp)
+                }
+                if (updateStatusLabel.isNotBlank()) {
+                    Text(updateStatusLabel, color = StudioPalette.Muted, fontSize = 11.5.sp, lineHeight = 16.sp)
+                }
+                if (updatePackages.isEmpty()) {
+                    StudioEmpty(
+                        "No saved ZIP packages.",
+                        if (connected) "Upload a ZIP containing aharane-update.json. The server will verify the manifest and archive before listing it here."
+                        else "Connect to the Aharane server to load the saved package library."
+                    )
+                } else {
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        Modifier.fillMaxWidth().heightIn(max = 390.dp),
+                        verticalArrangement = Arrangement.spacedBy(7.dp)
+                    ) {
+                        items(updatePackages, key = { it.updateId }) { pkg ->
+                            StudioCard(padding = PaddingValues(11.dp)) {
+                                Text(pkg.filename, color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    "Version ${pkg.version} · ${pkg.sizeLabel} · ${pkg.fileCount} files",
+                                    color = StudioPalette.Muted,
+                                    fontSize = 11.5.sp,
+                                    modifier = Modifier.padding(top = 3.dp)
+                                )
+                                Text(
+                                    "Validated · ${pkg.validatedAt ?: pkg.createdAt}",
+                                    color = StudioPalette.Accent,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
+                                )
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                    StudioActionButton(
+                                        if (activePackageId == pkg.updateId) "Deploying…" else "Update bot",
+                                        compact = true,
+                                        primary = true,
+                                        enabled = connected && activePackageId == null,
+                                        onClick = { pendingPackageDeployment = pkg }
+                                    )
+                                    StudioActionButton(
+                                        "Remove",
+                                        compact = true,
+                                        destructive = true,
+                                        enabled = connected && activePackageId == null,
+                                        onClick = { pendingPackageRemoval = pkg }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    StudioActionButton("Close", compact = true, onClick = { packagesOpen = false })
+                }
+            }
+        }
+    }
+
+    if (pendingPackageDeployment != null) {
+        val selectedPackage = pendingPackageDeployment!!
+        androidx.compose.ui.window.Dialog(onDismissRequest = { pendingPackageDeployment = null }) {
+            Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
                     .background(StudioPalette.Surface).padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("Update packages", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                StudioEmpty("No ZIP update packages saved.", "Upload and validate an Aharane update ZIP to make it available here.")
+                Text("Update Aharane?", color = StudioPalette.Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    "Deploy ${selectedPackage.filename} (version ${selectedPackage.version})? The server will prepare a separate release, run its checks, switch releases and restore the previous release if the health check fails.",
+                    color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 18.sp
+                )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    StudioActionButton("Close", compact = true, primary = true, onClick = { packagesOpen = false })
+                    StudioActionButton("Cancel", compact = true, onClick = { pendingPackageDeployment = null })
+                    Spacer(Modifier.width(7.dp))
+                    StudioActionButton("Confirm update", compact = true, primary = true, enabled = connected || previewOnly, onClick = {
+                        pendingPackageDeployment = null
+                        onDeployPackage(selectedPackage)
+                    })
+                }
+            }
+        }
+    }
+
+    if (pendingPackageRemoval != null) {
+        val selectedPackage = pendingPackageRemoval!!
+        androidx.compose.ui.window.Dialog(onDismissRequest = { pendingPackageRemoval = null }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(StudioPalette.Surface).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Remove update package?", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text("Remove ${selectedPackage.filename} from the saved package library? This does not change the running bot.", color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 18.sp)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    StudioActionButton("Cancel", compact = true, onClick = { pendingPackageRemoval = null })
+                    Spacer(Modifier.width(7.dp))
+                    StudioActionButton("Remove", compact = true, destructive = true, enabled = connected || previewOnly, onClick = {
+                        pendingPackageRemoval = null
+                        onRemovePackage(selectedPackage)
+                    })
                 }
             }
         }
@@ -472,7 +619,16 @@ private fun FileEntryRow(
             StudioFloatingMenu(
                 expanded = menuExpanded,
                 onDismiss = onMenuDismiss,
-                actions = fileMenuActionSpecs().map { action ->
+                actions = (
+                    if (entry.path.startsWith("Aharane update packages/") && entry.name.endsWith(".zip", true)) {
+                        listOf(
+                            FileMenuActionSpec("update_bot", "Update bot"),
+                            FileMenuActionSpec("remove_package", "Remove", destructive = true)
+                        )
+                    } else {
+                        fileMenuActionSpecs()
+                    }
+                ).map { action ->
                     StudioMenuAction(
                         title = action.label,
                         destructive = action.destructive

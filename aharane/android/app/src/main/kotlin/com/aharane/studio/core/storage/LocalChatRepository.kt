@@ -56,7 +56,8 @@ class LocalChatRepository(context: Context) {
             earliestIncoming == null -> old?.oldestSyncedMessageId.orEmpty()
             incomingOldest < oldOldest || oldOldest == 0L -> earliestIncoming.messageId
             incomingOldest > oldOldest -> old?.oldestSyncedMessageId.orEmpty()
-            else -> minOf(old?.oldestSyncedMessageId.orEmpty(), earliestIncoming.messageId)
+            old?.oldestSyncedMessageId.isNullOrBlank() -> earliestIncoming.messageId
+            else -> minOf(old.oldestSyncedMessageId, earliestIncoming.messageId)
         }
         dao.putConversation(conversation.toRow().copy(
             lastSyncAtMillis = System.currentTimeMillis(),
@@ -111,7 +112,7 @@ class LocalChatRepository(context: Context) {
         val incomingOldest = earliest?.timestampMillis ?: 0L
         val oldOldest = current.oldestSyncedTimestampMillis
         val takeIncomingCursor = earliest != null && (oldOldest <= 0L || incomingOldest < oldOldest ||
-            (incomingOldest == oldOldest && earliest.messageId < current.oldestSyncedMessageId))
+            (incomingOldest == oldOldest && (current.oldestSyncedMessageId.isBlank() || earliest.messageId < current.oldestSyncedMessageId)))
         val oldest = if (oldOldest <= 0L || incomingOldest <= 0L) maxOf(oldOldest, incomingOldest)
             else minOf(oldOldest, incomingOldest)
         dao.putConversation(current.copy(

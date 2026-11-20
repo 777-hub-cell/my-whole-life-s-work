@@ -1358,6 +1358,10 @@ fun AharaneApp(
                         else openSourceDocument("src/index.js")
                     },
                     onSave = { profile, values ->
+                        if (previewMode || !connected) {
+                            Toast.makeText(context, "Preview mode cannot save to a server.", Toast.LENGTH_SHORT).show()
+                            false
+                        } else {
                         val updatedOwners = if (profile == "Private") {
                             owners.copy(privateOwnerNumber = values["PRIVATE_OWNER_NUMBER"] ?: owners.privateOwnerNumber)
                         } else {
@@ -1372,6 +1376,7 @@ fun AharaneApp(
                         owners = repository.ownerSettings()
                         environmentRows = repository.environment()
                         true
+                        }
                     }
                 )
                 else -> when (currentDestination) {
@@ -1553,11 +1558,16 @@ fun AharaneApp(
                         values = environmentValues,
                         connected = connected,
                         onSave = { values ->
+                            if (previewMode || !connected) {
+                                Toast.makeText(context, "Preview mode cannot save environment values to a server.", Toast.LENGTH_SHORT).show()
+                                false
+                            } else {
                             repository.saveEnvironment(values.map {
                                 ServerEnvironmentValue(it.key, it.value, it.readOnly, it.secret, it.valueType)
                             })
                             environmentRows = repository.environment()
                             true
+                            }
                         },
                         previewMode = previewMode
                     )
@@ -1608,24 +1618,31 @@ fun AharaneApp(
                             .map { (folder, entries) -> "${folder} · ${formatBytes(entries.sumOf { it.sizeBytes ?: 0L })}" }
                             .sortedByDescending { it.substringAfter(" · ") },
                         onAccountAction = { accountId ->
-                            connectionScope.launch {
-                                val target = ChatAccount.fromApiValue(accountId) ?: return@launch
-                                try {
-                                    val state = if (target == ChatAccount.PRIVATE) runtime?.privateAccount else runtime?.publicAccount
-                                    if (state?.registered == true) {
-                                        accountControlTarget = target
-                                    } else {
-                                        pairingAccount = target
-                                        pairingCode = repository.pairCode(target)
+                            val target = ChatAccount.fromApiValue(accountId)
+                            if (target != null && previewMode) {
+                                pairingAccount = target
+                                pairingCode = ""
+                            } else if (target != null && connected) {
+                                connectionScope.launch {
+                                    try {
+                                        val state = if (target == ChatAccount.PRIVATE) runtime?.privateAccount else runtime?.publicAccount
+                                        if (state?.registered == true) {
+                                            accountControlTarget = target
+                                        } else {
+                                            pairingAccount = target
+                                            pairingCode = repository.pairCode(target)
+                                        }
+                                    } catch (error: Exception) {
+                                        pairingAccount = null
+                                        Toast.makeText(context, error.message ?: "Account action failed.", Toast.LENGTH_LONG).show()
                                     }
-                                } catch (error: Exception) {
-                                    pairingAccount = null
-                                    Toast.makeText(context, error.message ?: "Account action failed.", Toast.LENGTH_LONG).show()
                                 }
                             }
                         },
                         onSaveOwnerSettings = { privateOwner, publicOwner, publicBot, allowed ->
-                            connectionScope.launch {
+                            if (previewMode || !connected) {
+                                Toast.makeText(context, "Preview mode cannot save owner settings to a server.", Toast.LENGTH_SHORT).show()
+                            } else connectionScope.launch {
                                 try {
                                     val updated = ServerOwnerSettings(
                                         privateOwnerNumber = privateOwner,
@@ -1642,13 +1659,13 @@ fun AharaneApp(
                             }
                         },
                         onClearActivity = {
-                            connectionScope.launch {
+                            if (!previewMode && connected) connectionScope.launch {
                                 runCatching { repository.clearActivity(); activityRows = repository.activity(30) }
                                     .onFailure { Toast.makeText(context, it.message ?: "Could not clear activity.", Toast.LENGTH_LONG).show() }
                             }
                         },
                         onRefreshActivity = {
-                            connectionScope.launch {
+                            if (!previewMode && connected) connectionScope.launch {
                                 runCatching { activityRows = repository.activity(60) }
                                     .onFailure { Toast.makeText(context, it.message ?: "Could not refresh activity.", Toast.LENGTH_LONG).show() }
                             }
@@ -1670,7 +1687,9 @@ fun AharaneApp(
                                 .onFailure { Toast.makeText(context, it.message ?: "Could not export activity.", Toast.LENGTH_LONG).show() }
                         },
                         onSignOut = {
-                            connectionScope.launch {
+                            if (previewMode) {
+                                Toast.makeText(context, "Preview mode does not sign out of a server.", Toast.LENGTH_SHORT).show()
+                            } else connectionScope.launch {
                                 runCatching { connectionManager.logout() }
                                     .onFailure { Toast.makeText(context, it.message ?: "Could not sign out.", Toast.LENGTH_LONG).show() }
                                 AharaneNotificationScheduler.cancel(context)
@@ -1680,7 +1699,7 @@ fun AharaneApp(
                             }
                         },
                         onChangePassword = { current, new ->
-                            connectionScope.launch {
+                            if (!previewMode && connected) connectionScope.launch {
                                 runCatching { repository.changePassword(current, new) }
                                     .onSuccess { Toast.makeText(context, "Studio password changed.", Toast.LENGTH_SHORT).show() }
                                     .onFailure { Toast.makeText(context, it.message ?: "Password could not be changed.", Toast.LENGTH_LONG).show() }

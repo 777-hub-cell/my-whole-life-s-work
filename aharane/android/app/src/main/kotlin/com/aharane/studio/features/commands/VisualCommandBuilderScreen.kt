@@ -6,7 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -50,6 +52,7 @@ fun VisualCommandBuilderScreen(
     onBack: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val workspaceScroll = rememberScrollState()
     var account by remember { mutableStateOf("private") }
     var workflow by remember { mutableStateOf(VisualWorkflow.draft()) }
     var library by remember { mutableStateOf<List<VisualNodeCategory>>(emptyList()) }
@@ -159,6 +162,7 @@ fun VisualCommandBuilderScreen(
     }
 
     suspend fun saveDraft(): Boolean {
+        val wasEnabled = workflow.enabled
         if (!connected) {
             notice = "Connect to your Aharane server before saving."
             return false
@@ -176,7 +180,19 @@ fun VisualCommandBuilderScreen(
             saved = true
             dirty = false
             savedWorkflows = (savedWorkflows.filterNot { it.id == workflow.id } + workflow)
-            notice = if (validation.valid) "Draft saved on your Aharane server." else "Draft saved. Fix the errors before activating it."
+            if (wasEnabled && validation.valid) {
+                val activeResponse = repository.updateVisualCommand(workflow.id, workflow.copy(enabled = true).toJson())
+                val activeRow = activeResponse.optJSONObject("workflow") ?: row
+                workflow = VisualWorkflow.fromJson(activeRow)
+                validation = VisualWorkflowValidation.fromJson(activeResponse.optJSONObject("validation"))
+                savedWorkflows = savedWorkflows.filterNot { it.id == workflow.id } + workflow
+            }
+            notice = when {
+                wasEnabled && workflow.enabled -> "Changes saved; command remains active."
+                wasEnabled -> "Changes saved as a draft because validation found errors."
+                validation.valid -> "Draft saved on your Aharane server."
+                else -> "Draft saved. Fix the errors before activating it."
+            }
             true
         } catch (error: Exception) {
             notice = error.message ?: "The workflow could not be saved."
@@ -398,11 +414,34 @@ fun VisualCommandBuilderScreen(
             StudioActionButton(if (testing) "Testing…" else "Test safely", compact = true, enabled = connected && !testing && !saving, onClick = {
                 scope.launch { safeTest() }
             })
-            StudioActionButton("Activate", compact = true, primary = true, enabled = connected && !saving && !testing && !workflow.enabled, onClick = {
-                scope.launch { saveAndActivate() }
-            })
+            StudioActionButton(
+                if (workflow.enabled) "Deactivate" else "Activate",
+                compact = true,
+                primary = !workflow.enabled,
+                enabled = connected && !saving && !testing,
+                onClick = {
+                    scope.launch {
+                        if (workflow.enabled) {
+                            saving = true
+                            try {
+                                val response = repository.updateVisualCommand(workflow.id, workflow.copy(enabled = false).toJson())
+                                val row = response.optJSONObject("workflow") ?: workflow.copy(enabled = false).toJson()
+                                workflow = VisualWorkflow.fromJson(row)
+                                savedWorkflows = savedWorkflows.filterNot { it.id == workflow.id } + workflow
+                                notice = "Command deactivated."
+                            } catch (error: Exception) {
+                                notice = error.message ?: "Command could not be deactivated."
+                            } finally { saving = false }
+                        } else saveAndActivate()
+                    }
+                }
+            )
             StudioActionButton("Undo", compact = true, enabled = undo.isNotEmpty(), onClick = { undoChange() })
             StudioActionButton("Redo", compact = true, enabled = redo.isNotEmpty(), onClick = { redoChange() })
+            StudioActionButton("Fit", compact = true, onClick = {
+                zoom = 0.78f
+                scope.launch { workspaceScroll.animateScrollTo(0) }
+            })
             StudioActionButton("−", compact = true, onClick = { zoom = (zoom - 0.1f).coerceIn(0.5f, 1.8f) })
             StudioActionButton("+", compact = true, onClick = { zoom = (zoom + 0.1f).coerceIn(0.5f, 1.8f) })
             StudioActionButton("Delete", compact = true, destructive = true, enabled = saved && connected, onClick = { showDelete = true })
@@ -429,12 +468,26 @@ fun VisualCommandBuilderScreen(
                 Spacer(Modifier.weight(1f))
                 Text(workflow.nodes.size.toString() + " nodes · " + workflow.edges.size + " wires", color = StudioPalette.Muted, fontSize = 9.sp)
             }
-            val scroll = rememberScrollState()
             Box(Modifier.fillMaxSize().clip(RoundedCornerShape(9.dp)).background(Color(0xFFF2F5F2))) {
                 Box(
-                    Modifier.fillMaxSize().horizontalScroll(scroll).pointerInput(Unit) {
-                        detectTransformGestures { _, _, zoomChange, _ ->
-                            zoom = (zoom * zoomChange).coerceIn(0.5f, 1.8f)
+                    Modifier.fillMaxSize().horizontalScroll(workspaceScroll).pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+                            var lastDistance = 0f
+                            do {
+                                val event = awaitPointerEvent(PointerEventPass.Main)
+                                val pressed = event.changes.filter { it.pressed }
+                                if (pressed.size >= 2) {
+                                    val distance = (pressed[0].position - pressed[1].position).getDistance()
+                                    if (lastDistance > 0f && distance > 0f) {
+                                        zoom = (zoom * (distance / lastDistance)).coerceIn(0.5f, 1.8f)
+                                    }
+                                    lastDistance = distance
+                                    event.changes.forEach { if (it.pressed) it.consume() }
+                                } else {
+                                    lastDistance = 0f
+                                }
+                            } while (event.changes.any { it.pressed })
                         }
                     }
                 ) {
@@ -485,6 +538,7 @@ fun VisualCommandBuilderScreen(
                                 selected = selectedNodeId == node.id,
                                 error = nodeErrorMap[node.id].orEmpty().firstOrNull()?.message,
                                 onSelect = { selectedNodeId = node.id; configNodeId = node.id },
+                                onDragStart = { snapshot() },
                                 onMove = { delta -> moveNode(node.id, delta) },
                                 onSocket = { socket, output -> tapSocket(node, socket, output) }
                             )
@@ -699,6 +753,7 @@ private fun NodeCard(
     selected: Boolean,
     error: String?,
     onSelect: () -> Unit,
+    onDragStart: () -> Unit,
     onMove: (Offset) -> Unit,
     onSocket: (VisualSocket, Boolean) -> Unit
 ) {
@@ -712,7 +767,7 @@ private fun NodeCard(
             .clip(RoundedCornerShape(8.dp)).background(Color.White)
             .border(if (selected || error != null) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(8.dp))
             .pointerInput(node.id) {
-                detectDragGestures { change, amount ->
+                detectDragGestures(onDragStart = { onDragStart() }) { change, amount ->
                     change.consume()
                     onMove(Offset(amount.x / density, amount.y / density))
                 }

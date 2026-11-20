@@ -149,7 +149,9 @@ fun VisualCommandBuilderScreen(
 
     fun useSaved(row: JSONObject) {
         val item = VisualWorkflow.fromJson(row)
-        workflow = item
+        val commandName = item.nodes.firstOrNull { it.type == "trigger.command" }
+            ?.config?.get("command")?.trim()
+        workflow = if (!commandName.isNullOrBlank()) item.copy(name = commandName) else item
         validation = VisualWorkflowValidation.fromJson(row.optJSONObject("validation"))
         loadedId = item.id
         saved = true

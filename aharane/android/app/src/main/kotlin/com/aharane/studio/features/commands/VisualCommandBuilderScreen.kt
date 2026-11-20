@@ -252,7 +252,7 @@ fun VisualCommandBuilderScreen(
 
     fun addNode(definition: VisualNodeDefinition) {
         val config = when (definition.type) {
-            "trigger.command" -> mapOf("command" to "hello", "aliases" to "")
+            "trigger.command" -> mapOf("command" to "hello", "aliases" to "", "requireQuoted" to "false", "requireReply" to "false")
             "message.sendText", "message.replyText" -> mapOf("text" to "Hello, {{sender}}!")
             "message.react" -> mapOf("emoji" to "👍")
             "message.sendPoll" -> mapOf("title" to "Quick question?", "options" to "Option A\nOption B", "selectableCount" to "1")
@@ -818,6 +818,7 @@ private fun nodeSummary(node: VisualNode): String = when (node.type) {
     "message.sendText", "message.replyText" -> node.config["text"].orEmpty().ifBlank { "Connect text input" }
     "message.react" -> "React " + node.config["emoji"].orEmpty()
     "message.sendPoll" -> "Poll: " + node.config["title"].orEmpty()
+    "message.quotedText" -> "Quoted message text"
     "condition.equals" -> node.config["left"].orEmpty() + " = " + node.config["right"].orEmpty()
     "condition.contains" -> "Contains " + node.config["search"].orEmpty()
     "condition.isOwner" -> "Account owner check"
@@ -899,6 +900,21 @@ private fun NodeConfigurationDialog(
                         .clip(RoundedCornerShape(6.dp)).background(StudioPalette.Background)
                         .border(1.dp, StudioPalette.Line, RoundedCornerShape(6.dp)).padding(8.dp)
                 )
+            }
+            if (node.type == "trigger.command") {
+                listOf("requireQuoted" to "Require a quoted message", "requireReply" to "Only accept replies").forEach { (key, label) ->
+                    val checked = config[key] == "true"
+                    Row(
+                        Modifier.fillMaxWidth().clickable { config = config + (key to (!checked).toString()) }.padding(vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.Checkbox(
+                            checked = checked,
+                            onCheckedChange = { config = config + (key to it.toString()) }
+                        )
+                        Text(label, color = StudioPalette.Ink, fontSize = 11.sp)
+                    }
+                }
             }
             if (node.type == "message.sendText" || node.type == "message.replyText") {
                 Text("Templates: {{message.text}}, {{sender}}, {{args}}, {{arg1}}, {{var:name}}, {{counter:name}}",

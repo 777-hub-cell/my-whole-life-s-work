@@ -24,36 +24,97 @@ class AharaneConnectionManager(context: Context) {
     val api: AharaneApiClient?
         get() = client
 
-    fun setServerAddress(studioUrl: String): AharaneApiClient {
-        val endpoint = ServerEndpointParser.parse(studioUrl)
-        preferences.edit().putString(KEY_STUDIO_URL, endpoint.studioUrl).apply()
+    private fun clientFor(endpoint: ServerEndpoint): AharaneApiClient {
         val current = client
         if (current != null && current.endpoint == endpoint) return current
         return AharaneApiClient(appContext, endpoint).also { client = it }
     }
 
+    fun setServerAddress(studioUrl: String): AharaneApiClient {
+        val endpoint = ServerEndpointParser.parse(studioUrl)
+        preferences.edit().putString(KEY_STUDIO_URL, endpoint.studioUrl).apply()
+        return clientFor(endpoint)
+    }
+
+    /**
+     * Checks the encrypted cookie jar synchronously so the UI can show a
+     * restore splash instead of briefly rendering the sign-in form.
+     */
+    fun hasSavedSession(): Boolean {
+        val address = savedStudioUrl
+        if (address.isBlank()) return false
+        val candidates = runCatching { ServerEndpointParser.candidates(address) }.getOrNull()
+            ?: return false
+        val savedClient = candidates
+            .map { AharaneApiClient(appContext, it) }
+            .firstOrNull { it.hasSavedSession() }
+            ?: return false
+        client = savedClient
+        return true
+    }
+
     suspend fun restoreSession(): Boolean {
         val address = savedStudioUrl
         if (address.isBlank()) return false
-        val candidate = setServerAddress(address)
-        return try {
-            candidate.checkServer()
-            candidate.get("status")
-            true
-        } catch (_: AharaneApiException) {
-            false
-        } catch (_: Exception) {
-            false
+        var lastNotFound: AharaneApiException? = null
+        for (endpoint in ServerEndpointParser.candidates(address)) {
+            val candidate = clientFor(endpoint)
+            try {
+                candidate.checkServer()
+                candidate.authStatus()
+                if (!candidate.hasSavedSession()) return false
+                candidate.get("status")
+                client = candidate
+                return true
+            } catch (error: AharaneApiException) {
+                if (error.statusCode == 404) {
+                    lastNotFound = error
+                    continue
+                }
+                if (error.statusCode == 401) {
+                    candidate.clearSession()
+                    client = candidate
+                    return false
+                }
+                client = candidate
+                return false
+            } catch (_: Exception) {
+                // Retain the candidate and cookie for a safe offline fallback.
+                client = candidate
+                return false
+            }
         }
+        if (lastNotFound != null) throw lastNotFound
+        return false
     }
 
     suspend fun connect(studioUrl: String): JSONObject {
-        val candidate = setServerAddress(studioUrl)
-        val health = candidate.checkServer()
-        val auth = candidate.authStatus()
-        return JSONObject()
-            .put("health", health)
-            .put("auth", auth)
+        val preferred = ServerEndpointParser.parse(studioUrl)
+        preferences.edit().putString(KEY_STUDIO_URL, preferred.studioUrl).apply()
+        var lastNotFound: AharaneApiException? = null
+        for (endpoint in ServerEndpointParser.candidates(studioUrl)) {
+            val candidate = clientFor(endpoint)
+            try {
+                val health = candidate.checkServer()
+                val auth = candidate.authStatus()
+                client = candidate
+                return JSONObject()
+                    .put("health", health)
+                    .put("auth", auth)
+            } catch (error: AharaneApiException) {
+                if (error.statusCode == 404) {
+                    lastNotFound = error
+                    continue
+                }
+                client = candidate
+                throw error
+            } catch (error: Exception) {
+                client = candidate
+                throw error
+            }
+        }
+        if (lastNotFound != null) throw lastNotFound
+        throw IllegalStateException("Could not find the Aharane API at this Studio address.")
     }
 
     suspend fun login(password: String): JSONObject {

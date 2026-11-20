@@ -667,7 +667,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return enqueue(account, async () => {
       const rows = await readRows(account)
       const row = rows.find(item => item.jid === jid && item.id === key)
-      if (!row || row.directionKnown === false || row.fromMe === true || row.deletedByRemote === true) return Boolean(row?.deletedByRemote)
+      if (!row || row.directionKnown !== true || row.fromMe === true || row.viewOnce === true || row.deletedByRemote === true) return Boolean(row?.deletedByRemote)
       row.deletedByRemote = true
       row.deletedAt = Date.now()
       // Keep the original message body and its server-side media reference.

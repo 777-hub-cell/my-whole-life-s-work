@@ -1263,7 +1263,7 @@ fun AharaneApp(
                         } else if (connected) {
                             connectionScope.launch {
                                 try {
-                                    val bytes = repository.mediaBytes(message.key.account, message)
+                                    val bytes = repository.mediaBytes(activeConversation!!, message)
                                     val mime = message.mediaMimeType.orEmpty()
                                     if (mime.startsWith("image/")) {
                                         showImageBytes(
@@ -1360,7 +1360,7 @@ fun AharaneApp(
                         } else if (connected && key !in inlineMediaPreviews && message.messageId !in inlineMediaPreviewErrors) {
                             connectionScope.launch {
                                 try {
-                                    val bytes = repository.mediaBytes(message.key.account, message)
+                                    val bytes = repository.mediaBytes(activeConversation!!, message)
                                     val mime = message.mediaMimeType.orEmpty()
                                     val bitmap = withContext(Dispatchers.IO) {
                                         if (mime.startsWith("video/")) {
@@ -1404,7 +1404,7 @@ fun AharaneApp(
                             audioLoading = audioLoading + message.messageId
                             connectionScope.launch {
                                 try {
-                                    val bytes = repository.mediaBytes(message.key.account, message)
+                                    val bytes = repository.mediaBytes(activeConversation!!, message)
                                     val extension = message.mediaFileName?.substringAfterLast('.', "")
                                         ?.takeIf { it.matches(Regex("[A-Za-z0-9]{2,5}")) }
                                         ?: if (message.isVoiceNote) "ogg" else "audio"
@@ -1428,7 +1428,7 @@ fun AharaneApp(
                         } else if (connected) {
                             connectionScope.launch {
                                 try {
-                                    pendingMediaDownload = repository.mediaBytes(message.key.account, message)
+                                    pendingMediaDownload = repository.mediaBytes(activeConversation!!, message)
                                     pendingMediaDownloadName = message.mediaFileName ?: "aharane-attachment"
                                     downloadMediaLauncher.launch(pendingMediaDownloadName)
                                 } catch (error: Exception) {

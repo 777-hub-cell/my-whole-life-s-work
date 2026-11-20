@@ -47,6 +47,7 @@ import com.aharane.studio.core.network.ServerEnvironmentValue
 import com.aharane.studio.core.network.ServerFileEntry
 import com.aharane.studio.core.network.ServerOwnerSettings
 import com.aharane.studio.core.network.ServerRuntimeSnapshot
+import com.aharane.studio.core.network.ServerStorageSnapshot
 import com.aharane.studio.core.navigation.MainDestination
 import com.aharane.studio.features.chats.ChatsScreen
 import com.aharane.studio.features.chats.ConversationScreen
@@ -206,6 +207,7 @@ fun AharaneApp(
     var owners by remember { mutableStateOf(ServerOwnerSettings()) }
     var environmentRows by remember { mutableStateOf<List<ServerEnvironmentValue>>(emptyList()) }
     var activityRows by remember { mutableStateOf<List<ServerActivityEntry>>(emptyList()) }
+    var storageSnapshot by remember { mutableStateOf<ServerStorageSnapshot?>(null) }
     var serverFiles by remember { mutableStateOf<List<ServerFileEntry>>(emptyList()) }
     val chatsByAccount = remember { mutableStateMapOf<ChatAccount, List<ChatSummary>>() }
     var activeMessages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
@@ -298,6 +300,7 @@ fun AharaneApp(
         owners = repository.ownerSettings()
         environmentRows = repository.environment()
         activityRows = repository.activity(30)
+        storageSnapshot = repository.storage()
         serverFiles = repository.allFiles()
         chatsByAccount[ChatAccount.PRIVATE] = repository.chats(ChatAccount.PRIVATE)
         chatsByAccount[ChatAccount.PUBLIC] = repository.chats(ChatAccount.PUBLIC)
@@ -753,7 +756,73 @@ fun AharaneApp(
                         onEditorLineNumbersChanged = onEditorLineNumbersChanged,
                         page = morePage,
                         onPageChange = { morePage = it },
-                        onOpenEnvironment = { destinationName = MainDestination.ENVIRONMENT.name; morePage = "more" }
+                        onOpenEnvironment = { destinationName = MainDestination.ENVIRONMENT.name; morePage = "more" },
+                        connected = connected,
+                        privateAccountStatus = runtime?.privateAccount?.let(::accountStateLabel) ?: "Status not loaded",
+                        publicAccountStatus = runtime?.publicAccount?.let(::accountStateLabel) ?: "Status not loaded",
+                        privateOwnerNumber = owners.privateOwnerNumber,
+                        publicOwnerNumber = owners.publicOwnerNumber,
+                        publicBotNumber = owners.publicBotNumber,
+                        allowedPublicSenders = owners.allowedPublicSenders.joinToString(", "),
+                        activityEntries = activityRows.map { "${it.timestamp} · ${it.level.uppercase(Locale.ROOT)} · ${it.source} · ${it.message}" },
+                        storageSummary = storageSnapshot?.let { formatBytes(it.usedBytes) } ?: "—",
+                        onAccountAction = { accountId ->
+                            connectionScope.launch {
+                                val target = ChatAccount.fromApiValue(accountId) ?: return@launch
+                                try {
+                                    val state = if (target == ChatAccount.PRIVATE) runtime?.privateAccount else runtime?.publicAccount
+                                    if (state?.registered == true) {
+                                        repository.reconnect(target)
+                                        runtime = repository.runtimeSnapshot()
+                                    } else {
+                                        pairingAccount = target
+                                        pairingCode = repository.pairCode(target)
+                                    }
+                                } catch (error: Exception) {
+                                    pairingAccount = null
+                                    Toast.makeText(context, error.message ?: "Account action failed.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        onSaveOwnerSettings = { privateOwner, publicOwner, publicBot, allowed ->
+                            connectionScope.launch {
+                                try {
+                                    val updated = ServerOwnerSettings(
+                                        privateOwnerNumber = privateOwner,
+                                        publicOwnerNumber = publicOwner,
+                                        publicBotNumber = publicBot,
+                                        allowedPublicSenders = allowed.split(',').map(String::trim).filter(String::isNotBlank)
+                                    )
+                                    repository.saveOwnerSettings(updated)
+                                    owners = repository.ownerSettings()
+                                    Toast.makeText(context, "Owner settings saved.", Toast.LENGTH_SHORT).show()
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Owner settings could not be saved.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        onClearActivity = {
+                            connectionScope.launch {
+                                runCatching { repository.clearActivity(); activityRows = repository.activity(30) }
+                                    .onFailure { Toast.makeText(context, it.message ?: "Could not clear activity.", Toast.LENGTH_LONG).show() }
+                            }
+                        },
+                        onSignOut = {
+                            connectionScope.launch {
+                                runCatching { connectionManager.logout() }
+                                    .onFailure { Toast.makeText(context, it.message ?: "Could not sign out.", Toast.LENGTH_LONG).show() }
+                                authenticated = false
+                                connectionPassword = ""
+                                serverVerified = true
+                            }
+                        },
+                        onChangePassword = { current, new ->
+                            connectionScope.launch {
+                                runCatching { repository.changePassword(current, new) }
+                                    .onSuccess { Toast.makeText(context, "Studio password changed.", Toast.LENGTH_SHORT).show() }
+                                    .onFailure { Toast.makeText(context, it.message ?: "Password could not be changed.", Toast.LENGTH_LONG).show() }
+                            }
+                        }
                     )
                 }
             }

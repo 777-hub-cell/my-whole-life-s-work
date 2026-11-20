@@ -138,8 +138,11 @@ data class ChatAppearance(
 
 data class AppearanceProfile(val id: String, val name: String, val appearance: ChatAppearance, val builtIn: Boolean = false)
 
-class ChatAppearanceStore(context: Context) {
-    private val preferences = context.applicationContext.getSharedPreferences("aharane-chat-appearance", Context.MODE_PRIVATE)
+class ChatAppearanceStore(context: Context, previewMode: Boolean = false) {
+    private val preferences = context.applicationContext.getSharedPreferences(
+        if (previewMode) "aharane-chat-appearance-preview" else "aharane-chat-appearance",
+        Context.MODE_PRIVATE
+    )
     private val builtIns = listOf(
         AppearanceProfile("preset-classic", "Aharane Classic", ChatAppearance(), true),
         AppearanceProfile("preset-sage", "Soft Sage", ChatAppearance(

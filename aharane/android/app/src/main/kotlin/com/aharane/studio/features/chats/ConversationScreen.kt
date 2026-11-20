@@ -48,7 +48,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -1265,6 +1264,7 @@ private fun StudioPaletteAction(label: String, onClick: () -> Unit) {
     )
 }
 
+@Composable
 private fun appearanceColor(value: String): Color =
     runCatching { Color(android.graphics.Color.parseColor(value)) }.getOrDefault(StudioPalette.Background)
 

@@ -119,6 +119,7 @@ fun ConversationScreen(
     onReactMessage: (ChatMessage, String) -> Unit = { _, _ -> },
     onForwardMessage: (ChatMessage, ChatSummary) -> Unit = { _, _ -> },
     onDeleteMessage: (ChatMessage) -> Unit = {},
+    onRetryOutgoingMessage: (ChatMessage) -> Unit = {},
     onCopyMessage: (ChatMessage) -> Unit = {},
     forwardTargets: List<ChatSummary> = emptyList(),
     searchResults: List<ChatMessage>? = null,

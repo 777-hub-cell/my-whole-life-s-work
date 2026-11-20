@@ -1072,7 +1072,13 @@ fun AharaneApp(
                                 if (index < 0) return@CodeEditorScreen false
                                 val latestSha = repository.saveFile(path, content, editorDocuments[index].sha256)
                                 editorDocuments[index] = editorDocuments[index].copy(content = content, sha256 = latestSha)
-                                fileDraft = repository.fileTree()
+                                // The source write is already committed at this point. A secondary
+                                // directory refresh must not turn a successful save into "unsaved".
+                                runCatching { repository.fileTree() }
+                                    .onSuccess { fileDraft = it }
+                                    .onFailure {
+                                        serverError = it.message ?: "File saved, but the Files list could not refresh."
+                                    }
                                 true
                             } catch (error: Exception) {
                                 serverError = error.message ?: "Could not save this file."

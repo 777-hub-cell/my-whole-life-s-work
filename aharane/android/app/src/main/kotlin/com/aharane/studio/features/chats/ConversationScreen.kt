@@ -96,6 +96,7 @@ fun ConversationScreen(
     lastSyncedAt: Long = 0L,
     autoDownloadImages: Boolean = true,
     autoDownloadVideoPreviews: Boolean = true,
+    storageWarning: String = "",
     onSyncConversation: () -> Unit = {},
     onLoadOlderMessages: () -> Unit = {},
     onBack: () -> Unit,

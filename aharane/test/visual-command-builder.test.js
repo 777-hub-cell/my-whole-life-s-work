@@ -302,6 +302,7 @@ test('message triggers can be found only for their selected account', async t =>
   const draft = createWorkflowDraft('public')
   draft.nodes[0].type = 'trigger.message'
   draft.nodes[0].config = {}
+  draft.enabled = true
   await store.save(draft)
   assert.equal(store.findMessageTriggers('public').length, 1)
   assert.equal(store.findMessageTriggers('private').length, 0)

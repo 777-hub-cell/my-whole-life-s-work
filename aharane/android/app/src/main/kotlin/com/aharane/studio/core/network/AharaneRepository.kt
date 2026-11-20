@@ -400,7 +400,9 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
                         text = row.optString("text"),
                         timestampMillis = timestamp.coerceAtLeast(0L),
                         senderName = row.optString("pushName").takeIf { it.isNotBlank() },
-                        mediaFileName = row.optString("fileName").takeIf { it.isNotBlank() }
+                        mediaFileName = row.optString("fileName").takeIf { it.isNotBlank() },
+                        deletedByRemote = row.optBoolean("deletedByRemote"),
+                        deletedAtMillis = row.optLong("deletedAt")
                     )
                 )
             }

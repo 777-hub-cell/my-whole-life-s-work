@@ -376,10 +376,62 @@ class AharaneRepository(private val api: AharaneApiClient) {
         api.post("files/discard", JSONObject().put("confirm", true))
     }
 
-    suspend fun exportFiles(paths: List<String>): ByteArray {
-        val request = JSONObject().put("paths", JSONArray(paths))
-        val result = api.post("files/export-selection", request)
-        return android.util.Base64.decode(result.optString("archive"), android.util.Base64.DEFAULT)
+    suspend fun exportFiles(paths: List<String>): ByteArray =
+        api.postBytes("files/export-selection", JSONObject().put("paths", JSONArray(paths)))
+
+    suspend fun mediaBytes(account: ChatAccount, message: ChatMessage): ByteArray =
+        api.getBytes("chats/${account.apiValue}/media/${encodePath(message.messageId)}")
+
+    suspend fun viewOnceMedia(account: ChatAccount, message: ChatMessage): ByteArray {
+        require(message.isViewOnce) { "This message is not view-once media." }
+        require(!message.viewOnceViewed) { "This view-once media has already been opened." }
+        return api.sendViewOnceRequest(account.apiValue, message.messageId)
+    }
+
+    suspend fun downloadUnavailableMedia(conversation: ChatSummary, message: ChatMessage) {
+        api.downloadChatMedia(
+            conversation.key.account.apiValue,
+            conversation.key.jid,
+            message.messageId
+        )
+    }
+
+    suspend fun react(conversation: ChatSummary, message: ChatMessage, reaction: String) {
+        api.reactToMessage(
+            conversation.key.account.apiValue,
+            conversation.key.jid,
+            message.messageId,
+            reaction
+        )
+    }
+
+    suspend fun star(conversation: ChatSummary, message: ChatMessage, starred: Boolean) {
+        api.starMessage(
+            conversation.key.account.apiValue,
+            conversation.key.jid,
+            message.messageId,
+            starred
+        )
+    }
+
+    suspend fun deleteMessage(conversation: ChatSummary, message: ChatMessage) {
+        api.deleteMessage(
+            conversation.key.account.apiValue,
+            conversation.key.jid,
+            message.messageId
+        )
+    }
+
+    suspend fun archive(conversation: ChatSummary, archived: Boolean) {
+        api.archiveChat(
+            conversation.key.account.apiValue,
+            conversation.key.jid,
+            archived
+        )
+    }
+
+    suspend fun markUnread(conversation: ChatSummary) {
+        api.markChatUnread(conversation.key.account.apiValue, conversation.key.jid)
     }
 
     suspend fun activity(limit: Int = 100): List<ServerActivityEntry> {

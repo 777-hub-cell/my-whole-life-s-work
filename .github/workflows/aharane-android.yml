@@ -12,6 +12,10 @@ permissions:
   contents: read
   actions: read
 
+concurrency:
+  group: aharane-android-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Native Android tests and debug APK

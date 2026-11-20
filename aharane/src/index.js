@@ -1990,10 +1990,23 @@ app.post('/api/chats/:accountId/:jid/send', requireAdmin, async (req, res) => {
     const quotedMessageId = String(req.body?.quotedMessageId || '')
     const quoted = quotedMessageId ? await chatStore.getMessage(accountId, jid, quotedMessageId) : null
     if (quotedMessageId && !quoted?.sourceMessage) return res.status(410).json({ ok: false, error: 'The original message is not available to quote.' })
+    const clientMessageId = String(req.body?.clientMessageId || '')
+    if (clientMessageId) {
+      const intent = await chatStore.beginIdempotentSend(accountId, { clientMessageId, jid, text, quotedMessageId })
+      if (intent.state === 'sent') return res.json({ ok: true, message: intent.messageId, clientMessageId, idempotentReplay: true })
+      if (intent.state === 'uncertain') {
+        return res.status(409).json({
+          ok: false, state: 'uncertain', clientMessageId,
+          error: 'This send was already started but its final WhatsApp result was not recorded. It was not sent again to avoid a duplicate.',
+        })
+      }
+    }
     const sent = await socket.sendMessage(jid, { text }, quoted?.sourceMessage ? { quoted: quoted.sourceMessage } : undefined)
     await chatStore.recordMessage({ sessionId: accountId, message: sent, socket })
+    const messageId = sent?.key?.id || ''
+    if (clientMessageId) await chatStore.completeIdempotentSend(accountId, clientMessageId, messageId)
     publishStudioEvent('whatsapp.message.sent', { accountId, jid, type: 'text' })
-    res.json({ ok: true, message: sent?.key?.id || '' })
+    res.json({ ok: true, message: messageId, clientMessageId })
   } catch (error) {
     res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not send the message.') })
   }

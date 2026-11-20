@@ -194,13 +194,12 @@ def main():
     tap_label("Console")
     capture("03j-editor-console.png")
     assert_visible_texts(["Preview", "sample"])
-    # Keep the editor open while opening its explorer. Back exits the editor
-    # itself here; doing it twice would leave the app and send later captures to
-    # the Android launcher.
+    # The explorer is a panel within the editor. Android Back dismisses only
+    # that panel, so close the editor explicitly before navigating to ENV.
     if not any(node.attrib.get("content-desc") == "Hide explorer" for node in nodes()):
         tap_label("Show explorer", content_desc=True)
     capture("03d-editor-explorer.png")
-    back()  # Return from the editor to Files.
+    tap_label("Close editor")  # Return from the editor to Files.
 
     tap_label("ENV")
     capture("04-env.png")
@@ -232,6 +231,12 @@ def main():
     tap_label("Mira", scroll_to_find=True, required=False)
     capture("06g-per-conversation-override.png")
     back()
+    back()
+    back()  # Return from chat settings to More.
+
+    tap_label("Visual command builder")
+    capture("06h-visual-command-builder.png", 1)
+    assert_visible_texts(["WORKSPACE", "NODE LIBRARY", "Test safely", "Search WhatsApp nodes"])
     back()
 
     # A normal first launch now requires secure HTTPS sign-in before any Studio

@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,12 +73,29 @@ private fun previewConfiguration(profile: String) = if (profile == "Public") {
 fun ConfigurationScreen(
     onBack: () -> Unit,
     onEditConfig: () -> Unit,
-    previewMode: Boolean = false
+    previewMode: Boolean = false,
+    connected: Boolean = false,
+    serverValues: Map<String, String> = emptyMap(),
+    ownerNumberValue: String = "",
+    onSave: suspend (String, Map<String, String>) -> Boolean = { _, _ -> false }
 ) {
     var profile by rememberSaveable { mutableStateOf("Private") }
-    val initial = remember(profile, previewMode) {
+    val initial = remember(profile, previewMode, connected, serverValues, ownerNumberValue) {
         if (previewMode) previewConfiguration(profile)
-        else PreviewConfiguration("", "", "", false, false, false, false, "", "")
+        else if (connected) {
+            val prefix = if (profile == "Private") "PRIVATE_" else "PUBLIC_"
+            PreviewConfiguration(
+                botName = serverValues[prefix + "BOT_NAME"].orEmpty(),
+                prefix = serverValues[prefix + "COMMAND_PREFIX"].orEmpty(),
+                ownerNumber = ownerNumberValue,
+                autoRead = serverValues[prefix + "AUTO_READ"].equals("true", true),
+                showTyping = serverValues[prefix + "SHOW_TYPING"].equals("true", true),
+                rejectCalls = serverValues[prefix + "REJECT_CALLS"].equals("true", true),
+                alwaysOnline = serverValues[prefix + "ALWAYS_ONLINE"].equals("true", true),
+                cooldown = serverValues[prefix + "COMMAND_COOLDOWN"].orEmpty(),
+                welcomeMessage = serverValues[prefix + "WELCOME_MESSAGE"].orEmpty()
+            )
+        } else PreviewConfiguration("", "", "", false, false, false, false, "", "")
     }
     var botName by rememberSaveable(profile, previewMode) { mutableStateOf(initial.botName) }
     var prefix by rememberSaveable(profile, previewMode) { mutableStateOf(initial.prefix) }
@@ -90,7 +108,9 @@ fun ConfigurationScreen(
     var welcomeMessage by rememberSaveable(profile, previewMode) { mutableStateOf(initial.welcomeMessage) }
     var dirty by rememberSaveable(profile, previewMode) { mutableStateOf(false) }
     val context = LocalContext.current
-    val editable = previewMode
+    val saveScope = rememberCoroutineScope()
+    var saving by remember { mutableStateOf(false) }
+    val editable = previewMode || connected
 
     fun resetDraft() {
         botName = initial.botName
@@ -103,6 +123,10 @@ fun ConfigurationScreen(
         cooldown = initial.cooldown
         welcomeMessage = initial.welcomeMessage
         dirty = false
+    }
+
+    LaunchedEffect(initial) {
+        if (!dirty) resetDraft()
     }
 
     LazyColumn(
@@ -162,7 +186,7 @@ fun ConfigurationScreen(
                     lineHeight = 16.sp,
                     modifier = Modifier.padding(top = 7.dp)
                 )
-            } else {
+            } else if (!connected) {
                 Text(
                     "Connect your Aharane server to load the current values. No settings have been changed.",
                     color = StudioPalette.Muted,
@@ -282,13 +306,49 @@ fun ConfigurationScreen(
                     StudioTag("Not connected")
                 }
                 Spacer(Modifier.height(9.dp))
-                StudioActionButton(
-                    "Save changes",
-                    modifier = Modifier.fillMaxWidth(),
-                    primary = true,
-                    enabled = false,
-                    onClick = {}
-                )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    StudioActionButton(
+                        "Discard",
+                        modifier = Modifier.weight(1f),
+                        enabled = editable && dirty && !saving,
+                        onClick = ::resetDraft
+                    )
+                    StudioActionButton(
+                        if (saving) "Saving…" else "Save changes",
+                        modifier = Modifier.weight(1f),
+                        primary = true,
+                        enabled = editable && dirty && !saving,
+                        onClick = {
+                            val prefixKey = if (profile == "Private") "PRIVATE_" else "PUBLIC_"
+                            val values = mapOf(
+                                prefixKey + "BOT_NAME" to botName,
+                                prefixKey + "COMMAND_PREFIX" to prefix,
+                                prefixKey + "AUTO_READ" to autoRead.toString(),
+                                prefixKey + "SHOW_TYPING" to showTyping.toString(),
+                                prefixKey + "REJECT_CALLS" to rejectCalls.toString(),
+                                prefixKey + "ALWAYS_ONLINE" to alwaysOnline.toString(),
+                                prefixKey + "COMMAND_COOLDOWN" to cooldown,
+                                prefixKey + "WELCOME_MESSAGE" to welcomeMessage,
+                                if (profile == "Private") "PRIVATE_OWNER_NUMBER" else "PUBLIC_BOT_NUMBER" to ownerNumber
+                            )
+                            if (previewMode) {
+                                Toast.makeText(context, "Preview settings are local only.", Toast.LENGTH_SHORT).show()
+                                dirty = false
+                            } else {
+                                saveScope.launch {
+                                    saving = true
+                                    val saved = runCatching { onSave(profile, values) }.getOrDefault(false)
+                                    if (saved) dirty = false
+                                    else Toast.makeText(context, "Configuration could not be saved.", Toast.LENGTH_LONG).show()
+                                    saving = false
+                                }
+                            }
+                        }
+                    )
+                }
             }
         }
         item { Spacer(Modifier.height(12.dp)) }

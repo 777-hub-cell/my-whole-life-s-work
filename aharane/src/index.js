@@ -971,6 +971,7 @@ async function handleMessages(sessionId, currentSocket, event) {
     if (!message?.message || !message.key?.id) continue
 
     const remoteJid = String(message.key?.remoteJid || '')
+    const senderJid = String(message.key?.participant || remoteJid)
     const shouldPersist =
       (sessionId === 'private' && isPrivateVisibleChatJid(remoteJid)) ||
       (sessionId === 'public' && message.key.fromMe !== true && isPrivateVisibleChatJid(remoteJid))
@@ -1013,23 +1014,35 @@ async function handleMessages(sessionId, currentSocket, event) {
       registry = privateCommandRegistry
     } else if (sessionId === 'public') {
       if (message.key.fromMe === true || !isPrivateVisibleChatJid(remoteJid)) continue
+      const allowedSenders = publicAllowedSenders()
+      // Existing public commands remain direct-chat-only. Visual workflows may
+      // opt into groups, but the triggering participant must still be in the
+      // configured public sender allow-list.
       const allowedToUseCommands = isAllowedInbound({
         remoteJid,
         fromMe: false,
-        allowedSenders: publicAllowedSenders(),
+        allowedSenders,
+      })
+      const allowedVisualSender = isAllowedInbound({
+        remoteJid,
+        participantJid: senderJid,
+        allowGroups: true,
+        fromMe: false,
+        allowedSenders,
       })
       const firstConversationMessage = allowedToUseCommands && !await chatStore.hasConversation(sessionId, remoteJid)
       if (studioSettings.public.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
-      if (!allowedToUseCommands) continue
-      if (firstConversationMessage && studioSettings.public.welcomeMessage) {
+      if (!allowedVisualSender) continue
+      if (allowedToUseCommands && firstConversationMessage && studioSettings.public.welcomeMessage) {
         const welcome = await currentSocket.sendMessage(remoteJid, { text: studioSettings.public.welcomeMessage })
         await chatStore.recordMessage({ sessionId, message: welcome, socket: currentSocket })
       }
       allowedForAutomation = true
-      registry = publicCommandRegistry
+      if (allowedToUseCommands) registry = publicCommandRegistry
       isPublicOwner = isPublicOwnerSender({
         sessionId,
         remoteJid,
+        senderJid,
         publicOwnerNumber: ownerConfig.publicOwnerNumber,
       })
     } else {
@@ -1050,7 +1063,9 @@ async function handleMessages(sessionId, currentSocket, event) {
       },
       message,
       messageText,
-      sender: String(message.key?.participant || remoteJid),
+      sender: senderJid,
+      senderJid,
+      isGroupChat: remoteJid.endsWith('@g.us'),
       remoteJid,
       commandName: '',
       rawArgs: '',
@@ -1060,7 +1075,7 @@ async function handleMessages(sessionId, currentSocket, event) {
     // Message Received workflows run only after the same account-specific
     // authorization gates used by the existing command dispatcher.
     if (allowedForAutomation && sessionId === 'public' &&
-        allowCommand('visual-message:' + senderNumberFromJid(remoteJid))) {
+        allowCommand('visual-message:' + senderNumberFromJid(senderJid))) {
       for (const workflow of visualCommandStore.findMessageTriggers(sessionId)) {
         try {
           const result = await executeVisualWorkflow(workflow, { store: visualCommandStore, context: workflowContext })
@@ -1082,7 +1097,7 @@ async function handleMessages(sessionId, currentSocket, event) {
     if (!parsedCommand) continue
     if (!allowCommand(sessionId + ':' + (sessionId === 'private'
       ? ownerConfig.privateOwnerNumber
-      : senderNumberFromJid(remoteJid)))) continue
+      : senderNumberFromJid(senderJid)))) continue
 
     const command = parsedCommand.name.slice(0, 40)
     const visualWorkflows = visualCommandStore.findCommand(sessionId, parsedCommand.name)

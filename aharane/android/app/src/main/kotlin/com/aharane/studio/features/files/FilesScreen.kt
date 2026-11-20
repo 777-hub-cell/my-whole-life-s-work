@@ -156,10 +156,19 @@ fun FilesScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                StudioActionButton("New file", compact = true, onClick = { serverAction("create files", onCreateFile) })
-                StudioActionButton("Upload", compact = true, onClick = { serverAction("upload files", onUpload) })
-                StudioActionButton("New folder", compact = true, onClick = { serverAction("create folders", onCreateFolder) })
-                StudioActionButton("Export Bot Source", compact = true, onClick = { serverAction("export source", onExportSource) })
+                if (currentPath == "Update packages") {
+                    StudioActionButton("Upload ZIP", compact = true, primary = true, onClick = {
+                        if (connected || previewOnly) onUploadPackage()
+                        else Toast.makeText(context, "Connect to your Aharane server to upload an update package.", Toast.LENGTH_SHORT).show()
+                    })
+                    StudioActionButton("Refresh", compact = true, onClick = onRefreshPackages)
+                    StudioActionButton("View package manager", compact = true, onClick = { packagesOpen = true; onRefreshPackages() })
+                } else {
+                    StudioActionButton("New file", compact = true, onClick = { serverAction("create files", onCreateFile) })
+                    StudioActionButton("Upload", compact = true, onClick = { serverAction("upload files", onUpload) })
+                    StudioActionButton("New folder", compact = true, onClick = { serverAction("create folders", onCreateFolder) })
+                    StudioActionButton("Export Bot Source", compact = true, onClick = { serverAction("export source", onExportSource) })
+                }
             }
             Row(
                 Modifier.fillMaxWidth().padding(top = 13.dp, bottom = 10.dp),

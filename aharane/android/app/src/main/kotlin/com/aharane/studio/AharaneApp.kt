@@ -1392,12 +1392,11 @@ fun AharaneApp(
                         }
                     },
                     onOpenLocation = { message ->
-                        val match = Regex("""(?im)^\\s*(?:coordinates\\s*:\\s*)?(-?\\d{1,3}(?:\\.\\d+)?)[,\\s]+(-?\\d{1,3}(?:\\.\\d+)?)\\s*$""")
+                        val match = Regex("""(?im)^\s*(?:coordinates\s*:\s*)?(-?\d{1,3}(?:\.\d+)?)[,\s]+(-?\d{1,3}(?:\.\d+)?)\s*$""")
                             .find(message.text)
                         val latitude = match?.groupValues?.getOrNull(1)?.toDoubleOrNull()
                         val longitude = match?.groupValues?.getOrNull(2)?.toDoubleOrNull()
                         if (latitude != null && longitude != null && latitude in -90.0..90.0 && longitude in -180.0..180.0) {
-                            val label = message.text.lineSequence().firstOrNull { it.isNotBlank() && !it.contains("Coordinates:", true) }.orEmpty()
                             val uri = Uri.parse("geo:$latitude,$longitude?q=$latitude,$longitude")
                             val map = Intent(Intent.ACTION_VIEW, uri)
                             runCatching { context.startActivity(map) }

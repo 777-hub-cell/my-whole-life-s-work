@@ -51,12 +51,18 @@ def tap_label(
         matches = []
         for node in nodes():
             value = node.attrib.get("content-desc" if content_desc else "text", "")
-            if value == label:
+            # Compose may merge a clickable row's title and subtitle into
+            # one accessibility node (for example, "Configuration, Private Owner…").
+            # Match the visible label within that node, preferring the shortest
+            # matching text and then the smallest bounds to avoid tapping a parent.
+            if value == label or (not content_desc and label in value):
                 bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
                 if bounds:
-                    matches.append(tuple(map(int, bounds.groups())))
+                    x1, y1, x2, y2 = tuple(map(int, bounds.groups()))
+                    matches.append((len(value), (x2 - x1) * (y2 - y1), (x1, y1, x2, y2)))
+        matches.sort(key=lambda item: (item[0], item[1]))
         if len(matches) > occurrence:
-            x1, y1, x2, y2 = matches[occurrence]
+            _, _, (x1, y1, x2, y2) = matches[occurrence]
             run("adb", "shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
             time.sleep(0.7)
             return True

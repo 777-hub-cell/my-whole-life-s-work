@@ -73,6 +73,7 @@ import com.aharane.studio.core.network.ServerStorageSnapshot
 import com.aharane.studio.core.navigation.MainDestination
 import com.aharane.studio.features.chats.ChatsScreen
 import com.aharane.studio.features.chats.ConversationScreen
+import com.aharane.studio.features.commands.VisualCommandBuilderScreen
 import com.aharane.studio.features.configuration.ConfigurationScreen
 import com.aharane.studio.features.connection.ConnectionScreen
 import com.aharane.studio.features.environment.EnvironmentScreen
@@ -266,6 +267,7 @@ fun AharaneApp(
     var editorOpen by rememberSaveable { mutableStateOf(false) }
     var editorFromConfiguration by rememberSaveable { mutableStateOf(false) }
     var configurationOpen by rememberSaveable { mutableStateOf(false) }
+    var commandBuilderOpen by rememberSaveable { mutableStateOf(false) }
     var morePage by rememberSaveable { mutableStateOf("more") }
     var activeConversation by remember { mutableStateOf<ChatSummary?>(null) }
     var activeEditorPath by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1287,7 +1289,7 @@ fun AharaneApp(
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
-        if (!editorOpen && activeConversation == null) {
+        if (!editorOpen && activeConversation == null && !commandBuilderOpen) {
             StudioHeader()
         }
 
@@ -1314,6 +1316,11 @@ fun AharaneApp(
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
+                commandBuilderOpen -> VisualCommandBuilderScreen(
+                    repository = repository,
+                    connected = connected,
+                    onBack = { commandBuilderOpen = false }
+                )
                 editorOpen -> CodeEditorScreen(
                     modifier = Modifier.fillMaxSize(),
                     onClose = {
@@ -2229,6 +2236,7 @@ fun AharaneApp(
                         page = morePage,
                         onPageChange = { morePage = it },
                         onOpenEnvironment = { destinationName = MainDestination.ENVIRONMENT.name; morePage = "more" },
+                        onOpenCommandBuilder = { commandBuilderOpen = true },
                         connected = connected,
                         privateAccountStatus = runtime?.privateAccount?.let(::accountStateLabel) ?: "Status not loaded",
                         publicAccountStatus = runtime?.publicAccount?.let(::accountStateLabel) ?: "Status not loaded",
@@ -2461,7 +2469,7 @@ fun AharaneApp(
             }
         }
 
-        if (!editorOpen && activeConversation == null) {
+        if (!editorOpen && activeConversation == null && !commandBuilderOpen) {
             StudioBottomNavigation(
                 selected = currentDestination,
                 onNavigate = {

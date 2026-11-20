@@ -322,8 +322,6 @@ fun AharaneApp(
     var activeMessages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
     var hasOlderMessages by remember { mutableStateOf(false) }
     var loadingOlderMessages by remember { mutableStateOf(false) }
-    var lastConversationSyncAt by remember { mutableStateOf(0L) }
-    var cachedOfflineMediaIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var editorDiagnosticsByPath by remember { mutableStateOf<Map<String, EditorDiagnosticsResult>>(emptyMap()) }
     var editorDiagnosticsStateByPath by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var editorDiagnosticRequestId by remember { mutableIntStateOf(0) }
@@ -777,15 +775,12 @@ fun AharaneApp(
         conversationSearchRequestId += 1
         conversationSearchResults = null
         val conversation = activeConversation ?: return@LaunchedEffect
-        cachedOfflineMediaIds = emptySet()
         if (previewMode) return@LaunchedEffect
         val local = localChatRepository
         if (local != null) {
             runCatching {
                 activeMessages = local.messages(conversation.key)
-                cachedOfflineMediaIds = local.cachedMediaIds(conversation.key)
                 hasOlderMessages = local.hasOlderMessages(conversation.key)
-                lastConversationSyncAt = local.lastSyncedAt(conversation.key)
             }.onFailure {
                 localChatStorageError = it.message ?: "Could not load the encrypted conversation cache."
             }
@@ -794,7 +789,6 @@ fun AharaneApp(
             runCatching {
                 activeMessages = refreshConversationIncrementally(conversation)
                 hasOlderMessages = localChatRepository?.hasOlderMessages(conversation.key) ?: hasOlderMessages
-                lastConversationSyncAt = localChatRepository?.lastSyncedAt(conversation.key) ?: lastConversationSyncAt
             }.onFailure {
                 // Preserve the valid cached history when a sync request fails.
                 serverError = it.message ?: "Could not sync this conversation."
@@ -829,7 +823,6 @@ fun AharaneApp(
                 runCatching {
                     activeMessages = refreshConversationIncrementally(openConversation)
                     hasOlderMessages = localChatRepository?.hasOlderMessages(openConversation.key) ?: hasOlderMessages
-                    lastConversationSyncAt = localChatRepository?.lastSyncedAt(openConversation.key) ?: lastConversationSyncAt
                 }.onFailure { failures += "Conversation sync: ${it.message ?: "unavailable"}" }
             }
             runCatching { repository.updateStatus() }
@@ -1200,11 +1193,10 @@ fun AharaneApp(
                 }
             }.getOrNull()
             if (stored != null) {
-                cachedOfflineMediaIds = cachedOfflineMediaIds + message.messageId
                 return stored
             }
         }
-        if (!connected) error("This attachment is not saved for offline use. Reconnect to download it.")
+        if (!connected) error("Attachment could not be loaded.")
         val bytes = repository.mediaBytes(conversation, message)
         runCatching {
             val record = withContext(Dispatchers.IO) {
@@ -1217,11 +1209,10 @@ fun AharaneApp(
                 )
             }
             local?.recordMediaCache(conversation.key, message.messageId, record.relativePath, record.sha256, record.sizeBytes)
-            if (local != null) cachedOfflineMediaIds = cachedOfflineMediaIds + message.messageId
         }.onFailure { error ->
             // Media still opens online, but it is not labelled offline-ready unless
             // the authenticated encrypted copy and metadata commit both succeed.
-            serverError = "Attachment opened but not saved offline: " + (error.message ?: "cache unavailable")
+            serverError = "Attachment opened, but this phone could not keep a local copy: " + (error.message ?: "storage unavailable")
         }
         return bytes
     }
@@ -1458,68 +1449,56 @@ fun AharaneApp(
                     conversation = activeConversation!!,
                     messages = if (previewMode) previewMessages.filter { it.key == activeConversation!!.key } else activeMessages,
                     connected = if (previewMode) true else currentAccountState?.connected == true,
-                    mediaServerAvailable = connected,
                     appearance = chatAppearanceStore.resolve(activeConversation!!.key.account, activeConversation!!.key.jid),
                     hasOlderMessages = !previewMode && hasOlderMessages,
                     loadingOlderMessages = loadingOlderMessages,
-                    lastSyncedAt = lastConversationSyncAt,
-                    storageWarning = localChatStorageError,
                     autoDownloadImages = chatAppearanceStore.resolve(activeConversation!!.key.account, activeConversation!!.key.jid).autoDownloadImages,
                     autoDownloadVideoPreviews = chatAppearanceStore.resolve(activeConversation!!.key.account, activeConversation!!.key.jid).autoDownloadVideoPreviews,
                     onSyncConversation = {
                         val target = activeConversation
-                        if (target != null && !previewMode) {
-                            if (!connected) {
-                                Toast.makeText(context, "Offline · showing saved messages.", Toast.LENGTH_SHORT).show()
-                            } else {
-                                connectionScope.launch {
-                                    try {
-                                        activeMessages = refreshConversationIncrementally(target)
-                                        lastConversationSyncAt = localChatRepository?.lastSyncedAt(target.key) ?: System.currentTimeMillis()
-                                        serverError = ""
-                                    } catch (error: Exception) {
-                                        serverError = error.message ?: "Conversation sync failed."
-                                    }
+                        if (target != null && !previewMode && connected) {
+                            connectionScope.launch {
+                                try {
+                                    activeMessages = refreshConversationIncrementally(target)
+                                    serverError = ""
+                                } catch (error: Exception) {
+                                    serverError = error.message ?: "Conversation sync failed."
                                 }
                             }
                         }
                     },
                     onLoadOlderMessages = {
                         val target = activeConversation
-                        if (target != null && !previewMode) {
-                            if (!connected) {
-                                Toast.makeText(context, "Connect to Aharane to download older messages. Saved messages remain available offline.", Toast.LENGTH_SHORT).show()
-                            } else {
-                                connectionScope.launch {
-                                    loadingOlderMessages = true
-                                    try {
-                                        val before = localChatRepository?.oldestCursor(target.key)
-                                            ?: activeMessages.minWithOrNull(compareBy<ChatMessage> { it.timestampMillis }.thenBy { it.messageId })
-                                                ?.let { LocalChatRepository.MessageCursor(it.timestampMillis, it.messageId) }
-                                        if (before != null && before.timestampMillis > 0L) {
-                                            val page = repository.syncMessages(
-                                                target,
-                                                beforeMillis = before.timestampMillis,
-                                                beforeMessageId = before.messageId,
-                                                limit = 100
-                                            )
-                                            localChatRepository?.recordOlderPage(target.key, page.messages, page.hasOlder)
-                                            localChatRepository?.applyDeletedMessages(target.key, page.deletedMessageIds)
-                                            localChatRepository?.applyRemoteDeletedMessages(
-                                                target.key,
-                                                page.remoteDeletedMessages.map { it.messageId to it.deletedAtMillis }
-                                            )
-                                            activeMessages = localChatRepository?.messages(target.key)
-                                                ?: (page.messages + activeMessages).distinctBy { it.messageId }.sortedBy { it.timestampMillis }
-                                            hasOlderMessages = page.hasOlder
-                                        } else {
-                                            hasOlderMessages = false
-                                        }
-                                    } catch (error: Exception) {
-                                        serverError = error.message ?: "Older messages could not be loaded."
-                                    } finally {
-                                        loadingOlderMessages = false
+                        if (target != null && !previewMode && connected) {
+                            connectionScope.launch {
+                                loadingOlderMessages = true
+                                try {
+                                    val before = localChatRepository?.oldestCursor(target.key)
+                                        ?: activeMessages.minWithOrNull(compareBy<ChatMessage> { it.timestampMillis }.thenBy { it.messageId })
+                                            ?.let { LocalChatRepository.MessageCursor(it.timestampMillis, it.messageId) }
+                                    if (before != null && before.timestampMillis > 0L) {
+                                        val page = repository.syncMessages(
+                                            target,
+                                            beforeMillis = before.timestampMillis,
+                                            beforeMessageId = before.messageId,
+                                            limit = 100
+                                        )
+                                        localChatRepository?.recordOlderPage(target.key, page.messages, page.hasOlder)
+                                        localChatRepository?.applyDeletedMessages(target.key, page.deletedMessageIds)
+                                        localChatRepository?.applyRemoteDeletedMessages(
+                                            target.key,
+                                            page.remoteDeletedMessages.map { it.messageId to it.deletedAtMillis }
+                                        )
+                                        activeMessages = localChatRepository?.messages(target.key)
+                                            ?: (page.messages + activeMessages).distinctBy { it.messageId }.sortedBy { it.timestampMillis }
+                                        hasOlderMessages = page.hasOlder
+                                    } else {
+                                        hasOlderMessages = false
                                     }
+                                } catch (error: Exception) {
+                                    serverError = error.message ?: "Older messages could not be loaded."
+                                } finally {
+                                    loadingOlderMessages = false
                                 }
                             }
                         }
@@ -1598,15 +1577,15 @@ fun AharaneApp(
                     onKeepMediaOffline = { message ->
                         val target = activeConversation
                         if (previewMode || target == null || message.isViewOnce) {
-                            Toast.makeText(context, "This media cannot be kept offline in Preview or view-once mode.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "This media cannot be saved in Preview or from a view-once message.", Toast.LENGTH_SHORT).show()
                         } else {
                             connectionScope.launch {
                                 runCatching { obtainCachedOrRemoteMedia(target, message) }
                                     .onSuccess {
-                                        Toast.makeText(context, "Media verified and saved offline on this phone.", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Media saved on this phone.", Toast.LENGTH_SHORT).show()
                                     }
                                     .onFailure {
-                                        Toast.makeText(context, it.message ?: "Media could not be saved offline.", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, it.message ?: "Media could not be saved on this phone.", Toast.LENGTH_LONG).show()
                                     }
                             }
                         }
@@ -1711,7 +1690,6 @@ fun AharaneApp(
                     videoFiles = videoFiles,
                     videoLoading = videoLoading,
                     videoErrors = videoErrors,
-                    offlineMediaIds = cachedOfflineMediaIds,
                     onLoadMediaPreview = { message ->
                         val key = mediaCacheKey(message)
                         if (previewMode) {
@@ -2024,7 +2002,6 @@ fun AharaneApp(
                         savedShowAvatars = chatAppearance.optBoolean("showAvatars", true),
                         savedShowPreviews = chatAppearance.optBoolean("showPreviews", true),
                         savedShowTimestamps = chatAppearance.optBoolean("showTimestamps", true),
-                        localStorageError = localChatStorageError,
                         messageSearchResults = inboxMessageSearchResults,
                         onInboxSearchChanged = { query, fromMillis, toMillis ->
                             val account = selectedAccount
@@ -2431,7 +2408,6 @@ fun AharaneApp(
                                         encryptedMediaCache.clearAccount(targetAccount.apiValue)
                                     }
                                     localChatRepository?.clearCachedMediaMetadata(targetAccount)
-                                    if (activeConversation?.key?.account == targetAccount) cachedOfflineMediaIds = emptySet()
                                     chatAppearanceRevision += 1
                                 }.onFailure {
                                     Toast.makeText(context, it.message ?: "Could not clear encrypted offline media.", Toast.LENGTH_LONG).show()

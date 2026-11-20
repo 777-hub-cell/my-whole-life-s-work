@@ -130,7 +130,11 @@ fun ChatsScreen(
                 }
             }
             Text(
-                "${account.label} account · ${accountConversations.size} conversations",
+                when {
+                    accountConnected -> "${account.label} account · ${accountConversations.size} conversations"
+                    accountConversations.isNotEmpty() -> "${account.label} account · offline · ${accountConversations.size} last-loaded conversations"
+                    else -> "${account.label} account · disconnected"
+                },
                 color = StudioPalette.Muted,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
@@ -160,10 +164,11 @@ fun ChatsScreen(
             if (visibleChats.isEmpty()) {
                 StudioCard(padding = PaddingValues(horizontal = 16.dp, vertical = 28.dp)) {
                     Text(
-                        when (filter) {
-                            ChatFilter.UNREAD -> "No unread chats."
-                            ChatFilter.GROUPS -> "No groups match."
-                            ChatFilter.ARCHIVED -> "No archived chats."
+                        when {
+                            !accountConnected && accountConversations.isEmpty() -> "Connect the selected WhatsApp account to load conversations."
+                            filter == ChatFilter.UNREAD -> "No unread chats."
+                            filter == ChatFilter.GROUPS -> "No groups match."
+                            filter == ChatFilter.ARCHIVED -> "No archived chats."
                             else -> "No chats match."
                         },
                         color = StudioPalette.Muted,

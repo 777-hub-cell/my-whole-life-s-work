@@ -1938,19 +1938,17 @@ fun AharaneApp(
                                     }
                                     if (connected && query.trim().length >= 2) {
                                         runCatching {
-                                            val remote = repository.chats(account).flatMap { chat ->
+                                            val onlineChats = chatsByAccount[account].orEmpty().take(100)
+                                            val remote = onlineChats.flatMap { chat ->
                                                 repository.searchMessages(chat, query)
                                             }.filter { message ->
                                                 (fromMillis == 0L || message.timestampMillis >= fromMillis) &&
                                                     (toMillis == 0L || message.timestampMillis <= toMillis)
                                             }
-                                            localChatRepository?.saveMessages(
-                                                remote.groupBy { it.key }.flatMap { (key, rows) ->
-                                                    val chat = chatsByAccount[account].orEmpty().firstOrNull { it.key == key }
-                                                    if (chat != null) localChatRepository?.saveMessages(chat, rows)
-                                                    rows
-                                                }.let { emptyList() }
-                                            )
+                                            remote.groupBy { it.key }.forEach { (key, rows) ->
+                                                val chat = onlineChats.firstOrNull { it.key == key }
+                                                if (chat != null) localChatRepository?.saveMessages(chat, rows)
+                                            }
                                             if (requestId == inboxSearchRequestId && selectedAccount == account) {
                                                 inboxMessageSearchResults = (matches + remote).distinctBy { it.key.jid + "|" + it.messageId }
                                                     .sortedByDescending { it.timestampMillis }.take(100)

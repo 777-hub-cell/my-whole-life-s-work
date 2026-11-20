@@ -82,6 +82,38 @@ class EncryptedOfflineStorageTest {
         assertEquals(marker, restored?.title)
         assertEquals(marker, reopened.database.chatDao().messages("private", jid).single().text)
         assertTrue(reopened.database.chatDao().messages("public", jid).isEmpty())
+
+        val original = reopened.database.chatDao().messages("private", jid).single()
+        val attachment = original.copy(
+            messageId = "offline-search-file",
+            text = "Annual review attached",
+            timestampMillis = 1760000005000,
+            mediaFileName = "roster-2026.pdf",
+            senderName = "Elena"
+        )
+        reopened.database.chatDao().putMessages(listOf(attachment))
+        assertEquals(
+            "roster-2026.pdf",
+            reopened.database.chatDao().search("private", null, "ROSTER-2026.PDF", 0L, 0L, 10).single().mediaFileName
+        )
+        assertEquals(
+            "Elena",
+            reopened.database.chatDao().search("private", null, "elena", 0L, 0L, 10).single().senderName
+        )
+        assertEquals(
+            0,
+            reopened.database.chatDao().search("public", null, "annual review", 0L, 0L, 10).size
+        )
+        assertEquals(
+            0,
+            reopened.database.chatDao().search("private", null, "annual review", 1760000006000, 0L, 10).size
+        )
+
+        reopened.database.chatDao().putMessages(listOf(attachment.copy(text = "Corrected review")))
+        val duplicateRows = reopened.database.chatDao().messages("private", jid).filter { it.messageId == attachment.messageId }
+        assertEquals(1, duplicateRows.size)
+        assertEquals("Corrected review", duplicateRows.single().text)
+
         reopened.database.chatDao().clearMessages("private", jid)
         reopened.database.chatDao().clearConversation("private", jid)
         reopened.database.close()
@@ -130,6 +162,18 @@ class EncryptedOfflineStorageTest {
         store.reset(ChatAccount.PRIVATE, "2348222222222@s.whatsapp.net")
         assertEquals(14, store.resolve(ChatAccount.PRIVATE, "2348222222222@s.whatsapp.net").messageSize)
         assertEquals("#DCEFE5", store.resolve(ChatAccount.PUBLIC).outgoingBubble)
+
+        val profileId = store.saveProfile("Test profile", store.resolve(ChatAccount.PRIVATE))
+        val exported = store.exportProfiles()
+        store.renameProfile(profileId, "Renamed profile")
+        assertTrue(store.profiles().any { it.id == profileId && it.name == "Renamed profile" })
+        store.importProfiles(exported)
+        assertTrue(store.profiles().any { it.name == "Test profile" })
+        val duplicateId = store.duplicateProfile(profileId)
+        assertTrue(store.profiles().any { it.id == duplicateId })
+        store.deleteProfile(profileId)
+        assertFalse(store.profiles().any { it.id == profileId })
+
         context.getSharedPreferences("aharane-chat-appearance", Context.MODE_PRIVATE).edit().clear().commit()
     }
 }

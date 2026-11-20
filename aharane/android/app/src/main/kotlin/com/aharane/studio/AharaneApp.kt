@@ -9,7 +9,9 @@ import android.net.Uri
 import android.Manifest
 import android.content.pm.PackageManager
 import android.provider.OpenableColumns
+import android.widget.MediaController
 import android.widget.Toast
+import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -34,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.viewinterop.AndroidView
 import com.aharane.studio.core.design.*
 import com.aharane.studio.core.media.VoiceNoteRecorder
 import com.aharane.studio.core.model.ChatAccount
@@ -69,6 +72,7 @@ import com.aharane.studio.features.files.StudioFileEntry
 import com.aharane.studio.features.home.HomeScreen
 import com.aharane.studio.features.more.MoreScreen
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -248,6 +252,7 @@ fun AharaneApp(
     var mediaTitle by remember { mutableStateOf("") }
     var sharedMediaFile by remember { mutableStateOf<File?>(null) }
     var mediaMessageError by remember { mutableStateOf("") }
+    var viewOnceVideoFile by remember { mutableStateOf<File?>(null) }
     val openedViewOnceIds = remember { mutableStateListOf<String>() }
     var voiceRecorder by remember { mutableStateOf<VoiceNoteRecorder?>(null) }
     var voiceRecording by remember { mutableStateOf(false) }
@@ -427,6 +432,28 @@ fun AharaneApp(
             } catch (error: Exception) {
                 serverError = error.message ?: "Could not load this conversation."
                 activeMessages = emptyList()
+            }
+        }
+    }
+
+    // Keep the visible native dashboard/inbox fresh while the app is open.
+    // This uses the existing authenticated API and does not open a WhatsApp
+    // socket or send presence/read-receipt events.
+    LaunchedEffect(authenticated, previewMode, selectedAccount, activeConversation?.key) {
+        if (!authenticated || previewMode) return@LaunchedEffect
+        while (true) {
+            delay(20_000)
+            try {
+                val openConversation = activeConversation
+                val account = openConversation?.key?.account ?: selectedAccount
+                chatsByAccount[account] = repository.chats(account)
+                if (openConversation != null) {
+                    activeMessages = repository.messages(openConversation)
+                } else {
+                    runtime = repository.runtimeSnapshot()
+                }
+            } catch (error: Exception) {
+                serverError = error.message ?: "Aharane refresh failed."
             }
         }
     }
@@ -863,12 +890,22 @@ fun AharaneApp(
                                 try {
                                     val bytes = repository.viewOnceMedia(message.key.account, message)
                                     openedViewOnceIds.add(message.messageId)
-                                    showImageBytes(
-                                        bytes,
-                                        "View-once media",
-                                        onBitmap = { mediaTitle = "View-once media"; mediaImage = it; mediaMessageError = "" },
-                                        onError = { mediaTitle = "View-once media"; mediaMessageError = it }
-                                    )
+                                    val mime = message.mediaMimeType.orEmpty()
+                                    if (mime.startsWith("video/")) {
+                                        viewOnceVideoFile?.delete()
+                                        val extension = message.mediaFileName?.substringAfterLast('.', "mp4")
+                                            ?.takeIf { it.matches(Regex("[A-Za-z0-9]{2,5}")) } ?: "mp4"
+                                        val file = File.createTempFile("aharane-view-once-", ".$extension", context.cacheDir)
+                                        withContext(Dispatchers.IO) { file.writeBytes(bytes) }
+                                        viewOnceVideoFile = file
+                                    } else {
+                                        showImageBytes(
+                                            bytes,
+                                            "View-once media",
+                                            onBitmap = { mediaTitle = "View-once media"; mediaImage = it; mediaMessageError = "" },
+                                            onError = { mediaTitle = "View-once media"; mediaMessageError = it }
+                                        )
+                                    }
                                 } catch (error: Exception) {
                                     serverError = error.message ?: "View-once media is no longer available."
                                 }
@@ -1268,6 +1305,40 @@ fun AharaneApp(
                         onClick = ::runFileDialogAction
                     )
                 }
+            }
+        }
+    }
+
+    if (viewOnceVideoFile != null) {
+        val videoFile = viewOnceVideoFile!!
+        DisposableEffect(videoFile) {
+            onDispose { videoFile.delete() }
+        }
+        Dialog(onDismissRequest = {
+            videoFile.delete()
+            viewOnceVideoFile = null
+        }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                    .background(StudioPalette.Surface).padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("View-once video", color = StudioPalette.Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                AndroidView(
+                    factory = { viewContext ->
+                        VideoView(viewContext).apply {
+                            val player = this
+                            setMediaController(MediaController(viewContext).also { it.setAnchorView(player) })
+                            setVideoPath(videoFile.absolutePath)
+                            setOnPreparedListener { it.start() }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 420.dp)
+                )
+                StudioActionButton("Close", compact = true, primary = true, onClick = {
+                    videoFile.delete()
+                    viewOnceVideoFile = null
+                })
             }
         }
     }

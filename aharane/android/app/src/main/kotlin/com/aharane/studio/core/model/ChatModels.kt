@@ -69,7 +69,9 @@ data class ChatMessage(
     val isVoiceNote: Boolean = false,
     val reactions: List<String> = emptyList(),
     val localOutboxState: String? = null,
-    val localOutboxError: String? = null
+    val localOutboxError: String? = null,
+    val deletedByRemote: Boolean = false,
+    val deletedAtMillis: Long = 0L
 ) {
     init {
         require(messageId.isNotBlank())

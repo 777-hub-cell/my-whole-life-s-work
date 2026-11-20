@@ -32,6 +32,8 @@ fun HomeScreen(
     serviceSubtitle: String = "Not connected to Aharane service",
     privateAccountStatus: String = "Status not loaded",
     publicAccountStatus: String = "Status not loaded",
+    privateActionLabel: String = "Link account",
+    publicActionLabel: String = "Link account",
     onAccountAction: (ChatAccount) -> Unit = {},
     recentActivity: List<String> = emptyList()
 ) {
@@ -101,12 +103,14 @@ fun HomeScreen(
                 AccountRow(
                     account = ChatAccount.PRIVATE,
                     state = privateAccountStatus,
+                    actionLabel = privateActionLabel,
                     onAction = { onAccountAction(ChatAccount.PRIVATE) }
                 )
                 StudioDivider()
                 AccountRow(
                     account = ChatAccount.PUBLIC,
                     state = publicAccountStatus,
+                    actionLabel = publicActionLabel,
                     onAction = { onAccountAction(ChatAccount.PUBLIC) }
                 )
             }
@@ -224,7 +228,7 @@ private fun AccountRow(
             Text(state, color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 17.sp)
         }
         StudioActionButton(
-            if (state.equals("Connected", true)) "Manage" else if (state.contains("paired", true)) "Reconnect" else "Link account",
+            actionLabel,
             compact = true,
             primary = !state.equals("Connected", true),
             onClick = onAction

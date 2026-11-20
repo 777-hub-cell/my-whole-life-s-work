@@ -21,7 +21,7 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
       { id: 'message', label: 'Original message', type: 'message' }, { id: 'sender', label: 'Sender JID', type: 'string' },
       { id: 'chat', label: 'Chat JID', type: 'string' }, { id: 'arguments', label: 'Arguments', type: 'string' },
     ]) },
-    { type: 'trigger.message', name: 'Message received', description: 'Start for a message from an authorized one-to-one sender.', ports: ports([], [
+    { type: 'trigger.message', name: 'Message received', description: 'Start on a direct message from a sender allowed by the Public WhatsApp account.', ports: ports([], [
       { id: 'next', label: 'Next', type: 'exec' }, { id: 'messageText', label: 'Message text', type: 'string' },
       { id: 'message', label: 'Original message', type: 'message' }, { id: 'sender', label: 'Sender JID', type: 'string' },
       { id: 'chat', label: 'Chat JID', type: 'string' },
@@ -517,6 +517,7 @@ export function createVisualCommandStore(filePath) {
       }).map(item => structuredClone(item))
     },
     findMessageTriggers(account) {
+      if (account !== 'public') return []
       return data.workflows.filter(item => item.enabled && item.account === account && item.nodes.some(node => node.type === 'trigger.message')).map(item => structuredClone(item))
     },
   }

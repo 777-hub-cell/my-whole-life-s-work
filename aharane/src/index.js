@@ -1050,7 +1050,7 @@ async function handleMessages(sessionId, currentSocket, event) {
       },
       message,
       messageText,
-      sender: senderNumberFromJid(message.key?.participant || remoteJid) || remoteJid,
+      sender: String(message.key?.participant || remoteJid),
       remoteJid,
       commandName: '',
       rawArgs: '',
@@ -1432,7 +1432,7 @@ app.post('/api/visual-commands/:id/test', requireAdmin, async (req, res) => {
         remoteJid: jid,
         commandName: configuredName,
         rawArgs: messageText.trim().split(/\s+/).slice(1).join(' '),
-        args: messageText.trim().split(/\\s+/).slice(1),
+        args: messageText.trim().split(/\s+/).slice(1),
         socket: {
           sendMessage: async () => { throw new Error('Live sends are disabled during tests.') },
         },

@@ -63,17 +63,44 @@ function messageContent(message) {
     ['conversation', 'conversation'], ['extendedTextMessage', 'extendedTextMessage'],
     ['imageMessage', 'image'], ['videoMessage', 'video'], ['audioMessage', 'audio'],
     ['stickerMessage', 'sticker'], ['documentMessage', 'document'],
-    ['contactMessage', 'contact'], ['locationMessage', 'location'],
-    ['liveLocationMessage', 'location'], ['pollCreationMessage', 'poll'],
-    ['pollCreationMessageV3', 'poll'], ['reactionMessage', 'reaction'],
-    ['buttonsResponseMessage', 'response'], ['listResponseMessage', 'response'],
-    ['templateButtonReplyMessage', 'response'],
+    ['contactMessage', 'contact'], ['contactsArrayMessage', 'contact'],
+    ['locationMessage', 'location'], ['liveLocationMessage', 'location'],
+    ['pollCreationMessage', 'poll'], ['pollCreationMessageV3', 'poll'],
+    ['reactionMessage', 'reaction'], ['buttonsResponseMessage', 'response'],
+    ['listResponseMessage', 'response'], ['templateButtonReplyMessage', 'response'],
   ]
   for (const [key, type] of pairs) {
     if (!body[key]) continue
     const value = body[key]
-    const text = typeof value === 'string' ? value
-      : String(value.text || value.caption || value.name || value.selectedDisplayText || value.comment || '')
+    let text = ''
+    if (typeof value === 'string') {
+      text = value
+    } else if (type === 'contact') {
+      const contacts = Array.isArray(value.contacts) ? value.contacts : [value]
+      text = contacts.map(contact => [
+        String(contact.displayName || contact.name || '').trim(),
+        String(contact.vcard || '').trim(),
+      ].filter(Boolean).join('\n')).filter(Boolean).join('\n\n')
+    } else if (type === 'location') {
+      const latitude = Number(value.degreesLatitude)
+      const longitude = Number(value.degreesLongitude)
+      const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude) &&
+        Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180
+      text = [
+        String(value.name || '').trim(),
+        String(value.address || '').trim(),
+        hasCoordinates ? 'Coordinates: ' + latitude + ', ' + longitude : '',
+        String(value.comment || value.caption || '').trim(),
+      ].filter(Boolean).join('\n')
+    } else if (type === 'poll') {
+      const options = Array.isArray(value.options) ? value.options : []
+      text = [
+        String(value.name || value.question || value.title || value.text || '').trim(),
+        ...options.map(option => String(option?.optionName || option?.name || '').trim()).filter(Boolean).map(option => '• ' + option),
+      ].filter(Boolean).join('\n')
+    } else {
+      text = String(value.text || value.caption || value.name || value.selectedDisplayText || value.comment || '')
+    }
     const mimeType = String(value.mimetype || '')
     const fileName = String(value.fileName || '')
     const size = Number(value.fileLength?.toString?.() || value.fileLength || 0) || 0

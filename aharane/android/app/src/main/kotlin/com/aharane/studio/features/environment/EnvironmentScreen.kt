@@ -54,6 +54,15 @@ fun EnvironmentScreen(
                 "ENV",
                 "Managed environment values for the Private and Public accounts. Command prefixes are fixed by Aharane."
             )
+            if (previewMode) {
+                Text(
+                    "PREVIEW · Example values only. Changes are kept locally in this demo and are never sent to a server.",
+                    color = StudioPalette.Accent,
+                    fontSize = 11.5.sp,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
             Spacer(Modifier.height(18.dp))
         }
 
@@ -75,7 +84,7 @@ fun EnvironmentScreen(
                             )
                             if (item.valueType == "boolean") {
                                 Row(
-                                    Modifier.fillMaxWidth().clickable(enabled = connected && !item.readOnly) {
+                                    Modifier.fillMaxWidth().clickable(enabled = (connected || previewMode) && !item.readOnly) {
                                         drafts[index] = item.copy(
                                             value = if (item.value.equals("true", true)) "false" else "true"
                                         )
@@ -90,21 +99,21 @@ fun EnvironmentScreen(
                                     )
                                     NativeToggle(
                                         checked = item.value.equals("true", true),
-                                        enabled = connected && !item.readOnly
+                                        enabled = (connected || previewMode) && !item.readOnly
                                     )
                                 }
                             } else {
                                 BasicTextField(
                                     value = item.value,
                                     onValueChange = { value ->
-                                        if (connected && !item.readOnly) drafts[index] = item.copy(value = value)
+                                        if ((connected || previewMode) && !item.readOnly) drafts[index] = item.copy(value = value)
                                     },
-                                    readOnly = item.readOnly || !connected,
+                                    readOnly = item.readOnly || (!connected && !previewMode),
                                     singleLine = item.key.endsWith("BOT_NAME") || item.key.endsWith("COMMAND_COOLDOWN"),
                                     minLines = if (item.key.endsWith("WELCOME_MESSAGE")) 3 else 1,
                                     maxLines = if (item.key.endsWith("WELCOME_MESSAGE")) 5 else 1,
                                     textStyle = TextStyle(
-                                        color = if (item.readOnly || !connected) StudioPalette.Muted else StudioPalette.Ink,
+                                        color = if (item.readOnly || (!connected && !previewMode)) StudioPalette.Muted else StudioPalette.Ink,
                                         fontSize = 14.sp,
                                         lineHeight = 20.sp,
                                         fontFamily = FontFamily.Monospace
@@ -136,7 +145,7 @@ fun EnvironmentScreen(
                 StudioActionButton(
                     if (saving) "Saving…" else "Save changes",
                     primary = true,
-                    enabled = connected && !saving,
+                    enabled = (connected || previewMode) && !saving,
                     onClick = {
                         scope.launch {
                             saving = true
@@ -151,7 +160,7 @@ fun EnvironmentScreen(
                     }
                 )
             }
-            if (!connected) {
+            if (!connected && !previewMode) {
                 Text(
                     "Connect your Aharane server to load and save these values.",
                     color = StudioPalette.Muted,

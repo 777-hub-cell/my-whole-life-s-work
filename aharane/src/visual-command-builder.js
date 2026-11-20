@@ -203,7 +203,7 @@ export function validateWorkflow(input) {
   const byId = new Map()
   if (!workflow.account) issue(null, 'error', 'Choose a WhatsApp account.', 'Select Private or Public in workflow settings.')
   if (!workflow.nodes.length) issue(null, 'error', 'The workspace is empty.', 'Add one trigger and an action.')
-  if (rawNodeCount > MAX_NODES) issue(null, 'error', 'The workflow exceeds the 100-node limit.', 'Remove nodes until the workflow contains 100 nodes or fewer.')
+  if (rawNodeCount > MAX_NODES) issue(null, 'error', 'The workflow exceeds 100 nodes (maximum 100).', 'Remove nodes until the workflow contains 100 nodes or fewer.')
   if (rawEdgeCount > MAX_EDGES) issue(null, 'error', 'The workflow exceeds the 300-connection limit.', 'Remove connections until the workflow contains 300 or fewer.')
 
   for (const node of workflow.nodes) {
@@ -259,7 +259,7 @@ export function validateWorkflow(input) {
     if (node.type === 'group.participantsUpdate') {
       const action = textValue(config.action, 16)
       if (!['add', 'remove', 'promote', 'demote'].includes(action)) issue(node.id, 'error', 'The participant action is invalid.', 'Choose add, remove, promote, or demote.')
-      const phones = textValue(config.participants, 1000).split(/[\\n,]+/).map(value => value.replace(/[\\s()-]/g, '').replace(/^\\+/, '')).filter(Boolean)
+      const phones = textValue(config.participants, 1000).split(/[\n,]+/).map(value => value.replace(/[\s()-]/g, '').replace(/^\+/, '')).filter(Boolean)
       if (!phones.length || phones.length > 50 || phones.some(phone => !/^[0-9]{7,15}$/.test(phone))) {
         issue(node.id, 'error', 'Participant numbers are invalid.', 'Enter 1 to 50 phone numbers, one per line, using 7 to 15 digits.')
       }
@@ -268,14 +268,14 @@ export function validateWorkflow(input) {
       issue(node.id, 'error', 'The group setting is invalid.', 'Choose announcement, not_announcement, locked, or unlocked.')
     }
     if (['moderation.blockContact', 'moderation.unblockContact'].includes(node.type)) {
-      const phone = textValue(config.phone, 20).replace(/[\\s()-]/g, '').replace(/^\\+/, '')
+      const phone = textValue(config.phone, 20).replace(/[\s()-]/g, '').replace(/^\+/, '')
       if (!/^[0-9]{7,15}$/.test(phone)) issue(node.id, 'error', 'The contact number is invalid.', 'Use a phone number containing 7 to 15 digits.')
     }
     if (node.type === 'profile.updateName' && !textValue(config.name, 80).trim()) issue(node.id, 'error', 'A profile name is required.', 'Enter the WhatsApp account name.')
     if (node.type === 'profile.updateStatus' && !textValue(config.status, 139).trim()) issue(node.id, 'error', 'A profile status is required.', 'Enter the account status text.')
     if (node.type === 'newsletter.create' && !textValue(config.name, 100).trim()) issue(node.id, 'error', 'A newsletter name is required.', 'Enter a newsletter name.')
     if (['newsletter.follow', 'newsletter.unfollow', 'newsletter.publishText'].includes(node.type) &&
-        !/^\\d{5,25}@newsletter$/.test(textValue(config.newsletterJid, 80))) {
+        !/^\d{5,25}@newsletter$/.test(textValue(config.newsletterJid, 80))) {
       issue(node.id, 'error', 'The newsletter ID is invalid.', 'Use the WhatsApp newsletter JID ending in @newsletter.')
     }
     if (node.type === 'newsletter.publishText' && !textValue(config.text, 2000).trim()) {
@@ -672,7 +672,7 @@ export async function executeVisualWorkflow(input, options = {}) {
         } else if (node.type === 'group.participantsUpdate') {
           if (!isGroupJid(event.remoteJid)) throw new Error('Participant management requires a group chat.')
           const action = textValue(node.config.action, 16)
-          const phones = textValue(node.config.participants, 1000).split(/[\\n,]+/).map(value => value.replace(/[\\s()-]/g, '').replace(/^\\+/, '')).filter(Boolean)
+          const phones = textValue(node.config.participants, 1000).split(/[\n,]+/).map(value => value.replace(/[\s()-]/g, '').replace(/^\+/, '')).filter(Boolean)
           const participants = phones.map(phone => phone + '@s.whatsapp.net')
           const results = await event.socket.groupParticipantsUpdate(event.remoteJid, participants, action)
           const rejected = Array.isArray(results) ? results.filter(item => String(item?.status || '') !== '200') : []
@@ -686,7 +686,7 @@ export async function executeVisualWorkflow(input, options = {}) {
           await event.socket.groupSettingUpdate(event.remoteJid, setting)
           trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the group setting.' })
         } else if (node.type === 'moderation.blockContact' || node.type === 'moderation.unblockContact') {
-          const phone = textValue(node.config.phone, 20).replace(/[\\s()-]/g, '').replace(/^\\+/, '')
+          const phone = textValue(node.config.phone, 20).replace(/[\s()-]/g, '').replace(/^\+/, '')
           if (!/^[0-9]{7,15}$/.test(phone)) throw new Error('The contact phone number is invalid.')
           await event.socket.updateBlockStatus(phone + '@s.whatsapp.net', node.type === 'moderation.blockContact' ? 'block' : 'unblock')
           trace.push({ nodeId: node.id, type: node.type, status: 'success', message: node.type === 'moderation.blockContact' ? 'Contact blocked.' : 'Contact unblocked.' })
@@ -703,12 +703,12 @@ export async function executeVisualWorkflow(input, options = {}) {
           const description = textValue(node.config.description, 512).trim()
           const created = await event.socket.newsletterCreate(name, description)
           const newsletterJid = textValue(created?.id, 80)
-          if (!/^\\d{5,25}@newsletter$/.test(newsletterJid)) throw new Error('WhatsApp did not return a valid newsletter ID.')
+          if (!/^\d{5,25}@newsletter$/.test(newsletterJid)) throw new Error('WhatsApp did not return a valid newsletter ID.')
           outputs.set(node.id, { newsletterJid })
           trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'Newsletter created: ' + newsletterJid })
         } else if (node.type === 'newsletter.follow' || node.type === 'newsletter.unfollow') {
           const newsletterJid = textValue(node.config.newsletterJid, 80)
-          if (!/^\\d{5,25}@newsletter$/.test(newsletterJid)) throw new Error('The newsletter ID is invalid.')
+          if (!/^\d{5,25}@newsletter$/.test(newsletterJid)) throw new Error('The newsletter ID is invalid.')
           await (node.type === 'newsletter.follow'
             ? event.socket.newsletterFollow(newsletterJid)
             : event.socket.newsletterUnfollow(newsletterJid))
@@ -716,7 +716,7 @@ export async function executeVisualWorkflow(input, options = {}) {
         } else if (node.type === 'newsletter.publishText') {
           const newsletterJid = textValue(node.config.newsletterJid, 80)
           const text = textValue(node.config.text, 2000).trim()
-          if (!/^\\d{5,25}@newsletter$/.test(newsletterJid) || !text) throw new Error('Newsletter ID or post text is invalid.')
+          if (!/^\d{5,25}@newsletter$/.test(newsletterJid) || !text) throw new Error('Newsletter ID or post text is invalid.')
           const sent = await event.socket.sendMessage(newsletterJid, { text })
           if (!sent?.key?.id) throw new Error('WhatsApp did not return the newsletter post.')
           outputs.set(node.id, { sent })

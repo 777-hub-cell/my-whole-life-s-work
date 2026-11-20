@@ -113,8 +113,8 @@ def main():
         "--ez", "aharane_preview_mode", "true"
     )
     capture("01-home.png", 5)
-    tap_label("Link account", occurrence=0)
-    capture("01a-link-account.png")
+    tap_label("Preview", occurrence=0)
+    capture("01a-preview-account-action.png")
     tap_label("Close")
     tap_label("Configuration", scroll_to_find=True)
     capture("01b-configuration.png")

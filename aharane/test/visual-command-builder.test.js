@@ -435,6 +435,88 @@ test('group, moderation, profile and newsletter actions remain non-destructive i
   assert.equal(result.trace.filter(item => item.status === 'simulated' && item.nodeId !== trigger.id).length, definitions.length)
 })
 
+test('Is group admin uses Baileys group metadata and branches on the participant admin flag', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('public')
+  const trigger = draft.nodes[0]
+  trigger.config.chatScope = 'groups'
+  trigger.config.command = 'hello'
+  const check = { id: 'is-admin', type: 'condition.isGroupAdmin', x: 260, y: 100, config: {} }
+  const yes = { id: 'admin-yes', type: 'message.sendText', x: 500, y: 40, config: { text: 'You are an admin.' } }
+  const no = { id: 'admin-no', type: 'message.sendText', x: 500, y: 180, config: { text: 'You are not an admin.' } }
+  draft.nodes = [trigger, check, yes, no]
+  draft.edges = [
+    { id: 'trigger-admin', from: trigger.id, fromSocket: 'next', to: check.id, toSocket: 'in' },
+    { id: 'yes-admin', from: check.id, fromSocket: 'yes', to: yes.id, toSocket: 'in' },
+    { id: 'no-admin', from: check.id, fromSocket: 'no', to: no.id, toSocket: 'in' },
+  ]
+  assert.equal(validateWorkflow(draft).valid, true, JSON.stringify(validateWorkflow(draft).errors))
+  const sent = []
+  const event = context({
+    sessionId: 'public',
+    privateControl: false,
+    isPublicOwner: false,
+    allowedPublicSender: true,
+    remoteJid: '120363012345678901-1234567890@g.us',
+    sender: '2348012345678@s.whatsapp.net',
+    senderJid: '2348012345678@s.whatsapp.net',
+    messageText: '!hello',
+  })
+  event.socket = {
+    groupMetadata: async () => ({
+      participants: [
+        { id: '2348012345678@s.whatsapp.net', admin: 'admin' },
+        { id: '2348098765432@s.whatsapp.net', admin: null },
+      ],
+    }),
+    sendMessage: async (_jid, body) => { sent.push(body.text); return { key: { id: 'admin-branch' } } },
+  }
+  const result = await executeVisualWorkflow(draft, { store, context: event })
+  assert.equal(result.ok, true, result.error)
+  assert.deepEqual(sent, ['You are an admin.'])
+
+  const notAdmin = await executeVisualWorkflow(draft, {
+    store,
+    context: { ...event, senderJid: '2348098765432@s.whatsapp.net', sender: '2348098765432@s.whatsapp.net' },
+  })
+  assert.equal(notAdmin.ok, true, notAdmin.error)
+})
+
+test('Is group admin safe test is simulated and never fetches live group metadata', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('public')
+  draft.nodes[0].config.chatScope = 'groups'
+  draft.nodes[0].config.command = 'hello'
+  const check = { id: 'is-admin', type: 'condition.isGroupAdmin', x: 260, y: 100, config: {} }
+  const yes = { id: 'admin-yes', type: 'flow.end', x: 500, y: 40, config: {} }
+  const no = { id: 'admin-no', type: 'flow.end', x: 500, y: 180, config: {} }
+  draft.nodes = [draft.nodes[0], check, yes, no]
+  draft.edges = [
+    { id: 'trigger-admin', from: draft.nodes[0].id, fromSocket: 'next', to: check.id, toSocket: 'in' },
+    { id: 'yes-admin', from: check.id, fromSocket: 'yes', to: yes.id, toSocket: 'in' },
+    { id: 'no-admin', from: check.id, fromSocket: 'no', to: no.id, toSocket: 'in' },
+  ]
+  let calls = 0
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    dryRun: true,
+    context: context({
+      sessionId: 'public',
+      privateControl: false,
+      isPublicOwner: true,
+      allowedPublicSender: true,
+      remoteJid: '120363012345678901-1234567890@g.us',
+      sender: '2348012345678@s.whatsapp.net',
+      senderJid: '2348012345678@s.whatsapp.net',
+      messageText: '!hello',
+      socket: { groupMetadata: async () => { calls += 1; throw new Error('Must not fetch live data during a dry-run.') } },
+    }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.equal(calls, 0)
+  assert.ok(result.trace.some(item => item.type === 'condition.isGroupAdmin' && item.status === 'simulated'))
+})
+
 test('group metadata output can feed a downstream message and non-owner profile updates are denied', async t => {
   const { store } = await makeStore(t)
   const draft = createWorkflowDraft('public')

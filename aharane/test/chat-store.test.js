@@ -461,11 +461,7 @@ test('idempotent text send intents survive restart and never resend an uncertain
     } catch (error) {
       throw new Error('Same-content retry after restart failed: ' + error.message, { cause: error })
     }
-    assert.deepEqual(
-      replayedIntent,
-      await afterProcessRestart.beginIdempotentSend('private', { clientMessageId, jid, text: 'hello', quotedMessageId: '' }),
-      { state: 'uncertain', messageId: '' }
-    )
+    assert.deepEqual(replayedIntent, { state: 'uncertain', messageId: '' })
     assert.equal(
       (await afterProcessRestart.getIdempotentSend('private', clientMessageId)).state,
       'sending'

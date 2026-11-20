@@ -112,6 +112,12 @@ data class EditorDiagnostic(
     val column: Int?
 )
 
+data class EditorDiagnosticsResult(
+    val supported: Boolean,
+    val reason: String?,
+    val diagnostics: List<EditorDiagnostic>
+)
+
 /**
  * Typed adapter for the existing Aharane server API. It never talks to WhatsApp
  * directly; Baileys, sessions and command dispatch remain on the server.
@@ -752,14 +758,13 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
             JSONObject().put("updateId", updateId).put("confirm", true)
         )
 
-    suspend fun diagnoseSource(path: String, content: String): List<EditorDiagnostic> {
+    suspend fun diagnoseSource(path: String, content: String): EditorDiagnosticsResult {
         val response = api.post(
             "files/diagnostics",
             JSONObject().put("path", path).put("content", content)
         )
-        if (!response.optBoolean("supported")) return emptyList()
         val rows = response.optJSONArray("diagnostics") ?: JSONArray()
-        return buildList {
+        val results = buildList {
             for (index in 0 until rows.length()) {
                 val row = rows.optJSONObject(index) ?: continue
                 add(
@@ -772,6 +777,11 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
                 )
             }
         }
+        return EditorDiagnosticsResult(
+            supported = response.optBoolean("supported"),
+            reason = response.optString("reason").takeIf { it.isNotBlank() },
+            diagnostics = results
+        )
     }
 
     suspend fun clearActivity() {

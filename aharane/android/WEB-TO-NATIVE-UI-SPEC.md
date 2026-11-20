@@ -44,7 +44,7 @@ Do not invent service state, account state, identities, owner numbers or log ent
 
 Translate the Chats heading, account switcher, chat visibility control, starred-message control, chat-appearance control, account/conversation subtitle, search field without a leading glyph, and All / Unread / Groups / Archived segmented filter. Keep the order and control sizes of the current web toolbar. The empty state is one compact centered “No chats match.” line inside a single card. Connected state must render real conversation rows with web-equivalent avatars, previews, relative timestamps, unread count, pinned/muted and outgoing status indicators. Account counts, unread counts, search and actions must stay scoped to the selected Private or Public account.
 
-Opening a conversation is a full-screen native route with a top bar, in-conversation search, message timeline, date separators, incoming/outgoing bubbles, attachments/media previews, reply/attachment actions and composer. Preserve the user's chat privacy invariants: opening messages must not send read receipts or presence, and view-once image/video media must only be opened once. Do not mark a conversation read merely because the screen was rendered. (The native conversation surface is implemented; authenticated message loading, media playback, voice capture, and transport-backed privacy enforcement remain to be connected.)
+Opening a conversation is a full-screen native route with a top bar, in-conversation search, message timeline, date separators, incoming/outgoing bubbles, attachments/media previews, reply/attachment actions and composer. Preserve the user's chat privacy invariants: opening messages must not send read receipts or presence, and view-once image/video media must only be opened once. Do not mark a conversation read merely because the screen was rendered. (Conversation history is loaded through the authenticated Aharane API. Text/media sending, OGG/Opus voice-note recording, replies, reactions, starring, copying, same-account forwarding, deletion requests, media opening and view-once image/video viewing are wired to the existing server. Opening history may advance Aharane's local inbox read marker, but it does not call WhatsApp read-receipt or presence APIs.)
 
 ### Files and source editor
 
@@ -68,45 +68,45 @@ Keep the current compact More sections and order:
 - Development: Studio source.
 - Change password and Sign out actions.
 
-Use plain title/subtitle rows rather than decorative icon tiles. The native Studio source page must explain that Kotlin app source is bundled into the installed package and cannot be edited as a web HTML file at runtime. Account, activity, storage, password and sign-out operations remain unavailable until their authenticated services are connected.
+Use plain title/subtitle rows rather than decorative icon tiles. The native Studio source page must explain that Kotlin app source is bundled into the installed package and cannot be edited as a web HTML file at runtime. Account state and owner identities, activity and storage summaries, password change and sign-out use the authenticated server where their controls are enabled. Some secondary activity actions (live tail, copy/export) remain inactive.
 
 Dialogs and bottom sheets should preserve web Studio spacing/radius, white/dark surface, type hierarchy and dismissal behaviour.
 
 ## Current implementation state
 
-Implemented in the native Kotlin branch:
-- A custom Studio shell with the exact Home / Files / ENV / Chats / More navigation order, web-matched light/dark palettes, and bundled Bricolage Grotesque + Instrument Sans typefaces.
-- A Home dashboard translated to the current service-status, WhatsApp-account, setup/configuration and recent-activity sections, with no generated uptime, activity or message totals.
-- A Chats inbox with account separation, search, four filters, sorting, previews, unread counts, pinned/muted indicators, four current toolbar controls, and compact empty state. Chat visibility/starred/appearance dialogs are present; their server-backed data/settings are not wired yet.
-- A full-screen native conversation surface with its own header, in-thread search, date dividers, incoming/outgoing message styling, reply preview, attachment action, view-once treatment, and message composer. Conversation data, searches, reply lookups and unread counts are scoped to the active account/JID key; rendering the screen does not mark messages read or send presence.
-- A Files browser with naturally wrapping actions, breadcrumbs, search, folder-first A–Z ordering, selection/bulk-action surfaces, Update packages section, and a row-anchored 190dp white floating action menu with the live web actions (Rename, Duplicate, Move, Download as ZIP, Delete). The menu dismisses on outside tap and selection. Disconnected actions show explicit server-connection feedback.
-- A native full-screen editor workbench with tabs, expandable Explorer tree, monospaced editable document surface, JavaScript/JSON syntax token colours, synchronized line-number gutter, cursor-aware accessory-key row, Problems / Console panel and status strip. File open/content/save callbacks are exposed; server-backed file access is still pending.
-- An API-ready ENV variable presentation with a quiet disconnected state and Save changes action. No invented variables are shown; server save awaits the authenticated API adapter.
-- More sections in web order, including Accounts & owners, Activity and logs, Storage information, Appearance, Help, About, Development / Studio source, Change password and Sign out. Appearance controls for theme, accent, interface size, corners, spacing, editor palette, editor font size and line-number visibility persist on-device.
-- Debug-only emulator design fixtures for conversations, messages, file trees and source documents. They require both a debuggable APK and the explicit `aharane_preview_mode` launch extra; they are not loaded in normal launches or release builds.
-- A design contract and acceptance checklist in this document.
+The current native branch contains a real Android application, not a static mock-up. The normal app launch is gated by HTTPS server verification and Studio password sign-in. Debug-only sample screens are enabled only in a debuggable APK with the explicit `aharane_preview_mode` launch extra.
 
-Not implemented yet:
-- Secure Android pairing/session authentication and the authenticated Aharane API adapter.
-- Live server-backed account state, chats/messages, chat preferences, file tree/content, file mutations, ENV values and ENV saves, logs and storage metrics.
-- Media/video/audio playback, voice recording, message reactions and full view-once enforcement at the Android transport layer.
-- Full language-server syntax highlighting, cursor/selection and scroll restoration across document switches, and a live bot console.
-- Complete configuration/setup workflows and end-to-end permission/error handling.
-- Securely integrating server-backed account rows, owner identities, activity/storage details, chat tools, ENV and password actions.
-- Final screenshot-by-screenshot review of the newest native APK (both populated debug preview and normal disconnected UI) against the current Chromium web reference, followed by verification on the target Galaxy A16.
+Implemented and connected:
+
+- Kotlin + Jetpack Compose shell, web-matched navigation order, bundled Bricolage Grotesque and Instrument Sans fonts, light/dark/AMOLED palettes, and on-device appearance preferences.
+- Secure server connection and password sign-in. The received HTTP-only session cookie is persisted in Android Keystore-encrypted storage; the Studio password is not saved.
+- Home status and account state, Private/Public account pairing/reconnect/repair/stop/restart actions, owner settings, configuration and recent activity.
+- Chats list and conversation history scoped to the selected Private or Public account, account-specific visibility and appearance settings, starred messages, search/filter controls, local inbox unread markers, and foreground refresh while the app is open.
+- Conversation composer for text, media attachments and OGG/Opus voice notes; reply composition; message star/unstar, emoji reactions, copy, same-account forwarding and delete requests; normal media opening; and one-time view-once image/video handling.
+- Files tree and full-screen editor connected to the authenticated file API. Supported actions include creating files/folders, uploading, viewing/editing, checksum-aware save, rename, duplicate, move, delete, download and ZIP export, plus server-side Apply/Discard for staged edits.
+- ENV load/save, owner-identity load/save, account management, activity retrieval/clear, storage summary, password change and sign-out.
+- Periodic Android background notification checks, subject to OS scheduling and battery/network policy.
+- Debug-only emulator fixtures isolated from normal app launch and production data.
+
+Current limitations / remaining acceptance work:
+
+- The one-time admin password setup must first be completed in the web Studio; Android does not yet accept the one-time setup code.
+- Foreground refresh currently polls the authenticated API; a persistent WebSocket stream is not implemented. Background notification checks are periodic jobs, not guaranteed push delivery.
+- There is no Room-backed offline cache or reliable offline workspace sync. Text drafts survive Compose save/restore for the conversation screen but are not a durable outbox.
+- Normal image media can be previewed in-app. Regular audio/video/document attachments are opened by installed Android apps; the single-use view-once video path is app-local and cache-backed.
+- Some secondary Activity actions such as live tail/copy/export are still disabled. Full media-gallery management, message pagination, full editor language-server features and all web-only management tools are not yet parity-complete.
+- The debug APK is not a signed production release. Release signing needs an owner-supplied signing key and separate release validation.
+- Latest CI unit tests and debug APK assembly passed. The web reference screenshots were captured, but the native emulator capture script then failed because it did not scroll the Home list to the Configuration row. That test flow is being corrected and must pass before screenshot parity is accepted.
+- Final real-device verification still requires installing the APK on the Samsung Galaxy A16 (Android 16) and connecting it to the actual Aharane HTTPS server. Emulator verification cannot prove the device's microphone, media codecs, notification delivery, OS battery behaviour or live server connection.
 
 ## Delivery roadmap
 
-1. **Native UI parity (this PR):** complete every top-level and full-screen surface, reproduce menus, editor, conversation and appearance interactions, capture actual emulator screens, compare with the web source, and correct visual defects. Debug fixtures are allowed only in explicit debug preview mode.
-2. **Secure server linking:** add secure initial pairing/sign-in, persistent authenticated session storage, logout/re-link, certificate/TLS validation and server identity checks. Never store a server password or admin token in frontend preferences or source.
-3. **Live dashboard and messaging:** connect Home status/metrics, Private and Public accounts, inbox/search/filters, message history and outbound text sending. Opening a chat must not produce read receipts or presence. View-once must be enforced by the message/media transport, not only the UI.
-4. **Media and interaction:** implement image/video/audio/document/sticker/GIF rendering, media viewer, voice-note capture/playback, replies, reactions, and message delivery/error states.
-5. **Files, editor and operations:** connect the authenticated file tree and content API; implement create, rename, move, delete, upload, download, export, local draft conflicts and verified saving. Wire ENV, Configuration, activity/logs and storage data and saving.
-6. **Device QA and release:** validate on the Samsung Galaxy A16 (Android 16), cover system font scale, light/dark themes, permission/keyboard/rotation/accessibility cases, then prepare a signed release. Merge and production deployment require separate explicit approval.
+1. **Close native feature gaps:** finish conversation actions, keep every request aligned to the server contract, improve foreground refresh and fix remaining disconnected or disabled secondary actions.
+2. **Visual acceptance:** capture every important native screen on an Android 16 emulator, compare it with the actual web Studio at the same viewport, and fix layout, scrolling, touch-target, font-scale and keyboard issues.
+3. **Device QA:** install the generated APK on the Galaxy A16, test server sign-in, both WhatsApp accounts, media/voice notes, file editing, ENV saving, notifications, permission flows, rotation, and app restarts.
+4. **Release preparation:** configure a secure release signing process, build and validate a signed APK, then request explicit approval before merging or deploying anything.
 
-The UI phase is accepted only when the latest APK builds, tests pass, actual emulator screenshots have been inspected, all principal flows in the debug preview are reachable, and a corresponding web-reference comparison has been reviewed. Backend phases are separate: an attractive offline UI is not proof of server integration.
-
-Any UI control whose backing service does not exist must be disabled or clearly identified as a disconnected/local-only draft. A disabled backend operation must never show a false success state. The Android application remains independent from NIGHT/MSCC; no production deployment is part of this PR.
+The current PR is a development candidate, not a production release. UI parity is not accepted until the latest screenshot suite passes and the captures have been inspected. End-to-end server acceptance and physical-device testing are separate requirements.
 
 ## Acceptance checklist
 

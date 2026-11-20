@@ -326,7 +326,7 @@ test('contact cards retain vCards, locations retain coordinates and polls retain
               'TEL;TYPE=CELL:+2348012345678',
               'EMAIL:ada@example.test',
               'END:VCARD',
-            ].join('\\n'),
+            ].join('\n'),
           },
         },
       },
@@ -359,7 +359,7 @@ test('contact cards retain vCards, locations retain coordinates and polls retain
             displayName: 'Shared contacts',
             contacts: [{
               displayName: 'Grace Hopper',
-              vcard: ['BEGIN:VCARD', 'VERSION:3.0', 'FN:Grace Hopper', 'TEL:+15550102030', 'END:VCARD'].join('\\n'),
+              vcard: ['BEGIN:VCARD', 'VERSION:3.0', 'FN:Grace Hopper', 'TEL:+15550102030', 'END:VCARD'].join('\n'),
             }],
           },
         },

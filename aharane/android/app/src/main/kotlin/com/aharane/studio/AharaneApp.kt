@@ -379,6 +379,39 @@ fun AharaneApp(
         }
     }
 
+    suspend fun refreshConversationIncrementally(conversation: ChatSummary): List<ChatMessage> {
+        val local = localChatRepository
+        var cursor = local?.newestCursor(conversation.key)
+            ?: LocalChatRepository.MessageCursor(0L, "")
+        var page = repository.syncMessages(
+            conversation,
+            afterMillis = cursor.timestampMillis,
+            afterMessageId = cursor.messageId,
+            limit = 200
+        )
+        val received = mutableListOf<ChatMessage>()
+        var rounds = 0
+        do {
+            received += page.messages
+            local?.saveMessages(conversation, page.messages, if (cursor.timestampMillis == 0L) page.hasOlder else null)
+            val next = page.messages.maxWithOrNull(compareBy<ChatMessage> { it.timestampMillis }.thenBy { it.messageId })
+            if (next != null && cursor.timestampMillis > 0L &&
+                (next.timestampMillis < cursor.timestampMillis ||
+                    (next.timestampMillis == cursor.timestampMillis && next.messageId <= cursor.messageId))) break
+            if (next != null) cursor = LocalChatRepository.MessageCursor(next.timestampMillis, next.messageId)
+            rounds += 1
+            if (!page.hasNewer || page.messages.isEmpty() || rounds >= 5) break
+            page = repository.syncMessages(
+                conversation,
+                afterMillis = cursor.timestampMillis,
+                afterMessageId = cursor.messageId,
+                limit = 200
+            )
+        } while (true)
+        return local?.messages(conversation.key)
+            ?: (activeMessages + received).distinctBy { it.messageId }.sortedBy { it.timestampMillis }
+    }
+
     fun stopAndSendVoiceNote() {
         val active = voiceRecorder ?: return
         val conversation = activeConversation ?: return
@@ -660,39 +693,6 @@ fun AharaneApp(
                 busy = false
             }
         }
-    }
-
-    suspend fun refreshConversationIncrementally(conversation: ChatSummary): List<ChatMessage> {
-        val local = localChatRepository
-        var cursor = local?.newestCursor(conversation.key)
-            ?: LocalChatRepository.MessageCursor(0L, "")
-        var page = repository.syncMessages(
-            conversation,
-            afterMillis = cursor.timestampMillis,
-            afterMessageId = cursor.messageId,
-            limit = 200
-        )
-        val received = mutableListOf<ChatMessage>()
-        var rounds = 0
-        do {
-            received += page.messages
-            local?.saveMessages(conversation, page.messages, if (cursor.timestampMillis == 0L) page.hasOlder else null)
-            val next = page.messages.maxWithOrNull(compareBy<ChatMessage> { it.timestampMillis }.thenBy { it.messageId })
-            if (next != null && cursor.timestampMillis > 0L &&
-                (next.timestampMillis < cursor.timestampMillis ||
-                    (next.timestampMillis == cursor.timestampMillis && next.messageId <= cursor.messageId))) break
-            if (next != null) cursor = LocalChatRepository.MessageCursor(next.timestampMillis, next.messageId)
-            rounds += 1
-            if (!page.hasNewer || page.messages.isEmpty() || rounds >= 5) break
-            page = repository.syncMessages(
-                conversation,
-                afterMillis = cursor.timestampMillis,
-                afterMessageId = cursor.messageId,
-                limit = 200
-            )
-        } while (true)
-        return local?.messages(conversation.key)
-            ?: (activeMessages + received).distinctBy { it.messageId }.sortedBy { it.timestampMillis }
     }
 
     LaunchedEffect(activeConversation?.key, authenticated, previewMode, serverReachable, localChatRepository) {

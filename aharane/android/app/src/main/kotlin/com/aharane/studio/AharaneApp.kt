@@ -636,7 +636,10 @@ fun AharaneApp(
                 configurationOpen -> ConfigurationScreen(
                     previewMode = previewMode,
                     connected = connected,
-                    serverValues = environmentRows.associate { it.key to it.value },
+                    serverValues = environmentRows.associate { it.key to it.value } + mapOf(
+                        "PRIVATE_OWNER_NUMBER" to owners.privateOwnerNumber,
+                        "PUBLIC_BOT_NUMBER" to owners.publicBotNumber
+                    ),
                     ownerNumberValue = if (accountName == ChatAccount.PRIVATE.name) owners.privateOwnerNumber else owners.publicBotNumber,
                     onBack = { configurationOpen = false },
                     onEditConfig = {

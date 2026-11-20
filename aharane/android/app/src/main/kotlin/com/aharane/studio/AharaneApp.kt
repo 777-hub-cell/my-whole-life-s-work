@@ -1292,6 +1292,38 @@ fun AharaneApp(
                     messages = if (previewMode) previewMessages.filter { it.key == activeConversation!!.key } else activeMessages,
                     connected = if (previewMode) true else currentAccountState?.connected == true,
                     mediaServerAvailable = connected,
+                    appearance = chatAppearanceStore.resolve(activeConversation!!.key.account, activeConversation!!.key.jid),
+                    hasOlderMessages = !previewMode && hasOlderMessages,
+                    loadingOlderMessages = loadingOlderMessages,
+                    onLoadOlderMessages = {
+                        val target = activeConversation
+                        if (target != null && !previewMode) {
+                            if (!connected) {
+                                Toast.makeText(context, "Connect to Aharane to download older messages. Saved messages remain available offline.", Toast.LENGTH_SHORT).show()
+                            } else {
+                                connectionScope.launch {
+                                    loadingOlderMessages = true
+                                    try {
+                                        val before = localChatRepository?.oldestTimestamp(target.key)
+                                            ?: activeMessages.minOfOrNull { it.timestampMillis } ?: 0L
+                                        if (before > 0L) {
+                                            val page = repository.syncMessages(target, beforeMillis = before, limit = 100)
+                                            localChatRepository?.recordOlderPage(target.key, page.messages, page.hasOlder)
+                                            activeMessages = localChatRepository?.messages(target.key)
+                                                ?: (page.messages + activeMessages).distinctBy { it.messageId }.sortedBy { it.timestampMillis }
+                                            hasOlderMessages = page.hasOlder
+                                        } else {
+                                            hasOlderMessages = false
+                                        }
+                                    } catch (error: Exception) {
+                                        serverError = error.message ?: "Older messages could not be loaded."
+                                    } finally {
+                                        loadingOlderMessages = false
+                                    }
+                                }
+                            }
+                        }
+                    },
                     onBack = { activeConversation = null },
                     onSend = { text, replyTo ->
                         if (previewMode) {
@@ -1310,8 +1342,10 @@ fun AharaneApp(
                             connectionScope.launch {
                                 try {
                                     repository.sendText(activeConversation!!, text, replyTo)
-                                    activeMessages = repository.messages(activeConversation!!)
-                                    chatsByAccount[activeConversation!!.key.account] = repository.chats(activeConversation!!.key.account)
+                                    activeMessages = refreshConversationIncrementally(activeConversation!!)
+                                    val refreshedChats = repository.chats(activeConversation!!.key.account)
+                                    chatsByAccount[activeConversation!!.key.account] = refreshedChats
+                                    localChatRepository?.saveConversations(refreshedChats)
                                 } catch (error: Exception) {
                                     serverError = error.message ?: "Message could not be sent."
                                 }
@@ -1536,21 +1570,31 @@ fun AharaneApp(
                         val target = activeConversation
                         if (query.isBlank() || previewMode || target == null) {
                             conversationSearchResults = null
-                        } else {
-                            conversationSearchResults = null
+                        } else if (query.trim().length >= 2) {
                             connectionScope.launch {
-                                try {
-                                    val matches = repository.searchMessages(target, query)
-                                    if (requestId == conversationSearchRequestId && activeConversation?.key == target.key) {
-                                        conversationSearchResults = matches
-                                    }
-                                } catch (error: Exception) {
-                                    if (requestId == conversationSearchRequestId && activeConversation?.key == target.key) {
-                                        conversationSearchResults = emptyList()
-                                        serverError = error.message ?: "Conversation search failed."
+                                val cached = runCatching {
+                                    localChatRepository?.search(target.key.account, query, target.key.jid).orEmpty()
+                                }.getOrDefault(emptyList())
+                                if (requestId == conversationSearchRequestId && activeConversation?.key == target.key) {
+                                    conversationSearchResults = cached
+                                }
+                                if (connected) {
+                                    try {
+                                        val remote = repository.searchMessages(target, query)
+                                        localChatRepository?.saveMessages(target, remote)
+                                        if (requestId == conversationSearchRequestId && activeConversation?.key == target.key) {
+                                            conversationSearchResults = (cached + remote).distinctBy { it.messageId }.sortedByDescending { it.timestampMillis }
+                                        }
+                                    } catch (error: Exception) {
+                                        // Offline search results stay visible when server search fails.
+                                        if (requestId == conversationSearchRequestId && activeConversation?.key == target.key) {
+                                            serverError = error.message ?: "Server search failed; showing saved messages."
+                                        }
                                     }
                                 }
                             }
+                        } else {
+                            conversationSearchResults = null
                         }
                     },
                     onViewOnce = { message ->

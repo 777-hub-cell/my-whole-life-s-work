@@ -6,16 +6,22 @@ enum class ChatAccount(val apiValue: String, val label: String) {
         fun fromApiValue(value: String): ChatAccount? = entries.firstOrNull { it.apiValue == value }
     }
 }
-enum class ChatFilter(val label: String) { ALL("All"), UNREAD("Unread"), GROUPS("Groups"), ARCHIVED("Archived") }
+
+enum class ChatFilter(val label: String) {
+    ALL("All"), UNREAD("Unread"), GROUPS("Groups"), ARCHIVED("Archived")
+}
+
 data class ConversationKey(val account: ChatAccount, val jid: String) {
     init {
         require(jid.isNotBlank()) { "A conversation needs a WhatsApp JID." }
         require('@' in jid) { "A WhatsApp JID must include its server suffix." }
     }
 }
+
 enum class MessageKind {
     TEXT, IMAGE, VIDEO, AUDIO, STICKER, DOCUMENT, CONTACT, LOCATION, POLL, REACTION, RESPONSE, UNSUPPORTED
 }
+
 enum class MessageDirection { INCOMING, OUTGOING }
 enum class MessageStatus { UNKNOWN, PENDING, SENT, DELIVERED, READ, FAILED }
 
@@ -28,7 +34,9 @@ data class ChatSummary(
     val isGroup: Boolean = false,
     val isArchived: Boolean = false,
     val isPinned: Boolean = false,
-    val isMuted: Boolean = false
+    val isMuted: Boolean = false,
+    val lastMessageType: MessageKind = MessageKind.TEXT,
+    val lastMessageFromMe: Boolean = false
 ) {
     init {
         require(title.isNotBlank())
@@ -36,6 +44,7 @@ data class ChatSummary(
         require(lastMessageAtMillis >= 0L)
     }
 }
+
 data class ChatMessage(
     val key: ConversationKey,
     val messageId: String,
@@ -47,7 +56,16 @@ data class ChatMessage(
     val replyToMessageId: String? = null,
     val mediaMimeType: String? = null,
     val mediaFileName: String? = null,
-    val isViewOnce: Boolean = false
+    val isViewOnce: Boolean = false,
+    val senderName: String? = null,
+    val mediaUrl: String? = null,
+    val mediaSizeBytes: Long? = null,
+    val mediaDurationSeconds: Long? = null,
+    val viewOnceViewed: Boolean = false,
+    val mediaUnavailable: String? = null,
+    val isStarred: Boolean = false,
+    val isVoiceNote: Boolean = false,
+    val reactions: List<String> = emptyList()
 ) {
     init {
         require(messageId.isNotBlank())

@@ -1118,7 +1118,19 @@ accountRuntime = createAccountRuntime({
     for (const key of keys) {
       const jid = String(key?.remoteJid || '')
       const messageId = String(key?.id || '')
-      if (jid && messageId) await chatStore.deleteMessage(sessionId, jid, messageId)
+      if (!jid || !messageId) continue
+      const existing = await chatStore.getMessage(sessionId, jid, messageId)
+      if (!existing) continue
+      if (key?.fromMe === false || existing.fromMe === false) {
+        // A message deleted by the other participant stays in Aharane Hub.
+        // Preserve its body and media reference, with a visible deleted marker.
+        await chatStore.markMessageDeletedRemotely(sessionId, jid, messageId)
+      } else if (key?.fromMe === true || existing.fromMe === true) {
+        // Keep the existing behaviour for the account owner's own deleted messages.
+        await chatStore.deleteMessage(sessionId, jid, messageId)
+      }
+      // Unknown direction is intentionally kept; never discard a message when
+      // the socket event does not identify who sent it.
     }
   },
   publish: () => publishStudioEvent('whatsapp.status', studioRuntimeSnapshot()),

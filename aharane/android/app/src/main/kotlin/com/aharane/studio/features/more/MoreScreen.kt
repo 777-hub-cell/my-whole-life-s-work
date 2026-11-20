@@ -746,6 +746,7 @@ private fun HelpItem(title: String, description: String) {
         Text(title, color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
         Text(description, color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 18.sp)
     }
+}
 
 @Composable
 private fun OwnerNumberField(
@@ -791,4 +792,3 @@ private fun PasswordField(label: String, value: String, onValueChange: (String) 
     }
 }
 
-}

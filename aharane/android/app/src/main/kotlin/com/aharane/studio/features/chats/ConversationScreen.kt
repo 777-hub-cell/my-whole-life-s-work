@@ -143,7 +143,7 @@ fun ConversationScreen(
         }
     }
     val wallpaperBrush = when (appearance.wallpaper) {
-        "solid" -> Brush.linearGradient(listOf(appearanceColor(appearance.wallpaperColor), appearanceColor(appearance.wallpaperColor)))
+        "solid", "default" -> Brush.linearGradient(listOf(appearanceColor(appearance.wallpaperColor), appearanceColor(appearance.wallpaperColor)))
         "gradient" -> Brush.linearGradient(listOf(appearanceColor(appearance.gradientStart), appearanceColor(appearance.gradientEnd)))
         else -> {
             val background = if (appearance.theme == "dark") Color(0xFF18211F) else StudioPalette.Background

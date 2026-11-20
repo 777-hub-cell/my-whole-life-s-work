@@ -1821,8 +1821,12 @@ app.get('/api/chats/:accountId/:jid/sync', requireAdmin, async (req, res) => {
     const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 200))
     const after = Math.max(0, Number(req.query.after) || 0)
     const before = Math.max(0, Number(req.query.before) || 0)
+    const afterId = String(req.query.afterId || '').slice(0, 256)
+    const beforeId = String(req.query.beforeId || '').slice(0, 256)
     if (after > 0 && before > 0) return res.status(400).json({ ok: false, error: 'Use either an after or before cursor, not both.' })
-    const messages = await chatStore.getMessages(accountId, jid, { limit, after, before })
+    if (afterId && !after) return res.status(400).json({ ok: false, error: 'An after message id requires an after timestamp.' })
+    if (beforeId && !before) return res.status(400).json({ ok: false, error: 'A before message id requires a before timestamp.' })
+    const messages = await chatStore.getMessages(accountId, jid, { limit, after, before, afterId, beforeId })
     const timestamps = messages.map(message => Number(message.timestamp) || 0).filter(value => value > 0)
     res.json({
       ok: true,
@@ -1832,7 +1836,13 @@ app.get('/api/chats/:accountId/:jid/sync', requireAdmin, async (req, res) => {
       oldestTimestamp: timestamps.length ? Math.min(...timestamps) : 0,
       newestTimestamp: timestamps.length ? Math.max(...timestamps) : 0,
       syncedAt: Date.now(),
-      cursor: { after, before, limit },
+      cursor: {
+        after, before, afterId, beforeId, limit,
+        nextAfter: messages.length ? Number(messages[messages.length - 1].timestamp) : after,
+        nextAfterId: messages.length ? String(messages[messages.length - 1].id) : afterId,
+        nextBefore: messages.length ? Number(messages[0].timestamp) : before,
+        nextBeforeId: messages.length ? String(messages[0].id) : beforeId,
+      },
     })
   } catch (error) {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not sync conversation messages.') })

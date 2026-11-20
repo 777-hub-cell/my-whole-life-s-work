@@ -396,12 +396,11 @@ private fun FileEntryRow(
             StudioFloatingMenu(
                 expanded = menuExpanded,
                 onDismiss = onMenuDismiss,
-                actions = buildList {
-                    add(StudioMenuAction("Open") { onAction("open") })
-                    add(StudioMenuAction("Rename") { onAction("rename") })
-                    add(StudioMenuAction("Move") { onAction("move") })
-                    if (!entry.isDirectory) add(StudioMenuAction("Download") { onAction("download") })
-                    add(StudioMenuAction("Delete", destructive = true) { onAction("delete") })
+                actions = fileMenuActionSpecs().map { action ->
+                    StudioMenuAction(
+                        title = action.label,
+                        destructive = action.destructive
+                    ) { onAction(action.key) }
                 }
             )
         }

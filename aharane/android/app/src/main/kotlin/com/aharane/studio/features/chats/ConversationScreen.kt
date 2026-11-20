@@ -624,6 +624,7 @@ private fun MessageBubble(
     audioLoading: Boolean,
     audioError: String?,
     audioWaveform: List<Float>,
+    audioWaveform: List<Float>,
     onLoadAudio: () -> Unit,
     onDownloadMedia: () -> Unit,
     onOpenLocation: () -> Unit
@@ -719,6 +720,7 @@ private fun MessageBubble(
                     audioFile = audioFile,
                     audioLoading = audioLoading,
                     audioError = audioError,
+                    audioWaveform = audioWaveform,
                     onLoadMedia = onOpenMedia,
                     onLoadAudio = onLoadAudio,
                     onDownloadMedia = onDownloadMedia,

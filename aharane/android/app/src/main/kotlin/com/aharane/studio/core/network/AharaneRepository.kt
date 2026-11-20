@@ -328,6 +328,10 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
                 if (messageId.isBlank()) continue
                 val rawTimestamp = row.optLong("timestamp")
                 val timestamp = if (rawTimestamp > 0 && rawTimestamp < 10_000_000_000L) rawTimestamp * 1000L else rawTimestamp
+                val reactionRows = row.optJSONArray("reactions")
+                val reactions = reactionRows?.let { values ->
+                    List(values.length()) { values.optString(it) }.filter(String::isNotBlank)
+                }.orEmpty()
                 add(ChatMessage(
                     key = conversation.key,
                     messageId = messageId,
@@ -347,7 +351,8 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
                     mediaUnavailable = row.optString("mediaUnavailable").takeIf { it.isNotBlank() },
                     isStarred = row.optBoolean("starred"),
                     isVoiceNote = row.optBoolean("ptt"),
-                    replyToMessageId = row.optString("quotedMessageId").takeIf { it.isNotBlank() }
+                    replyToMessageId = row.optString("quotedMessageId").takeIf { it.isNotBlank() },
+                    reactions = reactions
                 ))
             }
         }

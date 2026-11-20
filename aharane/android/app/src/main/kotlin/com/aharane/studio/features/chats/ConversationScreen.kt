@@ -1057,8 +1057,6 @@ private fun MessageBubble(
                 }
                 if (outgoing && message.localOutboxState == "SENDING") {
                     Text("Sending…", color = StudioPalette.Muted, fontSize = 10.sp)
-                } else if (outgoing && message.localOutboxState == "PENDING") {
-                    Text("Pending · waiting for connection", color = StudioPalette.Muted, fontSize = 10.sp)
                 } else if (outgoing && message.localOutboxState == "FAILED") {
                     Row(
                         Modifier.fillMaxWidth().padding(top = 2.dp),

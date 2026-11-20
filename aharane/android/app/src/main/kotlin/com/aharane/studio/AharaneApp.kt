@@ -51,6 +51,7 @@ import com.aharane.studio.core.model.MessageKind
 import com.aharane.studio.core.model.MessageStatus
 import com.aharane.studio.core.network.AharaneConnectionManager
 import com.aharane.studio.core.storage.EncryptedMediaCache
+import com.aharane.studio.core.storage.ChatSyncScheduler
 import com.aharane.studio.core.storage.LocalChatRepository
 import com.aharane.studio.features.chats.ChatAppearanceStore
 import com.aharane.studio.core.notifications.AharaneNotificationScheduler
@@ -139,6 +140,13 @@ fun AharaneApp(
     }
 
     var authenticated by remember(previewMode) { mutableStateOf(previewMode) }
+    LaunchedEffect(authenticated, previewMode) {
+        when {
+            previewMode -> Unit
+            authenticated -> ChatSyncScheduler.schedule(context)
+            else -> ChatSyncScheduler.cancel(context)
+        }
+    }
     var connectionUrl by rememberSaveable { mutableStateOf(connectionManager.savedStudioUrl) }
     var connectionPassword by remember { mutableStateOf("") }
     var serverVerified by remember { mutableStateOf(false) }

@@ -686,21 +686,21 @@ fun MoreScreen(
                 }
             }
             item {
-                StudioSectionHeading("MEGA backup")
+                StudioSectionHeading("MEGA backup setup")
                 StudioCard {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("MEGA", color = StudioPalette.Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.weight(1f))
-                            StudioTag("Not connected")
+                            Text("Setup guidance", color = StudioPalette.Muted, fontSize = 11.sp)
                         }
                         Text(
-                            "Back up the bot’s files to your MEGA account. The Studio reads MEGA_EMAIL and MEGA_PASSWORD from ENV, so your password stays with your other secrets.",
+                            "This section does not verify a live MEGA session or run a backup. Configure these values only when the server-side MEGA integration is enabled; credentials remain in ENV.",
                             color = StudioPalette.Muted,
                             fontSize = 12.5.sp,
                             lineHeight = 18.sp
                         )
-                        StudioActionButton("Add credentials in ENV", onClick = onOpenEnvironment)
+                        StudioActionButton("Open ENV", onClick = onOpenEnvironment)
                     }
                 }
             }

@@ -1150,6 +1150,23 @@ fun AharaneApp(
                         allowedPublicSenders = owners.allowedPublicSenders.joinToString(", "),
                         activityEntries = activityRows.map { "${it.timestamp} · ${it.level.uppercase(Locale.ROOT)} · ${it.source} · ${it.message}" },
                         storageSummary = storageSnapshot?.let { formatBytes(it.usedBytes) } ?: "—",
+                        storageTotalSummary = storageSnapshot?.let { formatBytes(it.totalBytes) } ?: "—",
+                        storageFreeSummary = storageSnapshot?.let { formatBytes(it.freeBytes) } ?: "—",
+                        storageMediaSummary = storageSnapshot?.let { formatBytes(it.mediaBytes) } ?: "—",
+                        storageUsageFraction = storageSnapshot?.let {
+                            if (it.totalBytes > 0L) it.usedBytes.toFloat() / it.totalBytes.toFloat() else 0f
+                        } ?: 0f,
+                        largestFiles = serverFiles.asSequence()
+                            .filter { !it.isDirectory && it.sizeBytes != null }
+                            .sortedByDescending { it.sizeBytes ?: 0L }
+                            .take(5)
+                            .map { "${it.name} · ${formatBytes(it.sizeBytes ?: 0L)}" }
+                            .toList(),
+                        folderSummaries = serverFiles.asSequence()
+                            .filter { !it.isDirectory && it.sizeBytes != null }
+                            .groupBy { it.path.trim('/').split('/').firstOrNull().orEmpty().ifBlank { "Root files" } }
+                            .map { (folder, entries) -> "${folder} · ${formatBytes(entries.sumOf { it.sizeBytes ?: 0L })}" }
+                            .sortedByDescending { it.substringAfter(" · ") },
                         onAccountAction = { accountId ->
                             connectionScope.launch {
                                 val target = ChatAccount.fromApiValue(accountId) ?: return@launch
@@ -1190,6 +1207,28 @@ fun AharaneApp(
                                 runCatching { repository.clearActivity(); activityRows = repository.activity(30) }
                                     .onFailure { Toast.makeText(context, it.message ?: "Could not clear activity.", Toast.LENGTH_LONG).show() }
                             }
+                        },
+                        onRefreshActivity = {
+                            connectionScope.launch {
+                                runCatching { activityRows = repository.activity(60) }
+                                    .onFailure { Toast.makeText(context, it.message ?: "Could not refresh activity.", Toast.LENGTH_LONG).show() }
+                            }
+                        },
+                        onCopyActivity = {
+                            val text = activityRows.joinToString("\n") { "${it.timestamp} · ${it.level.uppercase(Locale.ROOT)} · ${it.source} · ${it.message}" }
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Aharane activity", text))
+                            Toast.makeText(context, "Activity copied.", Toast.LENGTH_SHORT).show()
+                        },
+                        onExportActivity = {
+                            val text = activityRows.joinToString("\n") { "${it.timestamp} · ${it.level.uppercase(Locale.ROOT)} · ${it.source} · ${it.message}" }
+                            val share = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, "Aharane activity export")
+                                putExtra(Intent.EXTRA_TEXT, text)
+                            }
+                            runCatching { context.startActivity(Intent.createChooser(share, "Export activity")) }
+                                .onFailure { Toast.makeText(context, it.message ?: "Could not export activity.", Toast.LENGTH_LONG).show() }
                         },
                         onSignOut = {
                             connectionScope.launch {

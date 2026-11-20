@@ -33,6 +33,12 @@ import com.aharane.studio.core.design.*
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatFilter
 import com.aharane.studio.core.model.ChatSummary
+import com.aharane.studio.core.model.ChatMessage
+import android.app.DatePickerDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.delay
+import java.util.Calendar
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -55,8 +61,23 @@ fun ChatsScreen(
     savedShowPreviews: Boolean = true,
     savedShowTimestamps: Boolean = true,
     localStorageError: String = "",
+    messageSearchResults: List<ChatMessage> = emptyList(),
+    onInboxSearchChanged: (String, Long, Long) -> Unit = { _, _, _ -> },
+    onInboxMessageSelected: (ChatMessage) -> Unit = {},
 ) {
     var query by rememberSaveable { mutableStateOf("") }
+    var fromMillis by rememberSaveable { mutableLongStateOf(0L) }
+    var toMillis by rememberSaveable { mutableLongStateOf(0L) }
+    val context = LocalContext.current
+    LaunchedEffect(query, fromMillis, toMillis, account) {
+        val term = query.trim()
+        if (term.length < 2) {
+            onInboxSearchChanged("", 0L, 0L)
+        } else {
+            delay(350)
+            onInboxSearchChanged(term, fromMillis, toMillis)
+        }
+    }
     val chatTheme = savedChatTheme.replaceFirstChar { it.uppercase() }
     val showAvatars = savedShowAvatars
     val showPreviews = savedShowPreviews
@@ -161,6 +182,40 @@ fun ChatsScreen(
                 showIcon = false
             )
             Spacer(Modifier.height(12.dp))
+        }
+        if (query.trim().length >= 2) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text("Saved message matches", color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    if (messageSearchResults.isEmpty()) {
+                        Text("No saved messages match this search yet.", color = StudioPalette.Muted, fontSize = 11.5.sp)
+                    } else {
+                        messageSearchResults.take(30).forEach { message ->
+                            val chatName = accountConversations.firstOrNull { it.key == message.key }?.title ?: message.key.jid
+                            Row(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+                                    .background(StudioPalette.Surface).clickable { onMessageSearchResultSelected(message) }
+                                    .padding(horizontal = 10.dp, vertical = 9.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(chatName, color = StudioPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    Text(
+                                        message.text.ifBlank { message.mediaFileName ?: message.kind.name.lowercase() },
+                                        color = StudioPalette.Muted, fontSize = 11.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        (message.senderName?.let { "$it · " } ?: "") + SimpleDateFormat("d MMM yyyy · h:mm a", Locale.getDefault()).format(Date(message.timestampMillis)),
+                                        color = StudioPalette.Muted, fontSize = 9.5.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
         }
         item {
             StudioSegmented(

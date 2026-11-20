@@ -1453,6 +1453,7 @@ fun AharaneApp(
                     conversation = activeConversation!!,
                     messages = if (previewMode) previewMessages.filter { it.key == activeConversation!!.key } else activeMessages,
                     connected = if (previewMode) true else currentAccountState?.connected == true,
+                    mediaRequestsAvailable = connected,
                     appearance = chatAppearanceStore.resolve(activeConversation!!.key.account, activeConversation!!.key.jid),
                     hasOlderMessages = !previewMode && hasOlderMessages,
                     loadingOlderMessages = loadingOlderMessages,

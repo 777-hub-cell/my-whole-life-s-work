@@ -1447,10 +1447,28 @@ app.post('/api/visual-commands/:id/test', requireAdmin, async (req, res) => {
   const messageText = String(req.body?.messageText || (trigger?.type === 'trigger.command'
     ? prefix + configuredName + ' sample'
     : 'Aharane sample message')).slice(0, 4000)
-  const jid = workflow.account === 'private' ? '2348012345678@s.whatsapp.net' : '2348098765432@s.whatsapp.net'
+  const groupTest = workflow.account === 'public' &&
+    ['groups', 'both'].includes(String(trigger?.config?.chatScope || 'direct'))
+  const jid = workflow.account === 'private'
+    ? '2348012345678@s.whatsapp.net'
+    : groupTest ? '120363012345678901-1234567890@g.us' : '2348098765432@s.whatsapp.net'
+  const senderJid = workflow.account === 'private' ? jid : '2348012345678@s.whatsapp.net'
   const message = {
-    key: { id: 'aharane-safe-test-message', remoteJid: jid, fromMe: workflow.account === 'private' },
-    message: { conversation: messageText },
+    key: {
+      id: 'aharane-safe-test-message',
+      remoteJid: jid,
+      fromMe: workflow.account === 'private',
+      ...(groupTest ? { participant: senderJid } : {}),
+    },
+    message: {
+      extendedTextMessage: {
+        text: messageText,
+        contextInfo: {
+          stanzaId: 'aharane-safe-test-quoted-message',
+          quotedMessage: { conversation: 'Aharane safe test quoted message' },
+        },
+      },
+    },
   }
   try {
     const result = await executeVisualWorkflow(workflow, {
@@ -1459,17 +1477,30 @@ app.post('/api/visual-commands/:id/test', requireAdmin, async (req, res) => {
       context: {
         sessionId: workflow.account,
         privateControl: workflow.account === 'private',
-        isPublicOwner: false,
+        isPublicOwner: workflow.account === 'public',
         allowedPublicSender: workflow.account === 'public',
         message,
         messageText,
-        sender: jid,
+        sender: senderJid,
+        senderJid,
+        isGroupChat: groupTest,
         remoteJid: jid,
         commandName: configuredName,
         rawArgs: messageText.trim().split(/\s+/).slice(1).join(' '),
         args: messageText.trim().split(/\s+/).slice(1),
         socket: {
           sendMessage: async () => { throw new Error('Live sends are disabled during tests.') },
+          groupMetadata: async () => ({ subject: 'Preview group', participants: [{ id: 'one' }, { id: 'two' }] }),
+          groupUpdateSubject: async () => { throw new Error('Live group changes are disabled during tests.') },
+          groupUpdateDescription: async () => { throw new Error('Live group changes are disabled during tests.') },
+          groupParticipantsUpdate: async () => { throw new Error('Live participant changes are disabled during tests.') },
+          groupSettingUpdate: async () => { throw new Error('Live group settings are disabled during tests.') },
+          updateBlockStatus: async () => { throw new Error('Live contact moderation is disabled during tests.') },
+          updateProfileName: async () => { throw new Error('Live profile changes are disabled during tests.') },
+          updateProfileStatus: async () => { throw new Error('Live profile changes are disabled during tests.') },
+          newsletterCreate: async () => { throw new Error('Live newsletter creation is disabled during tests.') },
+          newsletterFollow: async () => { throw new Error('Live newsletter actions are disabled during tests.') },
+          newsletterUnfollow: async () => { throw new Error('Live newsletter actions are disabled during tests.') },
         },
       },
     })

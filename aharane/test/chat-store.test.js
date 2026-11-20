@@ -458,10 +458,16 @@ test('idempotent text send intents survive restart and never resend an uncertain
       await afterProcessRestart.beginIdempotentSend('private', { clientMessageId, jid, text: 'hello', quotedMessageId: '' }),
       { state: 'sent', messageId: 'whatsapp-message-1' }
     )
-    await assert.rejects(
-      afterProcessRestart.beginIdempotentSend('private', { clientMessageId, jid, text: 'different text', quotedMessageId: '' }),
-      error => error?.status === 409
-    )
+    let reusedIdError = null
+    try {
+      await afterProcessRestart.beginIdempotentSend(
+        'private',
+        { clientMessageId, jid, text: 'different text', quotedMessageId: '' }
+      )
+    } catch (error) {
+      reusedIdError = error
+    }
+    assert.equal(reusedIdError?.status, 409)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

@@ -41,9 +41,9 @@ export function isPrivateSelfCommand({
 }
 
 /** Public Owner is a separate identity; Private Owner never inherits this role. */
-export function isPublicOwnerSender({ sessionId, remoteJid, publicOwnerNumber } = {}) {
+export function isPublicOwnerSender({ sessionId, remoteJid, senderJid, publicOwnerNumber } = {}) {
   if (sessionId !== 'public') return false
   const expected = normalizePhone(publicOwnerNumber)
-  const sender = senderNumberFromJid(remoteJid)
+  const sender = senderNumberFromJid(senderJid || remoteJid)
   return Boolean(expected && sender && sender === expected)
 }

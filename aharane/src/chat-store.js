@@ -323,20 +323,33 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       }))
   }
 
-  async function getMessages(id, jidValue, { limit = 200, before = 0, after = 0 } = {}) {
+  async function getMessages(id, jidValue, { limit = 200, before = 0, after = 0, beforeId = '', afterId = '' } = {}) {
     const account = accountId(id)
     const jid = safeJid(jidValue)
     if (!jid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
     const rows = await readRows(account)
     const maxBefore = Number(before) || Infinity
-    // WhatsApp timestamps are second-based; include the cursor second and let
-    // the native composite key deduplicate the overlapping boundary messages.
     const minAfter = Number(after) || 0
+    const olderThanCursor = row => {
+      if (!Number.isFinite(maxBefore)) return true
+      if (row.timestamp < maxBefore) return true
+      if (row.timestamp > maxBefore) return false
+      return beforeId ? String(row.id).localeCompare(String(beforeId)) < 0 : false
+    }
+    const newerThanCursor = row => {
+      if (!minAfter || row.timestamp > minAfter) return true
+      if (row.timestamp < minAfter) return false
+      // Older clients without a message-id cursor receive the inclusive
+      // timestamp boundary; the composite primary key makes that safe.
+      return afterId ? String(row.id).localeCompare(String(afterId)) > 0 : true
+    }
     const pageLimit = Math.max(1, Math.min(500, Number(limit) || 200))
     const matching = rows.filter(row =>
-      row.jid === jid && row.timestamp < maxBefore && (!minAfter || row.timestamp >= minAfter)
+      row.jid === jid && olderThanCursor(row) && newerThanCursor(row)
     ).sort((a, b) => a.timestamp - b.timestamp || String(a.id).localeCompare(String(b.id)))
-    const page = minAfter ? matching.slice(0, pageLimit) : matching.slice(-pageLimit)
+    const isOlderPage = Number(before) > 0
+    const isDeltaPage = Number(after) > 0
+    const page = isOlderPage ? matching.slice(-pageLimit) : isDeltaPage ? matching.slice(0, pageLimit) : matching.slice(-pageLimit)
     return page.map(row => ({
         id: row.id, jid: row.jid, fromMe: row.fromMe, participant: row.participant,
         pushName: row.pushName, timestamp: row.timestamp, type: row.type, text: row.text,

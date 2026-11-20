@@ -468,12 +468,18 @@ export function createVisualCommandStore(filePath) {
       }
       return mutate(async () => {
         const index = data.workflows.findIndex(item => item.id === workflow.id)
-        if (data.workflows.some(item => item.id !== workflow.id && item.account === workflow.account && item.enabled && workflow.enabled &&
-            item.nodes.some(node => node.type === 'trigger.command') && workflow.nodes.some(node => node.type === 'trigger.command') &&
-            [workflow.nodes.find(node => node.type === 'trigger.command')?.config.command, ...(workflow.nodes.find(node => node.type === 'trigger.command')?.config.aliases || [])]
-              .some(name => [item.nodes.find(node => node.type === 'trigger.command')?.config.command, ...(item.nodes.find(node => node.type === 'trigger.command')?.config.aliases || [])].includes(name)))) {
-          throw new Error('An enabled workflow already uses this command name or alias.')
-        }
+        const trigger = workflow.nodes.find(node => node.type === 'trigger.command')
+        const commandNames = new Set(trigger
+          ? [trigger.config.command, ...(Array.isArray(trigger.config.aliases) ? trigger.config.aliases : [])].map(value => textValue(value, 64).trim().toLowerCase()).filter(Boolean)
+          : [])
+        const conflict = data.workflows.some(item => {
+          if (item.id === workflow.id || item.account !== workflow.account || !item.enabled || !workflow.enabled) return false
+          const other = item.nodes.find(node => node.type === 'trigger.command')
+          if (!other) return false
+          return [other.config.command, ...(Array.isArray(other.config.aliases) ? other.config.aliases : [])]
+            .some(value => commandNames.has(textValue(value, 64).trim().toLowerCase()))
+        })
+        if (conflict) throw new Error('An enabled workflow already uses this command name or alias.')
         if (index >= 0) workflow.createdAt = data.workflows[index].createdAt
         if (index >= 0) data.workflows[index] = workflow
         else {

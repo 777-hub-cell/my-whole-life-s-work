@@ -29,12 +29,9 @@ fun HomeScreen(
     onOpenConfiguration: () -> Unit,
     onOpenActivity: () -> Unit = onOpenMore,
     serviceConnected: Boolean = false,
-    onAccountAction: (ChatAccount) -> Unit = {},
     serviceSubtitle: String = "Not connected to Aharane service",
     privateAccountStatus: String = "Status not loaded",
     publicAccountStatus: String = "Status not loaded",
-    privateActionLabel: String = "Link account",
-    publicActionLabel: String = "Link account",
     onAccountAction: (ChatAccount) -> Unit = {},
     recentActivity: List<String> = emptyList()
 ) {

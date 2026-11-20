@@ -396,6 +396,10 @@ fun ChatAppearanceStudioScreen(
     }
 
     fun change(field: String, value: String) {
+        if (scope == "conversation" && layerJid == null) {
+            android.widget.Toast.makeText(context, "Choose a conversation first.", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
         store.setField(layerAccount, layerJid, field, value)
         onChanged()
     }
@@ -415,7 +419,12 @@ fun ChatAppearanceStudioScreen(
             SettingSection("Apply to")
             SegmentRow(listOf("Global", "Account", "Conversation"), when (scope) {
                 "global" -> "Global"; "conversation" -> "Conversation"; else -> "Account"
-            }) { label -> scope = when(label) { "Global" -> "global"; "Conversation" -> "conversation"; else -> "account" } }
+            }) { label ->
+                scope = when(label) { "Global" -> "global"; "Conversation" -> "conversation"; else -> "account" }
+                if (label == "Conversation" && selectedJid.isBlank() && targets.isNotEmpty()) {
+                    selectedJid = targets.first().key.jid
+                }
+            }
             Text(
                 when (scope) {
                     "global" -> "Global default · inherited by both accounts"
@@ -566,10 +575,13 @@ fun ChatAppearanceStudioScreen(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    store.applyProfile(layerAccount, layerJid, selectedProfile)
-                    onChanged()
-                }) { Text("Apply") }
+                Button(
+                    enabled = scope != "conversation" || layerJid != null,
+                    onClick = {
+                        store.applyProfile(layerAccount, layerJid, selectedProfile)
+                        onChanged()
+                    }
+                ) { Text("Apply") }
                 OutlinedButton(onClick = { dialog = "create"; profileName = "" }) { Text("Save current") }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -586,7 +598,10 @@ fun ChatAppearanceStudioScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = { exportPicker.launch("aharane-chat-appearance.json") }) { Text("Export profiles") }
                 TextButton(onClick = { importPicker.launch(arrayOf("application/json", "text/json")) }) { Text("Import profiles") }
-                TextButton(onClick = { store.reset(layerAccount, layerJid); onChanged() }) { Text("Reset this layer") }
+                TextButton(
+                    enabled = scope != "conversation" || layerJid != null,
+                    onClick = { store.reset(layerAccount, layerJid); onChanged() }
+                ) { Text("Reset this layer") }
             }
         }
         item { Spacer(Modifier.height(22.dp)) }

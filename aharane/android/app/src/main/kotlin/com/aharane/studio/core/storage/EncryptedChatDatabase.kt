@@ -77,6 +77,23 @@ data class ChatMessageRow(
     val cachedMediaBytes: Long = 0L
 )
 
+@Entity(
+    tableName = "chat_outgoing_messages",
+    primaryKeys = ["account", "jid", "clientMessageId"],
+    indices = [Index(value = ["account", "jid", "state", "queuedAtMillis"])]
+)
+data class ChatOutgoingMessageRow(
+    val account: String,
+    val jid: String,
+    val clientMessageId: String,
+    val text: String,
+    val quotedMessageId: String?,
+    val queuedAtMillis: Long,
+    val state: String,
+    val lastError: String?,
+    val remoteMessageId: String?
+)
+
 @Dao
 interface ChatDao {
     @Query("SELECT * FROM chat_conversations WHERE account = :account ORDER BY isPinned DESC, lastMessageAtMillis DESC")
@@ -136,11 +153,32 @@ interface ChatDao {
 
     @Query("UPDATE chat_messages SET cachedMediaPath = NULL, cachedMediaSha256 = NULL, cachedMediaBytes = 0 WHERE account = :account")
     suspend fun clearCachedMediaMetadata(account: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putOutgoingMessage(row: ChatOutgoingMessageRow)
+
+    @Query("SELECT * FROM chat_outgoing_messages WHERE account = :account AND jid = :jid ORDER BY queuedAtMillis ASC")
+    suspend fun outgoingMessages(account: String, jid: String): List<ChatOutgoingMessageRow>
+
+    @Query("SELECT * FROM chat_outgoing_messages WHERE account = :account AND state = 'PENDING' ORDER BY queuedAtMillis ASC LIMIT :limit")
+    suspend fun pendingOutgoingMessages(account: String, limit: Int): List<ChatOutgoingMessageRow>
+
+    @Query("SELECT * FROM chat_outgoing_messages WHERE account = :account AND jid = :jid AND clientMessageId = :clientMessageId LIMIT 1")
+    suspend fun outgoingMessage(account: String, jid: String, clientMessageId: String): ChatOutgoingMessageRow?
+
+    @Query("UPDATE chat_outgoing_messages SET state = :state, lastError = :error, remoteMessageId = COALESCE(:remoteMessageId, remoteMessageId) WHERE account = :account AND jid = :jid AND clientMessageId = :clientMessageId")
+    suspend fun updateOutgoingMessage(account: String, jid: String, clientMessageId: String, state: String, error: String?, remoteMessageId: String?)
+
+    @Query("DELETE FROM chat_outgoing_messages WHERE account = :account AND jid = :jid AND clientMessageId = :clientMessageId")
+    suspend fun deleteOutgoingMessage(account: String, jid: String, clientMessageId: String)
+
+    @Query("DELETE FROM chat_outgoing_messages WHERE account = :account AND jid = :jid AND remoteMessageId = :remoteMessageId")
+    suspend fun reconcileOutgoingMessage(account: String, jid: String, remoteMessageId: String)
 }
 
 @Database(
-    entities = [ChatConversationRow::class, ChatMessageRow::class],
-    version = 2,
+    entities = [ChatConversationRow::class, ChatMessageRow::class, ChatOutgoingMessageRow::class],
+    version = 3,
     exportSchema = true
 )
 abstract class AharaneChatDatabase : RoomDatabase() {
@@ -154,6 +192,26 @@ class EncryptedChatDatabase private constructor(
     companion object {
         private const val KEY_ALIAS = "com.aharane.chat.database.wrap.v1"
         private const val KEY_FILE = "chat-database-key.wrap"
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """CREATE TABLE IF NOT EXISTS chat_outgoing_messages (
+                        account TEXT NOT NULL,
+                        jid TEXT NOT NULL,
+                        clientMessageId TEXT NOT NULL,
+                        text TEXT NOT NULL,
+                        quotedMessageId TEXT,
+                        queuedAtMillis INTEGER NOT NULL,
+                        state TEXT NOT NULL,
+                        lastError TEXT,
+                        remoteMessageId TEXT,
+                        PRIMARY KEY(account, jid, clientMessageId)
+                    )"""
+                )
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_chat_outgoing_messages_account_jid_state_queuedAtMillis ON chat_outgoing_messages(account, jid, state, queuedAtMillis)")
+            }
+        }
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
@@ -182,7 +240,7 @@ class EncryptedChatDatabase private constructor(
             val factory = SupportOpenHelperFactory(passphrase)
             val db = Room.databaseBuilder(context.applicationContext, AharaneChatDatabase::class.java, file.absolutePath)
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
             try {
                 // Force the encrypted open now. A bad or missing key fails closed here.

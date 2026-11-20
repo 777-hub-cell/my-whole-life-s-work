@@ -144,8 +144,8 @@ fun ConversationScreen(
     var draft by rememberSaveable(conversation.key.jid) { mutableStateOf("") }
     var replyTo by remember { mutableStateOf<ChatMessage?>(null) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
-    var mediaGalleryOpen by rememberSaveable { mutableStateOf(false) }
-    var mediaGalleryFilter by rememberSaveable { mutableStateOf("All") }
+    var mediaGalleryOpen by rememberSaveable(conversation.key.account.apiValue, conversation.key.jid) { mutableStateOf(false) }
+    var mediaGalleryFilter by rememberSaveable(conversation.key.account.apiValue, conversation.key.jid) { mutableStateOf("All") }
     var search by rememberSaveable { mutableStateOf("") }
     var selectedSearchDay by rememberSaveable { mutableStateOf<Long?>(null) }
     var moreOpen by remember { mutableStateOf(false) }
@@ -406,9 +406,6 @@ fun ConversationScreen(
                         verticalArrangement = Arrangement.spacedBy(1.dp)
                     ) {
                         items(galleryItems, key = { it.messageId }) { item ->
-                            val localReady = mediaPreviews.containsKey(mediaKey(item)) ||
-                                audioFiles.containsKey(mediaKey(item)) ||
-                                videoFiles.containsKey(mediaKey(item))
                             Row(
                                 Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
                                     .clickable {
@@ -453,9 +450,10 @@ fun ConversationScreen(
                                     )
                                 }
                                 Text(
-                                    if (localReady) "On phone" else if (mediaServerAvailable) "Open" else "Not saved",
-                                    color = if (localReady) StudioPalette.Accent else StudioPalette.Muted,
-                                    fontSize = 10.sp
+                                    if (mediaServerAvailable) "Tap to open" else "Offline · tap to try saved copy",
+                                    color = StudioPalette.Muted,
+                                    fontSize = 9.5.sp,
+                                    maxLines = 1
                                 )
                             }
                         }

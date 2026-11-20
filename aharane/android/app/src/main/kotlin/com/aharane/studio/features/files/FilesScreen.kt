@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -307,6 +308,9 @@ fun FilesScreen(
                                     currentPath = entry.path
                                     query = ""
                                     selectedPaths.clear()
+                                } else if (entry.path.startsWith("Aharane update packages/")) {
+                                    packagesOpen = true
+                                    onRefreshPackages()
                                 } else onEntryAction(entry, "open")
                             },
                             onMenuToggle = {
@@ -315,14 +319,20 @@ fun FilesScreen(
                             onMenuDismiss = { menuPath = null },
                             onAction = { action ->
                                 menuPath = null
-                                if (action == "open" && entry.isDirectory) {
-                                    currentPath = entry.path
-                                    query = ""
-                                    selectedPaths.clear()
-                                } else if (connected) {
-                                    onEntryAction(entry, action)
-                                } else {
-                                    Toast.makeText(context, "Connect to your Aharane server to manage files.", Toast.LENGTH_SHORT).show()
+                                val packageId = entry.path
+                                    .removePrefix("Aharane update packages/")
+                                    .removeSuffix(".zip")
+                                val storedPackage = updatePackages.firstOrNull { it.updateId == packageId }
+                                when {
+                                    action == "open" && entry.isDirectory -> {
+                                        currentPath = entry.path
+                                        query = ""
+                                        selectedPaths.clear()
+                                    }
+                                    storedPackage != null && action == "update_bot" -> pendingPackageDeployment = storedPackage
+                                    storedPackage != null && action == "remove_package" -> pendingPackageRemoval = storedPackage
+                                    connected -> onEntryAction(entry, action)
+                                    else -> Toast.makeText(context, "Connect to your Aharane server to manage files.", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         )

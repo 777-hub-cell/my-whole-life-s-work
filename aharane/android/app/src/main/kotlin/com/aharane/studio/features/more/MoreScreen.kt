@@ -645,7 +645,7 @@ fun MoreScreen(
                             }
                         }
                         Text(
-                            "A native Android translation of the Aharane Control Centre. Server operations remain on the web Studio until secure Android linking is complete.",
+                            "A native Kotlin and Jetpack Compose companion for Aharane Local Studio. It connects to the same authenticated server, WhatsApp sessions and workspace as the web Studio.",
                             color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp
                         )
                     }

@@ -936,6 +936,7 @@ private fun AudioMessagePlayer(
     var duration by remember(message.messageId, file) { mutableIntStateOf(0) }
     var progress by remember(message.messageId, file) { mutableIntStateOf(0) }
     var speed by remember(message.messageId, file) { mutableFloatStateOf(1f) }
+    var playbackError by remember(message.messageId, file) { mutableStateOf<String?>(null) }
 
     DisposableEffect(message.messageId, file) {
         onDispose {
@@ -945,6 +946,7 @@ private fun AudioMessagePlayer(
         }
     }
     LaunchedEffect(file) {
+        playbackError = null
         if (file != null) {
             runCatching {
                 val media = MediaPlayer()
@@ -952,15 +954,25 @@ private fun AudioMessagePlayer(
                 media.setOnPreparedListener {
                     duration = it.duration.coerceAtLeast(0)
                     prepared = true
+                    playbackError = null
+                }
+                media.setOnErrorListener { _, _, _ ->
+                    playing = false
+                    prepared = false
+                    playbackError = "This Android device could not decode this audio format."
+                    true
                 }
                 media.setOnCompletionListener {
                     playing = false
                     progress = 0
                     runCatching { it.seekTo(0) }
                 }
-                media.prepareAsync()
                 player = media
-            }.onFailure { prepared = false }
+                media.prepareAsync()
+            }.onFailure {
+                prepared = false
+                playbackError = it.message ?: "This audio file could not be prepared by Android."
+            }
         }
     }
     LaunchedEffect(player, playing, prepared) {
@@ -1003,6 +1015,8 @@ private fun AudioMessagePlayer(
                     color = foreground.copy(alpha = .72f),
                     fontSize = 10.5.sp
                 )
+            } else if (playbackError != null) {
+                Text(playbackError!!, color = StudioPalette.Bad, fontSize = 10.5.sp, lineHeight = 15.sp)
             } else if (!prepared) {
                 Text("Preparing audio…", color = foreground.copy(alpha = .72f), fontSize = 10.5.sp)
             } else {

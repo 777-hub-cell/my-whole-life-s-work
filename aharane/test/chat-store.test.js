@@ -442,9 +442,10 @@ test('incremental chat sync pages by timestamp and does not change the unread ma
       ['sync-2', 1760001001, 'second message'],
       ['sync-3', 1760001002, 'third message'],
     ]) {
-      await store.recordMessage({
-        sessionId: 'private',
-        message: { key: { id, remoteJid: jid, fromMe: false }, messageTimestamp: second, message: { conversation: text } },
+      await store.recordMessage('private', {
+        key: { id, remoteJid: jid, fromMe: false },
+        messageTimestamp: second,
+        message: { conversation: text },
       })
     }
     const initial = await store.getMessages('private', jid, { limit: 2 })

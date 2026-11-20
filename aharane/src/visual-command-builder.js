@@ -166,9 +166,6 @@ export function validateWorkflow(input) {
     if (node.type === 'flow.repeat') {
       const count = Number(config.count == null ? 2 : config.count)
       if (!Number.isInteger(count) || count < 1 || count > MAX_REPEAT) issue(node.id, 'error', 'Repeat count is outside the supported range.', 'Choose a whole number from 1 to 10.')
-      const body = outputEdges(workflow, node.id, 'body')[0]
-      if (!body) issue(node.id, 'error', 'The repeat body is not connected.', 'Connect Body to a sequence ending at End repeat body.')
-      else if (!canReachRepeatEnd(body.to, byId, workflow.edges)) issue(node.id, 'error', 'The repeat body has no End repeat body node.', 'Connect the body to End repeat body.')
       if (!outputEdges(workflow, node.id, 'next').length) issue(node.id, 'warning', 'Nothing runs after this repeat.', 'Connect Next to another action if needed.')
     }
     if (node.type === 'condition.equals') {
@@ -179,6 +176,14 @@ export function validateWorkflow(input) {
       if (!textValue(config.text).trim() && !inputEdge(workflow, node.id, 'text')) issue(node.id, 'error', 'The text to inspect is missing.', 'Enter a value or connect a text output.')
       if (!textValue(config.search).trim() && !inputEdge(workflow, node.id, 'search')) issue(node.id, 'error', 'The search value is missing.', 'Enter a value or connect a text output.')
     }
+  }
+
+  // Validate Repeat bodies only after every node has been indexed.
+  for (const node of workflow.nodes) {
+    if (node.type !== 'flow.repeat') continue
+    const body = outputEdges(workflow, node.id, 'body')[0]
+    if (!body) issue(node.id, 'error', 'The repeat body is not connected.', 'Connect Body to a sequence ending at End repeat body.')
+    else if (!canReachRepeatEnd(body.to, byId, workflow.edges)) issue(node.id, 'error', 'The repeat body has no End repeat body node.', 'Connect the body to End repeat body.')
   }
 
   const triggers = workflow.nodes.filter(node => triggerTypes.has(node.type))

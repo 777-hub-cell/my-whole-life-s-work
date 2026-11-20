@@ -171,6 +171,65 @@ test('Repeat is bounded and executes its body exactly the configured count', asy
   assert.equal(result.trace.filter(item => item.type === 'message.sendText').length, 3)
 })
 
+test('command triggers enforce quoted-message and reply requirements', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft()
+  draft.nodes[0].config.requireQuoted = true
+  draft.nodes[0].config.requireReply = true
+
+  const missing = await executeVisualWorkflow(draft, { store, dryRun: true, context: context() })
+  assert.equal(missing.ok, false)
+  assert.match(missing.error, /requires a quoted message/i)
+
+  const quotedMessage = context()
+  quotedMessage.message.message = {
+    extendedTextMessage: {
+      text: '.hello Ada',
+      contextInfo: {
+        stanzaId: 'quoted-1',
+        quotedMessage: { conversation: 'Please help me' },
+      },
+    },
+  }
+  const matched = await executeVisualWorkflow(draft, { store, dryRun: true, context: quotedMessage })
+  assert.equal(matched.ok, true, matched.error)
+})
+
+test('quoted message text is available to downstream typed text inputs', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft()
+  const trigger = draft.nodes[0]
+  const send = draft.nodes[1]
+  send.config.text = ''
+  const quoted = { id: 'quoted', type: 'message.quotedText', x: 510, y: 100, config: {} }
+  draft.nodes.push(quoted)
+  draft.edges.push({
+    id: 'quoted-text',
+    from: quoted.id,
+    fromSocket: 'value',
+    to: send.id,
+    toSocket: 'text',
+  })
+  assert.equal(validateWorkflow(draft).valid, true, JSON.stringify(validateWorkflow(draft).errors))
+  const message = context()
+  message.message.message = {
+    extendedTextMessage: {
+      text: '.hello Ada',
+      contextInfo: { quotedMessage: { conversation: 'Please help me' } },
+    },
+  }
+  const sent = []
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({
+      message,
+      socket: { sendMessage: async (_jid, body) => { sent.push(body.text); return { key: { id: 'quoted-reply' } } } },
+    }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.deepEqual(sent, ['Please help me'])
+})
+
 test('poll node builds a documented WhatsApp poll payload; safe test never sends it', async t => {
   const { store } = await makeStore(t)
   const draft = createWorkflowDraft()

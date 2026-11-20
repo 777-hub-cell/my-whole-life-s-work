@@ -77,17 +77,13 @@ class LocalChatRepository(context: Context) {
     }
 
     suspend fun resetInterruptedOutgoingMessages() {
-        listOf(ChatAccount.PRIVATE, ChatAccount.PUBLIC).forEach { account ->
-            dao.conversations(account.apiValue).forEach { conversation ->
-                dao.outgoingMessages(account.apiValue, conversation.jid)
-                    .filter { it.state == "SENDING" }
-                    .forEach { row ->
-                        dao.updateOutgoingMessage(
-                            account.apiValue, row.jid, row.clientMessageId,
-                            "FAILED", "The app stopped during sending. Safe retry uses the same server idempotency key.", null
-                        )
-                    }
-            }
+        // Outbox rows may survive even if the conversation summary has not yet
+        // been cached. Recover from the outbox table directly, not by walking chats.
+        dao.interruptedOutgoingMessages().forEach { row ->
+            dao.updateOutgoingMessage(
+                row.account, row.jid, row.clientMessageId,
+                "FAILED", "The app stopped during sending. Safe retry uses the same server idempotency key.", null
+            )
         }
     }
 

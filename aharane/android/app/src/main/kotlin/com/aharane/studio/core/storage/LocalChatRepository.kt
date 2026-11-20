@@ -14,7 +14,9 @@ class LocalChatRepository(context: Context) {
             summary.toRow().copy(
                 lastSyncAtMillis = previous?.lastSyncAtMillis ?: 0L,
                 newestSyncedTimestampMillis = previous?.newestSyncedTimestampMillis ?: 0L,
+                newestSyncedMessageId = previous?.newestSyncedMessageId ?: "",
                 oldestSyncedTimestampMillis = previous?.oldestSyncedTimestampMillis ?: 0L,
+                oldestSyncedMessageId = previous?.oldestSyncedMessageId ?: "",
                 hasOlderMessages = previous?.hasOlderMessages ?: false
             )
         }
@@ -29,17 +31,36 @@ class LocalChatRepository(context: Context) {
         val rows = messages.map { it.toRow() }
         if (rows.isNotEmpty()) dao.putMessages(rows)
         val old = dao.conversation(conversation.key.account.apiValue, conversation.key.jid)
-        val newest = maxOf(old?.newestSyncedTimestampMillis ?: 0L, rows.maxOfOrNull { it.timestampMillis } ?: 0L)
-        val oldestIncoming = rows.minOfOrNull { it.timestampMillis } ?: 0L
+        val latestIncoming = rows.maxWithOrNull(compareBy<ChatMessageRow> { it.timestampMillis }.thenBy { it.messageId })
+        val earliestIncoming = rows.minWithOrNull(compareBy<ChatMessageRow> { it.timestampMillis }.thenBy { it.messageId })
+        val oldNewest = old?.newestSyncedTimestampMillis ?: 0L
+        val incomingNewest = latestIncoming?.timestampMillis ?: 0L
+        val newest = maxOf(oldNewest, incomingNewest)
+        val newestId = when {
+            latestIncoming == null -> old?.newestSyncedMessageId.orEmpty()
+            incomingNewest > oldNewest -> latestIncoming.messageId
+            incomingNewest < oldNewest -> old?.newestSyncedMessageId.orEmpty()
+            else -> maxOf(old?.newestSyncedMessageId.orEmpty(), latestIncoming.messageId)
+        }
+        val oldOldest = old?.oldestSyncedTimestampMillis ?: 0L
+        val incomingOldest = earliestIncoming?.timestampMillis ?: 0L
         val oldest = when {
-            oldestIncoming <= 0L -> old?.oldestSyncedTimestampMillis ?: 0L
-            old == null || old.oldestSyncedTimestampMillis == 0L -> oldestIncoming
-            else -> minOf(old.oldestSyncedTimestampMillis, oldestIncoming)
+            incomingOldest <= 0L -> oldOldest
+            old == null || oldOldest == 0L -> incomingOldest
+            else -> minOf(oldOldest, incomingOldest)
+        }
+        val oldestId = when {
+            earliestIncoming == null -> old?.oldestSyncedMessageId.orEmpty()
+            incomingOldest < oldOldest || oldOldest == 0L -> earliestIncoming.messageId
+            incomingOldest > oldOldest -> old?.oldestSyncedMessageId.orEmpty()
+            else -> minOf(old?.oldestSyncedMessageId.orEmpty(), earliestIncoming.messageId)
         }
         dao.putConversation(conversation.toRow().copy(
             lastSyncAtMillis = System.currentTimeMillis(),
             newestSyncedTimestampMillis = newest,
+            newestSyncedMessageId = newestId,
             oldestSyncedTimestampMillis = oldest,
+            oldestSyncedMessageId = oldestId,
             hasOlderMessages = hasOlder ?: (old?.hasOlderMessages ?: true)
         ))
     }
@@ -57,14 +78,24 @@ class LocalChatRepository(context: Context) {
         return dao.search(account.apiValue, jid, term, fromMillis, toMillis, limit.coerceIn(1, 500)).map { it.toModel() }
     }
 
-    suspend fun newestTimestamp(key: ConversationKey): Long =
-        dao.conversation(key.account.apiValue, key.jid)?.newestSyncedTimestampMillis ?: 0L
+    data class MessageCursor(val timestampMillis: Long, val messageId: String)
+
+    suspend fun newestCursor(key: ConversationKey): MessageCursor {
+        val row = dao.conversation(key.account.apiValue, key.jid)
+        return MessageCursor(row?.newestSyncedTimestampMillis ?: 0L, row?.newestSyncedMessageId.orEmpty())
+    }
+
+    suspend fun oldestCursor(key: ConversationKey): MessageCursor {
+        val row = dao.conversation(key.account.apiValue, key.jid)
+        return MessageCursor(row?.oldestSyncedTimestampMillis ?: 0L, row?.oldestSyncedMessageId.orEmpty())
+    }
+
+    suspend fun newestTimestamp(key: ConversationKey): Long = newestCursor(key).timestampMillis
 
     suspend fun lastSyncedAt(key: ConversationKey): Long =
         dao.conversation(key.account.apiValue, key.jid)?.lastSyncAtMillis ?: 0L
 
-    suspend fun oldestTimestamp(key: ConversationKey): Long =
-        dao.conversation(key.account.apiValue, key.jid)?.oldestSyncedTimestampMillis ?: 0L
+    suspend fun oldestTimestamp(key: ConversationKey): Long = oldestCursor(key).timestampMillis
 
     suspend fun hasOlderMessages(key: ConversationKey): Boolean =
         dao.conversation(key.account.apiValue, key.jid)?.hasOlderMessages ?: true
@@ -73,12 +104,17 @@ class LocalChatRepository(context: Context) {
         val current = dao.conversation(key.account.apiValue, key.jid)
             ?: error("The conversation is not cached yet.")
         if (messages.isNotEmpty()) dao.putMessages(messages.filterNot { it.isViewOnce }.map { it.toRow() })
-        val oldest = messages.minOfOrNull { it.timestampMillis }?.let {
-            minOf(current.oldestSyncedTimestampMillis.takeIf { v -> v > 0 } ?: it, it)
-        } ?: current.oldestSyncedTimestampMillis
+        val earliest = messages.minWithOrNull(compareBy<ChatMessage> { it.timestampMillis }.thenBy { it.messageId })
+        val incomingOldest = earliest?.timestampMillis ?: 0L
+        val oldOldest = current.oldestSyncedTimestampMillis
+        val takeIncomingCursor = earliest != null && (oldOldest <= 0L || incomingOldest < oldOldest ||
+            (incomingOldest == oldOldest && earliest.messageId < current.oldestSyncedMessageId))
+        val oldest = if (oldOldest <= 0L || incomingOldest <= 0L) maxOf(oldOldest, incomingOldest)
+            else minOf(oldOldest, incomingOldest)
         dao.putConversation(current.copy(
             lastSyncAtMillis = System.currentTimeMillis(),
             oldestSyncedTimestampMillis = oldest,
+            oldestSyncedMessageId = if (takeIncomingCursor) earliest!!.messageId else current.oldestSyncedMessageId,
             hasOlderMessages = hasMore
         ))
     }

@@ -79,9 +79,7 @@ jobs:
           script: |
             set -eu
             mkdir -p screenshots
-            cd aharane/android
-            ./gradlew --no-daemon connectedDebugAndroidTest
-            cd ../..
+            cd aharane/android && ./gradlew --no-daemon connectedDebugAndroidTest
             adb install artifacts/app-debug.apk
             python3 aharane/android/scripts/capture_design_preview.py
 

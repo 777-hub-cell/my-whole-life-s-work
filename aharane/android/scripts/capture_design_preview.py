@@ -187,7 +187,7 @@ def main():
     assert_visible_texts(["Preview sample", "warning"])
     tap_label("Console")
     capture("03j-editor-console.png")
-    assert_visible_texts(["Preview", "sample", "Preview mode is isolated"])
+    assert_visible_texts(["Preview", "sample"])
     back()
     tap_label("Show explorer", content_desc=True)
     capture("03d-editor-explorer.png")

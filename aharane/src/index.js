@@ -1041,7 +1041,13 @@ async function handleMessages(sessionId, currentSocket, event) {
       privateControl,
       isPublicOwner,
       allowedPublicSender: sessionId === 'public' && allowedForAutomation,
-      socket: currentSocket,
+      socket: {
+        sendMessage: async (...args) => {
+          const sent = await currentSocket.sendMessage(...args)
+          if (sent?.key?.id) await chatStore.recordMessage({ sessionId, message: sent, socket: currentSocket })
+          return sent
+        },
+      },
       message,
       messageText,
       sender: senderNumberFromJid(message.key?.participant || remoteJid) || remoteJid,
@@ -1340,6 +1346,102 @@ app.post('/api/auth/logout', (req, res) => {
   if (!sameOriginRequest(req)) return res.status(403).json({ ok: false, error: 'Cross-origin requests are not allowed.' })
   clearAdminSessionCookie(res)
   res.json({ ok: true })
+})
+
+function visualWorkflowCommandConflict(workflow) {
+  const trigger = workflow.nodes.find(node => node.type === 'trigger.command')
+  if (!trigger) return null
+  const registry = workflow.account === 'private' ? privateCommandRegistry : publicCommandRegistry
+  const names = [trigger.config.command, ...(Array.isArray(trigger.config.aliases) ? trigger.config.aliases : [])]
+    .map(value => String(value || '').trim().toLowerCase()).filter(Boolean)
+  return names.find(name => registry?.commands?.has(name)) || null
+}
+
+function visualWorkflowPayload(workflow) {
+  return { ...workflow, validation: validateWorkflow(workflow) }
+}
+
+app.get('/api/visual-commands', requireAdmin, (req, res) => {
+  const account = String(req.query.account || '')
+  if (account && !['private', 'public'].includes(account)) {
+    return res.status(400).json({ ok: false, error: 'Account must be private or public.' })
+  }
+  const workflows = visualCommandStore.list(account || undefined).map(visualWorkflowPayload)
+  res.json({ ok: true, workflows })
+})
+
+app.post('/api/visual-commands', requireAdmin, async (req, res) => {
+  try {
+    const workflow = normalizeWorkflow(req.body?.workflow || req.body || {})
+    const conflict = visualWorkflowCommandConflict(workflow)
+    if (conflict) return res.status(409).json({ ok: false, error: 'The command name or alias "' + conflict + '" is already registered in this account.' })
+    const saved = await visualCommandStore.save(workflow)
+    res.status(201).json({ ok: true, workflow: saved.workflow, validation: saved.validation })
+  } catch (error) {
+    res.status(error.validation ? 422 : 400).json({ ok: false, error: error.message, validation: error.validation })
+  }
+})
+
+app.put('/api/visual-commands/:id', requireAdmin, async (req, res) => {
+  try {
+    const current = visualCommandStore.get(req.params.id)
+    if (!current) return res.status(404).json({ ok: false, error: 'Workflow not found.' })
+    const workflow = normalizeWorkflow({ ...(req.body?.workflow || req.body || {}), id: current.id, createdAt: current.createdAt })
+    const conflict = visualWorkflowCommandConflict(workflow)
+    if (conflict) return res.status(409).json({ ok: false, error: 'The command name or alias "' + conflict + '" is already registered in this account.' })
+    const saved = await visualCommandStore.save(workflow)
+    res.json({ ok: true, workflow: saved.workflow, validation: saved.validation })
+  } catch (error) {
+    res.status(error.validation ? 422 : 400).json({ ok: false, error: error.message, validation: error.validation })
+  }
+})
+
+app.delete('/api/visual-commands/:id', requireAdmin, async (req, res) => {
+  if (req.body?.confirm !== true) return res.status(400).json({ ok: false, error: 'Confirm workflow deletion.' })
+  const removed = await visualCommandStore.remove(req.params.id)
+  if (!removed) return res.status(404).json({ ok: false, error: 'Workflow not found.' })
+  res.json({ ok: true })
+})
+
+app.post('/api/visual-commands/:id/test', requireAdmin, async (req, res) => {
+  const workflow = visualCommandStore.get(req.params.id)
+  if (!workflow) return res.status(404).json({ ok: false, error: 'Workflow not found.' })
+  const trigger = workflow.nodes.find(node => node.type === 'trigger.command' || node.type === 'trigger.message')
+  const prefix = workflow.account === 'private' ? PRIVATE_COMMAND_PREFIX : PUBLIC_COMMAND_PREFIX
+  const configuredName = String(trigger?.config?.command || 'hello')
+  const messageText = String(req.body?.messageText || (trigger?.type === 'trigger.command'
+    ? prefix + configuredName + ' sample'
+    : 'Aharane sample message')).slice(0, 4000)
+  const jid = workflow.account === 'private' ? '2348012345678@s.whatsapp.net' : '2348098765432@s.whatsapp.net'
+  const message = {
+    key: { id: 'aharane-safe-test-message', remoteJid: jid, fromMe: workflow.account === 'private' },
+    message: { conversation: messageText },
+  }
+  try {
+    const result = await executeVisualWorkflow(workflow, {
+      store: visualCommandStore,
+      dryRun: true,
+      context: {
+        sessionId: workflow.account,
+        privateControl: workflow.account === 'private',
+        isPublicOwner: false,
+        allowedPublicSender: workflow.account === 'public',
+        message,
+        messageText,
+        sender: jid,
+        remoteJid: jid,
+        commandName: configuredName,
+        rawArgs: messageText.trim().split(/\\s+/).slice(1).join(' '),
+        args: messageText.trim().split(/\\s+/).slice(1),
+        socket: {
+          sendMessage: async () => { throw new Error('Live sends are disabled during tests.') },
+        },
+      },
+    })
+    res.json({ ok: result.ok, dryRun: true, result })
+  } catch (error) {
+    res.status(400).json({ ok: false, dryRun: true, error: String(error?.message || error) })
+  }
 })
 
 app.get('/api/status', requireAdmin, (_req, res) => {

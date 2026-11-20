@@ -3,6 +3,7 @@ package com.aharane.studio
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Build
@@ -2297,7 +2298,8 @@ fun AharaneApp(
                         mediaCache = encryptedMediaCache,
                         appLockEnabled = appLockEnabled,
                         onAppLockToggle = { enabled ->
-                            val activity = context as? MainActivity
+                            val activity = generateSequence(context as android.content.Context?) { (it as? ContextWrapper)?.baseContext }
+                                .filterIsInstance<MainActivity>().firstOrNull()
                             if (activity?.setAppLockEnabled(enabled) == true) {
                                 appLockEnabled = enabled
                             } else if (enabled) {

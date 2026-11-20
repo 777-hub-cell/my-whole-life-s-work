@@ -61,7 +61,6 @@ class AharaneConnectionManager(context: Context) {
             val candidate = clientFor(endpoint)
             try {
                 candidate.checkServer()
-                candidate.authStatus()
                 if (!candidate.hasSavedSession()) return false
                 candidate.get("status")
                 client = candidate
@@ -95,11 +94,10 @@ class AharaneConnectionManager(context: Context) {
         for (endpoint in ServerEndpointParser.candidates(studioUrl)) {
             val candidate = clientFor(endpoint)
             try {
-                val health = candidate.checkServer()
-                val auth = candidate.authStatus()
+                val auth = candidate.checkServer()
                 client = candidate
                 return JSONObject()
-                    .put("health", health)
+                    .put("health", JSONObject().put("apiAvailable", true))
                     .put("auth", auth)
             } catch (error: AharaneApiException) {
                 if (error.statusCode == 404) {

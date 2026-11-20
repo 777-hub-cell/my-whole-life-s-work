@@ -514,6 +514,10 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
         api.markChatUnread(conversation.key.account.apiValue, conversation.key.jid)
     }
 
+    suspend fun clearActivity() {
+        api.delete("activity")
+    }
+
     suspend fun activity(limit: Int = 100): List<ServerActivityEntry> {
         val rows = api.get("activity", mapOf("limit" to limit.toString())).optJSONArray("entries") ?: JSONArray()
         return buildList {

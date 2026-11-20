@@ -85,7 +85,7 @@ Normal attachments can be encrypted using AES-GCM after downloading. The file is
 
 ### Remaining release acceptance
 
-This implementation still needs a clean current-head Android build, unit and instrumentation tests, emulator walkthrough and screenshot review, and real Galaxy A16 / Android 16 testing. It is not yet release-complete. There is no durable idempotent outgoing message queue or media-gallery browser yet. Poll options are read-only because the existing server has no voting endpoint; Lottie/TGS vector sticker payloads and full reconciliation of archive/pin/mute state remain incomplete. Encrypted database migrations, Keystore-loss handling and media-tamper tests are now in the instrumentation suite but still need a passing emulator run. No production deployment or merge is authorised by this development work.
+This implementation still needs a clean current-head Android build, unit and instrumentation tests, emulator walkthrough and screenshot review, and real Galaxy A16 / Android 16 testing. It is not yet release-complete. The native conversation media gallery and durable idempotent text outbox are implemented; media/voice-note messages remain online-only. Poll options are read-only because the existing server has no voting endpoint; Lottie/TGS vector sticker payloads and complete archive/pin/mute reconciliation remain incomplete. Encrypted database migrations, Keystore-loss handling, media-tamper, offline search and remote-deletion retention are covered by instrumentation/backend tests but still require a passing latest emulator run. No production deployment or merge is authorised by this development work.
 
 
 ### Messages deleted by another participant

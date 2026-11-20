@@ -195,7 +195,9 @@ def main():
     capture("03j-editor-console.png")
     assert_visible_texts(["Preview", "sample"])
     back()
-    tap_label("Show explorer", content_desc=True)
+    # The explorer is already open when its toggle says "Hide explorer".
+    # If so, leave it open rather than waiting for the opposite label.
+    tap_label("Show explorer", content_desc=True, required=False)
     capture("03d-editor-explorer.png")
     back()
     back()

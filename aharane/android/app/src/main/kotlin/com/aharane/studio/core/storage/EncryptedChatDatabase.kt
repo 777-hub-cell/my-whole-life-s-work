@@ -74,7 +74,9 @@ data class ChatMessageRow(
     val reactionsJson: String,
     val cachedMediaPath: String? = null,
     val cachedMediaSha256: String? = null,
-    val cachedMediaBytes: Long = 0L
+    val cachedMediaBytes: Long = 0L,
+    val deletedByRemote: Boolean = false,
+    val deletedAtMillis: Long = 0L
 )
 
 @Entity(
@@ -181,7 +183,7 @@ interface ChatDao {
 
 @Database(
     entities = [ChatConversationRow::class, ChatMessageRow::class, ChatOutgoingMessageRow::class],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 abstract class AharaneChatDatabase : RoomDatabase() {
@@ -195,6 +197,13 @@ class EncryptedChatDatabase private constructor(
     companion object {
         private const val KEY_ALIAS = "com.aharane.chat.database.wrap.v1"
         private const val KEY_FILE = "chat-database-key.wrap"
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE chat_messages ADD COLUMN deletedByRemote INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE chat_messages ADD COLUMN deletedAtMillis INTEGER NOT NULL DEFAULT 0")
+            }
+        }
 
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(database: SupportSQLiteDatabase) {
@@ -243,7 +252,7 @@ class EncryptedChatDatabase private constructor(
             val factory = SupportOpenHelperFactory(passphrase)
             val db = Room.databaseBuilder(context.applicationContext, AharaneChatDatabase::class.java, file.absolutePath)
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
             try {
                 // Force the encrypted open now. A bad or missing key fails closed here.

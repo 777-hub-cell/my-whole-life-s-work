@@ -431,6 +431,47 @@ test('contact cards retain vCards, locations retain coordinates and polls retain
 
 
 
+test('edited messages reconcile duplicate IDs and preserve reactions, stars and delivery state', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-edits-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348666666666@s.whatsapp.net'
+    const key = { id: 'edit-1', remoteJid: jid, fromMe: false }
+    await store.recordMessage({
+      sessionId: 'private',
+      message: { key, messageTimestamp: 1763000000, message: { conversation: 'original text' } },
+    })
+    await store.setStarred('private', jid, 'edit-1', true)
+    await store.applyReaction('private', jid, 'edit-1', '❤️', 'Alice')
+    await store.updateMessageStatus('private', jid, 'edit-1', 'delivered')
+
+    await store.recordMessage({
+      sessionId: 'private',
+      message: {
+        key,
+        messageTimestamp: 1763000000,
+        message: { editedMessage: { message: { conversation: 'corrected text' } } },
+      },
+    })
+    let rows = await store.getMessages('private', jid, { limit: 20 })
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].text, 'corrected text')
+    assert.equal(rows[0].starred, true)
+    assert.deepEqual(rows[0].reactions, [{ actor: 'Alice', emoji: '❤️' }])
+    assert.equal(rows[0].status, 'delivered')
+
+    await store.updateMessageStatus('private', jid, 'edit-1', 'read')
+    rows = await store.getMessages('private', jid, { limit: 20 })
+    assert.equal(rows[0].status, 'read')
+
+    assert.equal(await store.deleteMessage('private', jid, 'edit-1'), true)
+    assert.deepEqual(await store.getMessages('private', jid, { limit: 20 }), [])
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('incremental chat sync uses a composite timestamp/message cursor and preserves unread markers', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-sync-'))
   try {

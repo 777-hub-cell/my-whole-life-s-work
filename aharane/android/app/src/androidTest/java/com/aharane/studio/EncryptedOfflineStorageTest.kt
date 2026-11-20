@@ -3,6 +3,8 @@ package com.aharane.studio
 import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.sqlite.db.SupportSQLiteOpenHelper
+import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.storage.ChatConversationRow
 import com.aharane.studio.core.storage.ChatMessageRow
@@ -146,6 +148,62 @@ class EncryptedOfflineStorageTest {
         cache.delete("private", jid, messageId)
         cache.clearConversation("private", jid)
         assertFalse(path.exists())
+    }
+
+    @Test
+    fun roomVersionOneMigrationAddsCompositeCursorColumnsWithoutDroppingHistory() {
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(null)
+                .callback(object : SupportSQLiteOpenHelper.Callback(1) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        db.execSQL(
+                            """CREATE TABLE chat_conversations (
+                                account TEXT NOT NULL,
+                                jid TEXT NOT NULL,
+                                title TEXT NOT NULL,
+                                lastMessagePreview TEXT NOT NULL,
+                                lastMessageAtMillis INTEGER NOT NULL,
+                                unreadCount INTEGER NOT NULL,
+                                isGroup INTEGER NOT NULL,
+                                isArchived INTEGER NOT NULL,
+                                isPinned INTEGER NOT NULL,
+                                isMuted INTEGER NOT NULL,
+                                lastMessageType TEXT NOT NULL,
+                                lastMessageFromMe INTEGER NOT NULL,
+                                lastSyncAtMillis INTEGER NOT NULL,
+                                newestSyncedTimestampMillis INTEGER NOT NULL,
+                                oldestSyncedTimestampMillis INTEGER NOT NULL,
+                                hasOlderMessages INTEGER NOT NULL,
+                                PRIMARY KEY(account, jid)
+                            )"""
+                        )
+                        db.execSQL(
+                            "INSERT INTO chat_conversations VALUES ('private','2348444444444@s.whatsapp.net','Saved','hello',1761000000000,2,0,0,0,0,'TEXT',0,1761000000100,1761000000000,1760000000000,1)"
+                        )
+                    }
+                    override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build()
+        )
+        try {
+            val db = helper.writableDatabase
+            EncryptedChatDatabase.MIGRATION_1_2.migrate(db)
+            val columns = mutableSetOf<String>()
+            db.query("PRAGMA table_info(chat_conversations)").use { cursor ->
+                val index = cursor.getColumnIndexOrThrow("name")
+                while (cursor.moveToNext()) columns += cursor.getString(index)
+            }
+            assertTrue(columns.contains("newestSyncedMessageId"))
+            assertTrue(columns.contains("oldestSyncedMessageId"))
+            db.query("SELECT title, unreadCount FROM chat_conversations WHERE account='private'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Saved", cursor.getString(0))
+                assertEquals(2, cursor.getInt(1))
+            }
+        } finally {
+            helper.close()
+        }
     }
 
     @Test

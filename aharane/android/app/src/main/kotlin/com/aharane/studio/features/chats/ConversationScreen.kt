@@ -714,8 +714,23 @@ private fun MessageBubble(
     }
     Row(
         Modifier.fillMaxWidth(),
-        horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start
+        horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.Bottom
     ) {
+        if (!outgoing && appearance.showAvatars) {
+            Box(
+                Modifier.size(24.dp).clip(CircleShape).background(StudioPalette.Soft),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    (message.senderName?.firstOrNull()?.uppercaseChar() ?: '•').toString(),
+                    color = StudioPalette.Accent,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(Modifier.width(5.dp))
+        }
         Column(
             Modifier.widthIn(max = 310.dp)
                 .clip(
@@ -742,7 +757,7 @@ private fun MessageBubble(
             if (!outgoing && appearance.showSenderLabels && !message.senderName.isNullOrBlank()) {
                 Text(
                     message.senderName,
-                    color = if (bubble.luminance() > 0.45f) StudioPalette.Accent else foreground.copy(alpha = .85f),
+                    color = if (appearanceLuminance(bubble) > 0.45f) StudioPalette.Accent else foreground.copy(alpha = .85f),
                     fontSize = 10.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(bottom = 4.dp)
@@ -1243,3 +1258,6 @@ private fun readableAppearanceText(background: Color): Color {
     val luminance = .2126f * background.red + .7152f * background.green + .0722f * background.blue
     return if (luminance > .52f) Color(0xFF17201C) else Color.White
 }
+
+private fun appearanceLuminance(color: Color): Float =
+    .2126f * color.red + .7152f * color.green + .0722f * color.blue

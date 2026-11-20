@@ -49,18 +49,10 @@ object ServerEndpointParser {
     }
 
     /**
-     * Reverse proxies differ: some mount the Studio API below the Studio path
-     * prefix, while others serve the same Node API at the host root. Keep the
-     * user's canonical Studio URL, but try both API mount points in order.
+     * Keep the external Studio prefix. The server's HttpOnly session cookie is
+     * explicitly scoped to /aharane/, so requests must stay under that path.
      */
-    fun candidates(raw: String): List<ServerEndpoint> {
-        val preferred = parse(raw)
-        return if (preferred.prefix.isBlank()) {
-            listOf(preferred)
-        } else {
-            listOf(preferred, preferred.copy(prefix = ""))
-        }
-    }
+    fun candidates(raw: String): List<ServerEndpoint> = listOf(parse(raw))
 }
 
 class AharaneApiException(
@@ -78,10 +70,16 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
 
     fun clearSession() = cookies.clear()
 
-    suspend fun checkServer(): JSONObject = requestJson(
-        url = endpoint.healthUrl(),
-        method = "GET"
-    )
+    suspend fun checkServer(): JSONObject {
+        return try {
+            requestJson(url = endpoint.healthUrl(), method = "GET")
+        } catch (error: AharaneApiException) {
+            // Some deployments expose /aharane/api through the reverse proxy
+            // but do not publish /aharane/healthz. The Studio itself verifies
+            // availability through auth/status, so use that same API probe.
+            if (error.statusCode == 404) authStatus() else throw error
+        }
+    }
 
     suspend fun authStatus(): JSONObject = get("auth/status")
 

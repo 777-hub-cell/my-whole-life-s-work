@@ -256,6 +256,9 @@ fun VisualCommandBuilderScreen(
             "message.sendText", "message.replyText" -> mapOf("text" to "Hello, {{sender}}!")
             "message.react" -> mapOf("emoji" to "👍")
             "message.sendPoll" -> mapOf("title" to "Quick question?", "options" to "Option A\nOption B", "selectableCount" to "1")
+            "message.sendLocation" -> mapOf("latitude" to "6.5244", "longitude" to "3.3792", "name" to "Lagos")
+            "contact.sendCard" -> mapOf("name" to "Contact name", "phone" to "2348012345678")
+            "message.sendButtons" -> mapOf("text" to "Choose an option", "buttons" to "Yes|yes\nNo|no")
             "condition.equals" -> mapOf("left" to "", "right" to "")
             "condition.contains" -> mapOf("text" to "{{message.text}}", "search" to "")
             "variable.set" -> mapOf("key" to "value", "value" to "")
@@ -843,6 +846,9 @@ private fun nodeSummary(node: VisualNode): String = when (node.type) {
     "message.sendText", "message.replyText" -> node.config["text"].orEmpty().ifBlank { "Connect text input" }
     "message.react" -> "React " + node.config["emoji"].orEmpty()
     "message.sendPoll" -> "Poll: " + node.config["title"].orEmpty()
+    "message.sendLocation" -> "Location: " + node.config["name"].orEmpty()
+    "contact.sendCard" -> "Contact: " + node.config["name"].orEmpty()
+    "message.sendButtons" -> "Buttons: " + node.config["buttons"].orEmpty().replace("\n", ", ")
     "message.quotedText" -> "Quoted message text"
     "condition.equals" -> node.config["left"].orEmpty() + " = " + node.config["right"].orEmpty()
     "condition.contains" -> "Contains " + node.config["search"].orEmpty()
@@ -900,6 +906,9 @@ private fun NodeConfigurationDialog(
         "message.sendText", "message.replyText" -> listOf("text" to "Message text")
         "message.react" -> listOf("emoji" to "Emoji")
         "message.sendPoll" -> listOf("title" to "Poll question", "options" to "Options, one per line", "selectableCount" to "Selectable answers (1–12)")
+        "message.sendLocation" -> listOf("latitude" to "Latitude (-90 to 90)", "longitude" to "Longitude (-180 to 180)", "name" to "Location label")
+        "contact.sendCard" -> listOf("name" to "Contact display name", "phone" to "Phone number")
+        "message.sendButtons" -> listOf("text" to "Message text", "buttons" to "One per line: Label|id")
         "condition.equals" -> listOf("left" to "Left value", "right" to "Right value")
         "condition.contains" -> listOf("text" to "Text to inspect", "search" to "Contains")
         "variable.set" -> listOf("key" to "Variable name", "value" to "Value")
@@ -919,7 +928,7 @@ private fun NodeConfigurationDialog(
                 BasicTextField(
                     value = config[key].orEmpty(),
                     onValueChange = { config = config + (key to it) },
-                    singleLine = key != "text" && key != "options",
+                    singleLine = key !in setOf("text", "options", "buttons"),
                     textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 11.sp),
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)
                         .clip(RoundedCornerShape(6.dp)).background(StudioPalette.Background)

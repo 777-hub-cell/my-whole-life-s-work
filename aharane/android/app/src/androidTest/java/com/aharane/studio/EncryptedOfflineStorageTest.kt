@@ -181,6 +181,47 @@ class EncryptedOfflineStorageTest {
     }
 
     @Test
+    fun encryptedOutgoingTextQueueSurvivesReopenAndRecoversInterruptedSend() = runBlocking {
+        val jid = "2348777777777@s.whatsapp.net"
+        val conversation = com.aharane.studio.core.model.ChatSummary(
+            key = com.aharane.studio.core.model.ConversationKey(ChatAccount.PRIVATE, jid),
+            title = "Outbox test",
+            lastMessagePreview = "",
+            lastMessageAtMillis = 1764000000000L
+        )
+        val first = LocalChatRepository(context)
+        val clientId = first.enqueueTextMessage(conversation, "queued while offline", null)
+        assertEquals("PENDING", first.outgoingMessage(conversation.key, clientId)?.state)
+        first.updateOutgoingMessage(conversation.key, clientId, "SENDING")
+        first.close()
+
+        val reopened = LocalChatRepository(context)
+        try {
+            reopened.resetInterruptedOutgoingMessages()
+            val interrupted = reopened.outgoingMessage(conversation.key, clientId)
+            assertEquals("FAILED", interrupted?.state)
+            assertTrue(interrupted?.lastError.orEmpty().contains("same server idempotency key"))
+            val displayed = reopened.messages(conversation.key).single()
+            assertEquals("local-$clientId", displayed.messageId)
+            assertEquals(MessageStatus.FAILED, displayed.status)
+            assertEquals("FAILED", displayed.localOutboxState)
+
+            reopened.updateOutgoingMessage(conversation.key, clientId, "PENDING", null)
+            assertTrue(reopened.pendingOutgoingMessages(ChatAccount.PRIVATE).any { it.jid == jid && it.clientMessageId == clientId })
+            assertTrue(reopened.outgoingMessages(ConversationKey(ChatAccount.PUBLIC, jid)).isEmpty())
+
+            reopened.updateOutgoingMessage(conversation.key, clientId, "SENT", null, "remote-outgoing-1")
+            val sent = reopened.messages(conversation.key).single()
+            assertEquals("remote-outgoing-1", sent.messageId)
+            assertEquals(MessageStatus.SENT, sent.status)
+            assertEquals("SENT", sent.localOutboxState)
+        } finally {
+            reopened.clearLocalConversation(conversation.key)
+            reopened.close()
+        }
+    }
+
+    @Test
     fun roomVersionOneMigrationAddsCompositeCursorColumnsWithoutDroppingHistory() {
         val helper = FrameworkSQLiteOpenHelperFactory().create(
             SupportSQLiteOpenHelper.Configuration.builder(context)

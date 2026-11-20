@@ -264,7 +264,8 @@ private fun ChatMessage.toRow() = ChatMessageRow(
     mediaFileName = mediaFileName, isViewOnce = isViewOnce, senderName = senderName,
     mediaUrl = mediaUrl, mediaSizeBytes = mediaSizeBytes, mediaDurationSeconds = mediaDurationSeconds,
     viewOnceViewed = viewOnceViewed, mediaUnavailable = mediaUnavailable, isStarred = isStarred,
-    isVoiceNote = isVoiceNote, reactionsJson = JSONArray(reactions).toString()
+    isVoiceNote = isVoiceNote, reactionsJson = JSONArray(reactions).toString(),
+    deletedByRemote = deletedByRemote, deletedAtMillis = deletedAtMillis
 )
 
 private fun ChatMessageRow.toModel() = ChatMessage(
@@ -281,5 +282,7 @@ private fun ChatMessageRow.toModel() = ChatMessage(
     reactions = runCatching {
         val json = org.json.JSONArray(reactionsJson)
         List(json.length()) { json.optString(it) }
-    }.getOrDefault(emptyList())
+    }.getOrDefault(emptyList()),
+    deletedByRemote = deletedByRemote,
+    deletedAtMillis = deletedAtMillis
 )

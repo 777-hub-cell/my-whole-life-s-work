@@ -111,6 +111,9 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
     suspend fun delete(path: String): JSONObject =
         requestJson(endpoint.apiUrl(path), "DELETE")
 
+    suspend fun delete(path: String, body: JSONObject): JSONObject =
+        requestJson(endpoint.apiUrl(path), "DELETE", body.toString().toByteArray(StandardCharsets.UTF_8))
+
     suspend fun uploadBytes(
         path: String,
         bytes: ByteArray,

@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -67,13 +68,21 @@ fun ConversationScreen(
     onRecordVoice: () -> Unit = {},
     onOpenMedia: (ChatMessage) -> Unit = {},
     onViewOnce: (ChatMessage) -> Unit = {},
-    onStarMessage: (ChatMessage) -> Unit = {}
+    onStarMessage: (ChatMessage) -> Unit = {},
+    onReactMessage: (ChatMessage, String) -> Unit = { _, _ -> },
+    onForwardMessage: (ChatMessage, ChatSummary) -> Unit = { _, _ -> },
+    onDeleteMessage: (ChatMessage) -> Unit = {},
+    onCopyMessage: (ChatMessage) -> Unit = {},
+    forwardTargets: List<ChatSummary> = emptyList()
 ) {
     var draft by rememberSaveable(conversation.key.jid) { mutableStateOf("") }
     var replyTo by remember { mutableStateOf<ChatMessage?>(null) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var search by rememberSaveable { mutableStateOf("") }
     var moreOpen by remember { mutableStateOf(false) }
+    var actionMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var forwardMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var deleteMessage by remember { mutableStateOf<ChatMessage?>(null) }
 
     val listState = rememberLazyListState()
     val visible = remember(messages, search, conversation.key) {
@@ -94,6 +103,9 @@ fun ConversationScreen(
     BackHandler {
         when {
             moreOpen -> moreOpen = false
+            actionMessage != null -> actionMessage = null
+            forwardMessage != null -> forwardMessage = null
+            deleteMessage != null -> deleteMessage = null
             searchOpen -> {
                 searchOpen = false
                 search = ""
@@ -228,7 +240,7 @@ fun ConversationScreen(
                             onReply = { replyTo = message },
                             onOpenMedia = { onOpenMedia(message) },
                             onViewOnce = { onViewOnce(message) },
-                            onStar = { onStarMessage(message) },
+                            onStar = { actionMessage = message },
                             connected = connected
                         )
                     }
@@ -348,6 +360,125 @@ fun ConversationScreen(
                     tint = if (hasDraft && connected) Color.White else StudioPalette.Muted,
                     modifier = Modifier.size(19.dp)
                 )
+            }
+        }
+    }
+
+    if (actionMessage != null) {
+        val selected = actionMessage!!
+        androidx.compose.ui.window.Dialog(onDismissRequest = { actionMessage = null }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(StudioPalette.Surface).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Text("Message actions", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    selected.text.ifBlank { messageAttachmentLabel(selected.kind) },
+                    color = StudioPalette.Muted,
+                    fontSize = 12.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                StudioPaletteAction("Reply") {
+                    replyTo = selected
+                    actionMessage = null
+                }
+                StudioPaletteAction(if (selected.isStarred) "Remove star" else "Star message") {
+                    onStarMessage(selected)
+                    actionMessage = null
+                }
+                Text("React", color = StudioPalette.Muted, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    listOf("❤️", "👍", "😂", "😮", "😢", "🙏").forEach { emoji ->
+                        androidx.compose.material3.TextButton(onClick = {
+                            onReactMessage(selected, emoji)
+                            actionMessage = null
+                        }) {
+                            Text(emoji, fontSize = 20.sp)
+                        }
+                    }
+                }
+                StudioPaletteAction("Copy message") {
+                    onCopyMessage(selected)
+                    actionMessage = null
+                }
+                StudioPaletteAction("Forward message") {
+                    forwardMessage = selected
+                    actionMessage = null
+                }
+                StudioPaletteAction("Delete message") {
+                    deleteMessage = selected
+                    actionMessage = null
+                }
+                StudioPaletteAction("Cancel") { actionMessage = null }
+            }
+        }
+    }
+
+    if (forwardMessage != null) {
+        val source = forwardMessage!!
+        val targets = forwardTargets.filter {
+            it.key.account == conversation.key.account && it.key != conversation.key
+        }
+        androidx.compose.ui.window.Dialog(onDismissRequest = { forwardMessage = null }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(StudioPalette.Surface).padding(16.dp)
+            ) {
+                Text("Forward to", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    "Choose a conversation in the same ${conversation.key.account.label} WhatsApp account.",
+                    color = StudioPalette.Muted,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
+                )
+                if (targets.isEmpty()) {
+                    Text("No other conversations are available in this account.", color = StudioPalette.Muted, fontSize = 13.sp)
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        items(targets, key = { it.key.jid }) { target ->
+                            StudioPaletteAction(target.title) {
+                                onForwardMessage(source, target)
+                                forwardMessage = null
+                            }
+                        }
+                    }
+                }
+                StudioPaletteAction("Cancel") { forwardMessage = null }
+            }
+        }
+    }
+
+    if (deleteMessage != null) {
+        val selected = deleteMessage!!
+        androidx.compose.ui.window.Dialog(onDismissRequest = { deleteMessage = null }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(StudioPalette.Surface).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Delete message?", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    "This asks WhatsApp to delete or clear the selected message. The server may reject the action when the connected account does not support it.",
+                    color = StudioPalette.Muted,
+                    fontSize = 12.5.sp,
+                    lineHeight = 18.sp
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    androidx.compose.material3.TextButton(onClick = { deleteMessage = null }) {
+                        Text("Cancel", color = StudioPalette.Muted)
+                    }
+                    androidx.compose.material3.TextButton(onClick = {
+                        onDeleteMessage(selected)
+                        deleteMessage = null
+                    }) {
+                        Text("Delete", color = StudioPalette.Bad)
+                    }
+                }
             }
         }
     }

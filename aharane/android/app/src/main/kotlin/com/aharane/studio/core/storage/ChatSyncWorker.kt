@@ -61,6 +61,10 @@ class ChatSyncWorker(
                             if (cursor.timestampMillis == 0L) page.hasOlder else null
                         )
                         local.applyDeletedMessages(conversation.key, page.deletedMessageIds)
+                        local.applyRemoteDeletedMessages(
+                            conversation.key,
+                            page.remoteDeletedMessages.map { it.messageId to it.deletedAtMillis }
+                        )
                     } catch (_: Exception) {
                         failures += 1
                     }

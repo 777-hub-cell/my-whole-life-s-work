@@ -128,6 +128,56 @@ class EncryptedOfflineStorageTest {
     }
 
     @Test
+    fun remoteDeletionMarkerPersistsIncomingMessageButNeverRemovesItsContent() = runBlocking {
+        val jid = "2348999999999@s.whatsapp.net"
+        val db = EncryptedChatDatabase.open(context)
+        val dao = db.database.chatDao()
+        dao.putConversation(
+            ChatConversationRow(
+                account = "private", jid = jid, title = "Retention test",
+                lastMessagePreview = "original message", lastMessageAtMillis = 1765000000000L,
+                unreadCount = 0, isGroup = false, isArchived = false, isPinned = false,
+                isMuted = false, lastMessageType = "TEXT", lastMessageFromMe = false
+            )
+        )
+        fun row(id: String, direction: String, viewOnce: Boolean = false) = ChatMessageRow(
+            account = "private", jid = jid, messageId = id, direction = direction,
+            kind = if (viewOnce) "IMAGE" else "TEXT",
+            text = if (viewOnce) "" else "Original content $id",
+            timestampMillis = 1765000000000L, status = "DELIVERED",
+            replyToMessageId = null, mediaMimeType = null, mediaFileName = null,
+            isViewOnce = viewOnce, senderName = "Participant", mediaUrl = null,
+            mediaSizeBytes = null, mediaDurationSeconds = null, viewOnceViewed = false,
+            mediaUnavailable = null, isStarred = false, isVoiceNote = false,
+            reactionsJson = "[]"
+        )
+        dao.putMessages(
+            listOf(
+                row("incoming-retained", "INCOMING"),
+                row("outgoing-kept", "OUTGOING"),
+                row("view-once-not-marked", "INCOMING", viewOnce = true)
+            )
+        )
+        dao.markMessageDeletedRemotely("private", jid, "incoming-retained", 1765000001000L)
+        dao.markMessageDeletedRemotely("private", jid, "outgoing-kept", 1765000001000L)
+        dao.markMessageDeletedRemotely("private", jid, "view-once-not-marked", 1765000001000L)
+
+        val incoming = dao.message("private", jid, "incoming-retained")
+        val outgoing = dao.message("private", jid, "outgoing-kept")
+        val viewOnce = dao.message("private", jid, "view-once-not-marked")
+        assertNotNull(incoming)
+        assertEquals("Original content incoming-retained", incoming?.text)
+        assertTrue(incoming?.deletedByRemote == true)
+        assertEquals(1765000001000L, incoming?.deletedAtMillis)
+        assertFalse(outgoing?.deletedByRemote == true)
+        assertFalse(viewOnce?.deletedByRemote == true)
+
+        dao.clearMessages("private", jid)
+        dao.clearConversation("private", jid)
+        db.database.close()
+    }
+
+    @Test
     fun encryptedMediaRequiresCorrectAccountAndConversationIdentity() {
         val cache = EncryptedMediaCache(context)
         val bytes = "offline-image-payload-sentinel".toByteArray()

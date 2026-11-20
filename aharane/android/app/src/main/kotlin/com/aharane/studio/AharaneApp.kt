@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.viewinterop.AndroidView
 import com.aharane.studio.core.design.*
+import com.aharane.studio.core.media.AudioWaveformDecoder
 import com.aharane.studio.core.media.VoiceNoteRecorder
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatSummary
@@ -293,6 +294,7 @@ fun AharaneApp(
     var inlineMediaPreviews by remember { mutableStateOf<Map<String, androidx.compose.ui.graphics.ImageBitmap>>(emptyMap()) }
     var inlineMediaPreviewErrors by remember { mutableStateOf<Set<String>>(emptySet()) }
     var audioFiles by remember { mutableStateOf<Map<String, File>>(emptyMap()) }
+    var audioWaveforms by remember { mutableStateOf<Map<String, List<Float>>>(emptyMap()) }
     var audioLoading by remember { mutableStateOf<Set<String>>(emptySet()) }
     var audioErrors by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var pendingMediaDownload by remember { mutableStateOf<ByteArray?>(null) }
@@ -368,6 +370,7 @@ fun AharaneApp(
             voiceRecording = false
             audioFiles.values.forEach { it.delete() }
             audioFiles = emptyMap()
+            audioWaveforms = emptyMap()
             audioLoading = emptySet()
             audioErrors = emptyMap()
             inlineMediaPreviews = emptyMap()
@@ -1183,6 +1186,7 @@ fun AharaneApp(
                     audioFiles = audioFiles,
                     audioLoading = audioLoading,
                     audioErrors = audioErrors,
+                    audioWaveforms = audioWaveforms,
                     onLoadMediaPreview = { message ->
                         val key = mediaCacheKey(message)
                         if (previewMode) {
@@ -1240,7 +1244,9 @@ fun AharaneApp(
                                         ?: if (message.isVoiceNote) "ogg" else "audio"
                                     val file = File.createTempFile("aharane-audio-", ".$extension", context.cacheDir)
                                     withContext(Dispatchers.IO) { file.writeBytes(bytes) }
+                                    val waveform = withContext(Dispatchers.IO) { AudioWaveformDecoder.decode(file) }
                                     audioFiles = audioFiles + (key to file)
+                                    if (waveform.isNotEmpty()) audioWaveforms = audioWaveforms + (key to waveform)
                                     audioErrors = audioErrors - message.messageId
                                 } catch (error: Exception) {
                                     audioErrors = audioErrors + (message.messageId to (error.message ?: "Audio could not be downloaded."))

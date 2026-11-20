@@ -308,7 +308,7 @@ fun FilesScreen(
                                     currentPath = entry.path
                                     query = ""
                                     selectedPaths.clear()
-                                } else if (entry.path.startsWith("Aharane update packages/")) {
+                                } else if (entry.path.startsWith("Update packages/")) {
                                     packagesOpen = true
                                     onRefreshPackages()
                                 } else onEntryAction(entry, "open")
@@ -320,7 +320,7 @@ fun FilesScreen(
                             onAction = { action ->
                                 menuPath = null
                                 val packageId = entry.path
-                                    .removePrefix("Aharane update packages/")
+                                    .removePrefix("Update packages/")
                                     .removeSuffix(".zip")
                                 val storedPackage = updatePackages.firstOrNull { it.updateId == packageId }
                                 when {
@@ -619,18 +619,19 @@ private fun FileEntryRow(
                 maxLines = 1
             )
         }
-        Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
-            Box(
-                Modifier.size(34.dp).clip(CircleShape).clickable(onClick = onMenuToggle),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Outlined.MoreVert, "File actions", tint = StudioPalette.Muted, modifier = Modifier.size(19.dp))
-            }
-            StudioFloatingMenu(
+        if (entry.path != "Update packages") {
+            Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier.size(34.dp).clip(CircleShape).clickable(onClick = onMenuToggle),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Outlined.MoreVert, "File actions", tint = StudioPalette.Muted, modifier = Modifier.size(19.dp))
+                }
+                StudioFloatingMenu(
                 expanded = menuExpanded,
                 onDismiss = onMenuDismiss,
                 actions = (
-                    if (entry.path.startsWith("Aharane update packages/") && entry.name.endsWith(".zip", true)) {
+                    if (entry.path.startsWith("Update packages/") && entry.name.endsWith(".zip", true)) {
                         listOf(
                             FileMenuActionSpec("update_bot", "Update bot"),
                             FileMenuActionSpec("remove_package", "Remove", destructive = true)
@@ -638,13 +639,14 @@ private fun FileEntryRow(
                     } else {
                         fileMenuActionSpecs()
                     }
-                ).map { action ->
-                    StudioMenuAction(
-                        title = action.label,
-                        destructive = action.destructive
-                    ) { onAction(action.key) }
-                }
-            )
+                    ).map { action ->
+                        StudioMenuAction(
+                            title = action.label,
+                            destructive = action.destructive
+                        ) { onAction(action.key) }
+                    }
+                )
+            }
         }
     }
 

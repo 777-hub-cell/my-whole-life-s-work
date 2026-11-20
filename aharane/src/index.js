@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import express from 'express'
 import { WebSocket, WebSocketServer } from 'ws'
 import pino from 'pino'
-import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState, WAMessageStubType } from '@whiskeysockets/baileys'
+import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState, WAMessageStubType, downloadMediaMessage } from '@itsliaaa/baileys'
 import {
   isAllowedInbound,
   isPrivateVisibleChatJid,
@@ -23,10 +23,10 @@ import { loadCommandRegistry, dispatchCommand, parseCommand } from './command-re
 import { isPrivateSelfChat, isPrivateSelfCommand, isPublicOwnerSender } from './authorization.js'
 import { loadOwnerConfig, normalizeOwnerConfig, saveOwnerConfig } from './owner-config.js'
 import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_ARCHIVE_BYTES, normalizeUpdatePath } from './update-manager.js'
-import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { createChatStore } from './chat-store.js'
 import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, normalizeChatVisibility, normalizeChatAppearance, isChatVisible, envView } from './studio-settings.js'
 import { createActivityStore } from './activity-store.js'
+import { createVisualCommandStore, normalizeWorkflow, validateWorkflow, executeVisualWorkflow } from './visual-command-builder.js'
 
 const APP_NAME = 'Aharane'
 const PROCESS_STARTED_AT = Date.now()
@@ -89,7 +89,8 @@ let ownerConfig = await loadOwnerConfig(OWNER_CONFIG_FILE, {
 })
 const chatStore = createChatStore({ dataDir: DATA_DIR, logger })
 const activityStore = createActivityStore({ dataDir: DATA_DIR })
-await Promise.all([chatStore.init(), activityStore.init()])
+const visualCommandStore = createVisualCommandStore(join(DATA_DIR, 'visual-commands.json'))
+await Promise.all([chatStore.init(), activityStore.init(), visualCommandStore.init()])
 const SETTINGS_FILE = join(DATA_DIR, 'studio-settings.json')
 const CHAT_WALLPAPER_FILE = join(DATA_DIR, 'chat-wallpaper')
 let studioSettings = await loadStudioSettings(SETTINGS_FILE)

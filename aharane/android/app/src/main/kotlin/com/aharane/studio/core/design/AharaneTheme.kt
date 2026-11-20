@@ -74,17 +74,17 @@ private val StudioTypography = Typography(
         fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.15).sp),
     titleMedium = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp, lineHeight = 19.sp),
-    bodyLarge = TextStyle(fontFamily = InstrumentSans, fontWeight = FontWeight.Normal,
+    bodyLarge = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.Normal,
         fontSize = 15.sp, lineHeight = 21.sp),
-    bodyMedium = TextStyle(fontFamily = InstrumentSans, fontWeight = FontWeight.Normal,
+    bodyMedium = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.Normal,
         fontSize = 14.sp, lineHeight = 20.sp),
-    bodySmall = TextStyle(fontFamily = InstrumentSans, fontWeight = FontWeight.Normal,
+    bodySmall = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.Normal,
         fontSize = 12.5.sp, lineHeight = 17.sp),
-    labelLarge = TextStyle(fontFamily = InstrumentSans, fontWeight = FontWeight.SemiBold,
+    labelLarge = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp, lineHeight = 18.sp),
-    labelMedium = TextStyle(fontFamily = InstrumentSans, fontWeight = FontWeight.SemiBold,
+    labelMedium = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
         fontSize = 12.5.sp, lineHeight = 16.sp),
-    labelSmall = TextStyle(fontFamily = InstrumentSans, fontWeight = FontWeight.SemiBold,
+    labelSmall = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
         fontSize = 11.5.sp, lineHeight = 14.sp)
 )
 

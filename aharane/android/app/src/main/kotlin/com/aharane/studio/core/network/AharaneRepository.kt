@@ -122,12 +122,18 @@ data class EditorDiagnosticsResult(
  * Typed adapter for the existing Aharane server API. It never talks to WhatsApp
  * directly; Baileys, sessions and command dispatch remain on the server.
  */
+data class RemoteDeletedMessage(
+    val messageId: String,
+    val deletedAtMillis: Long
+)
+
 data class ChatSyncPage(
     val messages: List<ChatMessage>,
     val hasOlder: Boolean,
     val hasNewer: Boolean,
     val syncedAtMillis: Long,
-    val deletedMessageIds: List<String> = emptyList()
+    val deletedMessageIds: List<String> = emptyList(),
+    val remoteDeletedMessages: List<RemoteDeletedMessage> = emptyList()
 )
 
 class AharaneRepository(private val connection: AharaneConnectionManager) {
@@ -366,6 +372,17 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
             syncedAtMillis = response.optLong("syncedAt", System.currentTimeMillis()),
             deletedMessageIds = response.optJSONArray("deletedMessageIds").let { values ->
                 if (values == null) emptyList() else List(values.length()) { values.optString(it) }.filter(String::isNotBlank)
+            },
+            remoteDeletedMessages = response.optJSONArray("remoteDeletedMessages").let { values ->
+                if (values == null) emptyList() else buildList {
+                    for (index in 0 until values.length()) {
+                        val row = values.optJSONObject(index) ?: continue
+                        val messageId = row.optString("id")
+                        if (messageId.isNotBlank()) add(
+                            RemoteDeletedMessage(messageId, row.optLong("deletedAt").coerceAtLeast(0L))
+                        )
+                    }
+                }
             }
         )
     }

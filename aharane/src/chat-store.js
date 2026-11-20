@@ -239,7 +239,40 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return enqueue(account, async () => {
       const key = record.jid + '|' + record.id
       const known = knownMessageKeys.get(account)
-      if (known.has(key)) return record
+      if (known.has(key)) {
+        const rows = await readRows(account)
+        const index = rows.findIndex(row => row.jid === record.jid && row.id === record.id)
+        if (index >= 0) {
+          const previous = rows[index]
+          const sameMedia = previous.type === record.type &&
+            previous.mimeType === record.mimeType &&
+            previous.fileName === record.fileName &&
+            previous.size === record.size
+          const updated = {
+            ...previous,
+            ...record,
+            status: record.status || previous.status || '',
+            reactions: Array.isArray(previous.reactions) ? previous.reactions : [],
+            starred: previous.starred === true,
+            viewOnceViewed: previous.viewOnceViewed === true,
+            mediaFile: sameMedia ? (previous.mediaFile || '') : '',
+            mediaUrl: sameMedia ? (previous.mediaUrl || '') : '',
+            mediaUnavailable: sameMedia ? (previous.mediaUnavailable || record.mediaUnavailable || '') : (record.mediaUnavailable || ''),
+            sourceMessage: sameMedia && previous.mediaFile ? '' : record.sourceMessage,
+          }
+          if (JSON.stringify(updated) !== JSON.stringify(previous)) {
+            if (!sameMedia && previous.mediaFile && /^[a-f0-9]{64}\.[a-z0-9]{1,8}$/.test(previous.mediaFile)) {
+              await unlink(join(mediaRoot, account, previous.mediaFile)).catch(() => {})
+            }
+            rows[index] = updated
+            await rewriteRows(account, rows)
+          }
+          return updated
+        }
+        // The bounded in-memory de-duplication set may have outlived an old
+        // row index. Do not append a duplicate without checking disk state.
+        return record
+      }
       await appendFile(files[account], JSON.stringify(record) + String.fromCharCode(10), { encoding: 'utf8', mode: 0o600 })
       await chmod(files[account], 0o600)
       known.add(key)
@@ -491,6 +524,38 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     })
   }
 
+  async function updateMessageStatus(id, jidValue, messageId, status) {
+    const account = accountId(id), jid = safeJid(jidValue), key = String(messageId || '')
+    if (!jid || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw Object.assign(new Error('Invalid message reference.'), { status: 400 })
+    const value = String(status || '').toLowerCase()
+    if (!['pending', 'sent', 'delivered', 'read', 'failed'].includes(value)) return null
+    return enqueue(account, async () => {
+      const rows = await readRows(account), row = rows.find(item => item.jid === jid && item.id === key)
+      if (!row || row.viewOnceViewed === true || row.status === value) return row || null
+      row.status = value
+      await rewriteRows(account, rows)
+      return { id: row.id, jid: row.jid, status: row.status }
+    })
+  }
+
+  async function deleteConversationMessages(id, jidValue) {
+    const account = accountId(id), jid = safeJid(jidValue)
+    if (!jid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
+    return enqueue(account, async () => {
+      const rows = await readRows(account)
+      const removed = rows.filter(row => row.jid === jid)
+      if (!removed.length) return 0
+      for (const row of removed) {
+        if (row.mediaFile && /^[a-f0-9]{64}\.[a-z0-9]{1,8}$/.test(row.mediaFile)) {
+          await unlink(join(mediaRoot, account, row.mediaFile)).catch(() => {})
+        }
+      }
+      await rewriteRows(account, rows.filter(row => row.jid !== jid))
+      for (const row of removed) knownMessageKeys.get(account)?.delete(jid + '|' + row.id)
+      return removed.length
+    })
+  }
+
   async function setStarred(id, jidValue, messageId, starred) {
     const account = accountId(id), jid = safeJid(jidValue), key = String(messageId || '')
     if (!jid || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw Object.assign(new Error('Invalid message reference.'), { status: 400 })
@@ -709,5 +774,5 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return { bytes: total, files: count }
   }
 
-  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
+  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, updateMessageStatus, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, deleteConversationMessages, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
 }

@@ -77,8 +77,8 @@ class LocalChatRepository(context: Context) {
 
     suspend fun search(account: ChatAccount, query: String, jid: String? = null, fromMillis: Long = 0L, toMillis: Long = 0L, limit: Int = 100): List<ChatMessage> {
         val term = query.trim()
-        if (term.length < 2) return emptyList()
-        return dao.search(account.apiValue, jid, term, fromMillis, toMillis, limit.coerceIn(1, 500)).map { it.toModel() }
+        if (term.length < 2 && fromMillis == 0L && toMillis == 0L) return emptyList()
+        return dao.search(account.apiValue, jid, term.takeIf { it.length >= 2 }.orEmpty(), fromMillis, toMillis, limit.coerceIn(1, 500)).map { it.toModel() }
     }
 
     data class MessageCursor(val timestampMillis: Long, val messageId: String)

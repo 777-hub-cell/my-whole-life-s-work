@@ -588,6 +588,30 @@ test('messages deleted by the other participant stay in the Hub store with a del
   }
 })
 
+test('explicit incoming delete event can safely mark a legacy row without direction metadata', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-legacy-remote-delete-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348765432109@s.whatsapp.net'
+    await store.recordMessage({
+      sessionId: 'private',
+      message: {
+        key: { id: 'legacy-row', remoteJid: jid },
+        messageTimestamp: 1763900000,
+        message: { conversation: 'Legacy retained message' },
+      },
+    })
+    assert.equal(await store.markMessageDeletedRemotely('private', jid, 'legacy-row'), false)
+    assert.equal(await store.markMessageDeletedRemotely('private', jid, 'legacy-row', false), true)
+    const [row] = await store.getMessages('private', jid, { limit: 10 })
+    assert.equal(row.text, 'Legacy retained message')
+    assert.equal(row.deletedByRemote, true)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('whole-conversation remote delete retains incoming history and does not erase owner or unknown-direction messages', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'aharane-remote-clear-retention-'))
   try {

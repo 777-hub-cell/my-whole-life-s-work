@@ -319,7 +319,14 @@ test('contact cards retain vCards, locations retain coordinates and polls retain
         message: {
           contactMessage: {
             displayName: 'Ada Lovelace',
-            vcard: 'BEGIN:VCARD\\nVERSION:3.0\\nFN:Ada Lovelace\\nTEL;TYPE=CELL:+2348012345678\\nEMAIL:ada@example.test\\nEND:VCARD',
+            vcard: [
+              'BEGIN:VCARD',
+              'VERSION:3.0',
+              'FN:Ada Lovelace',
+              'TEL;TYPE=CELL:+2348012345678',
+              'EMAIL:ada@example.test',
+              'END:VCARD',
+            ].join('\\n'),
           },
         },
       },
@@ -331,6 +338,29 @@ test('contact cards retain vCards, locations retain coordinates and polls retain
             address: 'Oyo State, Nigeria',
             degreesLatitude: 7.3775,
             degreesLongitude: 3.947,
+          },
+        },
+      },
+      {
+        key: { id: 'location-no-coordinates', remoteJid: jid, fromMe: false },
+        message: {
+          locationMessage: {
+            name: 'Undisclosed place',
+            address: 'Nigeria',
+            degreesLatitude: null,
+            degreesLongitude: '',
+          },
+        },
+      },
+      {
+        key: { id: 'contact-array-1', remoteJid: jid, fromMe: false },
+        message: {
+          contactsArrayMessage: {
+            displayName: 'Shared contacts',
+            contacts: [{
+              displayName: 'Grace Hopper',
+              vcard: ['BEGIN:VCARD', 'VERSION:3.0', 'FN:Grace Hopper', 'TEL:+15550102030', 'END:VCARD'].join('\\n'),
+            }],
           },
         },
       },
@@ -351,7 +381,9 @@ test('contact cards retain vCards, locations retain coordinates and polls retain
 
     const rows = await store.getMessages('private', jid)
     const contact = rows.find(row => row.id === 'contact-card-1')
+    const contactArray = rows.find(row => row.id === 'contact-array-1')
     const location = rows.find(row => row.id === 'location-1')
+    const locationWithoutCoordinates = rows.find(row => row.id === 'location-no-coordinates')
     const poll = rows.find(row => row.id === 'poll-1')
 
     assert.equal(contact.type, 'contact')
@@ -359,10 +391,17 @@ test('contact cards retain vCards, locations retain coordinates and polls retain
     assert.match(contact.text, /TEL;TYPE=CELL:\+2348012345678/)
     assert.match(contact.text, /EMAIL:ada@example.test/)
 
+    assert.equal(contactArray.type, 'contact')
+    assert.match(contactArray.text, /Grace Hopper/)
+    assert.match(contactArray.text, /TEL:\+15550102030/)
+
     assert.equal(location.type, 'location')
     assert.match(location.text, /Ibadan City Hall/)
     assert.match(location.text, /Oyo State, Nigeria/)
     assert.match(location.text, /Coordinates: 7\.3775, 3\.947/)
+
+    assert.equal(locationWithoutCoordinates.type, 'location')
+    assert.doesNotMatch(locationWithoutCoordinates.text, /Coordinates:/)
 
     assert.equal(poll.type, 'poll')
     assert.match(poll.text, /Where should we meet\?/)

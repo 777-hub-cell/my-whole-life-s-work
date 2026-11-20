@@ -36,7 +36,9 @@ data class ChatSummary(
     val isPinned: Boolean = false,
     val isMuted: Boolean = false,
     val lastMessageType: MessageKind = MessageKind.TEXT,
-    val lastMessageFromMe: Boolean = false
+    val lastMessageFromMe: Boolean = false,
+    val lastSyncedAtMillis: Long = 0L,
+    val hasOlderMessages: Boolean = false
 ) {
     init {
         require(title.isNotBlank())

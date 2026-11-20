@@ -65,10 +65,9 @@ Keep the current compact More sections and order:
 - Tools: Activity and logs; Storage information.
 - Preferences: Appearance (System / Light / Dark / AMOLED, accent, interface size, corners, spacing and editor preferences).
 - Support: Help; About Aharane.
-- Development: Studio source.
 - Change password and Sign out actions.
 
-Use plain title/subtitle rows rather than decorative icon tiles. The native Studio source page must explain that Kotlin app source is bundled into the installed package and cannot be edited as a web HTML file at runtime. Account state and owner identities, activity and storage summaries, password change and sign-out use the authenticated server where their controls are enabled. Some secondary activity actions (live tail, copy/export) remain inactive.
+Use plain title/subtitle rows rather than decorative icon tiles. Account state and owner identities, activity and storage summaries, password change and sign-out use the authenticated server where their controls are enabled. Some secondary activity actions (live tail, copy/export) remain inactive.
 
 Dialogs and bottom sheets should preserve web Studio spacing/radius, white/dark surface, type hierarchy and dismissal behaviour.
 

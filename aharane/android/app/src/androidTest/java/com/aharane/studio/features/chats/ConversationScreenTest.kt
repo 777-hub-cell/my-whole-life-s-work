@@ -37,11 +37,9 @@ class ConversationScreenTest {
         compose.onNodeWithTag("conversation-composer").performTextInput("Hello from the chat test")
         compose.onNodeWithContentDescription("Send message").performClick()
         compose.runOnIdle { assertEquals(listOf("Hello from the chat test"), sent) }
-        compose.runOnIdle {
-            val editableText = compose.onNodeWithTag("conversation-composer")
-                .fetchSemanticsNode().config[SemanticsProperties.EditableText]
-            assertEquals("", editableText.text)
-        }
+        val editableText = compose.onNodeWithTag("conversation-composer")
+            .fetchSemanticsNode().config[SemanticsProperties.EditableText]
+        assertEquals("", editableText.text)
     }
 
     @Test

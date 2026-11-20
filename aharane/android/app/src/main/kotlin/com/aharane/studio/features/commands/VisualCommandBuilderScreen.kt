@@ -18,6 +18,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -99,10 +102,49 @@ fun VisualCommandBuilderScreen(
 
     fun edit(transform: (VisualWorkflow) -> VisualWorkflow) {
         snapshot()
-        workflow = transform(workflow)
+        val updated = transform(workflow)
+        val commandName = updated.nodes.firstOrNull { it.type == "trigger.command" }
+            ?.config?.get("command")?.trim()
+        workflow = if (!commandName.isNullOrBlank()) updated.copy(name = commandName) else updated
         dirty = true
         validation = VisualWorkflowValidation()
         notice = ""
+    }
+
+    fun switchAccount() {
+        val next = if (account == "private") "public" else "private"
+        if (dirty) {
+            notice = "Save your changes before switching accounts."
+        } else {
+            account = next
+            workflow = VisualWorkflow.draft(next)
+            saved = false
+            loadedId = null
+            validation = VisualWorkflowValidation()
+            selectedNodeId = null
+            configNodeId = null
+            pendingSocket = null
+        }
+    }
+
+    fun fitWorkspace() {
+        val nodes = workflow.nodes
+        if (nodes.isNotEmpty() && workspaceViewportSize.width > 0 && workspaceViewportSize.height > 0) {
+            val left = nodes.minOf { it.x }
+            val top = nodes.minOf { it.y }
+            val right = nodes.maxOf { it.x + 206f }
+            val bottom = nodes.maxOf { node ->
+                node.y + (measuredNodeSizes[node.id]?.height?.let { with(density) { it.toDp().value } } ?: 132f)
+            }
+            val graphWidthPx = with(density) { (right - left + 96f).coerceAtLeast(260f).dp.toPx() }
+            val graphHeightPx = with(density) { (bottom - top + 96f).coerceAtLeast(180f).dp.toPx() }
+            val availableWidth = (workspaceViewportSize.width - with(density) { 32.dp.toPx() }).coerceAtLeast(1f)
+            val availableHeight = (workspaceViewportSize.height - with(density) { 32.dp.toPx() }).coerceAtLeast(1f)
+            zoom = minOf(availableWidth / graphWidthPx, availableHeight / graphHeightPx).coerceIn(0.35f, 1.8f)
+        } else {
+            zoom = 0.78f
+        }
+        scope.launch { workspaceScroll.scrollTo(0); workspaceVerticalScroll.scrollTo(0) }
     }
 
     fun useSaved(row: JSONObject) {
@@ -409,64 +451,24 @@ fun VisualCommandBuilderScreen(
         }
 
         Row(
-            Modifier.fillMaxWidth().padding(vertical = 5.dp),
+            Modifier.fillMaxWidth().padding(vertical = 6.dp).horizontalScroll(rememberScrollState()),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text("Name", color = StudioPalette.Muted, fontSize = 10.sp)
-            BasicTextField(
-                value = workflow.name,
-                onValueChange = { value ->
-                    if (value.length <= 80) edit { it.copy(name = value) }
-                },
-                singleLine = true,
-                textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
-                modifier = Modifier.weight(1f).clip(RoundedCornerShape(7.dp))
-                    .background(StudioPalette.Surface).border(1.dp, StudioPalette.Line, RoundedCornerShape(7.dp))
-                    .padding(horizontal = 8.dp, vertical = 6.dp).testTag("workflow-name"),
-                decorationBox = { inner ->
-                    Box {
-                        if (workflow.name.isBlank()) Text("Command name", color = StudioPalette.Muted, fontSize = 11.sp)
-                        inner()
-                    }
-                }
-            )
-        }
-
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            Text("Account", color = StudioPalette.Muted, fontSize = 10.sp)
-            listOf("private" to "Private", "public" to "Public").forEach { (value, label) ->
-                val active = account == value
-                Box(
-                    Modifier.clip(RoundedCornerShape(7.dp))
-                        .background(if (active) StudioPalette.Accent else StudioPalette.Surface)
-                        .border(1.dp, if (active) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(7.dp))
-                        .clickable {
-                            if (dirty) notice = "Save your changes before switching accounts."
-                            else {
-                                account = value
-                                workflow = VisualWorkflow.draft(value)
-                                saved = false
-                                loadedId = null
-                                validation = VisualWorkflowValidation()
-                            }
-                        }.padding(horizontal = 9.dp, vertical = 5.dp)
-                ) {
-                    Text(label, color = if (active) Color.White else StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                }
+            Row(
+                Modifier.clip(RoundedCornerShape(8.dp))
+                    .background(StudioPalette.Surface)
+                    .border(1.dp, StudioPalette.Line, RoundedCornerShape(8.dp))
+                    .clickable(onClick = ::switchAccount)
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(Icons.Outlined.Person, contentDescription = null, tint = StudioPalette.Accent, modifier = Modifier.size(17.dp))
+                Text(if (account == "private") "Private" else "Public", color = StudioPalette.Ink, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("↕", color = StudioPalette.Muted, fontSize = 12.sp)
             }
-            Spacer(Modifier.weight(1f))
-            Text(if (workflow.enabled) "Active" else "Draft", color = if (workflow.enabled) StudioPalette.Accent else StudioPalette.Muted, fontSize = 10.sp)
-        }
-
-        Row(
-            Modifier.fillMaxWidth().padding(bottom = 6.dp).horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
+            Spacer(Modifier.width(2.dp))
             StudioActionButton(if (testing) "Testing…" else "Test safely", compact = true, enabled = connected && !testing && !saving, onClick = {
                 scope.launch { safeTest() }
             })
@@ -492,29 +494,6 @@ fun VisualCommandBuilderScreen(
                     }
                 }
             )
-            StudioActionButton("Undo", compact = true, enabled = undo.isNotEmpty(), onClick = { undoChange() })
-            StudioActionButton("Redo", compact = true, enabled = redo.isNotEmpty(), onClick = { redoChange() })
-            StudioActionButton("Fit", compact = true, onClick = {
-                val nodes = workflow.nodes
-                if (nodes.isNotEmpty() && workspaceViewportSize.width > 0 && workspaceViewportSize.height > 0) {
-                    val left = nodes.minOf { it.x }
-                    val top = nodes.minOf { it.y }
-                    val right = nodes.maxOf { it.x + 206f }
-                    val bottom = nodes.maxOf { node ->
-                        node.y + (measuredNodeSizes[node.id]?.height?.let { with(density) { it.toDp().value } } ?: 132f)
-                    }
-                    val graphWidthPx = with(density) { (right - left + 96f).coerceAtLeast(260f).dp.toPx() }
-                    val graphHeightPx = with(density) { (bottom - top + 96f).coerceAtLeast(180f).dp.toPx() }
-                    val availableWidth = (workspaceViewportSize.width - with(density) { 32.dp.toPx() }).coerceAtLeast(1f)
-                    val availableHeight = (workspaceViewportSize.height - with(density) { 32.dp.toPx() }).coerceAtLeast(1f)
-                    zoom = minOf(availableWidth / graphWidthPx, availableHeight / graphHeightPx).coerceIn(0.35f, 1.8f)
-                } else {
-                    zoom = 0.78f
-                }
-                scope.launch { workspaceScroll.scrollTo(0); workspaceVerticalScroll.scrollTo(0) }
-            })
-            StudioActionButton("−", compact = true, onClick = { zoom = (zoom - 0.1f).coerceIn(0.35f, 1.8f) })
-            StudioActionButton("+", compact = true, onClick = { zoom = (zoom + 0.1f).coerceIn(0.35f, 1.8f) })
             StudioActionButton("Delete", compact = true, destructive = true, enabled = saved && connected, onClick = { showDelete = true })
         }
 
@@ -653,6 +632,31 @@ fun VisualCommandBuilderScreen(
                     modifier = Modifier.align(Alignment.BottomStart).padding(6.dp)
                         .clip(RoundedCornerShape(5.dp)).background(Color.White.copy(alpha = 0.92f)).padding(5.dp)
                 )
+                Row(
+                    Modifier.align(Alignment.TopEnd).padding(6.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(Color.White.copy(alpha = 0.96f))
+                        .border(1.dp, Color(0xFFDCE3DE), RoundedCornerShape(9.dp))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    WorkspaceToolButton("Undo", enabled = undo.isNotEmpty(), onClick = ::undoChange) {
+                        Text("↶", color = StudioPalette.Ink, fontSize = 19.sp)
+                    }
+                    WorkspaceToolButton("Redo", enabled = redo.isNotEmpty(), onClick = ::redoChange) {
+                        Text("↷", color = StudioPalette.Ink, fontSize = 19.sp)
+                    }
+                    WorkspaceToolButton("Fit workspace", enabled = true, onClick = ::fitWorkspace) {
+                        Text("Fit", color = StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    WorkspaceToolButton("Zoom out", enabled = zoom > 0.35f, onClick = { zoom = (zoom - 0.1f).coerceIn(0.35f, 1.8f) }) {
+                        Text("−", color = StudioPalette.Ink, fontSize = 19.sp)
+                    }
+                    WorkspaceToolButton("Zoom in", enabled = zoom < 1.8f, onClick = { zoom = (zoom + 0.1f).coerceIn(0.35f, 1.8f) }) {
+                        Text("+", color = StudioPalette.Ink, fontSize = 17.sp)
+                    }
+                }
             }
         }
 
@@ -1133,5 +1137,23 @@ private fun SafeTestResultDialog(result: JSONObject, onDismiss: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             StudioActionButton("Close", modifier = Modifier.fillMaxWidth(), compact = true, onClick = onDismiss)
         }
+    }
+}
+ 
+@Composable
+private fun WorkspaceToolButton(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Box(
+        Modifier.size(32.dp).clip(RoundedCornerShape(7.dp))
+            .background(if (enabled) Color(0xFFF5F7F5) else Color(0xFFECEFEC))
+            .border(1.dp, Color(0xFFE0E5E1), RoundedCornerShape(7.dp))
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        content()
     }
 }

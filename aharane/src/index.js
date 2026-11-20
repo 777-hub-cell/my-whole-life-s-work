@@ -1091,6 +1091,36 @@ accountRuntime = createAccountRuntime({
   loggedOutCode: DisconnectReason.loggedOut,
   onMessages: ({ sessionId, socket: currentSocket, event }) =>
     handleMessages(sessionId, currentSocket, event),
+  onMessageUpdates: async ({ sessionId, updates }) => {
+    if (!Array.isArray(updates)) return
+    for (const item of updates) {
+      const jid = String(item?.key?.remoteJid || '')
+      const messageId = String(item?.key?.id || '')
+      const raw = item?.update?.status
+      let status = ''
+      if (typeof raw === 'number' && Number.isFinite(raw)) {
+        status = raw <= 0 ? 'failed' : raw === 1 ? 'pending' : raw === 2 ? 'sent' : raw === 3 ? 'delivered' : raw >= 4 ? 'read' : ''
+      } else {
+        const value = String(raw || '').toLowerCase()
+        status = ['pending', 'sent', 'delivered', 'read', 'failed'].includes(value) ? value : ''
+      }
+      if (jid && messageId && status) {
+        await chatStore.updateMessageStatus(sessionId, jid, messageId, status)
+      }
+    }
+  },
+  onMessageDeletes: async ({ sessionId, update }) => {
+    if (update?.jid && update?.all === true) {
+      await chatStore.deleteConversationMessages(sessionId, update.jid)
+      return
+    }
+    const keys = Array.isArray(update?.keys) ? update.keys : (update?.key ? [update.key] : [])
+    for (const key of keys) {
+      const jid = String(key?.remoteJid || '')
+      const messageId = String(key?.id || '')
+      if (jid && messageId) await chatStore.deleteMessage(sessionId, jid, messageId)
+    }
+  },
   publish: () => publishStudioEvent('whatsapp.status', studioRuntimeSnapshot()),
   onCalls: async ({ sessionId, socket, calls }) => {
     if (!studioSettings[sessionId].rejectCalls || !Array.isArray(calls)) return

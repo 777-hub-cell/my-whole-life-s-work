@@ -145,18 +145,21 @@ function outputEdges(workflow, nodeId, socketId) {
 function findPort(node, direction, socketId) {
   return definitions.get(node?.type)?.ports[direction].find(port => port.id === socketId) || null
 }
-function canReachRepeatEnd(startId, byId, edges, seen = new Set()) {
-  if (seen.has(startId)) return false
-  seen.add(startId)
+function allRepeatPathsTerminate(startId, byId, edges, path = new Set()) {
+  if (path.has(startId)) return false
   const node = byId.get(startId)
   if (!node) return false
   if (node.type === 'flow.repeatEnd') return true
   if (node.type === 'flow.end') return false
-  return edges.filter(edge => edge.from === startId && edge.fromSocket !== 'body')
-    .some(edge => canReachRepeatEnd(edge.to, byId, edges, new Set(seen)))
+  const nextPath = new Set(path)
+  nextPath.add(startId)
+  const next = edges.filter(edge => edge.from === startId && isExec(byId.get(startId), edge.fromSocket))
+  return next.length > 0 && next.every(edge => allRepeatPathsTerminate(edge.to, byId, edges, nextPath))
 }
 
 export function validateWorkflow(input) {
+  const rawNodeCount = Array.isArray(input?.nodes) ? input.nodes.length : 0
+  const rawEdgeCount = Array.isArray(input?.edges) ? input.edges.length : 0
   const workflow = normalizeWorkflow(input)
   const errors = [], warnings = [], nodeErrors = {}
   const issue = (nodeId, severity, message, fix) => {
@@ -167,8 +170,8 @@ export function validateWorkflow(input) {
   const byId = new Map()
   if (!workflow.account) issue(null, 'error', 'Choose a WhatsApp account.', 'Select Private or Public in workflow settings.')
   if (!workflow.nodes.length) issue(null, 'error', 'The workspace is empty.', 'Add one trigger and an action.')
-  if (workflow.nodes.length > MAX_NODES) issue(null, 'error', 'Too many nodes.', 'Keep the workflow at 100 nodes or fewer.')
-  if (workflow.edges.length > MAX_EDGES) issue(null, 'error', 'Too many connections.', 'Keep the workflow at 300 connections or fewer.')
+  if (rawNodeCount > MAX_NODES) issue(null, 'error', 'Too many nodes.', 'Keep the workflow at 100 nodes or fewer.')
+  if (rawEdgeCount > MAX_EDGES) issue(null, 'error', 'Too many connections.', 'Keep the workflow at 300 connections or fewer.')
 
   for (const node of workflow.nodes) {
     if (!node.id || byId.has(node.id)) issue(node.id, 'error', 'Node IDs must be unique.', 'Remove the duplicate node.')
@@ -261,7 +264,7 @@ export function validateWorkflow(input) {
     if (node.type !== 'flow.repeat') continue
     const body = outputEdges(workflow, node.id, 'body')[0]
     if (!body) issue(node.id, 'error', 'The repeat body is not connected.', 'Connect Body to a sequence ending at End repeat body.')
-    else if (!canReachRepeatEnd(body.to, byId, workflow.edges)) issue(node.id, 'error', 'The repeat body has no End repeat body node.', 'Connect the body to End repeat body.')
+    else if (!allRepeatPathsTerminate(body.to, byId, workflow.edges)) issue(node.id, 'error', 'The repeat body has no End repeat body node.', 'Connect the body to End repeat body.')
   }
 
   const triggers = workflow.nodes.filter(node => triggerTypes.has(node.type))
@@ -661,6 +664,8 @@ export function createVisualCommandStore(filePath) {
     list(account) { return data.workflows.filter(item => !account || item.account === account).map(item => structuredClone(item)) },
     get(id) { const item = data.workflows.find(workflow => workflow.id === id); return item ? structuredClone(item) : null },
     async save(input) {
+      if (Array.isArray(input?.nodes) && input.nodes.length > MAX_NODES) throw new Error('The workflow exceeds the 100-node limit; no nodes were saved.')
+      if (Array.isArray(input?.edges) && input.edges.length > MAX_EDGES) throw new Error('The workflow exceeds the 300-connection limit; no connections were saved.')
       const workflow = normalizeWorkflow(input)
       const validation = validateWorkflow(workflow)
       if (!workflow.account) throw new Error('Choose a WhatsApp account.')

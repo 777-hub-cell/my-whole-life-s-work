@@ -417,6 +417,7 @@ fun ConversationScreen(
                                 previous.direction == message.direction && previous.senderName == message.senderName && sameDay(previous.timestampMillis, message.timestampMillis),
                             reply = message.replyToMessageId?.let { id -> messages.firstOrNull { it.messageId == id && it.key == conversation.key } },
                             onReply = { replyTo = message },
+                            onRetryOutgoing = { onRetryOutgoingMessage(message) },
                             onOpenMedia = { onOpenMedia(message) },
                             onViewOnce = { onViewOnce(message) },
                             onStar = { actionMessage = message },
@@ -759,6 +760,7 @@ private fun MessageBubble(
     groupedWithPrevious: Boolean,
     reply: ChatMessage?,
     onReply: () -> Unit,
+    onRetryOutgoing: () -> Unit,
     onOpenMedia: () -> Unit,
     onViewOnce: () -> Unit,
     onStar: () -> Unit,
@@ -931,6 +933,35 @@ private fun MessageBubble(
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
+                    }
+                }
+                if (outgoing && message.localOutboxState == "SENDING") {
+                    Text("Sending…", color = StudioPalette.Muted, fontSize = 10.sp)
+                } else if (outgoing && message.localOutboxState == "PENDING") {
+                    Text("Pending · waiting for connection", color = StudioPalette.Muted, fontSize = 10.sp)
+                } else if (outgoing && message.localOutboxState == "FAILED") {
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 2.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            message.localOutboxError?.take(115) ?: "Not sent",
+                            color = StudioPalette.Bad,
+                            fontSize = 9.5.sp,
+                            maxLines = 2
+                        )
+                        if (message.localOutboxError.orEmpty().contains("uncertain", ignoreCase = true)) {
+                            Text(" · Check WhatsApp", color = StudioPalette.Bad, fontSize = 9.5.sp)
+                        } else {
+                            Text(
+                                "  Retry",
+                                color = StudioPalette.Accent,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.clickable(onClick = onRetryOutgoing).padding(start = 4.dp)
+                            )
+                        }
                     }
                 }
             }

@@ -243,6 +243,7 @@ fun AharaneApp(
                     onRecordVoice = {}
                 )
                 configurationOpen -> ConfigurationScreen(
+                    previewMode = previewMode,
                     onBack = { configurationOpen = false },
                     onEditConfig = {
                         editorFromConfiguration = true

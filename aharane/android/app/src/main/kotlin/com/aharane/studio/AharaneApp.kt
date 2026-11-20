@@ -1548,7 +1548,7 @@ fun AharaneApp(
                             connectionScope.launch {
                                 try {
                                     repository.forwardMessage(activeConversation!!, message, target)
-                                    activeMessages = repository.messages(activeConversation!!)
+                                    activeMessages = refreshConversationIncrementally(activeConversation!!)
                                     Toast.makeText(context, "Message forwarded.", Toast.LENGTH_SHORT).show()
                                 } catch (error: Exception) {
                                     Toast.makeText(context, error.message ?: "Could not forward this message.", Toast.LENGTH_LONG).show()

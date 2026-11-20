@@ -90,7 +90,9 @@ data class ServerStorageSnapshot(
  * Typed adapter for the existing Aharane server API. It never talks to WhatsApp
  * directly; Baileys, sessions and command dispatch remain on the server.
  */
-class AharaneRepository(private val api: AharaneApiClient) {
+class AharaneRepository(private val connection: AharaneConnectionManager) {
+    private val api: AharaneApiClient
+        get() = connection.api ?: throw IllegalStateException("Connect to your Aharane server first.")
     suspend fun runtimeSnapshot(): ServerRuntimeSnapshot {
         val payload = api.get("studio/snapshot")
         val runtime = payload.optJSONObject("runtime") ?: JSONObject()
@@ -181,7 +183,9 @@ class AharaneRepository(private val api: AharaneApiClient) {
                         isGroup = row.optBoolean("group"),
                         isArchived = row.optBoolean("archived"),
                         isPinned = row.optBoolean("pinned"),
-                        isMuted = row.optBoolean("muted")
+                        isMuted = row.optBoolean("muted"),
+                        lastMessageType = parseMessageKind(row.optString("lastMessageType")),
+                        lastMessageFromMe = row.optBoolean("fromMe")
                     )
                 )
             }

@@ -67,7 +67,6 @@ fun MoreScreen(
     page: String,
     onPageChange: (String) -> Unit,
     onOpenEnvironment: () -> Unit = {},
-    onOpenCommandBuilder: () -> Unit = {},
     connected: Boolean = false,
     privateAccountStatus: String = "Status not loaded",
     publicAccountStatus: String = "Status not loaded",
@@ -813,14 +812,6 @@ fun MoreScreen(
             item { StudioSectionHeading("Tools") }
             item {
                 StudioCard {
-                    StudioRow(
-                        "Visual command builder",
-                        "Create WhatsApp commands with connected workflow nodes",
-                        icon = null,
-                        trailing = "›",
-                        onClick = onOpenCommandBuilder
-                    )
-                    StudioDivider()
                     StudioRow(
                         "Activity and logs",
                         "Review bot activity and diagnostic records",

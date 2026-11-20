@@ -7,18 +7,23 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.aharane.studio.core.design.AharaneTheme
 import com.aharane.studio.core.network.AharaneConnectionManager
 
 class MainActivity : ComponentActivity() {
+    private val notificationTarget = mutableStateOf<Triple<String, String, Long>?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val isDebuggable = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
         val previewMode = isDebuggable && intent?.getBooleanExtra("aharane_preview_mode", false) == true
         val preferences = getSharedPreferences("aharane-studio-ui", MODE_PRIVATE)
+        readNotificationIntent(intent)
 
         setContent {
             val connectionManager = androidx.compose.runtime.remember { AharaneConnectionManager(applicationContext) }
@@ -74,6 +79,10 @@ class MainActivity : ComponentActivity() {
                 AharaneApp(
                     connectionManager = connectionManager,
                     previewMode = previewMode,
+                    notificationAccount = notificationTarget.value?.first,
+                    notificationJid = notificationTarget.value?.second,
+                    notificationRequestId = notificationTarget.value?.third ?: 0L,
+                    onNotificationHandled = { notificationTarget.value = null },
                     themeMode = themeMode,
                     onThemeModeChanged = {
                         themeMode = it
@@ -116,6 +125,22 @@ class MainActivity : ComponentActivity() {
                     }
                 )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        readNotificationIntent(intent)
+    }
+
+    private fun readNotificationIntent(intent: android.content.Intent?) {
+        val account = intent?.getStringExtra("aharane.notification.account").orEmpty()
+        val jid = intent?.getStringExtra("aharane.notification.jid").orEmpty()
+        if (account.isNotBlank() && jid.isNotBlank()) {
+            notificationTarget.value = Triple(account, jid, System.currentTimeMillis())
+            intent.removeExtra("aharane.notification.account")
+            intent.removeExtra("aharane.notification.jid")
         }
     }
 }

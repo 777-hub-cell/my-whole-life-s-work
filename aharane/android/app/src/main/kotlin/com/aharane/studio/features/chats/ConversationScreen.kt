@@ -2,6 +2,7 @@ package com.aharane.studio.features.chats
 
 import androidx.activity.compose.BackHandler
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,12 +24,16 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Poll
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,6 +41,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,6 +53,11 @@ import com.aharane.studio.core.model.ChatSummary
 import com.aharane.studio.core.model.MessageDirection
 import com.aharane.studio.core.model.MessageKind
 import com.aharane.studio.core.model.MessageStatus
+import android.media.MediaPlayer
+import android.media.PlaybackParams
+import android.os.Build
+import java.io.File
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -75,7 +87,16 @@ fun ConversationScreen(
     onCopyMessage: (ChatMessage) -> Unit = {},
     forwardTargets: List<ChatSummary> = emptyList(),
     searchResults: List<ChatMessage>? = null,
-    onSearchChanged: (String) -> Unit = {}
+    onSearchChanged: (String) -> Unit = {},
+    mediaPreviews: Map<String, ImageBitmap> = emptyMap(),
+    mediaPreviewErrors: Set<String> = emptySet(),
+    audioFiles: Map<String, File> = emptyMap(),
+    audioLoading: Set<String> = emptySet(),
+    audioErrors: Map<String, String> = emptyMap(),
+    onLoadMediaPreview: (ChatMessage) -> Unit = {},
+    onLoadAudio: (ChatMessage) -> Unit = {},
+    onDownloadMedia: (ChatMessage) -> Unit = {},
+    onOpenLocation: (ChatMessage) -> Unit = {}
 ) {
     var draft by rememberSaveable(conversation.key.jid) { mutableStateOf("") }
     var replyTo by remember { mutableStateOf<ChatMessage?>(null) }
@@ -257,7 +278,16 @@ fun ConversationScreen(
                             onOpenMedia = { onOpenMedia(message) },
                             onViewOnce = { onViewOnce(message) },
                             onStar = { actionMessage = message },
-                            connected = connected
+                            connected = connected,
+                            mediaPreview = mediaPreviews[mediaKey(message)],
+                            mediaPreviewUnavailable = message.messageId in mediaPreviewErrors,
+                            onLoadMediaPreview = { onLoadMediaPreview(message) },
+                            audioFile = audioFiles[mediaKey(message)],
+                            audioLoading = message.messageId in audioLoading,
+                            audioError = audioErrors[message.messageId],
+                            onLoadAudio = { onLoadAudio(message) },
+                            onDownloadMedia = { onDownloadMedia(message) },
+                            onOpenLocation = { onOpenLocation(message) }
                         )
                     }
                 }
@@ -578,7 +608,16 @@ private fun MessageBubble(
     onOpenMedia: () -> Unit,
     onViewOnce: () -> Unit,
     onStar: () -> Unit,
-    connected: Boolean
+    connected: Boolean,
+    mediaPreview: ImageBitmap?,
+    mediaPreviewUnavailable: Boolean,
+    onLoadMediaPreview: () -> Unit,
+    audioFile: File?,
+    audioLoading: Boolean,
+    audioError: String?,
+    onLoadAudio: () -> Unit,
+    onDownloadMedia: () -> Unit,
+    onOpenLocation: () -> Unit
 ) {
     val outgoing = message.direction == MessageDirection.OUTGOING
     val bubble = if (outgoing) StudioPalette.Accent else StudioPalette.Surface
@@ -664,7 +703,16 @@ private fun MessageBubble(
                     message = message,
                     foreground = foreground,
                     outgoing = outgoing,
-                    onOpenMedia = onOpenMedia
+                    mediaPreview = mediaPreview,
+                    mediaPreviewUnavailable = mediaPreviewUnavailable,
+                    onLoadMediaPreview = onLoadMediaPreview,
+                    audioFile = audioFile,
+                    audioLoading = audioLoading,
+                    audioError = audioError,
+                    onLoadMedia = onOpenMedia,
+                    onLoadAudio = onLoadAudio,
+                    onDownloadMedia = onDownloadMedia,
+                    onOpenLocation = onOpenLocation
                 )
             }
             Row(
@@ -700,45 +748,136 @@ private fun MessageContent(
     message: ChatMessage,
     foreground: Color,
     outgoing: Boolean,
-    onOpenMedia: () -> Unit
+    mediaPreview: ImageBitmap?,
+    mediaPreviewUnavailable: Boolean,
+    onLoadMediaPreview: () -> Unit,
+    audioFile: File?,
+    audioLoading: Boolean,
+    audioError: String?,
+    onLoadMedia: () -> Unit,
+    onLoadAudio: () -> Unit,
+    onDownloadMedia: () -> Unit,
+    onOpenLocation: () -> Unit
 ) {
+    val soft = if (outgoing) Color.White.copy(alpha = .13f) else StudioPalette.Background
     when (message.kind) {
         MessageKind.TEXT, MessageKind.RESPONSE, MessageKind.REACTION ->
             Text(message.text, color = foreground, fontSize = 14.sp, lineHeight = 19.sp)
-        MessageKind.IMAGE, MessageKind.VIDEO, MessageKind.AUDIO, MessageKind.STICKER, MessageKind.DOCUMENT ->
+        MessageKind.IMAGE, MessageKind.STICKER -> {
+            LaunchedEffect(message.messageId, mediaPreview, mediaPreviewUnavailable) {
+                if (mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                if (mediaPreview != null) {
+                    Image(
+                        bitmap = mediaPreview,
+                        contentDescription = message.mediaFileName ?: "WhatsApp image",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp)
+                            .clip(RoundedCornerShape(9.dp)).clickable(onClick = onLoadMedia)
+                    )
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+                            .background(soft).clickable(onClick = onLoadMedia).padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(9.dp)
+                    ) {
+                        Icon(Icons.Outlined.Image, null, tint = foreground, modifier = Modifier.size(23.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(message.mediaFileName ?: messageAttachmentLabel(message.kind), color = foreground, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                if (mediaPreviewUnavailable) message.mediaUnavailable?.ifBlank { "Preview unavailable · tap to open" } ?: "Preview unavailable · tap to open"
+                                else "Loading preview · tap to open",
+                                color = foreground.copy(alpha = .72f),
+                                fontSize = 10.5.sp
+                            )
+                        }
+                    }
+                }
+                if (message.text.isNotBlank()) Text(message.text, color = foreground, fontSize = 13.sp, lineHeight = 18.sp)
+            }
+        }
+        MessageKind.VIDEO -> {
+            LaunchedEffect(message.messageId, mediaPreview, mediaPreviewUnavailable) {
+                if (mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
+            }
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(soft).clickable(onClick = onLoadMedia)) {
+                if (mediaPreview != null) {
+                    Box(Modifier.fillMaxWidth().heightIn(max = 210.dp), contentAlignment = Alignment.Center) {
+                        Image(bitmap = mediaPreview, contentDescription = "Video thumbnail", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().heightIn(max = 210.dp))
+                        Box(Modifier.size(46.dp).clip(CircleShape).background(Color.Black.copy(alpha = .62f)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Outlined.PlayArrow, "Play video", tint = Color.White, modifier = Modifier.size(30.dp))
+                        }
+                    }
+                } else {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Videocam, null, tint = foreground, modifier = Modifier.size(24.dp))
+                        Column(Modifier.weight(1f).padding(start = 9.dp)) {
+                            Text(message.mediaFileName ?: "Video", color = foreground, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                            Text(if (mediaPreviewUnavailable) message.mediaUnavailable ?: "Video preview unavailable" else "Preparing video preview…", color = foreground.copy(alpha = .7f), fontSize = 10.5.sp)
+                        }
+                        Icon(Icons.Outlined.PlayArrow, null, tint = foreground, modifier = Modifier.size(22.dp))
+                    }
+                }
+                Text(
+                    "${message.mediaMimeType ?: "Video"} · ${message.mediaSizeBytes?.let(::formatMediaBytes) ?: "Size unavailable"} · Tap to play",
+                    color = foreground.copy(alpha = .72f), fontSize = 10.5.sp,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                )
+            }
+        }
+        MessageKind.AUDIO -> AudioMessagePlayer(
+            message = message, file = audioFile, loading = audioLoading, error = audioError,
+            foreground = foreground, surface = soft, onLoad = onLoadAudio
+        )
+        MessageKind.DOCUMENT -> {
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
-                    .background(if (outgoing) Color.White.copy(alpha = .13f) else StudioPalette.Background)
-                    .clickable(onClick = onOpenMedia)
-                    .padding(10.dp),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(soft).padding(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(9.dp)
             ) {
-                val icon = when (message.kind) {
-                    MessageKind.IMAGE, MessageKind.STICKER -> Icons.Outlined.Image
-                    MessageKind.VIDEO -> Icons.Outlined.Videocam
-                    MessageKind.AUDIO -> Icons.Outlined.Mic
-                    else -> Icons.Outlined.Description
-                }
-                Icon(icon, contentDescription = null, tint = foreground, modifier = Modifier.size(24.dp))
-                Column(Modifier.weight(1f)) {
+                Icon(Icons.Outlined.Description, null, tint = foreground, modifier = Modifier.size(25.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(message.mediaFileName ?: "Document", color = foreground, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(
-                        message.mediaFileName ?: messageAttachmentLabel(message.kind),
-                        color = foreground,
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.SemiBold
+                        "${message.mediaMimeType ?: "File type unavailable"} · ${message.mediaSizeBytes?.let(::formatMediaBytes) ?: "Size unavailable"}",
+                        color = foreground.copy(alpha = .72f), fontSize = 10.5.sp
                     )
-                    Text(
-                        message.mediaMimeType ?: "Tap to open",
-                        color = foreground.copy(alpha = .7f),
-                        fontSize = 10.5.sp
-                    )
+                    if (message.mediaUnavailable != null) Text(message.mediaUnavailable, color = StudioPalette.Bad, fontSize = 10.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Open", color = foreground, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onLoadMedia))
+                        Text("Download", color = foreground, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onDownloadMedia))
+                    }
                 }
             }
-        MessageKind.CONTACT -> Text(message.text.ifBlank { "Contact card" }, color = foreground, fontSize = 14.sp)
-        MessageKind.LOCATION -> Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.LocationOn, null, tint = foreground, modifier = Modifier.size(18.dp))
-            Text(message.text.ifBlank { "Location" }, color = foreground, fontSize = 14.sp)
+        }
+        MessageKind.CONTACT -> {
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(soft).padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                Icon(Icons.Outlined.Person, null, tint = foreground, modifier = Modifier.size(25.dp))
+                Column {
+                    Text("Contact", color = foreground, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
+                    Text(message.text.ifBlank { "Contact card details are unavailable." }, color = foreground, fontSize = 13.sp, lineHeight = 18.sp)
+                }
+            }
+        }
+        MessageKind.LOCATION -> {
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(soft).padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                Icon(Icons.Outlined.LocationOn, null, tint = foreground, modifier = Modifier.size(24.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Location", color = foreground, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
+                    Text(message.text.ifBlank { "Location details unavailable." }, color = foreground, fontSize = 13.sp, lineHeight = 18.sp)
+                    if (message.text.isNotBlank()) Text("Open map", color = foreground, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onOpenLocation))
+                }
+            }
         }
         MessageKind.POLL -> Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Poll, null, tint = foreground, modifier = Modifier.size(18.dp))
@@ -746,11 +885,122 @@ private fun MessageContent(
             Text(message.text.ifBlank { "Poll" }, color = foreground, fontSize = 14.sp)
         }
         MessageKind.UNSUPPORTED -> Text(
-            message.text.ifBlank { "This message type cannot be displayed." },
+            message.text.ifBlank { "This WhatsApp message type is not supported by the native viewer." },
             color = foreground.copy(alpha = .8f),
             fontSize = 13.sp
         )
     }
+}
+
+@Composable
+private fun AudioMessagePlayer(
+    message: ChatMessage,
+    file: File?,
+    loading: Boolean,
+    error: String?,
+    foreground: Color,
+    surface: Color,
+    onLoad: () -> Unit
+) {
+    var player by remember(message.messageId, file) { mutableStateOf<MediaPlayer?>(null) }
+    var prepared by remember(message.messageId, file) { mutableStateOf(false) }
+    var playing by remember(message.messageId, file) { mutableStateOf(false) }
+    var duration by remember(message.messageId, file) { mutableIntStateOf(0) }
+    var progress by remember(message.messageId, file) { mutableIntStateOf(0) }
+    var speed by remember(message.messageId, file) { mutableFloatStateOf(1f) }
+
+    DisposableEffect(message.messageId, file) {
+        onDispose {
+            runCatching { player?.stop() }
+            runCatching { player?.release() }
+            player = null
+        }
+    }
+    LaunchedEffect(file) {
+        if (file != null) {
+            runCatching {
+                val media = MediaPlayer()
+                media.setDataSource(file.absolutePath)
+                media.setOnPreparedListener {
+                    duration = it.duration.coerceAtLeast(0)
+                    prepared = true
+                }
+                media.setOnCompletionListener {
+                    playing = false
+                    progress = 0
+                    runCatching { it.seekTo(0) }
+                }
+                media.prepareAsync()
+                player = media
+            }.onFailure { prepared = false }
+        }
+    }
+    LaunchedEffect(player, playing, prepared) {
+        while (player != null && prepared) {
+            if (playing) progress = runCatching { player?.currentPosition ?: 0 }.getOrDefault(progress)
+            delay(200)
+        }
+    }
+
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(surface).padding(9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        androidx.compose.material3.IconButton(
+            onClick = {
+                if (file == null) onLoad()
+                else if (prepared) {
+                    if (playing) { player?.pause(); playing = false }
+                    else { player?.start(); playing = true }
+                }
+            },
+            enabled = !loading && (file != null || error == null)
+        ) {
+            Icon(if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, if (playing) "Pause audio" else "Play audio", tint = foreground)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                message.mediaFileName ?: if (message.isVoiceNote) "WhatsApp voice note" else "Audio file",
+                color = foreground, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
+            if (file == null) {
+                Text(error ?: if (loading) "Loading audio…" else "${message.mediaMimeType ?: "Audio"} · Tap play to load", color = foreground.copy(alpha = .72f), fontSize = 10.5.sp)
+            } else if (!prepared) {
+                Text("Preparing audio…", color = foreground.copy(alpha = .72f), fontSize = 10.5.sp)
+            } else {
+                Slider(
+                    value = progress.toFloat().coerceIn(0f, duration.coerceAtLeast(1).toFloat()),
+                    onValueChange = { progress = it.toInt() },
+                    onValueChangeFinished = { player?.seekTo(progress) },
+                    valueRange = 0f..duration.coerceAtLeast(1).toFloat()
+                )
+                Text(
+                    "${formatMediaTime(progress / 1000)} / ${formatMediaTime(duration / 1000)}",
+                    color = foreground.copy(alpha = .72f), fontSize = 10.sp
+                )
+            }
+        }
+        Text(
+            "${speed}×", color = foreground, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.clickable(enabled = prepared) {
+                speed = when (speed) { 1f -> 1.5f; 1.5f -> 2f; else -> 1f }
+                if (Build.VERSION.SDK_INT >= 23) runCatching { player?.playbackParams = PlaybackParams().setSpeed(speed) }
+            }.padding(5.dp)
+        )
+    }
+}
+
+private fun mediaKey(message: ChatMessage): String = "${message.key.account.apiValue}:${message.messageId}"
+private fun formatMediaBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024L -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
+    bytes >= 1024L -> "%.0f KB".format(bytes / 1024.0)
+    else -> "$bytes B"
+}
+private fun formatMediaTime(seconds: Int): String {
+    val safe = seconds.coerceAtLeast(0)
+    return "${safe / 60}:${(safe % 60).toString().padStart(2, '0')}"
 }
 
 private fun sameDay(a: Long, b: Long): Boolean =

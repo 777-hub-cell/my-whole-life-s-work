@@ -221,7 +221,8 @@ fun ConversationScreen(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    if (conversation.isGroup) "Group conversation" else conversation.key.account.label + " account",
+                    (if (conversation.isGroup) "Group conversation" else conversation.key.account.label + " account") +
+                        if (connected) "" else " · Offline · cached",
                     color = StudioPalette.Muted,
                     fontSize = 11.5.sp,
                     lineHeight = 15.sp,
@@ -274,7 +275,27 @@ fun ConversationScreen(
             Box(Modifier.fillMaxWidth().height(1.dp).background(StudioPalette.Line))
         }
 
-        Box(Modifier.weight(1f).fillMaxWidth()) {
+        Box(Modifier.weight(1f).fillMaxWidth().background(wallpaperBrush)) {
+            if (appearance.wallpaper == "photo" && wallpaperBitmap != null) {
+                val matrix = ColorMatrix().apply {
+                    setToScale(
+                        appearance.wallpaperBrightness,
+                        appearance.wallpaperBrightness,
+                        appearance.wallpaperBrightness,
+                        1f
+                    )
+                }
+                Image(
+                    bitmap = wallpaperBitmap!!,
+                    contentDescription = "Conversation wallpaper",
+                    contentScale = if (appearance.photoFit == "fit") ContentScale.Fit else ContentScale.Crop,
+                    colorFilter = ColorFilter.colorMatrix(matrix),
+                    modifier = Modifier.fillMaxSize().blur(appearance.wallpaperBlur.dp)
+                )
+            }
+            if (appearance.wallpaperDim > 0f) {
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = appearance.wallpaperDim)))
+            }
             if (visible.isEmpty()) {
                 Column(
                     Modifier.align(Alignment.Center).padding(horizontal = 32.dp),

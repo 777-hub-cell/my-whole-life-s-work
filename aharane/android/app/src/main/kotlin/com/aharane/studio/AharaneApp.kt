@@ -345,6 +345,11 @@ fun AharaneApp(
         }
         voiceRecorder = null
         voiceRecording = false
+        if (previewMode || !connected) {
+            recorded.file.delete()
+            Toast.makeText(context, "Voice notes can only be sent to a connected live WhatsApp account.", Toast.LENGTH_SHORT).show()
+            return
+        }
         connectionScope.launch {
             try {
                 val bytes = withContext(Dispatchers.IO) { recorded.file.readBytes() }
@@ -432,7 +437,9 @@ fun AharaneApp(
     val uploadLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri != null) {
+        if (uri != null && previewMode) {
+            Toast.makeText(context, "Preview mode does not upload files to a server.", Toast.LENGTH_SHORT).show()
+        } else if (uri != null && connected) {
             connectionScope.launch {
                 try {
                     val name = queryDisplayName(context, uri)
@@ -721,6 +728,18 @@ fun AharaneApp(
     }
 
     fun runFileDialogAction() {
+        if (previewMode) {
+            fileDialogMode = ""
+            selectedFile = null
+            pendingDeletePaths = emptyList()
+            pendingMovePaths = emptyList()
+            Toast.makeText(context, "Preview mode does not modify server files.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!connected) {
+            Toast.makeText(context, "Connect to the Aharane server before modifying files.", Toast.LENGTH_SHORT).show()
+            return
+        }
         val mode = fileDialogMode
         val name = fileDialogName.trim()
         val entry = selectedFile
@@ -1480,7 +1499,9 @@ fun AharaneApp(
                         pendingEdits = fileDraft?.pendingEdits == true,
                         changedCount = fileDraft?.changedCount ?: 0,
                         onApplyEdits = {
-                            connectionScope.launch {
+                            if (previewMode || !connected) {
+                                Toast.makeText(context, "Preview mode has no server-side staged edits to apply.", Toast.LENGTH_SHORT).show()
+                            } else connectionScope.launch {
                                 try {
                                     repository.applyFileEdits()
                                     Toast.makeText(context, "Source changes are being applied. Aharane is restarting.", Toast.LENGTH_LONG).show()
@@ -1490,7 +1511,9 @@ fun AharaneApp(
                             }
                         },
                         onDiscardEdits = {
-                            connectionScope.launch {
+                            if (previewMode || !connected) {
+                                Toast.makeText(context, "Preview mode has no server-side staged edits to discard.", Toast.LENGTH_SHORT).show()
+                            } else connectionScope.launch {
                                 try {
                                     repository.discardFileEdits()
                                     fileDraft = repository.fileTree()
@@ -1505,16 +1528,27 @@ fun AharaneApp(
                             editorOpen = it
                         },
                         onCreateFile = {
-                            fileDialogMode = "create-file"
-                            fileDialogName = ""
-                            fileDialogError = ""
+                            if (previewMode || !connected) {
+                                Toast.makeText(context, "Preview mode does not create server files.", Toast.LENGTH_SHORT).show()
+                            } else {
+                                fileDialogMode = "create-file"
+                                fileDialogName = ""
+                                fileDialogError = ""
+                            }
                         },
                         onCreateFolder = {
-                            fileDialogMode = "create-folder"
-                            fileDialogName = ""
-                            fileDialogError = ""
+                            if (previewMode || !connected) {
+                                Toast.makeText(context, "Preview mode does not create server folders.", Toast.LENGTH_SHORT).show()
+                            } else {
+                                fileDialogMode = "create-folder"
+                                fileDialogName = ""
+                                fileDialogError = ""
+                            }
                         },
-                        onUpload = { uploadLauncher.launch(arrayOf("text/*", "application/json")) },
+                        onUpload = {
+                            if (previewMode) Toast.makeText(context, "Preview mode does not upload files to a server.", Toast.LENGTH_SHORT).show()
+                            else if (connected) uploadLauncher.launch(arrayOf("text/*", "application/json"))
+                        },
                         onExportSource = ::exportSource,
                         onEntryAction = ::onFileEntryAction,
                         updatePackages = updatePackages,
@@ -1816,7 +1850,11 @@ fun AharaneApp(
                     color = StudioPalette.Muted,
                     fontSize = 12.5.sp
                 )
-                StudioActionButton("Reconnect", modifier = Modifier.fillMaxWidth(), enabled = !busy, onClick = {
+                StudioActionButton("Reconnect", modifier = Modifier.fillMaxWidth(), enabled = !busy && connected, onClick = {
+                    if (previewMode || !connected) {
+                        Toast.makeText(context, "Connect to the live Aharane server to manage WhatsApp accounts.", Toast.LENGTH_SHORT).show()
+                        return@StudioActionButton
+                    }
                     connectionScope.launch {
                         busy = true
                         try {
@@ -1828,7 +1866,11 @@ fun AharaneApp(
                         } finally { busy = false }
                     }
                 })
-                StudioActionButton("Repair session", modifier = Modifier.fillMaxWidth(), enabled = !busy, onClick = {
+                StudioActionButton("Repair session", modifier = Modifier.fillMaxWidth(), enabled = !busy && connected, onClick = {
+                    if (previewMode || !connected) {
+                        Toast.makeText(context, "Connect to the live Aharane server to manage WhatsApp accounts.", Toast.LENGTH_SHORT).show()
+                        return@StudioActionButton
+                    }
                     connectionScope.launch {
                         busy = true
                         try {
@@ -1840,7 +1882,11 @@ fun AharaneApp(
                         } finally { busy = false }
                     }
                 })
-                StudioActionButton("Restart connection", modifier = Modifier.fillMaxWidth(), enabled = !busy, onClick = {
+                StudioActionButton("Restart connection", modifier = Modifier.fillMaxWidth(), enabled = !busy && connected, onClick = {
+                    if (previewMode || !connected) {
+                        Toast.makeText(context, "Connect to the live Aharane server to manage WhatsApp accounts.", Toast.LENGTH_SHORT).show()
+                        return@StudioActionButton
+                    }
                     connectionScope.launch {
                         busy = true
                         try {
@@ -1852,7 +1898,11 @@ fun AharaneApp(
                         } finally { busy = false }
                     }
                 })
-                StudioActionButton("Stop account", modifier = Modifier.fillMaxWidth(), destructive = true, enabled = !busy, onClick = {
+                StudioActionButton("Stop account", modifier = Modifier.fillMaxWidth(), destructive = true, enabled = !busy && connected, onClick = {
+                    if (previewMode || !connected) {
+                        Toast.makeText(context, "Connect to the live Aharane server to manage WhatsApp accounts.", Toast.LENGTH_SHORT).show()
+                        return@StudioActionButton
+                    }
                     connectionScope.launch {
                         busy = true
                         try {

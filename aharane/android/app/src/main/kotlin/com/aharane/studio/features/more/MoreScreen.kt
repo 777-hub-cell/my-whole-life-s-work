@@ -37,6 +37,9 @@ import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.delay
 import com.aharane.studio.core.design.*
 import com.aharane.studio.core.model.ChatAccount
+import com.aharane.studio.core.model.ChatSummary
+import com.aharane.studio.features.chats.ChatAppearanceStore
+import com.aharane.studio.features.chats.ChatAppearanceStudioScreen
 import kotlinx.coroutines.delay
 
 private val AccentChoices = listOf(
@@ -101,7 +104,11 @@ fun MoreScreen(
     onChatAccountSelected: (ChatAccount) -> Unit = {},
     onVisibilityModeChange: (String, Boolean) -> Unit = { _, _ -> },
     onChatAppearanceChange: (String, Boolean, Boolean, Boolean) -> Unit = { _, _, _, _ -> },
-    onChatMessageSizeChanged: (Int) -> Unit = {}
+    onChatMessageSizeChanged: (Int) -> Unit = {},
+    appearanceStore: ChatAppearanceStore? = null,
+    appearanceRevision: Int = 0,
+    cachedConversations: List<ChatSummary> = emptyList(),
+    onAppearanceChanged: () -> Unit = {}
 ) {
     var dialog by rememberSaveable { mutableStateOf("") }
     var customColorOpen by rememberSaveable { mutableStateOf(false) }
@@ -143,7 +150,9 @@ fun MoreScreen(
         }
     }
 
-    BackHandler(enabled = page != "more") { onPageChange("more") }
+    BackHandler(enabled = page != "more") {
+        onPageChange(if (page == "chat-appearance-studio") "chat-settings" else "more")
+    }
 
     if (page == "appearance") {
         LazyColumn(
@@ -384,7 +393,7 @@ fun MoreScreen(
                         title = "Show avatars",
                         description = "Display contact and group avatars in the inbox.",
                         checked = showChatAvatars,
-                        enabled = connected,
+                        enabled = true,
                         onCheckedChange = {
                             onChatAppearanceChange(chatTheme, it, showChatPreviews, showChatTimestamps)
                         }
@@ -394,7 +403,7 @@ fun MoreScreen(
                         title = "Show message previews",
                         description = "Show the latest message under each chat name.",
                         checked = showChatPreviews,
-                        enabled = connected,
+                        enabled = true,
                         onCheckedChange = {
                             onChatAppearanceChange(chatTheme, showChatAvatars, it, showChatTimestamps)
                         }
@@ -404,19 +413,34 @@ fun MoreScreen(
                         title = "Show timestamps",
                         description = "Show the last-message time on each inbox row.",
                         checked = showChatTimestamps,
-                        enabled = connected,
+                        enabled = true,
                         onCheckedChange = {
                             onChatAppearanceChange(chatTheme, showChatAvatars, showChatPreviews, it)
                         }
                     )
-                    if (!connected) {
-                        Text(
-                            "Connect to save chat appearance preferences to your Aharane server.",
-                            color = StudioPalette.Muted,
-                            fontSize = 11.5.sp,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
+                    Text(
+                        "These appearance choices stay on this phone and also work offline.",
+                        color = StudioPalette.Muted,
+                        fontSize = 11.5.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            }
+            item {
+                StudioSectionHeading("Advanced appearance")
+                StudioCard(padding = PaddingValues(14.dp)) {
+                    Text("Chat Appearance Studio", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Wallpapers, bubbles, typography, layout, media styling and reusable theme profiles.",
+                        color = StudioPalette.Muted, fontSize = 12.sp, lineHeight = 17.sp,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
+                    )
+                    StudioActionButton("Open Appearance Studio", primary = true, onClick = { onPageChange("chat-appearance-studio") })
+                    Text(
+                        "Global defaults, separate Private/Public overrides and individual conversation customisation.",
+                        color = StudioPalette.Muted, fontSize = 11.sp, lineHeight = 15.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
                 }
             }
             item {
@@ -446,6 +470,22 @@ fun MoreScreen(
                     )
                 }
             }
+        }
+    } else if (page == "chat-appearance-studio") {
+        if (appearanceStore != null) {
+            ChatAppearanceStudioScreen(
+                account = selectedChatAccount,
+                conversations = cachedConversations,
+                store = appearanceStore,
+                revision = appearanceRevision,
+                onChanged = onAppearanceChanged,
+                onBack = { onPageChange("chat-settings") }
+            )
+        } else {
+            StudioEmpty(
+                title = "Appearance preferences are unavailable.",
+                description = "The local appearance store could not be opened."
+            )
         }
     } else if (page == "starred") {
         LazyColumn(

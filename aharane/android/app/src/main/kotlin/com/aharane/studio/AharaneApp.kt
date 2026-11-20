@@ -1214,6 +1214,7 @@ fun AharaneApp(
                     conversation = activeConversation!!,
                     messages = if (previewMode) previewMessages.filter { it.key == activeConversation!!.key } else activeMessages,
                     connected = if (previewMode) true else currentAccountState?.connected == true,
+                    mediaServerAvailable = connected,
                     onBack = { activeConversation = null },
                     onSend = { text, replyTo ->
                         if (previewMode) {

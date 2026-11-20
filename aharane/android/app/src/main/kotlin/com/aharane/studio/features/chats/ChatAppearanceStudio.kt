@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -358,7 +359,7 @@ fun ChatAppearanceStudioScreen(
     val appearance = remember(revision, scope, account, currentJid) { store.resolve(layerAccount, layerJid) }
     val profiles = remember(revision) { store.profiles() }
 
-    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) {
             runCatching {
                 context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -423,6 +424,10 @@ fun ChatAppearanceStudioScreen(
                 },
                 color = StudioPalette.Muted, fontSize = 11.5.sp
             )
+            SettingSection("Chat theme")
+            SegmentRow(listOf("System", "Light", "Dark"), appearance.theme.replaceFirstChar { it.uppercase() }) {
+                change("theme", it.lowercase())
+            }
             if (scope == "conversation") {
                 var expanded by remember { mutableStateOf(false) }
                 Box {
@@ -447,7 +452,7 @@ fun ChatAppearanceStudioScreen(
                 "solid" -> parseColor(appearance.wallpaperColor)
                 "gradient" -> parseColor(appearance.gradientStart)
                 "photo" -> Color(0xFFE5EAE6)
-                else -> Color(0xFFE9EFEB)
+                else -> if (appearance.theme == "dark") Color(0xFF18211F) else Color(0xFFE9EFEB)
             }
             Box(
                 Modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(16.dp))
@@ -476,6 +481,15 @@ fun ChatAppearanceStudioScreen(
                 "solid" -> "Solid"; "gradient" -> "Gradient"; "photo" -> "Photo"; else -> "Default"
             }) { change("wallpaper", when(it) { "Solid" -> "solid"; "Gradient" -> "gradient"; "Photo" -> "photo"; else -> "default" }) }
             if (appearance.wallpaper == "solid" || appearance.wallpaper == "default") {
+                Text("Built-in backgrounds", color = StudioPalette.Muted, fontSize = 11.sp)
+                SegmentRow(listOf("Paper", "Mist", "Sand", "Sage"), when (appearance.wallpaperColor) {
+                    "#E7EAF5" -> "Mist"; "#F3E6D9" -> "Sand"; "#DCEFE5" -> "Sage"; else -> "Paper"
+                }) { preset ->
+                    change("wallpaper", "solid")
+                    change("wallpaperColor", when (preset) {
+                        "Mist" -> "#E7EAF5"; "Sand" -> "#F3E6D9"; "Sage" -> "#DCEFE5"; else -> "#E9EFEB"
+                    })
+                }
                 ColorPalette(appearance.wallpaperColor) { change("wallpaperColor", it) }
             }
             if (appearance.wallpaper == "gradient") {
@@ -485,7 +499,7 @@ fun ChatAppearanceStudioScreen(
                 ColorPalette(appearance.gradientEnd) { change("gradientEnd", it) }
             }
             if (appearance.wallpaper == "photo") {
-                OutlinedButton(onClick = { photoPicker.launch(arrayOf("image/*")) }) { Text("Choose photo") }
+                OutlinedButton(onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { Text("Choose photo") }
                 SegmentRow(listOf("Crop", "Fit"), if (appearance.photoFit == "fit") "Fit" else "Crop") {
                     change("photoFit", it.lowercase())
                 }
@@ -685,6 +699,9 @@ private fun parseColor(value: String): Color =
     runCatching { Color(android.graphics.Color.parseColor(value)) }.getOrDefault(Color(0xFFE9EFEB))
 
 private fun readableForeground(background: Color): Color {
-    val luminance = .2126f * background.red + .7152f * background.green + .0722f * background.blue
-    return if (luminance > .52f) Color(0xFF17201C) else Color.White
+    fun linear(channel: Float): Float = if (channel <= .04045f) channel / 12.92f else Math.pow(((channel + .055f) / 1.055f).toDouble(), 2.4).toFloat()
+    val luminance = .2126f * linear(background.red) + .7152f * linear(background.green) + .0722f * linear(background.blue)
+    val whiteContrast = 1.05f / (luminance + .05f)
+    val blackContrast = (luminance + .05f) / .05f
+    return if (blackContrast >= whiteContrast) Color(0xFF101713) else Color.White
 }

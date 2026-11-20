@@ -47,6 +47,20 @@ object ServerEndpointParser {
         val origin = "${parsed.protocol.lowercase()}://${parsed.authority}"
         return ServerEndpoint(origin = origin, prefix = prefix, studioUrl = origin + prefix + "/studio")
     }
+
+    /**
+     * Reverse proxies differ: some mount the Studio API below the Studio path
+     * prefix, while others serve the same Node API at the host root. Keep the
+     * user's canonical Studio URL, but try both API mount points in order.
+     */
+    fun candidates(raw: String): List<ServerEndpoint> {
+        val preferred = parse(raw)
+        return if (preferred.prefix.isBlank()) {
+            listOf(preferred)
+        } else {
+            listOf(preferred, preferred.copy(prefix = ""))
+        }
+    }
 }
 
 class AharaneApiException(

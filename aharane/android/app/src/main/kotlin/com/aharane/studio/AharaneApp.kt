@@ -125,6 +125,7 @@ fun AharaneApp(
     var chatAppearanceRevision by remember { mutableIntStateOf(0) }
     var localChatRepository by remember { mutableStateOf<LocalChatRepository?>(null) }
     var localChatStorageError by remember { mutableStateOf("") }
+    var syncingAllChats by remember { mutableStateOf(false) }
 
     LaunchedEffect(context) {
         runCatching {
@@ -2113,6 +2114,55 @@ fun AharaneApp(
                         appearanceStore = chatAppearanceStore,
                         appearanceRevision = chatAppearanceRevision,
                         cachedConversations = chatsByAccount[selectedAccount].orEmpty(),
+                        mediaCache = encryptedMediaCache,
+                        syncingAllChats = syncingAllChats,
+                        onSyncAllChats = {
+                            if (!connected) {
+                                Toast.makeText(context, "Reconnect to your Aharane server to sync conversations.", Toast.LENGTH_SHORT).show()
+                            } else {
+                                connectionScope.launch {
+                                    syncingAllChats = true
+                                    var syncedCount = 0
+                                    var failureCount = 0
+                                    try {
+                                        val conversations = repository.chats(selectedAccount)
+                                        chatsByAccount[selectedAccount] = conversations
+                                        localChatRepository?.saveConversations(conversations)
+                                        conversations.take(300).forEach { conversation ->
+                                            try {
+                                                var cursor = localChatRepository?.newestTimestamp(conversation.key) ?: 0L
+                                                var page = repository.syncMessages(conversation, afterMillis = cursor, limit = 200)
+                                                var pages = 0
+                                                do {
+                                                    localChatRepository?.saveMessages(
+                                                        conversation, page.messages,
+                                                        if (cursor == 0L) page.hasOlder else null
+                                                    )
+                                                    val latest = page.messages.maxOfOrNull { it.timestampMillis } ?: cursor
+                                                    if (latest <= cursor && cursor > 0L) break
+                                                    cursor = maxOf(cursor, latest)
+                                                    pages += 1
+                                                    if (!page.hasNewer || page.messages.isEmpty() || pages >= 3) break
+                                                    page = repository.syncMessages(conversation, afterMillis = cursor, limit = 200)
+                                                } while (true)
+                                                syncedCount += 1
+                                            } catch (_: Exception) {
+                                                failureCount += 1
+                                            }
+                                        }
+                                        Toast.makeText(
+                                            context,
+                                            "Synced " + syncedCount + " conversations" + if (failureCount > 0) " · " + failureCount + " unavailable" else "",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    } catch (error: Exception) {
+                                        Toast.makeText(context, error.message ?: "Chat synchronisation failed.", Toast.LENGTH_LONG).show()
+                                    } finally {
+                                        syncingAllChats = false
+                                    }
+                                }
+                            }
+                        },
                         onAppearanceChanged = {
                             chatAppearanceRevision += 1
                             chatAppearance = chatAppearanceStore.resolve(selectedAccount).toJson()

@@ -883,12 +883,49 @@ fun AharaneApp(
     fun onFileEntryAction(entry: StudioFileEntry, action: String) {
         if (previewMode) {
             if (action == "open" && !entry.isDirectory) openPreviewDocument(entry.path)
+            else if (action == "update_bot") {
+                Toast.makeText(context, "Preview ZIP files are examples only. Importing or deploying packages is disabled in Preview mode.", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        if (!authenticated || !serverReachable) {
+            Toast.makeText(context, "Connect to the Aharane server before managing files.", Toast.LENGTH_SHORT).show()
             return
         }
         val serverEntry = serverFiles.firstOrNull { it.path == entry.path }
             ?: ServerFileEntry(entry.name, entry.path, entry.isDirectory, null, null, false)
         when (action) {
             "open" -> if (!entry.isDirectory) openSourceDocument(entry.path)
+            "update_bot" -> {
+                if (!entry.name.endsWith(".zip", ignoreCase = true)) {
+                    Toast.makeText(context, "Choose a ZIP update package.", Toast.LENGTH_SHORT).show()
+                } else {
+                    connectionScope.launch {
+                        activePackageId = "workspace-import"
+                        packageProgress = 0f
+                        packageError = ""
+                        packageProgressLabel = "Reading workspace ZIP"
+                        try {
+                            val bytes = repository.downloadSourceFile(entry.path)
+                            val result = repository.uploadUpdatePackage(entry.name, bytes) { label, progress ->
+                                packageProgressLabel = label
+                                packageProgress = progress
+                            }
+                            updatePackages = repository.updatePackages()
+                            updateStatus = repository.updateStatus()
+                            val manifest = result.optJSONObject("manifest") ?: JSONObject()
+                            packageProgressLabel = "Validated ${entry.name} · version ${manifest.optString("bot_version")}"
+                            Toast.makeText(context, "Workspace ZIP validated and added to Update packages.", Toast.LENGTH_LONG).show()
+                        } catch (error: Exception) {
+                            packageError = error.message ?: "Workspace ZIP validation failed."
+                            packageProgressLabel = "ZIP import or validation failed"
+                            Toast.makeText(context, packageError, Toast.LENGTH_LONG).show()
+                        } finally {
+                            activePackageId = null
+                        }
+                    }
+                }
+            }
             "rename", "duplicate", "move" -> {
                 selectedFile = serverEntry
                 fileDialogMode = action

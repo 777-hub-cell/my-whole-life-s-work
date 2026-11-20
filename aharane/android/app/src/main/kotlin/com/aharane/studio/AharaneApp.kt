@@ -748,7 +748,7 @@ fun AharaneApp(
             packageProgressLabel = "Preview sample package removed locally. No server change was made."
             return
         }
-        if (!connected) {
+        if (!authenticated || !serverReachable) {
             packageError = "Connect to the Aharane server before removing a package."
             return
         }
@@ -775,7 +775,7 @@ fun AharaneApp(
             Toast.makeText(context, "Preview mode cannot deploy updates.", Toast.LENGTH_SHORT).show()
             return
         }
-        if (!connected) {
+        if (!authenticated || !serverReachable) {
             packageError = "Connect to the Aharane server before deploying an update."
             return
         }

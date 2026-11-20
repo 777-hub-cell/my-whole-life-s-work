@@ -1,7 +1,10 @@
 package com.aharane.studio.core.network
 
+import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.MessageDigest
+import java.util.UUID
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatMessage
 import com.aharane.studio.core.model.ChatSummary
@@ -84,6 +87,29 @@ data class ServerStorageSnapshot(
     val usedBytes: Long,
     val freeBytes: Long,
     val mediaBytes: Long
+)
+
+data class AharaneUpdatePackage(
+    val updateId: String,
+    val filename: String,
+    val sizeBytes: Long,
+    val status: String,
+    val version: String,
+    val createdAt: String,
+    val validatedAt: String?,
+    val fileCount: Int
+) {
+    val sizeLabel: String get() = when {
+        sizeBytes >= 1024L * 1024L -> "%.1f MB".format(sizeBytes / (1024.0 * 1024.0))
+        else -> "%.0f KB".format(sizeBytes / 1024.0)
+    }
+}
+
+data class EditorDiagnostic(
+    val severity: String,
+    val message: String,
+    val line: Int?,
+    val column: Int?
 )
 
 /**
@@ -644,6 +670,108 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
 
     suspend fun markUnread(conversation: ChatSummary) {
         api.markChatUnread(conversation.key.account.apiValue, conversation.key.jid)
+    }
+
+    suspend fun updatePackages(): List<AharaneUpdatePackage> {
+        val rows = api.get("files/packages").optJSONArray("packages") ?: JSONArray()
+        return buildList {
+            for (index in 0 until rows.length()) {
+                val row = rows.optJSONObject(index) ?: continue
+                val id = row.optString("updateId")
+                if (id.isBlank()) continue
+                add(
+                    AharaneUpdatePackage(
+                        updateId = id,
+                        filename = row.optString("filename"),
+                        sizeBytes = row.optLong("size"),
+                        status = row.optString("status"),
+                        version = row.optString("version"),
+                        createdAt = row.optString("createdAt"),
+                        validatedAt = row.optString("validatedAt").takeIf { it.isNotBlank() && it != "null" },
+                        fileCount = row.optInt("fileCount")
+                    )
+                )
+            }
+        }
+    }
+
+    suspend fun updateStatus(): JSONObject = api.get("update/status")
+
+    suspend fun uploadUpdatePackage(
+        filename: String,
+        bytes: ByteArray,
+        onProgress: (String, Float) -> Unit = { _, _ -> }
+    ): JSONObject {
+        require(filename.endsWith(".zip", ignoreCase = true)) { "Choose an Aharane ZIP update package." }
+        require(bytes.size in 22..(50 * 1024 * 1024)) { "The ZIP must be between 22 bytes and 50 MB." }
+        val updateId = UUID.randomUUID().toString()
+        val sha256 = MessageDigest.getInstance("SHA-256")
+            .digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+        val chunkBytes = 1024 * 1024
+        val totalChunks = (bytes.size + chunkBytes - 1) / chunkBytes
+        val started = api.post(
+            "update/upload/start",
+            JSONObject()
+                .put("updateId", updateId)
+                .put("filename", filename)
+                .put("size", bytes.size)
+                .put("totalChunks", totalChunks)
+                .put("sha256", sha256)
+        )
+        val actualChunkSize = started.optInt("chunkBytes", chunkBytes).takeIf { it > 0 } ?: chunkBytes
+        val actualTotal = started.optInt("totalChunks", totalChunks)
+        require(actualTotal == totalChunks) { "The server returned an unexpected upload layout." }
+        for (index in 0 until totalChunks) {
+            val from = index * actualChunkSize
+            val to = minOf(bytes.size, from + actualChunkSize)
+            require(to > from) { "The upload chunk layout is invalid." }
+            val chunk = bytes.copyOfRange(from, to)
+            api.post(
+                "update/upload/chunk",
+                JSONObject()
+                    .put("updateId", updateId)
+                    .put("index", index)
+                    .put("data", Base64.encodeToString(chunk, Base64.NO_WRAP))
+            )
+            onProgress("Uploading package", (index + 1).toFloat() / totalChunks.toFloat())
+        }
+        onProgress("Validating manifest and package contents", 0.98f)
+        val result = api.post("update/validate", JSONObject().put("updateId", updateId))
+        onProgress("Package validated", 1f)
+        return result
+    }
+
+    suspend fun removeUpdatePackage(updateId: String) {
+        api.post("files/packages/remove", JSONObject().put("updateId", updateId))
+    }
+
+    suspend fun deployUpdatePackage(updateId: String): JSONObject =
+        api.post(
+            "update/deploy",
+            JSONObject().put("updateId", updateId).put("confirm", true)
+        )
+
+    suspend fun diagnoseSource(path: String, content: String): List<EditorDiagnostic> {
+        val response = api.post(
+            "files/diagnostics",
+            JSONObject().put("path", path).put("content", content)
+        )
+        if (!response.optBoolean("supported")) return emptyList()
+        val rows = response.optJSONArray("diagnostics") ?: JSONArray()
+        return buildList {
+            for (index in 0 until rows.length()) {
+                val row = rows.optJSONObject(index) ?: continue
+                add(
+                    EditorDiagnostic(
+                        severity = row.optString("severity", "error"),
+                        message = row.optString("message"),
+                        line = row.optInt("line").takeIf { it > 0 },
+                        column = row.optInt("column").takeIf { it > 0 }
+                    )
+                )
+            }
+        }
     }
 
     suspend fun clearActivity() {

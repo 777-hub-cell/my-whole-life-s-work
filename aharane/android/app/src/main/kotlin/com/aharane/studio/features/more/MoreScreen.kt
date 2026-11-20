@@ -24,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -57,13 +58,41 @@ fun MoreScreen(
     onEditorLineNumbersChanged: (Boolean) -> Unit,
     page: String,
     onPageChange: (String) -> Unit,
-    onOpenEnvironment: () -> Unit = {}
+    onOpenEnvironment: () -> Unit = {},
+    connected: Boolean = false,
+    privateAccountStatus: String = "Status not loaded",
+    publicAccountStatus: String = "Status not loaded",
+    privateOwnerNumber: String = "",
+    publicOwnerNumber: String = "",
+    publicBotNumber: String = "",
+    allowedPublicSenders: String = "",
+    activityEntries: List<String> = emptyList(),
+    storageSummary: String = "Server storage values are not available.",
+    onAccountAction: (String) -> Unit = {},
+    onSaveOwnerSettings: (String, String, String, String) -> Unit = { _, _, _, _ -> },
+    onClearActivity: () -> Unit = {},
+    onSignOut: () -> Unit = {},
+    onChangePassword: (String, String) -> Unit = {}
 ) {
     var dialog by rememberSaveable { mutableStateOf("") }
     var customColorOpen by rememberSaveable { mutableStateOf(false) }
     var customHex by rememberSaveable { mutableStateOf(accentColor) }
     var activityQuery by rememberSaveable { mutableStateOf("") }
-    var activityFilter by rememberSaveable { mutableStateOf("All · 0") }
+    var activityFilter by rememberSaveable { mutableStateOf("All") }
+    var privateOwnerDraft by rememberSaveable { mutableStateOf(privateOwnerNumber) }
+    var publicOwnerDraft by rememberSaveable { mutableStateOf(publicOwnerNumber) }
+    var publicBotDraft by rememberSaveable { mutableStateOf(publicBotNumber) }
+    var allowedSendersDraft by rememberSaveable { mutableStateOf(allowedPublicSenders) }
+    var currentPassword by rememberSaveable { mutableStateOf("") }
+    var newPassword by rememberSaveable { mutableStateOf("") }
+
+    LaunchedEffect(privateOwnerNumber, publicOwnerNumber, publicBotNumber, allowedPublicSenders) {
+        privateOwnerDraft = privateOwnerNumber
+        publicOwnerDraft = publicOwnerNumber
+        publicBotDraft = publicBotNumber
+        allowedSendersDraft = allowedPublicSenders
+    }
+    val context = LocalContext.current
 
     BackHandler(enabled = page != "more") { onPageChange("more") }
 
@@ -225,17 +254,27 @@ fun MoreScreen(
                 StudioCard {
                     StudioRow(
                         title = "Private account",
-                        subtitle = "Status not loaded",
+                        subtitle = privateAccountStatus,
                         trailingContent = {
-                            StudioActionButton("Link account", compact = true, enabled = false, onClick = {})
+                            StudioActionButton(
+                                if (privateAccountStatus.equals("Connected", true)) "Manage" else if (privateAccountStatus.contains("paired", true)) "Reconnect" else "Link account",
+                                compact = true,
+                                enabled = connected,
+                                onClick = { onAccountAction("private") }
+                            )
                         }
                     )
                     StudioDivider()
                     StudioRow(
                         title = "Public account",
-                        subtitle = "Not paired · Not connected",
+                        subtitle = publicAccountStatus,
                         trailingContent = {
-                            StudioActionButton("Link account", compact = true, enabled = false, onClick = {})
+                            StudioActionButton(
+                                if (publicAccountStatus.equals("Connected", true)) "Manage" else if (publicAccountStatus.contains("paired", true)) "Reconnect" else "Link account",
+                                compact = true,
+                                enabled = connected,
+                                onClick = { onAccountAction("public") }
+                            )
                         }
                     )
                 }
@@ -243,27 +282,26 @@ fun MoreScreen(
             item { StudioSectionHeading("Owner identities") }
             item {
                 StudioCard(padding = PaddingValues(14.dp)) {
-                    listOf(
-                        "Private Owner number",
-                        "Public Owner number",
-                        "Public bot WhatsApp number",
-                        "Allowed public senders"
-                    ).forEachIndexed { index, label ->
-                        if (index > 0) Spacer(Modifier.height(12.dp))
-                        Text(label, color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "Not loaded",
-                            color = StudioPalette.Muted,
-                            fontSize = 13.sp,
-                            modifier = Modifier.fillMaxWidth().padding(top = 5.dp)
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(StudioPalette.Background)
-                                .border(1.dp, StudioPalette.Line, RoundedCornerShape(9.dp))
-                                .padding(horizontal = 11.dp, vertical = 10.dp)
-                        )
-                    }
+                    OwnerNumberField("Private Owner number", privateOwnerDraft, connected) { privateOwnerDraft = it }
+                    Spacer(Modifier.height(12.dp))
+                    OwnerNumberField("Public Owner number", publicOwnerDraft, connected) { publicOwnerDraft = it }
+                    Spacer(Modifier.height(12.dp))
+                    OwnerNumberField("Public bot WhatsApp number", publicBotDraft, connected) { publicBotDraft = it }
+                    Spacer(Modifier.height(12.dp))
+                    OwnerNumberField("Allowed public senders (comma separated)", allowedSendersDraft, connected) { allowedSendersDraft = it }
                     Spacer(Modifier.height(14.dp))
-                    StudioActionButton("Save owner settings", primary = true, enabled = false, onClick = {})
+                    StudioActionButton(
+                        "Save owner settings",
+                        primary = true,
+                        enabled = connected,
+                        onClick = { onSaveOwnerSettings(privateOwnerDraft, publicOwnerDraft, publicBotDraft, allowedSendersDraft) }
+                    )
+                    if (!connected) Text(
+                        "Connect to your Aharane server to load or save owner identities.",
+                        color = StudioPalette.Muted,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
                 }
             }
         }
@@ -299,9 +337,9 @@ fun MoreScreen(
             item {
                 BackToMore { onPageChange("more") }
                 Spacer(Modifier.height(12.dp))
-                StudioPageTitle("Activity and logs", "No server activity is available while disconnected.")
+                StudioPageTitle("Activity and logs", if (connected) "Recent activity from your Aharane server." else "No server activity is available while disconnected.")
                 Text(
-                    "0 entries",
+                    "${activityEntries.size} entries",
                     color = StudioPalette.Muted,
                     fontSize = 12.5.sp,
                     modifier = Modifier.padding(top = 5.dp, bottom = 12.dp)
@@ -317,7 +355,7 @@ fun MoreScreen(
             }
             item {
                 StudioSegmented(
-                    options = listOf("All · 0", "Info · 0", "Warnings · 0", "Errors · 0"),
+                    options = listOf("All", "Info", "Warnings", "Errors"),
                     selected = activityFilter,
                     onSelect = { activityFilter = it }
                 )
@@ -331,16 +369,33 @@ fun MoreScreen(
                     StudioActionButton("Live", compact = true, enabled = false, onClick = {})
                     StudioActionButton("Copy", compact = true, enabled = false, onClick = {})
                     StudioActionButton("Export", compact = true, enabled = false, onClick = {})
-                    StudioActionButton("Clear", compact = true, destructive = true, enabled = false, onClick = {})
+                    StudioActionButton("Clear", compact = true, destructive = true, enabled = connected && activityEntries.isNotEmpty(), onClick = onClearActivity)
                 }
                 Spacer(Modifier.height(12.dp))
             }
             item {
                 StudioCard {
-                    StudioEmpty(
-                        title = if (activityQuery.isBlank()) "No log entries yet." else "No log entries match.",
-                        description = "Connect to your Aharane server to load activity, warnings, errors and diagnostic details."
-                    )
+                    val filtered = activityEntries.filter { line ->
+                        (activityQuery.isBlank() || line.contains(activityQuery, ignoreCase = true)) &&
+                            (activityFilter == "All" || line.contains(activityFilter, ignoreCase = true))
+                    }
+                    if (filtered.isEmpty()) {
+                        StudioEmpty(
+                            title = if (activityQuery.isBlank()) "No log entries yet." else "No log entries match.",
+                            description = if (connected) "No activity matches the selected filter." else "Connect to your Aharane server to load activity, warnings, errors and diagnostic details."
+                        )
+                    } else {
+                        filtered.take(60).forEachIndexed { index, line ->
+                            if (index > 0) StudioDivider()
+                            Text(
+                                line,
+                                color = StudioPalette.Ink,
+                                fontSize = 12.5.sp,
+                                lineHeight = 18.sp,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 9.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -357,8 +412,8 @@ fun MoreScreen(
             }
             item {
                 StudioCard(padding = PaddingValues(18.dp)) {
-                    Text("—", color = StudioPalette.Ink, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                    Text("of — limit", color = StudioPalette.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                    Text(if (connected) storageSummary else "—", color = StudioPalette.Ink, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    Text(if (connected) "Server storage usage" else "of — limit", color = StudioPalette.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
                     Row(
                         Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 10.dp)
                             .height(7.dp).clip(RoundedCornerShape(6.dp)).background(StudioPalette.Line)
@@ -378,7 +433,8 @@ fun MoreScreen(
                         }
                     }
                     Text(
-                        "Server storage values are not available until you connect this app.",
+                        if (connected) "Storage is read from the Aharane server. Media breakdown is shown when available."
+                        else "Server storage values are not available until you connect this app.",
                         color = StudioPalette.Muted,
                         fontSize = 11.5.sp,
                         lineHeight = 16.sp,
@@ -507,8 +563,8 @@ fun MoreScreen(
                     Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 18.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    StudioActionButton("Change password", compact = true, enabled = false, onClick = {})
-                    StudioActionButton("Sign out", compact = true, destructive = true, enabled = false, onClick = {})
+                    StudioActionButton("Change password", compact = true, enabled = connected, onClick = { dialog = "password-change" })
+                    StudioActionButton("Sign out", compact = true, destructive = true, enabled = connected, onClick = onSignOut)
                 }
             }
         }
@@ -565,6 +621,17 @@ fun MoreScreen(
                         HelpItem("ENV", "Add local environment drafts and mark sensitive values as secrets.")
                         HelpItem("Chats", "Connect your server to load real conversations. Opening a chat must not send read receipts or presence.")
                     }
+                    "password-change" -> {
+                        Text("Change Studio password", color = StudioPalette.Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        PasswordField("Current password", currentPassword) { currentPassword = it }
+                        PasswordField("New password (12–128 characters)", newPassword) { newPassword = it }
+                        Text(
+                            "Your new password also applies to the Aharane web Studio.",
+                            color = StudioPalette.Muted,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp
+                        )
+                    }
                     "about" -> {
                         Text("About Aharane", color = StudioPalette.Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -583,7 +650,26 @@ fun MoreScreen(
                         )
                     }
                 }
-                StudioActionButton("Close", primary = true, modifier = Modifier.align(Alignment.End), onClick = { dialog = "" })
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    if (dialog == "password-change") {
+                        StudioActionButton("Cancel", compact = true, onClick = { dialog = ""; currentPassword = ""; newPassword = "" })
+                        Spacer(Modifier.width(8.dp))
+                        StudioActionButton(
+                            "Change password",
+                            compact = true,
+                            primary = true,
+                            enabled = currentPassword.isNotBlank() && newPassword.toByteArray(Charsets.UTF_8).size in 12..128,
+                            onClick = {
+                                onChangePassword(currentPassword, newPassword)
+                                dialog = ""
+                                currentPassword = ""
+                                newPassword = ""
+                            }
+                        )
+                    } else {
+                        StudioActionButton("Close", primary = true, onClick = { dialog = "" })
+                    }
+                }
             }
         }
     }
@@ -660,4 +746,49 @@ private fun HelpItem(title: String, description: String) {
         Text(title, color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
         Text(description, color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 18.sp)
     }
+
+@Composable
+private fun OwnerNumberField(
+    label: String,
+    value: String,
+    enabled: Boolean,
+    onValueChange: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(label, color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            readOnly = !enabled,
+            singleLine = true,
+            textStyle = androidx.compose.ui.text.TextStyle(
+                color = if (enabled) StudioPalette.Ink else StudioPalette.Muted,
+                fontSize = 13.sp
+            ),
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+                .background(StudioPalette.Background)
+                .border(1.dp, StudioPalette.Line, RoundedCornerShape(9.dp))
+                .padding(horizontal = 11.dp, vertical = 10.dp)
+        )
+    }
+}
+
+@Composable
+private fun PasswordField(label: String, value: String, onValueChange: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(label, color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+            textStyle = androidx.compose.ui.text.TextStyle(color = StudioPalette.Ink, fontSize = 13.sp),
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+                .background(StudioPalette.Background)
+                .border(1.dp, StudioPalette.Line, RoundedCornerShape(9.dp))
+                .padding(horizontal = 11.dp, vertical = 10.dp)
+        )
+    }
+}
+
 }

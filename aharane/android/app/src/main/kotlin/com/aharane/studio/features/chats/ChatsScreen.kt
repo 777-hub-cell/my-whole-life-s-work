@@ -70,9 +70,10 @@ fun ChatsScreen(
     val switchIcon = if (account == ChatAccount.PRIVATE) Icons.Outlined.Lock else Icons.Outlined.Public
     val accountConversations = conversations.filter { it.key.account == account }
     val unreadCount = accountConversations.sumOf { it.unreadCount }
-    val visibleChats = remember(conversations, account, filter, query) {
+    val visibleChats = remember(conversations, account, filter, query, showIndividuals, showGroups) {
         conversations.asSequence()
             .filter { it.key.account == account }
+            .filter { if (it.isGroup) showGroups else showIndividuals }
             .filter { chat ->
                 when (filter) {
                     ChatFilter.ALL -> !chat.isArchived

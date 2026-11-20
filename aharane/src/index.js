@@ -1059,7 +1059,8 @@ async function handleMessages(sessionId, currentSocket, event) {
 
     // Message Received workflows run only after the same account-specific
     // authorization gates used by the existing command dispatcher.
-    if (allowedForAutomation) {
+    if (allowedForAutomation && sessionId === 'public' &&
+        allowCommand('visual-message:' + senderNumberFromJid(remoteJid))) {
       for (const workflow of visualCommandStore.findMessageTriggers(sessionId)) {
         try {
           const result = await executeVisualWorkflow(workflow, { store: visualCommandStore, context: workflowContext })

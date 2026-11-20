@@ -664,6 +664,26 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     })
   }
 
+  async function markConversationIncomingMessagesDeletedRemotely(id, jidValue) {
+    const account = accountId(id), jid = safeJid(jidValue)
+    if (!jid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
+    return enqueue(account, async () => {
+      const rows = await readRows(account)
+      let marked = 0
+      const deletedAt = Date.now()
+      for (const row of rows) {
+        // Only mark messages whose sender is explicitly the other participant.
+        // Unknown direction and our own messages are preserved without guessing.
+        if (row.jid !== jid || row.fromMe !== false || row.deletedByRemote === true || row.viewOnce === true) continue
+        row.deletedByRemote = true
+        row.deletedAt = deletedAt
+        marked += 1
+      }
+      if (marked > 0) await rewriteRows(account, rows)
+      return marked
+    })
+  }
+
   async function updateMessageStatus(id, jidValue, messageId, status) {
     const account = accountId(id), jid = safeJid(jidValue), key = String(messageId || '')
     if (!jid || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw Object.assign(new Error('Invalid message reference.'), { status: 400 })
@@ -915,5 +935,5 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return { bytes: total, files: count }
   }
 
-  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, updateMessageStatus, markMessageDeletedRemotely, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, deleteConversationMessages, listDeletedMessageIds, beginIdempotentSend, completeIdempotentSend, getIdempotentSend, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
+  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, updateMessageStatus, markMessageDeletedRemotely, markConversationIncomingMessagesDeletedRemotely, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, deleteConversationMessages, listDeletedMessageIds, beginIdempotentSend, completeIdempotentSend, getIdempotentSend, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
 }

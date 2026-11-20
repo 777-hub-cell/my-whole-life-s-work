@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -272,6 +272,19 @@ test('persistent counters are saved atomically and survive a fresh store instanc
   const reloaded = createVisualCommandStore(path)
   await reloaded.init()
   assert.equal(await reloaded.incrementCounter('workflow-1', 'daily'), 3)
+})
+
+test('corrupted workflow storage is preserved without blocking the bot runtime', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-visual-corrupt-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const path = join(dir, 'visual-commands.json')
+  const original = '{ not valid JSON'
+  await writeFile(path, original)
+  const store = createVisualCommandStore(path)
+  await store.init()
+  assert.match(store.storageWarning(), /preserved/i)
+  await assert.rejects(() => store.save(createWorkflowDraft()), /preserved/i)
+  assert.equal(await readFile(path, 'utf8'), original)
 })
 
 test('only valid workflows can be activated, while invalid drafts remain editable', async t => {

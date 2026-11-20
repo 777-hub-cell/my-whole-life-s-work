@@ -40,6 +40,7 @@ import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatSummary
 import com.aharane.studio.features.chats.ChatAppearanceStore
 import com.aharane.studio.features.chats.ChatAppearanceStudioScreen
+import com.aharane.studio.core.storage.EncryptedMediaCache
 
 private val AccentChoices = listOf(
     "#0E7A5C", "#3867D6", "#8752C7", "#B34D76", "#B56C22", "#4D7779"
@@ -107,6 +108,9 @@ fun MoreScreen(
     appearanceStore: ChatAppearanceStore? = null,
     appearanceRevision: Int = 0,
     cachedConversations: List<ChatSummary> = emptyList(),
+    mediaCache: EncryptedMediaCache? = null,
+    onSyncAllChats: () -> Unit = {},
+    syncingAllChats: Boolean = false,
     onAppearanceChanged: () -> Unit = {}
 ) {
     var dialog by rememberSaveable { mutableStateOf("") }
@@ -422,6 +426,43 @@ fun MoreScreen(
                         color = StudioPalette.Muted,
                         fontSize = 11.5.sp,
                         modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            }
+            item {
+                StudioSectionHeading("Offline chat storage")
+                StudioCard(padding = PaddingValues(14.dp)) {
+                    val accountKey = selectedChatAccount.apiValue
+                    var cacheLimitMb by rememberSaveable(accountKey) {
+                        mutableIntStateOf(((mediaCache?.maximumCacheBytes(accountKey) ?: 536870912L) / (1024L * 1024L)).toInt())
+                    }
+                    val cachedBytes = remember(appearanceRevision, accountKey) {
+                        mediaCache?.cacheSizeBytes(accountKey) ?: 0L
+                    }
+                    Text("Encrypted media cache", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Saved media: " + (cachedBytes / (1024L * 1024L)).toString() + " MB · Limit: " + cacheLimitMb + " MB",
+                        color = StudioPalette.Muted, fontSize = 11.5.sp,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                    Slider(
+                        value = cacheLimitMb.toFloat(),
+                        onValueChange = { cacheLimitMb = it.toInt().coerceIn(100, 2048) },
+                        onValueChangeFinished = { mediaCache?.setMaximumCacheMegabytes(accountKey, cacheLimitMb) },
+                        valueRange = 100f..2048f,
+                        steps = 18
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        StudioActionButton("Clear " + selectedChatAccount.label + " media cache", primary = false, onClick = {
+                            mediaCache?.clearAccount(accountKey)
+                            onAppearanceChanged()
+                        })
+                        StudioActionButton("Sync all chats", primary = true, enabled = connected && !syncingAllChats, loading = syncingAllChats, onClick = onSyncAllChats)
+                    }
+                    Text(
+                        "Only completed, verified attachments are marked offline-ready. View-once media is never cached.",
+                        color = StudioPalette.Muted, fontSize = 11.sp, lineHeight = 15.sp,
+                        modifier = Modifier.padding(top = 6.dp)
                     )
                 }
             }

@@ -531,7 +531,7 @@ private val CssCodeHighlight = RegexCodeHighlight(
 }
 
 private val MarkdownCodeHighlight = RegexCodeHighlight(
-    Regex("""(?m)^#{1,6}\\s+.*$|^>.*$|^[-*+]\\s+.*$|^\\s*[-*_]{3,}\\s*$|\\x60{1,3}[^\\x60\\n]+\\x60{1,3}|\\*\\*[^*]+\\*\\*|__[^_]+__|\\[[^]]+\\]\\([^)]+\\)""")
+    Regex("""(?m)^#{1,6}\s+.*$|^>.*$|^[-*+]\s+.*$|^\s*[-*_]{3,}\s*$|\x60{1,3}[^\x60\n]+\x60{1,3}|\*\*[^*]+\*\*|__[^_]+__|\[[^]]+\]\([^)]+\)""")
 ) { token ->
     when {
         token.startsWith("#") -> Color(0xFF569CD6)

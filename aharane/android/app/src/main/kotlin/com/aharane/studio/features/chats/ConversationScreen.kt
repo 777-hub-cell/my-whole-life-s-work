@@ -879,15 +879,41 @@ private fun MessageContent(
             }
         }
         MessageKind.CONTACT -> {
+            val vCardName = Regex("(?im)^FN[^:]*:(.+)$").find(message.text)?.groupValues?.getOrNull(1)?.trim()
+            val firstDisplayLine = message.text.lineSequence()
+                .map(String::trim)
+                .firstOrNull { it.isNotBlank() && !it.equals("BEGIN:VCARD", true) && !it.equals("END:VCARD", true) && !it.contains(':') }
+            val contactName = vCardName?.takeIf { it.isNotBlank() }
+                ?: firstDisplayLine
+                ?: "Contact"
+            val phones = Regex("(?im)^TEL[^:]*:(.+)$").findAll(message.text)
+                .map { it.groupValues[1].trim() }.filter { it.isNotBlank() }.distinct().toList()
+            val emails = Regex("(?im)^EMAIL[^:]*:(.+)$").findAll(message.text)
+                .map { it.groupValues[1].trim() }.filter { it.isNotBlank() }.distinct().toList()
+            val addresses = Regex("(?im)^ADR[^:]*:(.+)$").findAll(message.text)
+                .map { it.groupValues[1].trim().replace(';', ' ').replace(Regex("\\s+"), " ") }
+                .filter { it.isNotBlank() }.distinct().toList()
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(soft).padding(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(9.dp)
             ) {
                 Icon(Icons.Outlined.Person, null, tint = foreground, modifier = Modifier.size(25.dp))
-                Column {
-                    Text("Contact", color = foreground, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
-                    Text(message.text.ifBlank { "Contact card details are unavailable." }, color = foreground, fontSize = 13.sp, lineHeight = 18.sp)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Contact", color = foreground.copy(alpha = .72f), fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
+                    Text(contactName, color = foreground, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    phones.forEach { Text("Phone · $it", color = foreground, fontSize = 12.sp, lineHeight = 16.sp) }
+                    emails.forEach { Text("Email · $it", color = foreground, fontSize = 12.sp, lineHeight = 16.sp) }
+                    addresses.forEach { Text("Address · $it", color = foreground, fontSize = 11.5.sp, lineHeight = 15.sp) }
+                    if (phones.isEmpty() && emails.isEmpty() && addresses.isEmpty()) {
+                        Text(
+                            if (message.text.isBlank()) "Contact details are unavailable."
+                            else message.text.lines().filter { it.isNotBlank() }.take(5).joinToString("\\n"),
+                            color = foreground.copy(alpha = .82f),
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp
+                        )
+                    }
                 }
             }
         }

@@ -90,6 +90,9 @@ interface ChatDao {
     @Query("SELECT * FROM chat_messages WHERE account = :account AND jid = :jid ORDER BY timestampMillis ASC")
     suspend fun messages(account: String, jid: String): List<ChatMessageRow>
 
+    @Query("SELECT * FROM chat_messages WHERE account = :account AND jid = :jid AND messageId = :messageId LIMIT 1")
+    suspend fun message(account: String, jid: String, messageId: String): ChatMessageRow?
+
     @Query("SELECT * FROM chat_messages WHERE account = :account AND jid = :jid AND timestampMillis < :before ORDER BY timestampMillis DESC LIMIT :limit")
     suspend fun olderMessages(account: String, jid: String, before: Long, limit: Int): List<ChatMessageRow>
 

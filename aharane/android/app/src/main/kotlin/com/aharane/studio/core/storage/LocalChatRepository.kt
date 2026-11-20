@@ -211,6 +211,7 @@ class LocalChatRepository(context: Context) {
 
     suspend fun clearLocalConversation(key: ConversationKey) {
         dao.clearMessages(key.account.apiValue, key.jid)
+        dao.clearOutgoingMessages(key.account.apiValue, key.jid)
         dao.clearConversation(key.account.apiValue, key.jid)
     }
 

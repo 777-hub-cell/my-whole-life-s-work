@@ -162,13 +162,17 @@ fun AharaneApp(
                         }.onFailure {
                             // Only a previously saved, Keystore-protected session may unlock local chat history offline.
                             authenticated = true
-                            serverReachable = false
                             connectionError = "Offline access · showing chats saved on this phone."
                         }
                     }
                 } catch (error: Exception) {
-                    connectionError = error.message ?: "Could not reach your Aharane server."
-                    serverVerified = false
+                    if (connectionManager.api?.hasSavedSession() == true) {
+                        authenticated = true
+                        connectionError = "Offline access · showing chats saved on this phone."
+                    } else {
+                        connectionError = error.message ?: "Could not reach your Aharane server."
+                        serverVerified = false
+                    }
                 } finally {
                     connectionBusy = false
                 }

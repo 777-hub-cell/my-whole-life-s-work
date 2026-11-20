@@ -326,8 +326,7 @@ fun CodeEditorScreen(
                         saveState = "saving"
                         onContentChange(activeDocument.path, next.text)
                     },
-                    visualTransformation = if (activeDocument.path.endsWith(".js", true) ||
-                        activeDocument.path.endsWith(".json", true)) StudioCodeHighlight else VisualTransformation.None,
+                    visualTransformation = syntaxHighlightFor(activeDocument.path),
                     cursorBrush = SolidColor(Color(0xFFAEAFAD)),
                     readOnly = !editable,
                     textStyle = TextStyle(
@@ -458,6 +457,67 @@ private object StudioCodeHighlight : VisualTransformation {
             builder.addStyle(SpanStyle(color = color), match.range.first, match.range.last + 1)
         }
         return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
+    }
+}
+
+private fun syntaxHighlightFor(path: String): VisualTransformation = when (path.substringAfterLast('.', "").lowercase()) {
+    "js", "mjs", "cjs", "json" -> StudioCodeHighlight
+    "html", "htm", "xml" -> HtmlCodeHighlight
+    "css", "scss" -> CssCodeHighlight
+    "yaml", "yml" -> YamlCodeHighlight
+    else -> VisualTransformation.None
+}
+
+private class RegexCodeHighlight(
+    private val tokens: Regex,
+    private val resolveColor: (String) -> Color
+) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val builder = AnnotatedString.Builder(text.text)
+        tokens.findAll(text.text).forEach { match ->
+            builder.addStyle(
+                SpanStyle(color = resolveColor(match.value)),
+                match.range.first,
+                match.range.last + 1
+            )
+        }
+        return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
+    }
+}
+
+private val HtmlCodeHighlight = RegexCodeHighlight(
+    Regex("""<!--[\\s\\S]*?-->|</?[A-Za-z][^>]*>|[A-Za-z_:][-A-Za-z0-9_:.]*(?=\\s*=)|"(?:\\\\.|[^"])*"|'(?:\\\\.|[^'])*'""")
+) { token ->
+    when {
+        token.startsWith("<!--") -> Color(0xFF6A9955)
+        token.startsWith("<") -> Color(0xFF569CD6)
+        token.startsWith('"') || token.startsWith("'") -> Color(0xFFCE9178)
+        else -> Color(0xFFDCDCAA)
+    }
+}
+
+private val CssCodeHighlight = RegexCodeHighlight(
+    Regex("""/\\*[\\s\\S]*?\\*/|//[^\\n]*|#[0-9A-Fa-f]{3,8}\\b|@[A-Za-z-]+|[A-Za-z-]+(?=\\s*:)|\\b\\d+(?:\\.\\d+)?(?:px|rem|em|vh|vw|%)?\\b|"(?:\\\\.|[^"])*"|'(?:\\\\.|[^'])*'""")
+) { token ->
+    when {
+        token.startsWith("/*") || token.startsWith("//") -> Color(0xFF6A9955)
+        token.startsWith('"') || token.startsWith("'") -> Color(0xFFCE9178)
+        token.startsWith("@") -> Color(0xFFC586C0)
+        token.startsWith("#") -> Color(0xFFB5CEA8)
+        token.firstOrNull()?.isDigit() == true -> Color(0xFFB5CEA8)
+        else -> Color(0xFF9CDCFE)
+    }
+}
+
+private val YamlCodeHighlight = RegexCodeHighlight(
+    Regex("""#[^\\n]*|^\\s*[A-Za-z0-9_.-]+(?=\\s*:)|"(?:\\\\.|[^"])*"|'(?:\\\\.|[^'])*'|\\b(true|false|null|yes|no)\\b|\\b\\d+(?:\\.\\d+)?\\b""", RegexOption.MULTILINE)
+) { token ->
+    when {
+        token.startsWith("#") -> Color(0xFF6A9955)
+        token.startsWith('"') || token.startsWith("'") -> Color(0xFFCE9178)
+        token in setOf("true", "false", "null", "yes", "no") -> Color(0xFF569CD6)
+        token.firstOrNull()?.isDigit() == true -> Color(0xFFB5CEA8)
+        else -> Color(0xFF9CDCFE)
     }
 }
 

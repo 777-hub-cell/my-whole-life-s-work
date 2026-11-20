@@ -961,21 +961,26 @@ fun AharaneApp(
                         privateActionLabel = runtime?.privateAccount?.let(::accountActionLabel) ?: "Link account",
                         publicActionLabel = runtime?.publicAccount?.let(::accountActionLabel) ?: "Link account",
                         onAccountAction = { target ->
-                            connectionScope.launch {
-                                try {
-                                    val state = when (target) {
-                                        ChatAccount.PRIVATE -> runtime?.privateAccount
-                                        ChatAccount.PUBLIC -> runtime?.publicAccount
+                            if (previewMode) {
+                                pairingAccount = target
+                                pairingCode = ""
+                            } else {
+                                connectionScope.launch {
+                                    try {
+                                        val state = when (target) {
+                                            ChatAccount.PRIVATE -> runtime?.privateAccount
+                                            ChatAccount.PUBLIC -> runtime?.publicAccount
+                                        }
+                                        if (state?.registered == true) {
+                                            accountControlTarget = target
+                                        } else {
+                                            pairingAccount = target
+                                            pairingCode = repository.pairCode(target)
+                                        }
+                                    } catch (error: Exception) {
+                                        pairingAccount = null
+                                        Toast.makeText(context, error.message ?: "Account action failed.", Toast.LENGTH_LONG).show()
                                     }
-                                    if (state?.registered == true) {
-                                        accountControlTarget = target
-                                    } else {
-                                        pairingAccount = target
-                                        pairingCode = repository.pairCode(target)
-                                    }
-                                } catch (error: Exception) {
-                                    pairingAccount = null
-                                    Toast.makeText(context, error.message ?: "Account action failed.", Toast.LENGTH_LONG).show()
                                 }
                             }
                         },
@@ -1329,7 +1334,7 @@ fun AharaneApp(
         }
     }
 
-    if (pairingAccount != null && pairingCode.isNotBlank()) {
+    if (pairingAccount != null && (previewMode || pairingCode.isNotBlank())) {
         Dialog(onDismissRequest = { pairingAccount = null; pairingCode = "" }) {
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
@@ -1337,18 +1342,31 @@ fun AharaneApp(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text("Link ${pairingAccount!!.label} account", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                Text("Pair this account in WhatsApp → Linked devices → Link a device, then enter this code:", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
-                Text(pairingCode, color = StudioPalette.Accent, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StudioActionButton("Copy code", compact = true, onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Aharane pairing code", pairingCode))
-                        Toast.makeText(context, "Pairing code copied.", Toast.LENGTH_SHORT).show()
-                    })
+                if (previewMode) {
+                    Text(
+                        "This is a design preview. Connect to your Aharane server to generate a real WhatsApp pairing code. No account has been paired.",
+                        color = StudioPalette.Muted,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp
+                    )
                     StudioActionButton("Close", compact = true, primary = true, onClick = {
                         pairingAccount = null
                         pairingCode = ""
                     })
+                } else {
+                    Text("Pair this account in WhatsApp → Linked devices → Link a device, then enter this code:", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
+                    Text(pairingCode, color = StudioPalette.Accent, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        StudioActionButton("Copy code", compact = true, onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Aharane pairing code", pairingCode))
+                            Toast.makeText(context, "Pairing code copied.", Toast.LENGTH_SHORT).show()
+                        })
+                        StudioActionButton("Close", compact = true, primary = true, onClick = {
+                            pairingAccount = null
+                            pairingCode = ""
+                        })
+                    }
                 }
             }
         }

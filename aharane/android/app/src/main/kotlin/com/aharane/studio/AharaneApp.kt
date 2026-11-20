@@ -897,6 +897,7 @@ fun AharaneApp(
                         if (query.isBlank() || previewMode || target == null) {
                             conversationSearchResults = null
                         } else {
+                            conversationSearchResults = null
                             connectionScope.launch {
                                 try {
                                     val matches = repository.searchMessages(target, query)

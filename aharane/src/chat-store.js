@@ -199,7 +199,10 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     const account = accountId(id)
     const previous = queues.get(account) || Promise.resolve()
     const next = previous.catch(() => {}).then(task)
-    const tracked = next.finally(() => {
+    // Keep the internal queue tail fulfilled even when an operation rejects.
+    // The caller still receives the original rejected promise, but a handled
+    // failure must not leave an unobserved rejected queue-tail promise.
+    const tracked = next.catch(() => {}).finally(() => {
       if (queues.get(account) === tracked) queues.delete(account)
     })
     queues.set(account, tracked)

@@ -148,6 +148,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
   const mediaRoot = join(dataDir, 'chat-media')
   const files = Object.fromEntries(['private', 'public'].map(id => [id, join(root, id + '.jsonl')]))
   const readMarkers = Object.fromEntries(['private', 'public'].map(id => [id, join(root, id + '.read.json')]))
+  const deletedFiles = Object.fromEntries(['private', 'public'].map(id => [id, join(root, id + '.deleted.jsonl')]))
   const queues = new Map()
   const ready = new Set()
   const initializing = new Map()
@@ -222,6 +223,40 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       }
     }
     return rows
+  }
+
+  async function recordDeleted(id, jid, messageId) {
+    const account = accountId(id)
+    const key = String(messageId || '')
+    if (!jid || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) return
+    const rows = await readFile(deletedFiles[account], 'utf8').catch(error => {
+      if (error?.code === 'ENOENT') return ''
+      throw error
+    })
+    const existing = rows.split('\n').filter(Boolean).slice(-1000).some(line => {
+      try { const row = JSON.parse(line); return row.jid === jid && row.id === key } catch { return false }
+    })
+    if (!existing) {
+      await appendFile(deletedFiles[account], JSON.stringify({ jid, id: key, deletedAt: Date.now() }) + '\n', { encoding: 'utf8', mode: 0o600 })
+      await chmod(deletedFiles[account], 0o600)
+    }
+  }
+
+  async function listDeletedMessageIds(id, jidValue, limit = 1000) {
+    const account = accountId(id), jid = safeJid(jidValue)
+    if (!jid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
+    await ensureReady(account)
+    const content = await readFile(deletedFiles[account], 'utf8').catch(error => {
+      if (error?.code === 'ENOENT') return ''
+      throw error
+    })
+    return content.split('\n').filter(Boolean).slice(-Math.max(1, Math.min(2000, Number(limit) || 1000)))
+      .flatMap(line => {
+        try {
+          const row = JSON.parse(line)
+          return row.jid === jid && typeof row.id === 'string' ? [row.id] : []
+        } catch { return [] }
+      })
   }
 
   async function writeReadMarkers(id, markers) {
@@ -516,6 +551,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       const rows = await readRows(account), index = rows.findIndex(item => item.jid === jid && item.id === key)
       if (index < 0) return false
       const [removed] = rows.splice(index, 1)
+      await recordDeleted(account, jid, key)
       if (removed.mediaFile && /^[a-f0-9]{64}\.[a-z0-9]{1,8}$/.test(removed.mediaFile)) {
         await unlink(join(mediaRoot, account, removed.mediaFile)).catch(() => {})
       }
@@ -546,6 +582,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       const removed = rows.filter(row => row.jid === jid)
       if (!removed.length) return 0
       for (const row of removed) {
+        await recordDeleted(account, jid, row.id)
         if (row.mediaFile && /^[a-f0-9]{64}\.[a-z0-9]{1,8}$/.test(row.mediaFile)) {
           await unlink(join(mediaRoot, account, row.mediaFile)).catch(() => {})
         }
@@ -774,5 +811,5 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return { bytes: total, files: count }
   }
 
-  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, updateMessageStatus, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, deleteConversationMessages, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
+  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, updateMessageStatus, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, deleteConversationMessages, listDeletedMessageIds, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
 }

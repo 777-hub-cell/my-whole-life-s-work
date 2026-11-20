@@ -100,7 +100,7 @@ def assert_visible_texts(labels):
     raise RuntimeError(f"File popup is missing expected actions: {missing!r}")
 
 def assert_absent_texts(labels):
-    """Ensure removed Android-app source editing does not reappear in More."""
+    """Ensure removed or relocated entries do not reappear on More."""
     visible = {
         node.attrib.get("text", "") or node.attrib.get("content-desc", "")
         for node in nodes()
@@ -110,7 +110,21 @@ def assert_absent_texts(labels):
         if any(label.casefold() in value.casefold() for value in visible)
     ]
     if found:
-        raise RuntimeError(f"Unexpected removed UI entries are visible: {found!r}")
+        raise RuntimeError(f"Unexpected UI entries are visible: {found!r}")
+
+
+def scroll_until_label_visible(label: str, max_swipes: int = 6):
+    """Scroll a screen until a label is visible without activating it."""
+    for _ in range(max_swipes + 1):
+        visible = [
+            node.attrib.get("text", "") or node.attrib.get("content-desc", "")
+            for node in nodes()
+        ]
+        if any(label.casefold() in value.casefold() for value in visible):
+            return
+        run("adb", "shell", "input", "swipe", "540", "2050", "540", "980", "350")
+        time.sleep(0.5)
+    raise RuntimeError(f"Could not scroll to visible UI label: {label!r}")
 
 
 def back():
@@ -136,6 +150,12 @@ def main():
     back()
     capture("01d-configuration-return.png")
     tap_label("‹  Back to Home")
+    scroll_until_label_visible("Visual command builder")
+    capture("01e-home-visual-command-builder-shortcut.png")
+    tap_label("Visual command builder")
+    capture("01f-home-visual-command-builder.png", 2)
+    assert_visible_texts(["WORKSPACE", "NODE LIBRARY", "Test safely", "Search WhatsApp nodes"])
+    back()
 
     tap_label("Chats")
     capture("02-chats.png")
@@ -206,7 +226,7 @@ def main():
     capture("04-env.png")
     tap_label("More")
     capture("05-more.png")
-    assert_absent_texts(["Development", "Studio source"])
+    assert_absent_texts(["Development", "Studio source", "Visual command builder"])
     tap_label("Accounts & owners")
     capture("05a-accounts-owners.png")
     back()
@@ -235,10 +255,7 @@ def main():
     back()
     back()  # Return from chat settings to More.
 
-    tap_label("Visual command builder", scroll_to_find=True)
-    capture("06h-visual-command-builder.png", 1)
-    assert_visible_texts(["WORKSPACE", "NODE LIBRARY", "Test safely", "Search WhatsApp nodes"])
-    back()
+    # The Visual Command Builder is intentionally opened only from Home.
 
     # A normal first launch now requires secure HTTPS sign-in before any Studio
     # content is available. Capture that gate separately; never bypass auth in

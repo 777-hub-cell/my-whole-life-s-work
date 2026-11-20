@@ -309,7 +309,7 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
         if (afterMillis > 0L) query["after"] = afterMillis.toString()
         beforeMillis?.let { query["before"] = it.toString() }
         val response = api.get(
-            "chats/\${conversation.key.account.apiValue}/\${encodePath(conversation.key.jid)}/sync",
+            "chats/${conversation.key.account.apiValue}/${encodePath(conversation.key.jid)}/sync",
             query
         )
         val rows = response.optJSONArray("messages") ?: JSONArray()

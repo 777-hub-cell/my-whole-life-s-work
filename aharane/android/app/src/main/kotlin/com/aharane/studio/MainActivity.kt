@@ -48,6 +48,9 @@ class MainActivity : ComponentActivity() {
             var editorFontSize by rememberSaveable {
                 mutableStateOf(preferences.getInt("editorFontSize", 14))
             }
+            var chatMessageSize by rememberSaveable {
+                mutableStateOf(preferences.getInt("chatMessageSize", 14))
+            }
             var editorLineNumbers by rememberSaveable {
                 mutableStateOf(preferences.getBoolean("editorLineNumbers", true))
             }
@@ -117,6 +120,11 @@ class MainActivity : ComponentActivity() {
                     onEditorFontSizeChanged = {
                         editorFontSize = it
                         preferences.edit().putInt("editorFontSize", it).apply()
+                    },
+                    chatMessageSize = chatMessageSize,
+                    onChatMessageSizeChanged = {
+                        chatMessageSize = it
+                        preferences.edit().putInt("chatMessageSize", it).apply()
                     },
                     editorLineNumbers = editorLineNumbers,
                     onEditorLineNumbersChanged = {

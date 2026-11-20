@@ -67,7 +67,9 @@ data class ChatMessage(
     val mediaUnavailable: String? = null,
     val isStarred: Boolean = false,
     val isVoiceNote: Boolean = false,
-    val reactions: List<String> = emptyList()
+    val reactions: List<String> = emptyList(),
+    val localOutboxState: String? = null,
+    val localOutboxError: String? = null
 ) {
     init {
         require(messageId.isNotBlank())

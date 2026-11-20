@@ -1811,6 +1811,34 @@ app.post('/api/chats/:accountId/:jid/star', requireAdmin, async (req, res) => {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not update starred message.') })
   }
 })
+app.get('/api/chats/:accountId/:jid/sync', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = decodeURIComponent(String(req.params.jid || ''))
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid) || !await chatStore.hasConversation(accountId, jid)) {
+      return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    }
+    const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 200))
+    const after = Math.max(0, Number(req.query.after) || 0)
+    const before = Math.max(0, Number(req.query.before) || 0)
+    if (after > 0 && before > 0) return res.status(400).json({ ok: false, error: 'Use either an after or before cursor, not both.' })
+    const messages = await chatStore.getMessages(accountId, jid, { limit, after, before })
+    const timestamps = messages.map(message => Number(message.timestamp) || 0).filter(value => value > 0)
+    res.json({
+      ok: true,
+      messages,
+      hasOlder: before > 0 ? messages.length >= limit : after === 0 && messages.length >= limit,
+      hasNewer: after > 0 && messages.length >= limit,
+      oldestTimestamp: timestamps.length ? Math.min(...timestamps) : 0,
+      newestTimestamp: timestamps.length ? Math.max(...timestamps) : 0,
+      syncedAt: Date.now(),
+      cursor: { after, before, limit },
+    })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not sync conversation messages.') })
+  }
+})
+
 app.get('/api/chats/:accountId/:jid/messages', requireAdmin, async (req, res) => {
   try {
     const accountId = chatAccount(req.params.accountId)

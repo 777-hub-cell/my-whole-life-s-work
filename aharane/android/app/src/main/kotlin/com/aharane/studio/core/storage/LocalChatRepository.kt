@@ -17,7 +17,7 @@ class LocalChatRepository(context: Context) {
 
     suspend fun saveMessages(conversation: ChatSummary, messages: List<ChatMessage>, hasOlder: Boolean? = null) {
         require(messages.all { it.key == conversation.key }) { "A message crossed its account or conversation boundary." }
-        val rows = messages.filterNot { it.isViewOnce }.map { it.toRow() }
+        val rows = messages.map { it.toRow() }
         if (rows.isNotEmpty()) dao.putMessages(rows)
         val old = dao.conversation(conversation.key.account.apiValue, conversation.key.jid)
         val newest = maxOf(old?.newestSyncedTimestampMillis ?: 0L, rows.maxOfOrNull { it.timestampMillis } ?: 0L)
@@ -36,19 +36,16 @@ class LocalChatRepository(context: Context) {
     }
 
     suspend fun messages(key: ConversationKey): List<ChatMessage> =
-        dao.messages(key.account.apiValue, key.jid)
-            .filterNot { it.isViewOnce }
-            .map { it.toModel() }
+        dao.messages(key.account.apiValue, key.jid).map { it.toModel() }
 
     suspend fun olderMessages(key: ConversationKey, before: Long, limit: Int = 100): List<ChatMessage> =
         dao.olderMessages(key.account.apiValue, key.jid, before, limit)
-            .asReversed().filterNot { it.isViewOnce }.map { it.toModel() }
+            .asReversed().map { it.toModel() }
 
     suspend fun search(account: ChatAccount, query: String, jid: String? = null, fromMillis: Long = 0L, toMillis: Long = 0L, limit: Int = 100): List<ChatMessage> {
         val term = query.trim()
         if (term.length < 2) return emptyList()
-        return dao.search(account.apiValue, jid, term, fromMillis, toMillis, limit.coerceIn(1, 500))
-            .filterNot { it.isViewOnce }.map { it.toModel() }
+        return dao.search(account.apiValue, jid, term, fromMillis, toMillis, limit.coerceIn(1, 500)).map { it.toModel() }
     }
 
     suspend fun newestTimestamp(key: ConversationKey): Long =

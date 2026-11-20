@@ -429,3 +429,32 @@ test('contact cards retain vCards, locations retain coordinates and polls retain
   }
 })
 
+
+
+test('incremental chat sync pages by timestamp and does not change the unread marker', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-sync-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348012345678@s.whatsapp.net'
+    for (const [id, second, text] of [
+      ['sync-1', 1760001000, 'first cached'],
+      ['sync-2', 1760001001, 'second message'],
+      ['sync-3', 1760001002, 'third message'],
+    ]) {
+      await store.recordMessage({
+        sessionId: 'private',
+        message: { key: { id, remoteJid: jid, fromMe: false }, messageTimestamp: second, message: { conversation: text } },
+      })
+    }
+    const initial = await store.getMessages('private', jid, { limit: 2 })
+    assert.deepEqual(initial.map(message => message.id), ['sync-2', 'sync-3'])
+    const delta = await store.getMessages('private', jid, { after: 1760001001000, limit: 20 })
+    assert.deepEqual(delta.map(message => message.id), ['sync-2', 'sync-3'])
+    const older = await store.getMessages('private', jid, { before: 1760001002000, limit: 20 })
+    assert.deepEqual(older.map(message => message.id), ['sync-1', 'sync-2'])
+    assert.equal((await store.listChats('private'))[0].unreadCount, 3)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

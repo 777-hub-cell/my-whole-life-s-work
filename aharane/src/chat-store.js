@@ -323,16 +323,21 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       }))
   }
 
-  async function getMessages(id, jidValue, { limit = 200, before = 0 } = {}) {
+  async function getMessages(id, jidValue, { limit = 200, before = 0, after = 0 } = {}) {
     const account = accountId(id)
     const jid = safeJid(jidValue)
     if (!jid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
     const rows = await readRows(account)
     const maxBefore = Number(before) || Infinity
-    return rows.filter(row => row.jid === jid && row.timestamp < maxBefore)
-      .sort((a, b) => a.timestamp - b.timestamp)
-      .slice(-Math.max(1, Math.min(500, Number(limit) || 200)))
-      .map(row => ({
+    // WhatsApp timestamps are second-based; include the cursor second and let
+    // the native composite key deduplicate the overlapping boundary messages.
+    const minAfter = Number(after) || 0
+    const pageLimit = Math.max(1, Math.min(500, Number(limit) || 200))
+    const matching = rows.filter(row =>
+      row.jid === jid && row.timestamp < maxBefore && (!minAfter || row.timestamp >= minAfter)
+    ).sort((a, b) => a.timestamp - b.timestamp || String(a.id).localeCompare(String(b.id)))
+    const page = minAfter ? matching.slice(0, pageLimit) : matching.slice(-pageLimit)
+    return page.map(row => ({
         id: row.id, jid: row.jid, fromMe: row.fromMe, participant: row.participant,
         pushName: row.pushName, timestamp: row.timestamp, type: row.type, text: row.text,
         mimeType: row.mimeType, fileName: row.fileName, size: row.size, duration: row.duration || 0,

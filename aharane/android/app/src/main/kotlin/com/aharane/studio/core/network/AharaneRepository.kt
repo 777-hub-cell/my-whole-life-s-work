@@ -122,6 +122,13 @@ data class EditorDiagnosticsResult(
  * Typed adapter for the existing Aharane server API. It never talks to WhatsApp
  * directly; Baileys, sessions and command dispatch remain on the server.
  */
+data class ChatSyncPage(
+    val messages: List<ChatMessage>,
+    val hasOlder: Boolean,
+    val hasNewer: Boolean,
+    val syncedAtMillis: Long
+)
+
 class AharaneRepository(private val connection: AharaneConnectionManager) {
     private val api: AharaneApiClient
         get() = connection.api ?: throw IllegalStateException("Connect to your Aharane server first.")
@@ -289,6 +296,59 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
                 )
             }
         }
+    }
+
+    suspend fun syncMessages(
+        conversation: ChatSummary,
+        afterMillis: Long = 0L,
+        beforeMillis: Long? = null,
+        limit: Int = 200
+    ): ChatSyncPage {
+        require(afterMillis <= 0L || beforeMillis == null) { "Use either an after or before cursor." }
+        val query = mutableMapOf("limit" to limit.coerceIn(1, 500).toString())
+        if (afterMillis > 0L) query["after"] = afterMillis.toString()
+        beforeMillis?.let { query["before"] = it.toString() }
+        val response = api.get(
+            "chats/\${conversation.key.account.apiValue}/\${encodePath(conversation.key.jid)}/sync",
+            query
+        )
+        val rows = response.optJSONArray("messages") ?: JSONArray()
+        val messages = buildList {
+            for (index in 0 until rows.length()) {
+                val row = rows.optJSONObject(index) ?: continue
+                val messageId = row.optString("id")
+                if (messageId.isBlank()) continue
+                val rawTimestamp = row.optLong("timestamp")
+                val timestamp = if (rawTimestamp > 0 && rawTimestamp < 10_000_000_000L) rawTimestamp * 1000L else rawTimestamp
+                add(ChatMessage(
+                    key = conversation.key,
+                    messageId = messageId,
+                    direction = if (row.optBoolean("fromMe")) MessageDirection.OUTGOING else MessageDirection.INCOMING,
+                    kind = parseMessageKind(row.optString("type")),
+                    text = row.optString("text"),
+                    timestampMillis = timestamp.coerceAtLeast(0L),
+                    status = parseMessageStatus(row.optString("status")),
+                    mediaMimeType = row.optString("mimeType").takeIf { it.isNotBlank() },
+                    mediaFileName = row.optString("fileName").takeIf { it.isNotBlank() },
+                    isViewOnce = row.optBoolean("viewOnce"),
+                    senderName = row.optString("pushName").takeIf { it.isNotBlank() },
+                    mediaUrl = row.optString("mediaUrl").takeIf { it.isNotBlank() },
+                    mediaSizeBytes = row.optLong("size").takeIf { it > 0 },
+                    mediaDurationSeconds = row.optLong("duration").takeIf { it > 0 },
+                    viewOnceViewed = row.optBoolean("viewOnceViewed"),
+                    mediaUnavailable = row.optString("mediaUnavailable").takeIf { it.isNotBlank() },
+                    isStarred = row.optBoolean("starred"),
+                    isVoiceNote = row.optBoolean("ptt"),
+                    replyToMessageId = row.optString("quotedMessageId").takeIf { it.isNotBlank() }
+                ))
+            }
+        }
+        return ChatSyncPage(
+            messages = messages,
+            hasOlder = response.optBoolean("hasOlder", messages.size >= limit),
+            hasNewer = response.optBoolean("hasNewer", false),
+            syncedAtMillis = response.optLong("syncedAt", System.currentTimeMillis())
+        )
     }
 
     suspend fun searchMessages(

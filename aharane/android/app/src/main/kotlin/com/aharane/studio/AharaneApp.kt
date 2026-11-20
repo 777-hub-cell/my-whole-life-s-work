@@ -50,6 +50,9 @@ import com.aharane.studio.core.model.MessageDirection
 import com.aharane.studio.core.model.MessageKind
 import com.aharane.studio.core.model.MessageStatus
 import com.aharane.studio.core.network.AharaneConnectionManager
+import com.aharane.studio.core.storage.EncryptedMediaCache
+import com.aharane.studio.core.storage.LocalChatRepository
+import com.aharane.studio.features.chats.ChatAppearanceStore
 import com.aharane.studio.core.notifications.AharaneNotificationScheduler
 import com.aharane.studio.core.network.AharaneRepository
 import com.aharane.studio.core.network.AharaneUpdatePackage
@@ -117,6 +120,22 @@ fun AharaneApp(
     val context = LocalContext.current
     val connectionScope = rememberCoroutineScope()
     val repository = remember(connectionManager) { AharaneRepository(connectionManager) }
+    val chatAppearanceStore = remember(context) { ChatAppearanceStore(context.applicationContext) }
+    val encryptedMediaCache = remember(context) { EncryptedMediaCache(context.applicationContext) }
+    var chatAppearanceRevision by remember { mutableIntStateOf(0) }
+    var localChatRepository by remember { mutableStateOf<LocalChatRepository?>(null) }
+    var localChatStorageError by remember { mutableStateOf("") }
+
+    LaunchedEffect(context) {
+        runCatching {
+            withContext(Dispatchers.IO) { LocalChatRepository(context.applicationContext) }
+        }.onSuccess {
+            localChatRepository = it
+            localChatStorageError = ""
+        }.onFailure {
+            localChatStorageError = it.message ?: "Encrypted offline chat storage is unavailable."
+        }
+    }
 
     var authenticated by remember(previewMode) { mutableStateOf(previewMode) }
     var connectionUrl by rememberSaveable { mutableStateOf(connectionManager.savedStudioUrl) }
@@ -140,6 +159,11 @@ fun AharaneApp(
                         runCatching {
                             connectionManager.api?.get("status")
                             authenticated = true
+                        }.onFailure {
+                            // Only a previously saved, Keystore-protected session may unlock local chat history offline.
+                            authenticated = true
+                            serverReachable = false
+                            connectionError = "Offline access · showing chats saved on this phone."
                         }
                     }
                 } catch (error: Exception) {
@@ -275,8 +299,10 @@ fun AharaneApp(
     var showIndividualChats by remember { mutableStateOf(true) }
     var showGroupChats by remember { mutableStateOf(true) }
     var starredPreviews by remember { mutableStateOf<List<String>>(emptyList()) }
-    var chatAppearance by remember { mutableStateOf(JSONObject()) }
+    var chatAppearance by remember { mutableStateOf(chatAppearanceStore.resolve(null).toJson()) }
     var activeMessages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
+    var hasOlderMessages by remember { mutableStateOf(false) }
+    var loadingOlderMessages by remember { mutableStateOf(false) }
     var editorDiagnosticsByPath by remember { mutableStateOf<Map<String, EditorDiagnosticsResult>>(emptyMap()) }
     var editorDiagnosticsStateByPath by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var editorDiagnosticRequestId by remember { mutableIntStateOf(0) }
@@ -289,6 +315,20 @@ fun AharaneApp(
         if (previewMode) addAll(DesignPreviewFixtures.messages)
     } }
     val editorDocuments = remember { mutableStateListOf<StudioEditorDocument>() }
+
+    LaunchedEffect(localChatRepository, previewMode) {
+        val local = localChatRepository ?: return@LaunchedEffect
+        if (previewMode) return@LaunchedEffect
+        runCatching {
+            val privateChats = local.conversations(ChatAccount.PRIVATE)
+            val publicChats = local.conversations(ChatAccount.PUBLIC)
+            if (privateChats.isNotEmpty()) chatsByAccount[ChatAccount.PRIVATE] = privateChats
+            if (publicChats.isNotEmpty()) chatsByAccount[ChatAccount.PUBLIC] = publicChats
+        }.onFailure {
+            localChatStorageError = it.message ?: "Could not open saved conversations."
+        }
+    }
+
 
     var pairingAccount by remember { mutableStateOf<ChatAccount?>(null) }
     var pairingCode by remember { mutableStateOf("") }
@@ -561,10 +601,18 @@ fun AharaneApp(
             .onSuccess { serverFiles = it }
             .onFailure { failures += "Files: ${it.message ?: "unavailable"}" }
         runCatching { repository.chats(ChatAccount.PRIVATE) }
-            .onSuccess { chatsByAccount[ChatAccount.PRIVATE] = it }
+            .onSuccess {
+                chatsByAccount[ChatAccount.PRIVATE] = it
+                runCatching { localChatRepository?.saveConversations(it) }
+                    .onFailure { error -> localChatStorageError = error.message ?: "Private chats could not be cached." }
+            }
             .onFailure { failures += "Private inbox: ${it.message ?: "unavailable"}" }
         runCatching { repository.chats(ChatAccount.PUBLIC) }
-            .onSuccess { chatsByAccount[ChatAccount.PUBLIC] = it }
+            .onSuccess {
+                chatsByAccount[ChatAccount.PUBLIC] = it
+                runCatching { localChatRepository?.saveConversations(it) }
+                    .onFailure { error -> localChatStorageError = error.message ?: "Public chats could not be cached." }
+            }
             .onFailure { failures += "Public inbox: ${it.message ?: "unavailable"}" }
         runCatching { repository.updatePackages() }
             .onSuccess {
@@ -601,27 +649,53 @@ fun AharaneApp(
         }
     }
 
-    LaunchedEffect(activeConversation, authenticated, previewMode) {
+    suspend fun refreshConversationIncrementally(conversation: ChatSummary): List<ChatMessage> {
+        val local = localChatRepository
+        var cursor = local?.newestTimestamp(conversation.key) ?: 0L
+        var page = repository.syncMessages(conversation, afterMillis = cursor, limit = 200)
+        var rounds = 0
+        do {
+            local?.saveMessages(conversation, page.messages, if (cursor == 0L) page.hasOlder else null)
+            cursor = maxOf(cursor, page.messages.maxOfOrNull { it.timestampMillis } ?: cursor)
+            rounds += 1
+            if (!page.hasNewer || page.messages.isEmpty() || rounds >= 5) break
+            page = repository.syncMessages(conversation, afterMillis = cursor, limit = 200)
+        } while (true)
+        return local?.messages(conversation.key)
+            ?: (activeMessages + page.messages).distinctBy { it.messageId }.sortedBy { it.timestampMillis }
+    }
+
+    LaunchedEffect(activeConversation?.key, authenticated, previewMode, serverReachable, localChatRepository) {
         conversationSearchRequestId += 1
         conversationSearchResults = null
         val conversation = activeConversation ?: return@LaunchedEffect
-        if (!previewMode && authenticated) {
-            try {
-                activeMessages = repository.messages(conversation)
-            } catch (error: Exception) {
-                serverError = error.message ?: "Could not load this conversation."
-                activeMessages = emptyList()
+        if (previewMode) return@LaunchedEffect
+        val local = localChatRepository
+        if (local != null) {
+            runCatching {
+                activeMessages = local.messages(conversation.key)
+                hasOlderMessages = local.hasOlderMessages(conversation.key)
+            }.onFailure {
+                localChatStorageError = it.message ?: "Could not load the encrypted conversation cache."
+            }
+        }
+        if (authenticated && serverReachable) {
+            runCatching {
+                activeMessages = refreshConversationIncrementally(conversation)
+                hasOlderMessages = localChatRepository?.hasOlderMessages(conversation.key) ?: hasOlderMessages
+            }.onFailure {
+                // Preserve the valid cached history when a sync request fails.
+                serverError = it.message ?: "Could not sync this conversation."
             }
         }
     }
 
-    // Keep the visible native dashboard/inbox fresh while the app is open.
-    // This uses the existing authenticated API and does not open a WhatsApp
-    // socket or send presence/read-receipt events.
-    LaunchedEffect(authenticated, previewMode, accountName, activeConversation?.key) {
+    // A modest foreground refresh synchronises only message deltas, not full history.
+    // This path does not call WhatsApp presence or read-receipt APIs.
+    LaunchedEffect(authenticated, previewMode, accountName, activeConversation?.key, localChatRepository) {
         if (!authenticated || previewMode) return@LaunchedEffect
         while (true) {
-            delay(20_000)
+            delay(60_000)
             try {
                 runtime = repository.runtimeSnapshot()
                 serverReachable = true
@@ -635,13 +709,16 @@ fun AharaneApp(
             val openConversation = activeConversation
             val account = openConversation?.key?.account ?: ChatAccount.valueOf(accountName)
             val failures = mutableListOf<String>()
-            runCatching { repository.chats(account) }
-                .onSuccess { chatsByAccount[account] = it }
-                .onFailure { failures += "Inbox: ${it.message ?: "unavailable"}" }
+            runCatching {
+                val rows = repository.chats(account)
+                chatsByAccount[account] = rows
+                localChatRepository?.saveConversations(rows)
+            }.onFailure { failures += "Inbox: ${it.message ?: "unavailable"}" }
             if (openConversation != null) {
-                runCatching { repository.messages(openConversation) }
-                    .onSuccess { activeMessages = it }
-                    .onFailure { failures += "Conversation: ${it.message ?: "unavailable"}" }
+                runCatching {
+                    activeMessages = refreshConversationIncrementally(openConversation)
+                    hasOlderMessages = localChatRepository?.hasOlderMessages(openConversation.key) ?: hasOlderMessages
+                }.onFailure { failures += "Conversation sync: ${it.message ?: "unavailable"}" }
             }
             runCatching { repository.updateStatus() }
                 .onSuccess { updateStatus = it }
@@ -994,14 +1071,14 @@ fun AharaneApp(
     val selectedFilter = ChatFilter.valueOf(filterName)
     val connected = authenticated && !previewMode && serverReachable
 
-    LaunchedEffect(selectedAccount, connected, previewMode) {
+    LaunchedEffect(selectedAccount, connected, previewMode, chatAppearanceRevision) {
+        chatAppearance = chatAppearanceStore.resolve(selectedAccount).toJson()
         if (connected) {
             try {
                 val visibility = repository.visibility(selectedAccount)
                 showIndividualChats = visibility.optJSONObject("individuals")?.optString("mode") != "selected"
                 showGroupChats = visibility.optJSONObject("groups")?.optString("mode") != "selected"
                 starredPreviews = repository.starredPreviews(selectedAccount)
-                chatAppearance = repository.chatAppearance()
             } catch (error: Exception) {
                 serverError = error.message ?: "Could not load chat preferences."
             }
@@ -1929,23 +2006,29 @@ fun AharaneApp(
                             }
                         },
                         onChatAppearanceChange = { theme, avatars, previews, timestamps ->
-                            if (connected) {
-                                connectionScope.launch {
-                                    try {
-                                        val updated = repository.chatAppearance()
-                                            .put("theme", theme)
-                                            .put("showAvatars", avatars)
-                                            .put("showPreviews", previews)
-                                            .put("showTimestamps", timestamps)
-                                        repository.saveChatAppearance(updated)
-                                        chatAppearance = updated
-                                    } catch (error: Exception) {
-                                        Toast.makeText(context, error.message ?: "Chat appearance could not be saved.", Toast.LENGTH_LONG).show()
-                                    }
-                                }
+                            runCatching {
+                                chatAppearanceStore.setField(selectedAccount, null, "theme", theme)
+                                chatAppearanceStore.setField(selectedAccount, null, "showAvatars", avatars.toString())
+                                chatAppearanceStore.setField(selectedAccount, null, "showPreviews", previews.toString())
+                                chatAppearanceStore.setField(selectedAccount, null, "showTimestamps", timestamps.toString())
+                                chatAppearance = chatAppearanceStore.resolve(selectedAccount).toJson()
+                                chatAppearanceRevision += 1
+                            }.onFailure {
+                                Toast.makeText(context, it.message ?: "Chat appearance could not be saved.", Toast.LENGTH_LONG).show()
                             }
                         },
-                        onChatMessageSizeChanged = onChatMessageSizeChanged
+                        onChatMessageSizeChanged = {
+                            onChatMessageSizeChanged(it)
+                            chatAppearanceStore.setField(selectedAccount, null, "messageSize", it.toString())
+                            chatAppearanceRevision += 1
+                        },
+                        appearanceStore = chatAppearanceStore,
+                        appearanceRevision = chatAppearanceRevision,
+                        cachedConversations = chatsByAccount[selectedAccount].orEmpty(),
+                        onAppearanceChanged = {
+                            chatAppearanceRevision += 1
+                            chatAppearance = chatAppearanceStore.resolve(selectedAccount).toJson()
+                        }
                     )
                 }
             }

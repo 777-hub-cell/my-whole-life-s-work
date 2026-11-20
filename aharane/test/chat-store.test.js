@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createChatStore } from '../src/chat-store.js'
@@ -443,9 +444,25 @@ test('idempotent text send intents survive restart and never resend an uncertain
       { state: 'sending', messageId: '' }
     )
 
+    const persisted = JSON.parse(await readFile(join(dir, 'chats', 'private.send-keys.json'), 'utf8'))
+    const expectedPayloadHash = createHash('sha256')
+      .update(JSON.stringify({ jid, text: 'hello', quotedMessageId: '' }))
+      .digest('hex')
+    assert.equal(persisted[clientMessageId].payloadHash, expectedPayloadHash)
+    assert.equal(persisted[clientMessageId].jid, jid)
+
     const afterProcessRestart = createChatStore({ dataDir: dir, logger: { warn() {} } })
     await afterProcessRestart.init()
+    let replayedIntent
+    try {
+      replayedIntent = await afterProcessRestart.beginIdempotentSend(
+        'private', { clientMessageId, jid, text: 'hello', quotedMessageId: '' }
+      )
+    } catch (error) {
+      throw new Error('Same-content retry after restart failed: ' + error.message, { cause: error })
+    }
     assert.deepEqual(
+      replayedIntent,
       await afterProcessRestart.beginIdempotentSend('private', { clientMessageId, jid, text: 'hello', quotedMessageId: '' }),
       { state: 'uncertain', messageId: '' }
     )

@@ -1127,7 +1127,7 @@ accountRuntime = createAccountRuntime({
       if (key?.fromMe === false || (existing.directionKnown !== false && existing.fromMe === false)) {
         // A message deleted by the other participant stays in Aharane Hub.
         // Preserve its body and media reference, with a visible deleted marker.
-        await chatStore.markMessageDeletedRemotely(sessionId, jid, messageId)
+        await chatStore.markMessageDeletedRemotely(sessionId, jid, messageId, key?.fromMe)
       } else if (key?.fromMe === true || (existing.directionKnown !== false && existing.fromMe === true)) {
         // Keep the existing behaviour for the account owner's own deleted messages.
         await chatStore.deleteMessage(sessionId, jid, messageId)

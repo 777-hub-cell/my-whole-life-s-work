@@ -41,7 +41,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -51,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import com.aharane.studio.core.design.StudioPalette
 import com.aharane.studio.core.model.ChatMessage
 import com.aharane.studio.core.model.ChatSummary
@@ -61,6 +67,10 @@ import android.media.MediaPlayer
 import android.media.PlaybackParams
 import android.os.Build
 import java.io.File
+import android.graphics.BitmapFactory
+import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -79,6 +89,10 @@ fun ConversationScreen(
     messages: List<ChatMessage>,
     connected: Boolean,
     mediaServerAvailable: Boolean = connected,
+    appearance: ChatAppearance = ChatAppearance(),
+    hasOlderMessages: Boolean = false,
+    loadingOlderMessages: Boolean = false,
+    onLoadOlderMessages: () -> Unit = {},
     onBack: () -> Unit,
     onSend: (String, ChatMessage?) -> Unit,
     onAttach: () -> Unit = {},

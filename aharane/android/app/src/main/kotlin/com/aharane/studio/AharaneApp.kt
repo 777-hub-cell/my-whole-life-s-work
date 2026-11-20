@@ -409,8 +409,9 @@ fun AharaneApp(
                     isVoiceNote = true,
                     durationSeconds = recorded.durationSeconds
                 )
-                activeMessages = repository.messages(conversation)
-                chatsByAccount[conversation.key.account] = repository.chats(conversation.key.account)
+                activeMessages = refreshConversationIncrementally(conversation)
+                chatsByAccount[conversation.key.account] = localChatRepository?.saveConversations(repository.chats(conversation.key.account))
+                    ?: repository.chats(conversation.key.account)
                 Toast.makeText(context, "Voice note sent.", Toast.LENGTH_SHORT).show()
             } catch (error: Exception) {
                 Toast.makeText(context, error.message ?: "Voice note could not be sent.", Toast.LENGTH_LONG).show()
@@ -1497,7 +1498,7 @@ fun AharaneApp(
                             connectionScope.launch {
                                 try {
                                     repository.star(activeConversation!!, message, !message.isStarred)
-                                    activeMessages = repository.messages(activeConversation!!)
+                                    activeMessages = refreshConversationIncrementally(activeConversation!!)
                                     starredPreviews = repository.starredPreviews(activeConversation!!.key.account)
                                     Toast.makeText(
                                         context,
@@ -1541,7 +1542,8 @@ fun AharaneApp(
                                 try {
                                     repository.deleteMessage(activeConversation!!, message)
                                     activeMessages = repository.messages(activeConversation!!)
-                                    chatsByAccount[activeConversation!!.key.account] = repository.chats(activeConversation!!.key.account)
+                                    chatsByAccount[activeConversation!!.key.account] = localChatRepository?.saveConversations(repository.chats(activeConversation!!.key.account))
+                                        ?: repository.chats(activeConversation!!.key.account)
                                     Toast.makeText(context, "Message deleted.", Toast.LENGTH_SHORT).show()
                                 } catch (error: Exception) {
                                     Toast.makeText(context, error.message ?: "Could not delete this message.", Toast.LENGTH_LONG).show()

@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import com.aharane.studio.core.design.AharaneInstrumentSans
 import com.aharane.studio.core.design.StudioPalette
 import com.aharane.studio.core.model.ChatMessage
 import com.aharane.studio.core.model.ChatSummary
@@ -914,7 +915,8 @@ private fun MessageContent(
                 },
                 fontFamily = when (appearance.fontFamily) {
                     "Mono" -> androidx.compose.ui.text.font.FontFamily.Monospace
-                    else -> androidx.compose.ui.text.font.FontFamily.SansSerif
+                    "System" -> androidx.compose.ui.text.font.FontFamily.SansSerif
+                    else -> AharaneInstrumentSans
                 }
             )
         MessageKind.IMAGE, MessageKind.STICKER -> {

@@ -146,7 +146,8 @@ def main():
     tap_label("Close media gallery", content_desc=True, required=False)
     tap_label("Search in conversation", content_desc=True, required=False)
     capture("02c-conversation-search.png", 1)
-    back()
+    back()  # Close the in-conversation search field.
+    back()  # Return from the full-screen conversation to the inbox.
     tap_label("Switch to Public WhatsApp", content_desc=True, required=False)
     capture("02d-public-chats.png", 1)
     tap_label("Switch to Private WhatsApp", content_desc=True, required=False)

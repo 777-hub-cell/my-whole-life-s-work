@@ -716,36 +716,50 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
             .joinToString("") { "%02x".format(it) }
         val chunkBytes = 1024 * 1024
         val totalChunks = (bytes.size + chunkBytes - 1) / chunkBytes
-        val started = api.post(
-            "update/upload/start",
-            JSONObject()
-                .put("updateId", updateId)
-                .put("filename", filename)
-                .put("size", bytes.size)
-                .put("totalChunks", totalChunks)
-                .put("sha256", sha256)
-        )
-        val actualChunkSize = started.optInt("chunkBytes", chunkBytes).takeIf { it > 0 } ?: chunkBytes
-        val actualTotal = started.optInt("totalChunks", totalChunks)
-        require(actualTotal == totalChunks) { "The server returned an unexpected upload layout." }
-        for (index in 0 until totalChunks) {
-            val from = index * actualChunkSize
-            val to = minOf(bytes.size, from + actualChunkSize)
-            require(to > from) { "The upload chunk layout is invalid." }
-            val chunk = bytes.copyOfRange(from, to)
-            api.post(
-                "update/upload/chunk",
+        var uploadStarted = false
+        try {
+            val started = api.post(
+                "update/upload/start",
                 JSONObject()
                     .put("updateId", updateId)
-                    .put("index", index)
-                    .put("data", Base64.encodeToString(chunk, Base64.NO_WRAP))
+                    .put("filename", filename)
+                    .put("size", bytes.size)
+                    .put("totalChunks", totalChunks)
+                    .put("sha256", sha256)
             )
-            onProgress("Uploading package", (index + 1).toFloat() / totalChunks.toFloat())
+            uploadStarted = true
+            val actualChunkSize = started.optInt("chunkBytes", chunkBytes).takeIf { it > 0 } ?: chunkBytes
+            val actualTotal = started.optInt("totalChunks", totalChunks)
+            require(actualTotal == totalChunks) { "The server returned an unexpected upload layout." }
+            for (index in 0 until totalChunks) {
+                val from = index * actualChunkSize
+                val to = minOf(bytes.size, from + actualChunkSize)
+                require(to > from) { "The upload chunk layout is invalid." }
+                val chunk = bytes.copyOfRange(from, to)
+                api.post(
+                    "update/upload/chunk",
+                    JSONObject()
+                        .put("updateId", updateId)
+                        .put("index", index)
+                        .put("data", Base64.encodeToString(chunk, Base64.NO_WRAP))
+                )
+                onProgress("Uploading package", (index + 1).toFloat() / totalChunks.toFloat())
+            }
+            onProgress("Validating manifest and package contents", 0.98f)
+            val result = api.post("update/validate", JSONObject().put("updateId", updateId))
+            uploadStarted = false
+            onProgress("Package validated", 1f)
+            return result
+        } catch (error: Exception) {
+            if (uploadStarted) {
+                // The server refuses to abort a validated package, so this is
+                // safe even when the validation response was lost in transit.
+                runCatching {
+                    api.post("update/upload/abort", JSONObject().put("updateId", updateId))
+                }
+            }
+            throw error
         }
-        onProgress("Validating manifest and package contents", 0.98f)
-        val result = api.post("update/validate", JSONObject().put("updateId", updateId))
-        onProgress("Package validated", 1f)
-        return result
     }
 
     suspend fun removeUpdatePackage(updateId: String) {

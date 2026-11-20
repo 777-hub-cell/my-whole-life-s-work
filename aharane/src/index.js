@@ -2213,6 +2213,79 @@ app.get('/api/files/preview', requireAdmin, async (req, res) => {
   }
 })
 
+app.post('/api/files/diagnostics', requireAdmin, async (req, res) => {
+  let temporary = ''
+  try {
+    const requestedPath = String(req.body?.path || '').trim()
+    const target = await safeSourceTarget(requestedPath, { allowMissing: true })
+    const extension = extname(target.path).toLowerCase()
+    const content = String(req.body?.content ?? '')
+    if (Buffer.byteLength(content, 'utf8') > MAX_SOURCE_FILE_BYTES) {
+      return res.status(413).json({ ok: false, error: 'The editor buffer exceeds the 512 KB diagnostics limit.' })
+    }
+    if (extension === '.json') {
+      try {
+        JSON.parse(content)
+        return res.json({ ok: true, supported: true, diagnostics: [] })
+      } catch (error) {
+        const message = String(error?.message || 'Invalid JSON')
+        const position = Number(message.match(/position\s+(\d+)/i)?.[1] || 0)
+        const before = content.slice(0, position)
+        return res.json({
+          ok: true,
+          supported: true,
+          diagnostics: [{
+            severity: 'error',
+            message: message.slice(0, 240),
+            line: before.split('\n').length,
+            column: before.length - before.lastIndexOf('\n'),
+          }],
+        })
+      }
+    }
+    if (!['.js', '.mjs', '.cjs'].includes(extension)) {
+      return res.json({
+        ok: true,
+        supported: false,
+        reason: 'This file type does not have a syntax checker configured on the Aharane server.',
+        diagnostics: [],
+      })
+    }
+    const checkExtension = extension === '.cjs' ? '.cjs' : '.mjs'
+    temporary = join(UPDATE_DIR, 'editor-diagnostic-' + randomUUID() + checkExtension)
+    await writeFile(temporary, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+    try {
+      await execFileAsync(process.execPath, ['--check', temporary], {
+        cwd: await currentReleaseDirectory(),
+        timeout: 10_000,
+        maxBuffer: 64 * 1024,
+      })
+      return res.json({ ok: true, supported: true, diagnostics: [] })
+    } catch (error) {
+      const output = String(error?.stderr || error?.stdout || error?.message || 'JavaScript syntax check failed.')
+      const location = output.match(/editor-diagnostic-[^:\s]+:(\d+)(?::(\d+))?/)
+      const errorLine = output.split('\n').find(line => /SyntaxError:|Error:/.test(line))
+      return res.json({
+        ok: true,
+        supported: true,
+        diagnostics: [{
+          severity: 'error',
+          message: String(errorLine || output).replaceAll(temporary, target.path).trim().slice(0, 300),
+          line: location ? Number(location[1]) : null,
+          column: location?.[2] ? Number(location[2]) : null,
+        }],
+      })
+    }
+  } catch (error) {
+    res.status(error?.status || 400).json({
+      ok: false,
+      error: String(error?.message || 'Could not run source diagnostics.'),
+    })
+  } finally {
+    if (temporary) await rm(temporary, { force: true }).catch(() => {})
+  }
+})
+
 app.get('/api/files/draft-status', requireAdmin, async (_req, res) => {
   const manual = await readJsonFile(MANUAL_EDIT_STATE_FILE)
   res.json({

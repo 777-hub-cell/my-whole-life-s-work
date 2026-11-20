@@ -10,6 +10,7 @@ import org.gradle.api.tasks.TaskAction
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 abstract class FetchAharaneFontsTask : DefaultTask() {
@@ -118,6 +119,10 @@ androidComponents {
     }
 }
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
@@ -125,5 +130,11 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.icons)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    implementation(libs.androidx.sqlite)
+    implementation(libs.sqlcipher)
+    ksp(libs.room.compiler)
     testImplementation(libs.junit)
+    testImplementation(libs.room.testing)
 }

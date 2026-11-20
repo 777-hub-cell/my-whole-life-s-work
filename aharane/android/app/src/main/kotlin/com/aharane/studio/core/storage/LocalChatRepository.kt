@@ -9,7 +9,16 @@ class LocalChatRepository(context: Context) {
     private val dao = secureDatabase.database.chatDao()
 
     suspend fun saveConversations(rows: List<ChatSummary>) {
-        dao.putConversations(rows.map { it.toRow() })
+        val preserved = rows.map { summary ->
+            val previous = dao.conversation(summary.key.account.apiValue, summary.key.jid)
+            summary.toRow().copy(
+                lastSyncAtMillis = previous?.lastSyncAtMillis ?: 0L,
+                newestSyncedTimestampMillis = previous?.newestSyncedTimestampMillis ?: 0L,
+                oldestSyncedTimestampMillis = previous?.oldestSyncedTimestampMillis ?: 0L,
+                hasOlderMessages = previous?.hasOlderMessages ?: true
+            )
+        }
+        dao.putConversations(preserved)
     }
 
     suspend fun conversations(account: ChatAccount): List<ChatSummary> =
@@ -73,6 +82,19 @@ class LocalChatRepository(context: Context) {
 
     suspend fun recordMediaCache(key: ConversationKey, messageId: String, relativePath: String, sha256: String, size: Long) {
         dao.setCachedMedia(key.account.apiValue, key.jid, messageId, relativePath, sha256, size)
+    }
+
+    suspend fun cachedMediaInfo(key: ConversationKey, messageId: String): ChatMessageRow? =
+        dao.message(key.account.apiValue, key.jid, messageId)
+
+    suspend fun cachedMediaForAccount(account: ChatAccount): List<ChatMessageRow> =
+        dao.conversations(account.apiValue).flatMap { conversation ->
+            dao.messages(account.apiValue, conversation.jid).filter { !it.cachedMediaPath.isNullOrBlank() }
+        }
+
+    suspend fun clearLocalConversation(key: ConversationKey) {
+        dao.clearMessages(key.account.apiValue, key.jid)
+        dao.clearConversation(key.account.apiValue, key.jid)
     }
 
     suspend fun cachedMediaBytes(account: ChatAccount): Long = dao.cachedMediaBytes(account.apiValue) ?: 0L

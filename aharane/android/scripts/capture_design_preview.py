@@ -209,7 +209,7 @@ def main():
     capture("06a-chat-settings.png", 1)
     tap_label("Open Appearance Studio", scroll_to_find=True)
     capture("06b-chat-appearance-studio.png", 1)
-    tap_label("Photo", required=False)
+    tap_label("Photo", scroll_to_find=True, required=False)
     tap_label("Choose photo", scroll_to_find=True, required=False)
     if tap_label("Choose photo", required=False):
         capture("06c-android-photo-picker.png", 1)
@@ -221,7 +221,7 @@ def main():
     tap_label("Apply to", scroll_to_find=True)
     tap_label("Conversation", scroll_to_find=True)
     capture("06f-conversation-override-selector.png")
-    tap_label("Mira", required=False)
+    tap_label("Mira", scroll_to_find=True, required=False)
     capture("06g-per-conversation-override.png")
     back()
     back()

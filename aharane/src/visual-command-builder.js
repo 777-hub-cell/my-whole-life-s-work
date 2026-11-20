@@ -16,12 +16,12 @@ const ports = (inputs, outputs) => ({ inputs, outputs })
 
 export const VISUAL_NODE_LIBRARY = Object.freeze([
   { category: 'Triggers and events', nodes: [
-    { type: 'trigger.command', name: 'Command trigger', description: 'Start when an allowed WhatsApp user sends this command.', ports: ports([], [
+    { type: 'trigger.command', name: 'Command trigger', description: 'Start on an allowed WhatsApp command; Private always stays in the owner self-chat.', ports: ports([], [
       { id: 'next', label: 'Next', type: 'exec' }, { id: 'messageText', label: 'Message text', type: 'string' },
       { id: 'message', label: 'Original message', type: 'message' }, { id: 'sender', label: 'Sender JID', type: 'string' },
       { id: 'chat', label: 'Chat JID', type: 'string' }, { id: 'arguments', label: 'Arguments', type: 'string' },
     ]) },
-    { type: 'trigger.message', name: 'Message received', description: 'Start on a direct message from a sender allowed by the Public WhatsApp account.', ports: ports([], [
+    { type: 'trigger.message', name: 'Message received', description: 'Start on an allowed Public WhatsApp direct message or explicitly permitted group message.', ports: ports([], [
       { id: 'next', label: 'Next', type: 'exec' }, { id: 'messageText', label: 'Message text', type: 'string' },
       { id: 'message', label: 'Original message', type: 'message' }, { id: 'sender', label: 'Sender JID', type: 'string' },
       { id: 'chat', label: 'Chat JID', type: 'string' },
@@ -31,10 +31,21 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
     { type: 'message.sendText', name: 'Send text', description: 'Send text to the chat that triggered this workflow.', ports: ports([execIn, { id: 'text', label: 'Text', type: 'string' }], [execOut, { id: 'sent', label: 'Sent message', type: 'message' }]) },
     { type: 'message.replyText', name: 'Reply to message', description: 'Reply to the triggering WhatsApp message with a quote.', ports: ports([execIn, { id: 'text', label: 'Text', type: 'string' }], [execOut, { id: 'sent', label: 'Sent message', type: 'message' }]) },
     { type: 'message.react', name: 'React to message', description: 'React to the triggering message with an emoji.', ports: ports([execIn, { id: 'emoji', label: 'Emoji', type: 'string' }], [execOut]) },
+    { type: 'media.forwardOriginal', name: 'Forward original message', description: 'Forward the original WhatsApp message, including media it already contains.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Forwarded message', type: 'message' }]) },
     { type: 'message.sendLocation', name: 'Send location', description: 'Send a WhatsApp location pin with validated coordinates.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Location message', type: 'message' }]) },
   ] },
   { category: 'Contacts and chats', nodes: [
     { type: 'contact.sendCard', name: 'Send contact card', description: 'Send a WhatsApp vCard using a display name and phone number.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Contact message', type: 'message' }]) },
+  ] },
+  { category: 'Groups and participants', nodes: [
+    { type: 'group.getInfo', name: 'Get group information', description: 'Read metadata for the group that triggered this workflow.', ports: ports([execIn], [execOut, { id: 'subject', label: 'Group name', type: 'string' }, { id: 'participantCount', label: 'Participants', type: 'number' }]) },
+    { type: 'group.updateSubject', name: 'Change group name', description: 'Change the current group name (Public Owner only).', ports: ports([execIn], [execOut]) },
+    { type: 'group.updateDescription', name: 'Change group description', description: 'Change the current group description (Public Owner only).', ports: ports([execIn], [execOut]) },
+    { type: 'group.participantsUpdate', name: 'Manage participants', description: 'Add, remove, promote or demote listed group participants (Public Owner only).', ports: ports([execIn], [execOut]) },
+    { type: 'group.settingUpdate', name: 'Change group settings', description: 'Set who can send messages or edit group information (Public Owner only).', ports: ports([execIn], [execOut]) },
+  ] },
+  { category: 'Media and attachments', nodes: [
+    { type: 'media.forwardOriginal', name: 'Forward original message', description: 'Forward the triggering message with its original supported media payload.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Forwarded message', type: 'message' }]) },
   ] },
   { category: 'Interactive messages', nodes: [
     { type: 'message.sendButtons', name: 'Send buttons', description: 'Send up to three interactive reply buttons.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Interactive message', type: 'message' }]) },
@@ -59,11 +70,27 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
     { type: 'counter.increment', name: 'Increment counter', description: 'Increase a persistent counter for this command.', ports: ports([execIn], [execOut, { id: 'value', label: 'Count', type: 'number' }]) },
     { type: 'value.toText', name: 'Number to text', description: 'Convert a numeric output, such as a counter, into text.', ports: ports([{ id: 'value', label: 'Number', type: 'number' }], [{ id: 'value', label: 'Text', type: 'string' }]) },
   ] },
+  { category: 'Timing and scheduling', nodes: [
+    { type: 'flow.delay', name: 'Wait', description: 'Pause this workflow run for up to 10 seconds; this is not a persistent scheduled job.', ports: ports([execIn], [execOut]) },
+  ] },
   { category: 'Flow control', nodes: [
-    { type: 'flow.delay', name: 'Wait', description: 'Wait for up to 10 seconds before continuing.', ports: ports([execIn], [execOut]) },
     { type: 'flow.repeat', name: 'Repeat', description: 'Run a body a fixed number of times (maximum 10).', ports: ports([execIn], [{ id: 'body', label: 'Body', type: 'exec' }, { id: 'next', label: 'Next', type: 'exec' }]) },
     { type: 'flow.repeatEnd', name: 'End repeat body', description: 'Return to Repeat for its next iteration.', ports: ports([execIn], []) },
     { type: 'flow.end', name: 'End workflow', description: 'Stop this workflow run.', ports: ports([execIn], []) },
+  ] },
+  { category: 'Moderation and administration', nodes: [
+    { type: 'moderation.blockContact', name: 'Block contact', description: 'Block a contact on this WhatsApp account (Owner only).', ports: ports([execIn], [execOut]) },
+    { type: 'moderation.unblockContact', name: 'Unblock contact', description: 'Unblock a contact on this WhatsApp account (Owner only).', ports: ports([execIn], [execOut]) },
+  ] },
+  { category: 'WhatsApp account and profile', nodes: [
+    { type: 'profile.updateName', name: 'Change profile name', description: 'Set this WhatsApp account profile name (Owner only).', ports: ports([execIn], [execOut]) },
+    { type: 'profile.updateStatus', name: 'Change profile status', description: 'Set this WhatsApp account status text (Owner only).', ports: ports([execIn], [execOut]) },
+  ] },
+  { category: 'Statuses and newsletters', nodes: [
+    { type: 'newsletter.create', name: 'Create newsletter', description: 'Create a WhatsApp newsletter (Owner only).', ports: ports([execIn], [execOut, { id: 'newsletterJid', label: 'Newsletter JID', type: 'string' }]) },
+    { type: 'newsletter.follow', name: 'Follow newsletter', description: 'Follow a specified newsletter (Owner only).', ports: ports([execIn], [execOut]) },
+    { type: 'newsletter.unfollow', name: 'Unfollow newsletter', description: 'Unfollow a specified newsletter (Owner only).', ports: ports([execIn], [execOut]) },
+    { type: 'newsletter.publishText', name: 'Publish newsletter text', description: 'Publish text to a specified newsletter (Owner only).', ports: ports([execIn], [execOut, { id: 'sent', label: 'Published message', type: 'message' }]) },
   ] },
 ])
 

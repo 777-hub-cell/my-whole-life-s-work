@@ -133,6 +133,13 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
         )
     }
 
+    suspend fun studioSettings(): JSONObject =
+        api.get("settings").optJSONObject("settings") ?: JSONObject()
+
+    suspend fun saveStudioSettings(settings: JSONObject) {
+        api.put("settings", JSONObject().put("settings", settings))
+    }
+
     suspend fun environment(): List<ServerEnvironmentValue> {
         val rows = api.get("env").optJSONArray("env") ?: JSONArray()
         return buildList {
@@ -375,6 +382,32 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
                 .put("name", name)
                 .put("type", "folder")
         )
+    }
+
+    suspend fun duplicateSourceEntry(entry: ServerFileEntry, newName: String) {
+        require(newName.isNotBlank()) { "Enter a name for the copy." }
+        val parent = entry.path.substringBeforeLast('/', "")
+        if (!entry.isDirectory) {
+            val source = previewFile(entry.path)
+            createFile(parent, newName, source.content)
+            return
+        }
+        val targetRoot = if (parent.isBlank()) newName else "$parent/$newName"
+        createFolder(parent, newName)
+        val descendants = allFiles().filter { it.path.startsWith(entry.path.trimEnd('/') + "/") }
+            .sortedBy { it.path.count { character -> character == '/' } }
+        descendants.filter { it.isDirectory }.forEach { folder ->
+            val relative = folder.path.removePrefix(entry.path.trimEnd('/') + "/")
+            createFolder(targetRoot, relative)
+        }
+        descendants.filterNot { it.isDirectory }.forEach { file ->
+            val relative = file.path.removePrefix(entry.path.trimEnd('/') + "/")
+            val targetParent = relative.substringBeforeLast('/', "")
+            val targetName = relative.substringAfterLast('/')
+            val targetDir = if (targetParent.isBlank()) targetRoot else "$targetRoot/$targetParent"
+            val source = previewFile(file.path)
+            createFile(targetDir, targetName, source.content)
+        }
     }
 
     suspend fun renameFile(path: String, newName: String) {

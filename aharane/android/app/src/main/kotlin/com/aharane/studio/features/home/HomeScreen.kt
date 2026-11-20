@@ -10,7 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -19,7 +19,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.aharane.studio.core.design.*
 import com.aharane.studio.core.model.ChatAccount
 
@@ -28,10 +27,16 @@ fun HomeScreen(
     onOpenChats: () -> Unit,
     onOpenMore: () -> Unit,
     onOpenConfiguration: () -> Unit,
-    onOpenActivity: () -> Unit = onOpenMore
+    onOpenActivity: () -> Unit = onOpenMore,
+    serviceConnected: Boolean = false,
+    serviceSubtitle: String = "Not connected to Aharane service",
+    privateAccountStatus: String = "Status not loaded",
+    publicAccountStatus: String = "Status not loaded",
+    privateActionLabel: String = "Link account",
+    publicActionLabel: String = "Link account",
+    onAccountAction: (ChatAccount) -> Unit = {},
+    recentActivity: List<String> = emptyList()
 ) {
-    var pairingAccount by remember { mutableStateOf<ChatAccount?>(null) }
-
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
@@ -56,7 +61,7 @@ fun HomeScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            "Not connected to Aharane service",
+                            serviceSubtitle,
                             color = StudioPalette.Muted,
                             fontSize = 12.5.sp,
                             lineHeight = 17.sp
@@ -64,15 +69,18 @@ fun HomeScreen(
                     }
                     Row(
                         Modifier.clip(RoundedCornerShape(99.dp))
-                            .background(Color(0xFFF8E8E6))
+                            .background(if (serviceConnected) Color(0xFFE1F3EB) else Color(0xFFF8E8E6))
                             .padding(horizontal = 11.dp, vertical = 7.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(7.dp)
                     ) {
-                        Box(Modifier.size(8.dp).clip(CircleShape).background(StudioPalette.Bad))
+                        Box(
+                            Modifier.size(8.dp).clip(CircleShape)
+                                .background(if (serviceConnected) StudioPalette.Accent else StudioPalette.Bad)
+                        )
                         Text(
-                            "Offline",
-                            color = StudioPalette.Bad,
+                            if (serviceConnected) "Online" else "Offline",
+                            color = if (serviceConnected) StudioPalette.Accent else StudioPalette.Bad,
                             fontSize = 12.5.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -94,14 +102,16 @@ fun HomeScreen(
             StudioCard {
                 AccountRow(
                     account = ChatAccount.PRIVATE,
-                    state = "Status not loaded",
-                    onLink = { pairingAccount = ChatAccount.PRIVATE }
+                    state = privateAccountStatus,
+                    actionLabel = privateActionLabel,
+                    onAction = { onAccountAction(ChatAccount.PRIVATE) }
                 )
                 StudioDivider()
                 AccountRow(
                     account = ChatAccount.PUBLIC,
-                    state = "Not paired",
-                    onLink = { pairingAccount = ChatAccount.PUBLIC }
+                    state = publicAccountStatus,
+                    actionLabel = publicActionLabel,
+                    onAction = { onAccountAction(ChatAccount.PUBLIC) }
                 )
             }
         }
@@ -111,7 +121,7 @@ fun HomeScreen(
             StudioCard {
                 StudioRow(
                     title = "Configuration",
-                    subtitle = "Private Owner · Not loaded · Public Owner · Not loaded · Public bot number · Not loaded",
+                    subtitle = "Private Owner · Public Owner · Public bot number",
                     icon = Icons.Outlined.Tune,
                     trailing = "›",
                     onClick = onOpenConfiguration,
@@ -120,56 +130,55 @@ fun HomeScreen(
             }
         }
 
-        item { StudioSectionHeading("Recent activity") }
         item {
-            StudioCard {
-                Box(Modifier.fillMaxWidth().height(26.dp))
-            }
-        }
-        item { Spacer(Modifier.height(10.dp)) }
-    }
-
-    if (pairingAccount != null) {
-        Dialog(onDismissRequest = { pairingAccount = null }) {
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                    .background(StudioPalette.Surface).padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(11.dp)
+            Row(
+                Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "Link ${pairingAccount!!.label} account",
+                    "Recent activity",
                     color = StudioPalette.Ink,
+                    fontFamily = androidx.compose.material3.MaterialTheme.typography.titleLarge.fontFamily,
                     fontSize = 17.sp,
+                    lineHeight = 22.sp,
                     fontWeight = FontWeight.Bold
                 )
+                Spacer(Modifier.weight(1f))
                 Text(
-                    "The native app is not connected to your Aharane server yet. Account pairing will work after secure server linking is added.",
-                    color = StudioPalette.Muted,
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp
+                    "View all",
+                    color = StudioPalette.Accent,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clickable(onClick = onOpenActivity).padding(5.dp)
                 )
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    StudioActionButton(
-                        "Open configuration",
-                        compact = true,
-                        onClick = {
-                            pairingAccount = null
-                            onOpenConfiguration()
-                        }
+            }
+        }
+        item {
+            StudioCard {
+                if (recentActivity.isEmpty()) {
+                    Text(
+                        "No recent activity.",
+                        color = StudioPalette.Muted,
+                        fontSize = 13.sp,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 18.dp)
                     )
-                    Spacer(Modifier.width(8.dp))
-                    StudioActionButton(
-                        "Close",
-                        compact = true,
-                        primary = true,
-                        onClick = { pairingAccount = null }
-                    )
+                } else {
+                    recentActivity.take(3).forEachIndexed { index, line ->
+                        if (index > 0) StudioDivider()
+                        Text(
+                            line,
+                            color = StudioPalette.Ink,
+                            fontSize = 12.5.sp,
+                            lineHeight = 18.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)
+                        )
+                    }
                 }
             }
         }
+        item { Spacer(Modifier.height(10.dp)) }
     }
 }
 
@@ -177,7 +186,8 @@ fun HomeScreen(
 private fun AccountRow(
     account: ChatAccount,
     state: String,
-    onLink: () -> Unit
+    actionLabel: String,
+    onAction: () -> Unit
 ) {
     val isPrivate = account == ChatAccount.PRIVATE
     Row(
@@ -200,7 +210,8 @@ private fun AccountRow(
             }
             Box(
                 Modifier.align(Alignment.BottomEnd).size(12.dp)
-                    .clip(CircleShape).background(StudioPalette.Bad)
+                    .clip(CircleShape)
+                    .background(if (state.equals("Connected", true)) StudioPalette.Accent else StudioPalette.Bad)
                     .border(1.5.dp, StudioPalette.Surface, CircleShape)
             )
         }
@@ -216,6 +227,6 @@ private fun AccountRow(
             )
             Text(state, color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 17.sp)
         }
-        StudioActionButton("Link account", compact = true, primary = true, onClick = onLink)
+        StudioActionButton(actionLabel, compact = true, primary = actionLabel == "Link account", onClick = onAction)
     }
 }

@@ -110,7 +110,7 @@ private fun ChatSummary.toRow() = ChatConversationRow(
 )
 
 private fun ChatConversationRow.toModel() = ChatSummary(
-    key = ConversationKey(ChatAccount.fromApiValue(account) ?: ChatAccount.PRIVATE, jid),
+    key = ConversationKey(if (account == ChatAccount.PUBLIC.apiValue) ChatAccount.PUBLIC else ChatAccount.PRIVATE, jid),
     title = title.ifBlank { jid.substringBefore('@') },
     lastMessagePreview = lastMessagePreview, lastMessageAtMillis = lastMessageAtMillis,
     unreadCount = unreadCount, isGroup = isGroup, isArchived = isArchived, isPinned = isPinned,

@@ -50,6 +50,8 @@ import com.aharane.studio.core.model.MessageStatus
 import com.aharane.studio.core.network.AharaneConnectionManager
 import com.aharane.studio.core.notifications.AharaneNotificationScheduler
 import com.aharane.studio.core.network.AharaneRepository
+import com.aharane.studio.core.network.AharaneUpdatePackage
+import com.aharane.studio.core.network.EditorDiagnostic
 import com.aharane.studio.core.network.ServerAccountState
 import com.aharane.studio.core.network.ServerActivityEntry
 import com.aharane.studio.core.network.ServerEnvironmentValue
@@ -224,12 +226,34 @@ fun AharaneApp(
     var fileDirectory by rememberSaveable { mutableStateOf("") }
 
     var runtime by remember { mutableStateOf<ServerRuntimeSnapshot?>(null) }
+    var serverReachable by remember { mutableStateOf(false) }
     var owners by remember { mutableStateOf(ServerOwnerSettings()) }
     var environmentRows by remember { mutableStateOf<List<ServerEnvironmentValue>>(emptyList()) }
     var activityRows by remember { mutableStateOf<List<ServerActivityEntry>>(emptyList()) }
     var storageSnapshot by remember { mutableStateOf<ServerStorageSnapshot?>(null) }
     var serverFiles by remember { mutableStateOf<List<ServerFileEntry>>(emptyList()) }
     var fileDraft by remember { mutableStateOf<ServerFileTree?>(null) }
+    var updatePackages by remember(previewMode) {
+        mutableStateOf(
+            if (previewMode) listOf(
+                AharaneUpdatePackage(
+                    updateId = "preview-demo-package",
+                    filename = "aharane-preview-update.zip",
+                    sizeBytes = 1_245_000L,
+                    status = "validated",
+                    version = "2.4.0",
+                    createdAt = "Preview sample",
+                    validatedAt = "Preview sample",
+                    fileCount = 148
+                )
+            ) else emptyList()
+        )
+    }
+    var updateStatus by remember { mutableStateOf(JSONObject()) }
+    var packageProgressLabel by remember { mutableStateOf("") }
+    var packageProgress by remember { mutableFloatStateOf(0f) }
+    var packageError by remember { mutableStateOf("") }
+    var activePackageId by remember { mutableStateOf<String?>(null) }
     val chatsByAccount = remember { mutableStateMapOf<ChatAccount, List<ChatSummary>>() }
     var showIndividualChats by remember { mutableStateOf(true) }
     var showGroupChats by remember { mutableStateOf(true) }
@@ -410,6 +434,9 @@ fun AharaneApp(
         serverFiles = repository.allFiles()
         chatsByAccount[ChatAccount.PRIVATE] = repository.chats(ChatAccount.PRIVATE)
         chatsByAccount[ChatAccount.PUBLIC] = repository.chats(ChatAccount.PUBLIC)
+        updatePackages = repository.updatePackages()
+        updateStatus = repository.updateStatus()
+        serverReachable = true
     }
 
     LaunchedEffect(authenticated, previewMode) {
@@ -425,6 +452,8 @@ fun AharaneApp(
             try {
                 reloadServerData()
             } catch (error: Exception) {
+                serverReachable = false
+                runtime = null
                 serverError = error.message ?: "Could not load Aharane data."
             } finally {
                 busy = false
@@ -456,13 +485,16 @@ fun AharaneApp(
             try {
                 val openConversation = activeConversation
                 val account = openConversation?.key?.account ?: ChatAccount.valueOf(accountName)
+                runtime = repository.runtimeSnapshot()
+                serverReachable = true
                 chatsByAccount[account] = repository.chats(account)
                 if (openConversation != null) {
                     activeMessages = repository.messages(openConversation)
-                } else {
-                    runtime = repository.runtimeSnapshot()
                 }
+                updateStatus = repository.updateStatus()
             } catch (error: Exception) {
+                serverReachable = false
+                runtime = null
                 serverError = error.message ?: "Aharane refresh failed."
             }
         }
@@ -656,7 +688,7 @@ fun AharaneApp(
     val currentDestination = MainDestination.valueOf(destinationName)
     val selectedAccount = ChatAccount.valueOf(accountName)
     val selectedFilter = ChatFilter.valueOf(filterName)
-    val connected = authenticated && !previewMode
+    val connected = authenticated && !previewMode && serverReachable
 
     LaunchedEffect(selectedAccount, connected, previewMode) {
         if (connected) {
@@ -679,7 +711,7 @@ fun AharaneApp(
         ChatAccount.PUBLIC -> runtime?.publicAccount
     }
     val currentChats = if (previewMode) DesignPreviewFixtures.conversations else chatsByAccount[selectedAccount].orEmpty()
-    val studioFileEntries = if (previewMode) {
+    val sourceFileEntries = if (previewMode) {
         DesignPreviewFixtures.files.map { StudioFileEntry(it.name, it.path, it.isDirectory, it.sizeLabel) }
     } else {
         serverFiles.map { entry ->
@@ -692,6 +724,17 @@ fun AharaneApp(
             )
         }
     }
+    val studioFileEntries = sourceFileEntries + listOf(
+        StudioFileEntry("Update packages", "Update packages", true)
+    ) + updatePackages.map { pkg ->
+        StudioFileEntry(
+            name = pkg.filename,
+            path = "Update packages/${pkg.updateId}.zip",
+            isDirectory = false,
+            sizeLabel = "${pkg.sizeLabel} · v${pkg.version}",
+            modifiedLabel = pkg.validatedAt ?: pkg.createdAt
+        )
+    }
     val environmentValues = if (previewMode) emptyList() else environmentRows.map {
         EnvironmentValue(it.key, it.value, it.readOnly, it.type, it.secret)
     }
@@ -703,6 +746,18 @@ fun AharaneApp(
     ) {
         if (!editorOpen && activeConversation == null) {
             StudioHeader()
+        }
+
+        if (previewMode) {
+            Row(
+                Modifier.fillMaxWidth().background(StudioPalette.Soft)
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Text("PREVIEW", color = StudioPalette.Accent, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                Text("Sample data only · actions never reach your server", color = StudioPalette.Ink, fontSize = 11.5.sp)
+            }
         }
 
         if (serverError.isNotBlank() && connected) {
@@ -986,12 +1041,12 @@ fun AharaneApp(
                         onOpenMore = { destinationName = MainDestination.MORE.name; morePage = "more" },
                         onOpenConfiguration = { configurationOpen = true },
                         onOpenActivity = { destinationName = MainDestination.MORE.name; morePage = "activity" },
-                        serviceConnected = runtime != null && !previewMode,
-                        serviceSubtitle = if (previewMode) "Preview only" else if (runtime != null) "Connected to Aharane server" else "Not connected to Aharane service",
+                        serviceConnected = serverReachable && !previewMode,
+                        serviceSubtitle = if (previewMode) "Preview only" else if (connected) "Connected to Aharane server" else "Not connected to Aharane service",
                         privateAccountStatus = if (previewMode) "Preview session" else runtime?.privateAccount?.let(::accountStateLabel) ?: "Status not loaded",
                         publicAccountStatus = if (previewMode) "Preview session" else runtime?.publicAccount?.let(::accountStateLabel) ?: "Status not loaded",
-                        privateActionLabel = runtime?.privateAccount?.let(::accountActionLabel) ?: "Link account",
-                        publicActionLabel = runtime?.publicAccount?.let(::accountActionLabel) ?: "Link account",
+                        privateActionLabel = if (previewMode) "Preview" else runtime?.privateAccount?.let(::accountActionLabel) ?: "Link account",
+                        publicActionLabel = if (previewMode) "Preview" else runtime?.publicAccount?.let(::accountActionLabel) ?: "Link account",
                         onAccountAction = { target ->
                             if (previewMode) {
                                 pairingAccount = target
@@ -1095,6 +1150,44 @@ fun AharaneApp(
                         onUpload = { uploadLauncher.launch(arrayOf("text/*", "application/json")) },
                         onExportSource = ::exportSource,
                         onEntryAction = ::onFileEntryAction,
+                        updatePackages = updatePackages,
+                        updateStatusLabel = updateStatus.optJSONObject("update")?.let { state ->
+                            when (state.optString("status", "idle")) {
+                                "idle" -> "Current bot version: ${updateStatus.optString("currentVersion").ifBlank { "not reported" }}"
+                                "preparing" -> "Preparing update ${state.optString("version")}. Do not stop the server."
+                                "awaiting-healthcheck" -> "Release activated · awaiting service startup health check."
+                                "failed" -> "Deployment failed: ${state.optString("message").ifBlank { "The server reported a failure." }}"
+                                else -> "Update status: ${state.optString("status")}"
+                            }
+                        } ?: if (previewMode) "Preview package library · no deployment service is connected." else "",
+                        packageProgressLabel = packageProgressLabel,
+                        packageProgress = packageProgress,
+                        packageError = packageError,
+                        activePackageId = activePackageId,
+                        onRefreshPackages = {
+                            if (previewMode) {
+                                packageProgressLabel = "Preview data only · no server request was made."
+                            } else if (connected) {
+                                connectionScope.launch {
+                                    runCatching {
+                                        updatePackages = repository.updatePackages()
+                                        updateStatus = repository.updateStatus()
+                                    }.onFailure {
+                                        packageError = it.message ?: "Could not refresh update packages."
+                                    }
+                                }
+                            }
+                        },
+                        onUploadPackage = {
+                            if (previewMode) {
+                                packageProgressLabel = "Preview only · package uploads are disabled for demo data."
+                                Toast.makeText(context, "Preview mode does not upload to a server.", Toast.LENGTH_SHORT).show()
+                            } else if (connected) {
+                                updatePackageLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed"))
+                            }
+                        },
+                        onDeployPackage = { pkg -> deployUpdatePackage(pkg) },
+                        onRemovePackage = { pkg -> removeUpdatePackage(pkg) },
                         onBulkAction = { entries, action ->
                             when (action) {
                                 "delete" -> {

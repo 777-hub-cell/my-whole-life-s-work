@@ -24,21 +24,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.aharane.studio.core.design.StudioActionButton
 import com.aharane.studio.core.design.StudioPalette
-import com.aharane.studio.core.network.AharaneRepository
+import com.aharane.studio.core.network.VisualCommandDataSource
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -48,7 +54,7 @@ private data class ActiveSocket(val nodeId: String, val socketId: String, val ty
 
 @Composable
 fun VisualCommandBuilderScreen(
-    repository: AharaneRepository,
+    repository: VisualCommandDataSource,
     connected: Boolean,
     onBack: () -> Unit
 ) {
@@ -68,6 +74,11 @@ fun VisualCommandBuilderScreen(
     var search by remember { mutableStateOf("") }
     var workspaceFraction by remember { mutableFloatStateOf(0.58f) }
     var zoom by remember { mutableFloatStateOf(1f) }
+    var workspaceViewportSize by remember { mutableStateOf(IntSize.Zero) }
+    var workspaceCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val measuredNodeSizes = remember { mutableStateMapOf<String, IntSize>() }
+    val measuredSocketPositions = remember { mutableStateMapOf<String, Offset>() }
+    val density = LocalDensity.current
     var loading by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
@@ -390,9 +401,9 @@ fun VisualCommandBuilderScreen(
                 Text("Visual command builder", color = StudioPalette.Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                 Text(if (dirty) "Unsaved changes" else if (workflow.enabled) "Active command" else "Workflow draft", color = StudioPalette.Muted, fontSize = 10.sp)
             }
-            StudioActionButton("Load", compact = true, enabled = connected && savedWorkflows.isNotEmpty(), onClick = { showLoad = true })
+            StudioActionButton("Load", modifier = Modifier.testTag("workflow-load"), compact = true, enabled = connected && savedWorkflows.isNotEmpty(), onClick = { showLoad = true })
             Spacer(Modifier.width(5.dp))
-            StudioActionButton("Save", compact = true, primary = true, enabled = connected && !saving && (!saved || dirty), onClick = {
+            StudioActionButton("Save", modifier = Modifier.testTag("workflow-save"), compact = true, primary = true, enabled = connected && !saving && (!saved || dirty), onClick = {
                 scope.launch { saveDraft() }
             })
         }
@@ -412,7 +423,7 @@ fun VisualCommandBuilderScreen(
                 textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(7.dp))
                     .background(StudioPalette.Surface).border(1.dp, StudioPalette.Line, RoundedCornerShape(7.dp))
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    .padding(horizontal = 8.dp, vertical = 6.dp).testTag("workflow-name"),
                 decorationBox = { inner ->
                     Box {
                         if (workflow.name.isBlank()) Text("Command name", color = StudioPalette.Muted, fontSize = 11.sp)
@@ -484,11 +495,26 @@ fun VisualCommandBuilderScreen(
             StudioActionButton("Undo", compact = true, enabled = undo.isNotEmpty(), onClick = { undoChange() })
             StudioActionButton("Redo", compact = true, enabled = redo.isNotEmpty(), onClick = { redoChange() })
             StudioActionButton("Fit", compact = true, onClick = {
-                zoom = 0.78f
-                scope.launch { workspaceScroll.animateScrollTo(0); workspaceVerticalScroll.animateScrollTo(0) }
+                val nodes = workflow.nodes
+                if (nodes.isNotEmpty() && workspaceViewportSize.width > 0 && workspaceViewportSize.height > 0) {
+                    val left = nodes.minOf { it.x }
+                    val top = nodes.minOf { it.y }
+                    val right = nodes.maxOf { it.x + 206f }
+                    val bottom = nodes.maxOf { node ->
+                        node.y + (measuredNodeSizes[node.id]?.height?.let { with(density) { it.toDp().value } } ?: 132f)
+                    }
+                    val graphWidthPx = with(density) { (right - left + 96f).coerceAtLeast(260f).dp.toPx() }
+                    val graphHeightPx = with(density) { (bottom - top + 96f).coerceAtLeast(180f).dp.toPx() }
+                    val availableWidth = (workspaceViewportSize.width - with(density) { 32.dp.toPx() }).coerceAtLeast(1f)
+                    val availableHeight = (workspaceViewportSize.height - with(density) { 32.dp.toPx() }).coerceAtLeast(1f)
+                    zoom = minOf(availableWidth / graphWidthPx, availableHeight / graphHeightPx).coerceIn(0.35f, 1.8f)
+                } else {
+                    zoom = 0.78f
+                }
+                scope.launch { workspaceScroll.scrollTo(0); workspaceVerticalScroll.scrollTo(0) }
             })
-            StudioActionButton("−", compact = true, onClick = { zoom = (zoom - 0.1f).coerceIn(0.5f, 1.8f) })
-            StudioActionButton("+", compact = true, onClick = { zoom = (zoom + 0.1f).coerceIn(0.5f, 1.8f) })
+            StudioActionButton("−", compact = true, onClick = { zoom = (zoom - 0.1f).coerceIn(0.35f, 1.8f) })
+            StudioActionButton("+", compact = true, onClick = { zoom = (zoom + 0.1f).coerceIn(0.35f, 1.8f) })
             StudioActionButton("Delete", compact = true, destructive = true, enabled = saved && connected, onClick = { showDelete = true })
         }
 
@@ -511,9 +537,9 @@ fun VisualCommandBuilderScreen(
             Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("WORKSPACE", color = StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.weight(1f))
-                Text(workflow.nodes.size.toString() + " nodes · " + workflow.edges.size + " wires", color = StudioPalette.Muted, fontSize = 9.sp)
+                Text(workflow.nodes.size.toString() + " nodes · " + workflow.edges.size + " wires", color = StudioPalette.Muted, fontSize = 9.sp, modifier = Modifier.testTag("workflow-node-count"))
             }
-            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(9.dp)).background(Color(0xFFF2F5F2))) {
+            Box(Modifier.fillMaxSize().onSizeChanged { workspaceViewportSize = it }.clip(RoundedCornerShape(9.dp)).background(Color(0xFFF2F5F2))) {
                 Box(
                     Modifier.fillMaxSize().horizontalScroll(workspaceScroll).verticalScroll(workspaceVerticalScroll).pointerInput(Unit) {
                         awaitEachGesture {
@@ -536,14 +562,25 @@ fun VisualCommandBuilderScreen(
                         }
                     }
                 ) {
-                    val canvasWidth = maxOf(900.dp, ((workflow.nodes.maxOfOrNull { it.x } ?: 0f) + 300f).dp)
-                    val canvasHeight = maxOf(430.dp, ((workflow.nodes.maxOfOrNull { it.y } ?: 0f) + 260f).dp)
+                    val minNodeX = workflow.nodes.minOfOrNull { it.x } ?: 0f
+                    val minNodeY = workflow.nodes.minOfOrNull { it.y } ?: 0f
+                    val canvasOriginX = 48f - minNodeX
+                    val canvasOriginY = 48f - minNodeY
+                    val maxNodeRight = workflow.nodes.maxOfOrNull { it.x + 206f } ?: 206f
+                    val maxNodeBottom = workflow.nodes.maxOfOrNull { node ->
+                        node.y + (measuredNodeSizes[node.id]?.height?.let { with(density) { it.toDp().value } } ?: 132f)
+                    } ?: 180f
+                    val canvasWidth = maxOf(900.dp, (canvasOriginX + maxNodeRight + 48f).dp)
+                    val canvasHeight = maxOf(430.dp, (canvasOriginY + maxNodeBottom + 48f).dp)
+                    // Outer box owns scaled scroll dimensions; inner box preserves
+                    // unscaled coordinates for socket measurements.
+                    Box(Modifier.width(canvasWidth * zoom).height(canvasHeight * zoom)) {
                     Box(
-                        Modifier.width(canvasWidth).height(canvasHeight).graphicsLayer {
+                        Modifier.requiredWidth(canvasWidth).requiredHeight(canvasHeight).graphicsLayer {
                             scaleX = zoom
                             scaleY = zoom
                             transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
-                        }
+                        }.onGloballyPositioned { workspaceCoordinates = it }
                     ) {
                         Canvas(Modifier.fillMaxSize()) {
                             val density = this.density
@@ -561,8 +598,8 @@ fun VisualCommandBuilderScreen(
                             workflow.edges.forEach { edge ->
                                 val from = workflow.nodes.firstOrNull { it.id == edge.from } ?: return@forEach
                                 val to = workflow.nodes.firstOrNull { it.id == edge.to } ?: return@forEach
-                                val start = Offset((from.x + 198f) * density, (from.y + 66f) * density)
-                                val end = Offset(to.x * density, (to.y + 66f) * density)
+                                val start = measuredSocketPositions[socketPositionKey(from.id, edge.fromSocket, true)] ?: return@forEach
+                                val end = measuredSocketPositions[socketPositionKey(to.id, edge.toSocket, false)] ?: return@forEach
                                 val bend = ((end.x - start.x) * 0.48f).coerceAtLeast(34.dp.toPx())
                                 val path = Path().apply {
                                     moveTo(start.x, start.y)
@@ -591,8 +628,19 @@ fun VisualCommandBuilderScreen(
                                 error = nodeErrorMap[node.id].orEmpty().firstOrNull()?.message,
                                 onSelect = { selectedNodeId = node.id; configNodeId = node.id },
                                 onDragStart = { snapshot() },
-                                onMove = { delta -> moveNode(node.id, delta) },
-                                onSocket = { socket, output -> tapSocket(node, socket, output) }
+                                onMove = { delta -> moveNode(node.id, delta / zoom) },
+                                onSocket = { socket, output -> tapSocket(node, socket, output) },
+                                onMeasured = { size -> if (measuredNodeSizes[node.id] != size) measuredNodeSizes[node.id] = size },
+                                onSocketPosition = { socket, output, coordinates ->
+                                    val canvas = workspaceCoordinates
+                                    if (canvas != null) {
+                                        val center = canvas.localPositionOf(coordinates, Offset(coordinates.size.width / 2f, coordinates.size.height / 2f))
+                                        val key = socketPositionKey(node.id, socket.id, output)
+                                        if (measuredSocketPositions[key] != center) measuredSocketPositions[key] = center
+                                    }
+                                },
+                                canvasOriginX = canvasOriginX,
+                                canvasOriginY = canvasOriginY
                             )
                         }
                     }
@@ -795,7 +843,7 @@ private fun LibraryNodeRow(node: VisualNodeDefinition, enabled: Boolean, onAdd: 
             Text(node.description, color = StudioPalette.Muted, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.width(6.dp))
-        StudioActionButton("Add", compact = true, enabled = enabled, onClick = onAdd)
+        StudioActionButton("Add", modifier = Modifier.testTag("add-node-" + node.type), compact = true, enabled = enabled, onClick = onAdd)
     }
 }
 
@@ -808,7 +856,11 @@ private fun NodeCard(
     onSelect: () -> Unit,
     onDragStart: () -> Unit,
     onMove: (Offset) -> Unit,
-    onSocket: (VisualSocket, Boolean) -> Unit
+    onSocket: (VisualSocket, Boolean) -> Unit,
+    onMeasured: (IntSize) -> Unit,
+    onSocketPosition: (VisualSocket, Boolean, LayoutCoordinates) -> Unit,
+    canvasOriginX: Float,
+    canvasOriginY: Float
 ) {
     val borderColor = when {
         error != null -> StudioPalette.Bad
@@ -816,7 +868,8 @@ private fun NodeCard(
         else -> Color(0xFFD9E2DC)
     }
     Column(
-        Modifier.offset(node.x.dp, node.y.dp).width(206.dp)
+        Modifier.offset((node.x + canvasOriginX).dp, (node.y + canvasOriginY).dp).width(206.dp)
+            .onSizeChanged(onMeasured).testTag("node-card-" + node.type)
             .clip(RoundedCornerShape(8.dp)).background(Color.White)
             .border(if (selected || error != null) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(8.dp))
             .pointerInput(node.id) {
@@ -841,16 +894,25 @@ private fun NodeCard(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp))
         if (definition.inputs.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 5.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                definition.inputs.forEach { socket -> SocketAction(socket, false, onSocket = { onSocket(socket, false) }) }
+                definition.inputs.forEach { socket ->
+                    SocketAction(socket, false, "socket-" + node.type + "-in-" + socket.id,
+                        onSocket = { onSocket(socket, false) }, onPosition = { onSocketPosition(socket, false, it) })
+                }
             }
         }
         if (definition.outputs.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 5.dp, vertical = 4.dp), horizontalArrangement = Arrangement.End) {
-                definition.outputs.forEach { socket -> SocketAction(socket, true, onSocket = { onSocket(socket, true) }) }
+                definition.outputs.forEach { socket ->
+                    SocketAction(socket, true, "socket-" + node.type + "-out-" + socket.id,
+                        onSocket = { onSocket(socket, true) }, onPosition = { onSocketPosition(socket, true, it) })
+                }
             }
         }
     }
 }
+
+private fun socketPositionKey(nodeId: String, socketId: String, output: Boolean): String =
+    nodeId + "|" + (if (output) "out|" else "in|") + socketId
 
 private fun nodeSummary(node: VisualNode): String = when (node.type) {
     "trigger.command" -> "." + node.config["command"].orEmpty() + " command"
@@ -892,7 +954,13 @@ private fun nodeSummary(node: VisualNode): String = when (node.type) {
 }
 
 @Composable
-private fun SocketAction(socket: VisualSocket, output: Boolean, onSocket: () -> Unit) {
+private fun SocketAction(
+    socket: VisualSocket,
+    output: Boolean,
+    tag: String,
+    onSocket: () -> Unit,
+    onPosition: (LayoutCoordinates) -> Unit
+) {
     val color = when (socket.type) {
         "exec" -> Color(0xFF537F6D)
         "string" -> Color(0xFF3F78B9)
@@ -902,19 +970,19 @@ private fun SocketAction(socket: VisualSocket, output: Boolean, onSocket: () -> 
         else -> StudioPalette.Muted
     }
     Row(
-        Modifier.clickable(onClick = onSocket).padding(horizontal = 2.dp, vertical = 2.dp),
+        Modifier.clickable(onClick = onSocket).testTag(tag).padding(horizontal = 2.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(3.dp)
     ) {
-        if (!output) SocketDot(color)
+        if (!output) SocketDot(color, onPosition)
         Text(socket.label, color = color, fontSize = 8.sp, maxLines = 1)
-        if (output) SocketDot(color)
+        if (output) SocketDot(color, onPosition)
     }
 }
 
 @Composable
-private fun SocketDot(color: Color) {
-    Box(Modifier.size(11.dp).clip(CircleShape).background(Color.White).border(1.6.dp, color, CircleShape))
+private fun SocketDot(color: Color, onPosition: (LayoutCoordinates) -> Unit) {
+    Box(Modifier.size(11.dp).onGloballyPositioned(onPosition).clip(CircleShape).background(Color.White).border(1.6.dp, color, CircleShape))
 }
 
 @Composable
@@ -971,6 +1039,7 @@ private fun NodeConfigurationDialog(
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)
                         .clip(RoundedCornerShape(6.dp)).background(StudioPalette.Background)
                         .border(1.dp, StudioPalette.Line, RoundedCornerShape(6.dp)).padding(8.dp)
+                        .testTag("node-config-field-" + key)
                 )
             }
             if (node.type == "trigger.command" || node.type == "trigger.message") {

@@ -1425,7 +1425,7 @@ fun AharaneApp(
                                 }
                             }
                         },
-                        recentActivity = if (previewMode) emptyList() else activityRows.take(3).map { it.message }
+                        recentActivity = if (previewMode) DesignPreviewFixtures.activity else activityRows.take(3).map { it.message }
                     )
                     MainDestination.CHATS -> ChatsScreen(
                         account = selectedAccount,

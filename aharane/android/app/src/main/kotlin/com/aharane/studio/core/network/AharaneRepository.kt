@@ -126,7 +126,8 @@ data class ChatSyncPage(
     val messages: List<ChatMessage>,
     val hasOlder: Boolean,
     val hasNewer: Boolean,
-    val syncedAtMillis: Long
+    val syncedAtMillis: Long,
+    val deletedMessageIds: List<String> = emptyList()
 )
 
 class AharaneRepository(private val connection: AharaneConnectionManager) {
@@ -360,7 +361,10 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
             messages = messages,
             hasOlder = response.optBoolean("hasOlder", messages.size >= limit),
             hasNewer = response.optBoolean("hasNewer", false),
-            syncedAtMillis = response.optLong("syncedAt", System.currentTimeMillis())
+            syncedAtMillis = response.optLong("syncedAt", System.currentTimeMillis()),
+            deletedMessageIds = response.optJSONArray("deletedMessageIds").let { values ->
+                if (values == null) emptyList() else List(values.length()) { values.optString(it) }.filter(String::isNotBlank)
+            }
         )
     }
 

@@ -141,7 +141,7 @@ fun AharaneApp(
             localChatRepository = local
             localChatStorageError = ""
         } catch (error: Exception) {
-            localChatStorageError = error.message ?: "Encrypted offline chat storage is unavailable."
+            localChatStorageError = error.message ?: "Encrypted chat storage is unavailable."
         }
     }
 
@@ -722,7 +722,7 @@ fun AharaneApp(
                     chatsByAccount[ChatAccount.PRIVATE] = localChatRepository?.saveConversations(it) ?: it
                 }.onFailure { error ->
                     chatsByAccount[ChatAccount.PRIVATE] = it
-                    localChatStorageError = error.message ?: "Private chats could not be cached."
+                    localChatStorageError = error.message ?: "Private chats could not be stored locally."
                 }
             }
             .onFailure { failures += "Private inbox: ${it.message ?: "unavailable"}" }
@@ -732,7 +732,7 @@ fun AharaneApp(
                     chatsByAccount[ChatAccount.PUBLIC] = localChatRepository?.saveConversations(it) ?: it
                 }.onFailure { error ->
                     chatsByAccount[ChatAccount.PUBLIC] = it
-                    localChatStorageError = error.message ?: "Public chats could not be cached."
+                    localChatStorageError = error.message ?: "Public chats could not be stored locally."
                 }
             }
             .onFailure { failures += "Public inbox: ${it.message ?: "unavailable"}" }
@@ -782,7 +782,7 @@ fun AharaneApp(
                 activeMessages = local.messages(conversation.key)
                 hasOlderMessages = local.hasOlderMessages(conversation.key)
             }.onFailure {
-                localChatStorageError = it.message ?: "Could not load the encrypted conversation cache."
+                localChatStorageError = it.message ?: "Could not load encrypted local messages."
             }
         }
         if (authenticated && serverReachable) {
@@ -1526,7 +1526,7 @@ fun AharaneApp(
                             connectionScope.launch {
                                 try {
                                     val local = localChatRepository
-                                        ?: error("Encrypted offline message storage is unavailable. The message was not sent.")
+                                        ?: error("Local encrypted message storage is unavailable. The message was not sent.")
                                     val clientMessageId = local.enqueueTextMessage(
                                         target, text, replyTo?.messageId
                                     )
@@ -1548,7 +1548,7 @@ fun AharaneApp(
                         } else {
                             connectionScope.launch {
                                 try {
-                                    val local = localChatRepository ?: error("Encrypted offline queue is unavailable.")
+                                    val local = localChatRepository ?: error("Local encrypted outgoing-message queue is unavailable.")
                                     val queued = local.outgoingMessage(target.key, clientMessageId)
                                     if (queued?.state == "FAILED") {
                                         local.updateOutgoingMessage(target.key, clientMessageId, "PENDING", null)
@@ -2414,7 +2414,7 @@ fun AharaneApp(
                                     localChatRepository?.clearCachedMediaMetadata(targetAccount)
                                     chatAppearanceRevision += 1
                                 }.onFailure {
-                                    Toast.makeText(context, it.message ?: "Could not clear encrypted offline media.", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, it.message ?: "Could not clear saved media.", Toast.LENGTH_LONG).show()
                                 }
                             }
                         },

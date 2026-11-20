@@ -120,18 +120,22 @@ fun CodeEditorScreen(
     }
     var dirty by remember(activeDocument?.path) { mutableStateOf(false) }
     var saveState by remember(activeDocument?.path) { mutableStateOf("saved") }
+    var saveNowRequested by remember(activeDocument?.path) { mutableStateOf(false) }
     LaunchedEffect(activeDocument?.path, activeDocument?.content) {
         if (!dirty) editorValue = TextFieldValue(activeDocument?.content.orEmpty())
     }
-    LaunchedEffect(editorValue.text, dirty, activeDocument?.path, editable) {
+    LaunchedEffect(editorValue.text, dirty, activeDocument?.path, editable, saveNowRequested) {
         if (dirty && editable && activeDocument != null) {
-            kotlinx.coroutines.delay(600)
-            saveState = if (onSave(activeDocument.path, editorValue.text)) {
+            if (!saveNowRequested) kotlinx.coroutines.delay(600)
+            saveState = "saving"
+            val saved = onSave(activeDocument.path, editorValue.text)
+            if (saved) {
                 dirty = false
-                "saved"
+                saveState = "saved"
             } else {
-                "unsaved"
+                saveState = "unsaved"
             }
+            saveNowRequested = false
         }
     }
     LaunchedEffect(activeDocument?.path, editorValue.text, connected) {
@@ -415,10 +419,26 @@ fun CodeEditorScreen(
                     .padding(horizontal = 4.dp, vertical = 7.dp)
             )
             Spacer(Modifier.weight(1f))
+            if (activeDocument != null && (dirty || saveState == "unsaved")) {
+                Text(
+                    "Save now",
+                    color = Color.White,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clickable(enabled = editable && saveState != "saving") {
+                        saveNowRequested = true
+                        saveState = "saving"
+                    }.padding(horizontal = 8.dp, vertical = 7.dp)
+                )
+            }
             Text(
-                if (activeDocument == null) "Connect to open source files" else "${activeDocument.languageLabel} · Auto-save on",
+                if (activeDocument == null) "Connect to open source files" else when (saveState) {
+                    "saving" -> "Saving…"
+                    "unsaved" -> "Not saved · Auto-save on"
+                    else -> "${activeDocument.languageLabel} · Saved"
+                },
                 color = Color.White,
-                fontSize = 12.5.sp
+                fontSize = 11.5.sp
             )
         }
     }

@@ -62,6 +62,8 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
         return cookies.headerFor(endpoint.apiUrl("status")).isNotBlank()
     }
 
+    fun clearSession() = cookies.clear()
+
     suspend fun checkServer(): JSONObject = requestJson(
         url = endpoint.healthUrl(),
         method = "GET"

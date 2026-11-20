@@ -287,8 +287,8 @@ test('Public group workflows require explicit group scope and an allow-listed pa
   draft.nodes[0].config.chatScope = 'groups'
   draft.nodes[0].config.command = 'hello'
   const update = { id: 'subject', type: 'group.updateSubject', x: 300, y: 100, config: { subject: 'Aharane Builders' } }
-  draft.nodes.push(update)
-  draft.edges.push({ id: 'group-exec', from: draft.nodes[0].id, fromSocket: 'next', to: update.id, toSocket: 'in' })
+  draft.nodes = [draft.nodes[0], update]
+  draft.edges = [{ id: 'group-exec', from: draft.nodes[0].id, fromSocket: 'next', to: update.id, toSocket: 'in' }]
   assert.equal(validateWorkflow(draft).valid, true, JSON.stringify(validateWorkflow(draft).errors))
 
   let calls = 0
@@ -324,8 +324,8 @@ test('Public group administration actions require the verified Public Owner', as
     id: 'participants', type: 'group.participantsUpdate', x: 300, y: 100,
     config: { action: 'promote', participants: '2348098765432' },
   }
-  draft.nodes.push(admin)
-  draft.edges.push({ id: 'admin-exec', from: draft.nodes[0].id, fromSocket: 'next', to: admin.id, toSocket: 'in' })
+  draft.nodes = [draft.nodes[0], admin]
+  draft.edges = [{ id: 'admin-exec', from: draft.nodes[0].id, fromSocket: 'next', to: admin.id, toSocket: 'in' }]
   let calls = 0
   const nonOwner = context({
     sessionId: 'public', privateControl: false, isPublicOwner: false, allowedPublicSender: true,

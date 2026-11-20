@@ -128,7 +128,7 @@ class EncryptedOfflineStorageTest {
     }
 
     @Test
-    fun remoteDeletionMarkerPersistsIncomingMessageButNeverRemovesItsContent() = runBlocking {
+    fun remoteDeletionMarkerPersistsBothDirectionsAndPreservesOfflineMedia() = runBlocking {
         val jid = "2348999999999@s.whatsapp.net"
         val db = EncryptedChatDatabase.open(context)
         val dao = db.database.chatDao()

@@ -968,9 +968,16 @@ async function handleMessages(sessionId, currentSocket, event) {
   if (!isSafeMessageUpsert(event)) return
   for (const message of event.messages) {
     if (!message?.message || !message.key?.id) continue
-    if (markMessageSeen(sessionId + ':' + message.key.id)) continue
 
     const remoteJid = String(message.key?.remoteJid || '')
+    const shouldPersist =
+      (sessionId === 'private' && isPrivateVisibleChatJid(remoteJid)) ||
+      (sessionId === 'public' && message.key.fromMe !== true && isPrivateVisibleChatJid(remoteJid))
+    // Persist duplicate-ID edits before suppressing duplicate command execution.
+    // The store reconciles changed message content without resetting reactions/stars.
+    if (shouldPersist) await chatStore.recordMessage({ sessionId, message, socket: currentSocket })
+    if (markMessageSeen(sessionId + ':' + message.key.id)) continue
+
     const text = textFromMessage(message)
     let registry
     let isPublicOwner = false
@@ -1010,7 +1017,6 @@ async function handleMessages(sessionId, currentSocket, event) {
         allowedSenders: publicAllowedSenders(),
       })
       const firstConversationMessage = allowedToUseCommands && !await chatStore.hasConversation(sessionId, remoteJid)
-      await chatStore.recordMessage({ sessionId, message, socket: currentSocket })
       if (studioSettings.public.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
       if (!allowedToUseCommands) continue
       if (firstConversationMessage && studioSettings.public.welcomeMessage) {

@@ -194,13 +194,13 @@ def main():
     tap_label("Console")
     capture("03j-editor-console.png")
     assert_visible_texts(["Preview", "sample"])
-    back()
-    # The explorer is already open when its toggle says "Hide explorer".
-    # If so, leave it open rather than waiting for the opposite label.
-    tap_label("Show explorer", content_desc=True, required=False)
+    # Keep the editor open while opening its explorer. Back exits the editor
+    # itself here; doing it twice would leave the app and send later captures to
+    # the Android launcher.
+    if not any(node.attrib.get("content-desc") == "Hide explorer" for node in nodes()):
+        tap_label("Show explorer", content_desc=True)
     capture("03d-editor-explorer.png")
-    back()
-    back()
+    back()  # Return from the editor to Files.
 
     tap_label("ENV")
     capture("04-env.png")

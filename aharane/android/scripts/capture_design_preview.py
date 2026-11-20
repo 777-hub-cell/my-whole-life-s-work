@@ -72,6 +72,18 @@ def tap_label(
         raise RuntimeError(f"Could not locate tappable UI element: {label!r}")
     return False
 
+def assert_visible_texts(labels):
+    """Fail the screenshot run if the native popup drifts from the web actions."""
+    deadline = time.time() + 8
+    while time.time() < deadline:
+        visible = {node.attrib.get("text", "") for node in nodes()}
+        missing = [label for label in labels if label not in visible]
+        if not missing:
+            return
+        time.sleep(0.35)
+    raise RuntimeError(f"File popup is missing expected actions: {missing!r}")
+
+
 def back():
     run("adb", "shell", "input", "keyevent", "4")
     time.sleep(0.8)
@@ -110,6 +122,7 @@ def main():
     tap_label("admin")
     capture("03b-admin-folder.png")
     tap_label("File actions", content_desc=True)
+    assert_visible_texts(["Rename", "Duplicate", "Move", "Download as ZIP", "Delete"])
     capture("03c-file-menu.png")
     back()
     tap_label("auth.js")

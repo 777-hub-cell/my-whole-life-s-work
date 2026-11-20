@@ -588,6 +588,38 @@ test('messages deleted by the other participant stay in the Hub store with a del
   }
 })
 
+test('remote deletion retention preserves an already downloaded incoming attachment', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-remote-delete-media-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348788888888@s.whatsapp.net'
+    await store.recordMessage({
+      sessionId: 'private',
+      message: {
+        key: { id: 'retained-photo', remoteJid: jid, fromMe: false },
+        messageTimestamp: 1764100000,
+        pushName: 'Other participant',
+        message: { imageMessage: { mimetype: 'image/png', fileLength: 5, caption: 'Keep this photo' } },
+      },
+    })
+    const downloaded = await store.downloadMessageMedia(
+      'private', jid, 'retained-photo', async () => Buffer.from('photo')
+    )
+    assert.ok(downloaded?.mediaUrl)
+    assert.ok(await store.getMedia('private', 'retained-photo'))
+
+    assert.equal(await store.markMessageDeletedRemotely('private', jid, 'retained-photo'), true)
+    const [message] = await store.getMessages('private', jid, { limit: 20 })
+    assert.equal(message.text, 'Keep this photo')
+    assert.equal(message.deletedByRemote, true)
+    assert.equal(message.mediaUrl, downloaded.mediaUrl)
+    assert.ok(await store.getMedia('private', 'retained-photo'))
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('incremental chat sync uses a composite timestamp/message cursor and preserves unread markers', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-sync-'))
   try {

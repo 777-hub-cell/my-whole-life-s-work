@@ -1490,7 +1490,7 @@ app.post('/api/visual-commands/:id/test', requireAdmin, async (req, res) => {
         args: messageText.trim().split(/\s+/).slice(1),
         socket: {
           sendMessage: async () => { throw new Error('Live sends are disabled during tests.') },
-          groupMetadata: async () => ({ subject: 'Preview group', participants: [{ id: 'one' }, { id: 'two' }] }),
+          groupMetadata: async () => ({ subject: 'Preview group', participants: [{ id: senderJid, admin: 'admin' }, { id: '2348098765432@s.whatsapp.net', admin: null }] }),
           groupUpdateSubject: async () => { throw new Error('Live group changes are disabled during tests.') },
           groupUpdateDescription: async () => { throw new Error('Live group changes are disabled during tests.') },
           groupParticipantsUpdate: async () => { throw new Error('Live participant changes are disabled during tests.') },

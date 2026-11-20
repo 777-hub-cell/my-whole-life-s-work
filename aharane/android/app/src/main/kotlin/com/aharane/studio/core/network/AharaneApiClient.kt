@@ -114,12 +114,26 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
         headers
     )
 
-    suspend fun getBytes(path: String): ByteArray {
-        val url = endpoint.apiUrl(path)
-        return perform(url, "GET", null, null, emptyMap()).let { response ->
-            if (response.first !in 200..299) throw responseError(response.first, response.second)
-            response.third
-        }
+    suspend fun getBytes(path: String): ByteArray =
+        requestBytes(endpoint.apiUrl(path), "GET")
+
+    suspend fun postBytes(path: String, body: JSONObject = JSONObject()): ByteArray =
+        requestBytes(
+            endpoint.apiUrl(path),
+            "POST",
+            body.toString().toByteArray(StandardCharsets.UTF_8),
+            "application/json"
+        )
+
+    private suspend fun requestBytes(
+        url: URL,
+        method: String,
+        body: ByteArray? = null,
+        contentType: String? = null
+    ): ByteArray {
+        val response = perform(url, method, body, contentType, emptyMap())
+        if (response.first !in 200..299) throw responseError(response.first, response.second)
+        return response.third
     }
 
     suspend fun sendChatMessage(account: String, jid: String, text: String): JSONObject =
@@ -143,13 +157,8 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
         )
     )
 
-    suspend fun sendViewOnceRequest(account: String, messageId: String): ByteArray {
-        val result = post(
-            "chats/$account/media/$messageId/view-once",
-            JSONObject()
-        )
-        return Base64Compat.decode(result.optString("data"))
-    }
+    suspend fun sendViewOnceRequest(account: String, messageId: String): ByteArray =
+        postBytes("chats/$account/media/$messageId/view-once", JSONObject())
 
     private suspend fun requestJson(
         url: URL,
@@ -236,7 +245,4 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
             } else "%%%02X".format(unsigned)
         }
 
-    private object Base64Compat {
-        fun decode(value: String): ByteArray = android.util.Base64.decode(value, android.util.Base64.DEFAULT)
-    }
 }

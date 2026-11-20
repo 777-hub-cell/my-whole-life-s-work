@@ -1022,7 +1022,7 @@ private fun AudioMessagePlayer(
                     else { player?.start(); playing = true }
                 }
             },
-            enabled = !loading && (file != null || (serverAvailable && error == null))
+            enabled = !loading && (file != null || serverAvailable)
         ) {
             Icon(if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, if (playing) "Pause audio" else "Play audio", tint = foreground)
         }

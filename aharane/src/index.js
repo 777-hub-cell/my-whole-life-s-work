@@ -1049,18 +1049,37 @@ async function handleMessages(sessionId, currentSocket, event) {
       continue
     }
 
+    const visualWorkflowSocket = {
+      sendMessage: async (...args) => {
+        const sent = await currentSocket.sendMessage(...args)
+        if (sent?.key?.id) await chatStore.recordMessage({ sessionId, message: sent, socket: currentSocket })
+        return sent
+      },
+    }
+    for (const method of [
+      'groupMetadata',
+      'groupUpdateSubject',
+      'groupUpdateDescription',
+      'groupParticipantsUpdate',
+      'groupSettingUpdate',
+      'updateBlockStatus',
+      'updateProfileName',
+      'updateProfileStatus',
+      'newsletterCreate',
+      'newsletterFollow',
+      'newsletterUnfollow',
+    ]) {
+      if (typeof currentSocket[method] === 'function') {
+        visualWorkflowSocket[method] = (...args) => currentSocket[method](...args)
+      }
+    }
+
     const workflowContext = {
       sessionId,
       privateControl,
       isPublicOwner,
       allowedPublicSender: sessionId === 'public' && allowedForAutomation,
-      socket: {
-        sendMessage: async (...args) => {
-          const sent = await currentSocket.sendMessage(...args)
-          if (sent?.key?.id) await chatStore.recordMessage({ sessionId, message: sent, socket: currentSocket })
-          return sent
-        },
-      },
+      socket: visualWorkflowSocket,
       message,
       messageText,
       sender: senderJid,

@@ -354,6 +354,87 @@ test('Public group administration actions require the verified Public Owner', as
   assert.equal(calls, 1)
 })
 
+test('group, moderation, profile and newsletter actions remain non-destructive in dry-run', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('public')
+  const trigger = draft.nodes[0]
+  trigger.config.chatScope = 'groups'
+  trigger.config.command = 'hello'
+  const definitions = [
+    ['group.getInfo', {}],
+    ['group.updateSubject', { subject: 'New subject' }],
+    ['group.updateDescription', { description: 'New description' }],
+    ['group.participantsUpdate', { action: 'promote', participants: '2348012345678\n2348098765432' }],
+    ['group.settingUpdate', { setting: 'announcement' }],
+    ['moderation.blockContact', { phone: '2348012345678' }],
+    ['moderation.unblockContact', { phone: '2348012345678' }],
+    ['profile.updateName', { name: 'New name' }],
+    ['profile.updateStatus', { status: 'New status' }],
+    ['newsletter.create', { name: 'Test letter', description: 'Preview' }],
+    ['newsletter.follow', { newsletterJid: '12345678901@newsletter' }],
+    ['newsletter.unfollow', { newsletterJid: '12345678901@newsletter' }],
+    ['newsletter.publishText', { newsletterJid: '12345678901@newsletter', text: 'Preview post' }],
+  ]
+  const nodes = definitions.map(([type, config], index) => ({
+    id: 'privileged-' + index,
+    type,
+    x: 300 + index * 220,
+    y: 100,
+    config,
+  }))
+  draft.nodes = [trigger, ...nodes]
+  draft.edges = []
+  let previous = trigger.id
+  let fromSocket = 'next'
+  for (const node of nodes) {
+    draft.edges.push({
+      id: 'edge-' + node.id,
+      from: previous,
+      fromSocket,
+      to: node.id,
+      toSocket: 'in',
+    })
+    previous = node.id
+    fromSocket = 'next'
+  }
+  const validation = validateWorkflow(draft)
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors))
+
+  let externalCalls = 0
+  const forbidden = async () => { externalCalls += 1; throw new Error('Dry-run must never call a live WhatsApp method.') }
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    dryRun: true,
+    context: context({
+      sessionId: 'public',
+      privateControl: false,
+      isPublicOwner: true,
+      allowedPublicSender: true,
+      remoteJid: '120363012345678901-1234567890@g.us',
+      sender: '2348012345678@s.whatsapp.net',
+      senderJid: '2348012345678@s.whatsapp.net',
+      messageText: '!hello',
+      socket: {
+        sendMessage: forbidden,
+        groupMetadata: forbidden,
+        groupUpdateSubject: forbidden,
+        groupUpdateDescription: forbidden,
+        groupParticipantsUpdate: forbidden,
+        groupSettingUpdate: forbidden,
+        updateBlockStatus: forbidden,
+        updateProfileName: forbidden,
+        updateProfileStatus: forbidden,
+        newsletterCreate: forbidden,
+        newsletterFollow: forbidden,
+        newsletterUnfollow: forbidden,
+      },
+    }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.equal(externalCalls, 0)
+  assert.equal(result.trace.filter(item => item.status === 'simulated').length, definitions.length)
+})
+
 test('group metadata output can feed a downstream message and non-owner profile updates are denied', async t => {
   const { store } = await makeStore(t)
   const draft = createWorkflowDraft('public')

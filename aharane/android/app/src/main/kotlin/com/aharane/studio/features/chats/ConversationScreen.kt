@@ -989,7 +989,7 @@ private fun MessageContent(
             val openImage = if (animatedMime && Build.VERSION.SDK_INT >= 28 && animatedMediaFile == null) {
                 onLoadMediaPreview
             } else onLoadMedia
-            LaunchedEffect(message.messageId, mediaPreview, mediaPreviewUnavailable) {
+            LaunchedEffect(message.messageId, mediaPreview, mediaPreviewUnavailable, autoDownloadImages) {
                 if (mediaConnected && autoDownloadImages && mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
             }
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
@@ -1040,7 +1040,7 @@ private fun MessageContent(
             }
         }
         MessageKind.VIDEO -> {
-            LaunchedEffect(message.messageId, mediaPreview, mediaPreviewUnavailable) {
+            LaunchedEffect(message.messageId, mediaPreview, mediaPreviewUnavailable, autoDownloadVideoPreviews) {
                 if (mediaConnected && autoDownloadVideoPreviews && mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
             }
             if (videoFile != null) {

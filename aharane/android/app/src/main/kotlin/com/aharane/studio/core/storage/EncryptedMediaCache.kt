@@ -57,15 +57,15 @@ class EncryptedMediaCache(context: Context) {
             "The offline media cache is full. Increase its limit or clear older cached media."
         }
         val temporary = File(folder, target.name + ".part")
-        val iv = ByteArray(12).also(SecureRandom()::nextBytes)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, mediaKey(), GCMParameterSpec(128, iv))
-        cipher.updateAAD(ownership.toByteArray(Charsets.UTF_8))
-        FileOutputStream(temporary).use { raw ->
-            raw.write(iv)
-            CipherOutputStream(raw, cipher).use { encrypted -> encrypted.write(bytes) }
-        }
         try {
+            val iv = ByteArray(12).also(SecureRandom()::nextBytes)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, mediaKey(), GCMParameterSpec(128, iv))
+            cipher.updateAAD(ownership.toByteArray(Charsets.UTF_8))
+            FileOutputStream(temporary).use { raw ->
+                raw.write(iv)
+                CipherOutputStream(raw, cipher).use { encrypted -> encrypted.write(bytes) }
+            }
             val digest = sha256(bytes)
             val verifiedBytes = readEncryptedFile(temporary, ownership)
             check(sha256(verifiedBytes) == digest && verifiedBytes.size == bytes.size) { "Encrypted media verification failed." }

@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.delay
 import com.aharane.studio.core.design.*
 
 private val AccentChoices = listOf(
@@ -67,10 +68,19 @@ fun MoreScreen(
     publicBotNumber: String = "",
     allowedPublicSenders: String = "",
     activityEntries: List<String> = emptyList(),
-    storageSummary: String = "Server storage values are not available.",
+    storageSummary: String = "—",
+    storageTotalSummary: String = "—",
+    storageFreeSummary: String = "—",
+    storageMediaSummary: String = "—",
+    storageUsageFraction: Float = 0f,
+    largestFiles: List<String> = emptyList(),
+    folderSummaries: List<String> = emptyList(),
     onAccountAction: (String) -> Unit = {},
     onSaveOwnerSettings: (String, String, String, String) -> Unit = { _, _, _, _ -> },
     onClearActivity: () -> Unit = {},
+    onRefreshActivity: () -> Unit = {},
+    onCopyActivity: () -> Unit = {},
+    onExportActivity: () -> Unit = {},
     onSignOut: () -> Unit = {},
     onChangePassword: (String, String) -> Unit
 ) {
@@ -79,6 +89,7 @@ fun MoreScreen(
     var customHex by rememberSaveable { mutableStateOf(accentColor) }
     var activityQuery by rememberSaveable { mutableStateOf("") }
     var activityFilter by rememberSaveable { mutableStateOf("All") }
+    var activityLive by rememberSaveable { mutableStateOf(false) }
     var privateOwnerDraft by rememberSaveable { mutableStateOf(privateOwnerNumber) }
     var publicOwnerDraft by rememberSaveable { mutableStateOf(publicOwnerNumber) }
     var publicBotDraft by rememberSaveable { mutableStateOf(publicBotNumber) }
@@ -93,6 +104,17 @@ fun MoreScreen(
         allowedSendersDraft = allowedPublicSenders
     }
     val context = LocalContext.current
+
+    LaunchedEffect(page, activityLive, connected) {
+        if (page == "activity" && activityLive && connected) {
+            while (true) {
+                delay(10_000)
+                onRefreshActivity()
+            }
+        } else if (page != "activity" || !connected) {
+            activityLive = false
+        }
+    }
 
     BackHandler(enabled = page != "more") { onPageChange("more") }
 
@@ -366,9 +388,12 @@ fun MoreScreen(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
-                    StudioActionButton("Live", compact = true, enabled = false, onClick = {})
-                    StudioActionButton("Copy", compact = true, enabled = false, onClick = {})
-                    StudioActionButton("Export", compact = true, enabled = false, onClick = {})
+                    StudioActionButton(if (activityLive) "Pause live" else "Live", compact = true, enabled = connected, onClick = {
+                        activityLive = !activityLive
+                        onRefreshActivity()
+                    })
+                    StudioActionButton("Copy", compact = true, enabled = connected && activityEntries.isNotEmpty(), onClick = onCopyActivity)
+                    StudioActionButton("Export", compact = true, enabled = connected && activityEntries.isNotEmpty(), onClick = onExportActivity)
                     StudioActionButton("Clear", compact = true, destructive = true, enabled = connected && activityEntries.isNotEmpty(), onClick = onClearActivity)
                 }
                 Spacer(Modifier.height(12.dp))
@@ -413,42 +438,56 @@ fun MoreScreen(
             item {
                 StudioCard(padding = PaddingValues(18.dp)) {
                     Text(if (connected) storageSummary else "—", color = StudioPalette.Ink, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                    Text(if (connected) "Server storage usage" else "of — limit", color = StudioPalette.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 10.dp)
+                    Text(if (connected) "Used on the Aharane server" else "Connect to load server storage", color = StudioPalette.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                    Box(
+                        Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 12.dp)
                             .height(7.dp).clip(RoundedCornerShape(6.dp)).background(StudioPalette.Line)
-                    ) { }
-                    listOf("Code and text", "Images", "Videos", "Audio").forEachIndexed { index, label ->
+                    ) {
+                        Box(
+                            Modifier.fillMaxWidth(storageUsageFraction.coerceIn(0f, 1f))
+                                .fillMaxHeight().background(StudioPalette.Accent)
+                        )
+                    }
+                    listOf(
+                        "Total space" to storageTotalSummary,
+                        "Free space" to storageFreeSummary,
+                        "Media files" to storageMediaSummary
+                    ).forEach { (label, value) ->
                         Row(
-                            Modifier.fillMaxWidth().heightIn(min = 42.dp),
+                            Modifier.fillMaxWidth().heightIn(min = 36.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(
-                                Modifier.size(8.dp).clip(CircleShape).background(
-                                    listOf(Color(0xFF3B82F6), StudioPalette.Accent, Color(0xFFD6336C), Color(0xFFE0A100))[index]
-                                )
-                            )
-                            Text(label, color = StudioPalette.Ink, fontSize = 13.sp, modifier = Modifier.padding(start = 10.dp).weight(1f))
-                            Text("—", color = StudioPalette.Muted, fontSize = 12.sp)
+                            Text(label, color = StudioPalette.Ink, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            Text(if (connected) value else "—", color = StudioPalette.Muted, fontSize = 12.sp)
                         }
                     }
-                    Text(
-                        if (connected) "Storage is read from the Aharane server. Media breakdown is shown when available."
-                        else "Server storage values are not available until you connect this app.",
-                        color = StudioPalette.Muted,
-                        fontSize = 11.5.sp,
-                        lineHeight = 16.sp,
-                        modifier = Modifier.padding(top = 6.dp)
-                    )
                 }
             }
             item {
                 StudioSectionHeading("Largest files")
-                StudioCard { StudioEmpty("No files yet.", "Connect to browse file sizes and storage use.") }
+                StudioCard {
+                    if (!connected || largestFiles.isEmpty()) {
+                        StudioEmpty("No file sizes available.", if (connected) "The server has not returned file sizes for the current workspace." else "Connect to browse file sizes and storage use.")
+                    } else {
+                        largestFiles.take(5).forEachIndexed { index, line ->
+                            if (index > 0) StudioDivider()
+                            Text(line, color = StudioPalette.Ink, fontSize = 12.5.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 10.dp))
+                        }
+                    }
+                }
             }
             item {
                 StudioSectionHeading("By folder")
-                StudioCard { StudioEmpty("No folders yet.", "Folder usage appears after the file tree loads.") }
+                StudioCard {
+                    if (!connected || folderSummaries.isEmpty()) {
+                        StudioEmpty("No folder sizes available.", if (connected) "No folder sizes were returned from the current file tree." else "Connect to browse folder sizes.")
+                    } else {
+                        folderSummaries.take(8).forEachIndexed { index, line ->
+                            if (index > 0) StudioDivider()
+                            Text(line, color = StudioPalette.Ink, fontSize = 12.5.sp, modifier = Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 10.dp))
+                        }
+                    }
+                }
             }
             item {
                 StudioSectionHeading("MEGA backup")

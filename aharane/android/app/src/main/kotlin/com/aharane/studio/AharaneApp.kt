@@ -248,6 +248,7 @@ fun AharaneApp(
     var fileDialogError by remember { mutableStateOf("") }
     var selectedFile by remember { mutableStateOf<ServerFileEntry?>(null) }
     var pendingDeletePaths by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pendingMovePaths by remember { mutableStateOf<List<String>>(emptyList()) }
     var pendingExportBytes by remember { mutableStateOf<ByteArray?>(null) }
     var mediaImage by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     var mediaTitle by remember { mutableStateOf("") }
@@ -595,12 +596,17 @@ fun AharaneApp(
                         entry ?: error("Select a file first."),
                         name
                     )
-                    "move" -> repository.moveFile(entry?.path ?: error("Select a file first."), name)
+                    "move" -> if (pendingMovePaths.isNotEmpty()) {
+                        repository.moveFiles(pendingMovePaths, name)
+                    } else {
+                        repository.moveFile(entry?.path ?: error("Select a file first."), name)
+                    }
                     "delete" -> repository.deleteFiles(pendingDeletePaths)
                 }
                 fileDialogMode = ""
                 selectedFile = null
                 pendingDeletePaths = emptyList()
+                pendingMovePaths = emptyList()
                 serverFiles = repository.allFiles()
                 Toast.makeText(context, "File changes saved.", Toast.LENGTH_SHORT).show()
             } catch (error: Exception) {
@@ -624,21 +630,15 @@ fun AharaneApp(
             "rename", "duplicate", "move" -> {
                 selectedFile = serverEntry
                 fileDialogMode = action
-                fileDialogName = when (action) {
-                    "move" -> fileDirectory
-                    else -> entry.name
-                }
+                fileDialogName = if (action == "move") "" else entry.name
                 fileDialogError = ""
             }
             "delete" -> {
-                if (entry.isDirectory) {
-                    Toast.makeText(context, "Delete files inside this folder individually. Folder deletion is not supported by the server.", Toast.LENGTH_LONG).show()
-                } else {
-                    selectedFile = serverEntry
-                    pendingDeletePaths = listOf(entry.path)
-                    fileDialogMode = "delete"
-                    fileDialogError = ""
-                }
+                selectedFile = serverEntry
+                pendingDeletePaths = listOf(entry.path)
+                pendingMovePaths = emptyList()
+                fileDialogMode = "delete"
+                fileDialogError = ""
             }
             "download-zip" -> exportSelection(listOf(entry.path))
             else -> Toast.makeText(context, "This file action is not available.", Toast.LENGTH_SHORT).show()
@@ -1101,12 +1101,20 @@ fun AharaneApp(
                         onBulkAction = { entries, action ->
                             when (action) {
                                 "delete" -> {
-                                    pendingDeletePaths = entries.filterNot { it.isDirectory }.map { it.path }
+                                    pendingDeletePaths = entries.map { it.path }
+                                    pendingMovePaths = emptyList()
                                     selectedFile = null
+                                    fileDialogName = ""
+                                    fileDialogError = ""
                                     fileDialogMode = "delete"
                                 }
                                 "move" -> {
-                                    Toast.makeText(context, "Select a destination folder from the file menu.", Toast.LENGTH_SHORT).show()
+                                    pendingMovePaths = entries.map { it.path }
+                                    pendingDeletePaths = emptyList()
+                                    selectedFile = null
+                                    fileDialogName = ""
+                                    fileDialogError = ""
+                                    fileDialogMode = "move"
                                 }
                                 "zip" -> exportSelection(entries.map { it.path })
                             }
@@ -1373,7 +1381,12 @@ fun AharaneApp(
     }
 
     if (fileDialogMode.isNotBlank()) {
-        Dialog(onDismissRequest = { fileDialogMode = ""; selectedFile = null; pendingDeletePaths = emptyList() }) {
+        Dialog(onDismissRequest = {
+            fileDialogMode = ""
+            selectedFile = null
+            pendingDeletePaths = emptyList()
+            pendingMovePaths = emptyList()
+        }) {
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
                     .background(StudioPalette.Surface).padding(18.dp),
@@ -1409,7 +1422,7 @@ fun AharaneApp(
                             .padding(horizontal = 11.dp, vertical = 12.dp)
                     )
                 } else {
-                    Text("This permanently deletes the selected source files from the Aharane workspace.", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
+                    Text("This permanently deletes the selected files or folders from the Aharane workspace.", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
                 }
                 if (fileDialogError.isNotBlank()) Text(fileDialogError, color = StudioPalette.Bad, fontSize = 12.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.align(Alignment.End)) {
@@ -1417,6 +1430,7 @@ fun AharaneApp(
                         fileDialogMode = ""
                         selectedFile = null
                         pendingDeletePaths = emptyList()
+                        pendingMovePaths = emptyList()
                     })
                     StudioActionButton(
                         if (busy) "Working…" else if (fileDialogMode == "delete") "Delete" else "Save",

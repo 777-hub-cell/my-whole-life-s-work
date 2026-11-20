@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -65,7 +66,8 @@ fun ConversationScreen(
     onAttach: () -> Unit = {},
     onRecordVoice: () -> Unit = {},
     onOpenMedia: (ChatMessage) -> Unit = {},
-    onViewOnce: (ChatMessage) -> Unit = {}
+    onViewOnce: (ChatMessage) -> Unit = {},
+    onStarMessage: (ChatMessage) -> Unit = {}
 ) {
     var draft by rememberSaveable(conversation.key.jid) { mutableStateOf("") }
     var replyTo by remember { mutableStateOf<ChatMessage?>(null) }
@@ -226,6 +228,7 @@ fun ConversationScreen(
                             onReply = { replyTo = message },
                             onOpenMedia = { onOpenMedia(message) },
                             onViewOnce = { onViewOnce(message) },
+                            onStar = { onStarMessage(message) },
                             connected = connected
                         )
                     }
@@ -427,6 +430,7 @@ private fun MessageBubble(
     onReply: () -> Unit,
     onOpenMedia: () -> Unit,
     onViewOnce: () -> Unit,
+    onStar: () -> Unit,
     connected: Boolean
 ) {
     val outgoing = message.direction == MessageDirection.OUTGOING
@@ -460,7 +464,10 @@ private fun MessageBubble(
                         bottomStart = if (outgoing) 15.dp else 5.dp
                     )
                 )
-                .clickable(onClick = onReply)
+                .combinedClickable(
+                    onClick = onReply,
+                    onLongClick = { if (connected) onStar() }
+                )
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             if (reply != null) {
@@ -519,6 +526,9 @@ private fun MessageBubble(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(timestamp, color = foreground.copy(alpha = if (outgoing) .72f else .55f), fontSize = 9.5.sp)
+                if (message.isStarred) {
+                    Text("★  ", color = foreground.copy(alpha = .9f), fontSize = 10.sp)
+                }
                 if (outgoing) {
                     Text(
                         when (message.status) {

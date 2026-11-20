@@ -610,6 +610,7 @@ test('whole-conversation remote delete retains incoming history and does not era
       })
     }
 
+    assert.equal(await store.markMessageDeletedRemotely('private', jid, 'unknown-1'), false)
     assert.equal(await store.markConversationIncomingMessagesDeletedRemotely('private', jid), 2)
     const messages = await store.getMessages('private', jid, { limit: 20 })
     assert.equal(messages.length, 4)
@@ -620,6 +621,10 @@ test('whole-conversation remote delete retains incoming history and does not era
     assert.equal(byId['outgoing-1'].deletedByRemote, false)
     assert.equal(byId['unknown-1'].deletedByRemote, false)
     assert.deepEqual(await store.listDeletedMessageIds('private', jid), [])
+    assert.deepEqual(
+      (await store.listRemoteDeletedMessages('private', jid)).map(row => row.id).sort(),
+      ['incoming-1', 'incoming-2']
+    )
     assert.equal(await store.markConversationIncomingMessagesDeletedRemotely('private', jid), 0)
   } finally {
     await rm(dir, { recursive: true, force: true })

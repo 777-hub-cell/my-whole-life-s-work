@@ -352,6 +352,7 @@ fun AharaneApp(
     }
     var activityRows by remember { mutableStateOf<List<ServerActivityEntry>>(emptyList()) }
     var storageSnapshot by remember { mutableStateOf<ServerStorageSnapshot?>(null) }
+    var messageMetrics by remember { mutableStateOf<ServerMessageMetrics?>(null) }
     var serverFiles by remember { mutableStateOf<List<ServerFileEntry>>(emptyList()) }
     var fileDraft by remember { mutableStateOf<ServerFileTree?>(null) }
     var packageLibraryLoaded by remember(previewMode) { mutableStateOf(false) }
@@ -772,6 +773,9 @@ fun AharaneApp(
         runCatching { repository.storage() }
             .onSuccess { storageSnapshot = it }
             .onFailure { failures += "Storage: ${it.message ?: "unavailable"}" }
+        runCatching { repository.metrics() }
+            .onSuccess { messageMetrics = it }
+            .onFailure { messageMetrics = null }
         runCatching { repository.fileTree() }
             .onSuccess { fileDraft = it }
             .onFailure { failures += "Files draft: ${it.message ?: "unavailable"}" }
@@ -2037,13 +2041,9 @@ fun AharaneApp(
                         publicAccountStatus = if (previewMode) "Preview session" else runtime?.publicAccount?.let(::accountStateLabel) ?: "Status not loaded",
                         privateActionLabel = if (previewMode) "Preview" else runtime?.privateAccount?.let(::accountActionLabel) ?: "Link account",
                         publicActionLabel = if (previewMode) "Preview" else runtime?.publicAccount?.let(::accountActionLabel) ?: "Link account",
-                        storageAvailable = storageSnapshot != null && connected,
-                        storageUsageFraction = storageSnapshot?.let {
-                            if (it.totalBytes > 0L) it.usedBytes.toFloat() / it.totalBytes.toFloat() else 0f
-                        } ?: 0f,
-                        storageUsedSummary = storageSnapshot?.let { formatBytes(it.usedBytes) } ?: "—",
-                        storageTotalSummary = storageSnapshot?.let { formatBytes(it.totalBytes) } ?: "—",
-                        storageFreeSummary = storageSnapshot?.let { formatBytes(it.freeBytes) } ?: "—",
+                        metricsAvailable = messageMetrics != null && connected,
+                        messagesLast24h = messageMetrics?.messagesLast24h ?: 0,
+                        hourlyMessageCounts = messageMetrics?.hourlyMessages ?: emptyList(),
                         onAccountAction = { target ->
                             if (previewMode) {
                                 pairingAccount = target

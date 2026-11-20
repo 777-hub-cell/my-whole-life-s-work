@@ -111,6 +111,7 @@ fun MoreScreen(
     mediaCache: EncryptedMediaCache? = null,
     onSyncAllChats: () -> Unit = {},
     syncingAllChats: Boolean = false,
+    onClearMediaCache: (ChatAccount) -> Unit = {},
     onAppearanceChanged: () -> Unit = {}
 ) {
     var dialog by rememberSaveable { mutableStateOf("") }
@@ -454,8 +455,7 @@ fun MoreScreen(
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         StudioActionButton("Clear " + selectedChatAccount.label + " media cache", primary = false, onClick = {
-                            mediaCache?.clearAccount(accountKey)
-                            onAppearanceChanged()
+                            onClearMediaCache(selectedChatAccount)
                         })
                         StudioActionButton(if (syncingAllChats) "Syncing…" else "Sync all chats", primary = true, enabled = connected && !syncingAllChats, onClick = onSyncAllChats)
                     }

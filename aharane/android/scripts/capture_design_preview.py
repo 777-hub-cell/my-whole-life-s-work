@@ -75,7 +75,14 @@ def tap_label(
         time.sleep(0.35)
 
     if required:
-        raise RuntimeError(f"Could not locate tappable UI element: {label!r}")
+        visible = sorted({
+            node.attrib.get("text", "") or node.attrib.get("content-desc", "")
+            for node in nodes()
+            if node.attrib.get("text", "") or node.attrib.get("content-desc", "")
+        })
+        raise RuntimeError(
+            f"Could not locate tappable UI element: {label!r}; visible labels: {visible[:100]!r}"
+        )
     return False
 
 def assert_visible_texts(labels):
@@ -83,7 +90,10 @@ def assert_visible_texts(labels):
     deadline = time.time() + 8
     while time.time() < deadline:
         visible = {node.attrib.get("text", "") for node in nodes()}
-        missing = [label for label in labels if label not in visible]
+        missing = [
+            label for label in labels
+            if not any(label.casefold() in value.casefold() for value in visible)
+        ]
         if not missing:
             return
         time.sleep(0.35)

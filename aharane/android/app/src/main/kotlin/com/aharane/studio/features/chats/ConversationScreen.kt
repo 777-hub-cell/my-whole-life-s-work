@@ -126,6 +126,22 @@ fun ConversationScreen(
     var actionMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var forwardMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var deleteMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    val context = LocalContext.current
+    var wallpaperBitmap by remember(appearance.photoUri) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(appearance.photoUri) {
+        wallpaperBitmap = if (appearance.photoUri.isBlank()) null else withContext(Dispatchers.IO) {
+            runCatching {
+                context.contentResolver.openInputStream(Uri.parse(appearance.photoUri))?.use {
+                    BitmapFactory.decodeStream(it)?.asImageBitmap()
+                }
+            }.getOrNull()
+        }
+    }
+    val wallpaperBrush = when (appearance.wallpaper) {
+        "solid" -> Brush.linearGradient(listOf(appearanceColor(appearance.wallpaperColor), appearanceColor(appearance.wallpaperColor)))
+        "gradient" -> Brush.linearGradient(listOf(appearanceColor(appearance.gradientStart), appearanceColor(appearance.gradientEnd)))
+        else -> Brush.linearGradient(listOf(StudioPalette.Background, StudioPalette.Background))
+    }
 
     val listState = rememberLazyListState()
     val visible = remember(messages, searchResults, search, conversation.key) {

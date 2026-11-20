@@ -93,6 +93,7 @@ fun ConversationScreen(
     hasOlderMessages: Boolean = false,
     loadingOlderMessages: Boolean = false,
     lastSyncedAt: Long = 0L,
+    onSyncConversation: () -> Unit = {},
     onLoadOlderMessages: () -> Unit = {},
     onBack: () -> Unit,
     onSend: (String, ChatMessage?) -> Unit,

@@ -2,6 +2,7 @@ package com.aharane.studio.core.storage
 
 import android.content.Context
 import com.aharane.studio.core.model.*
+import java.util.UUID
 import org.json.JSONArray
 
 class LocalChatRepository(context: Context) {
@@ -29,6 +30,67 @@ class LocalChatRepository(context: Context) {
     suspend fun conversations(account: ChatAccount): List<ChatSummary> =
         dao.conversations(account.apiValue).map { it.toModel() }
 
+    suspend fun enqueueTextMessage(
+        conversation: ChatSummary,
+        text: String,
+        quotedMessageId: String?,
+        clientMessageId: String = UUID.randomUUID().toString().replace("-", "")
+    ): String {
+        require(text.isNotBlank() && text.toByteArray(Charsets.UTF_8).size <= 12 * 1024)
+        require(quotedMessageId.isNullOrBlank() || dao.message(
+            conversation.key.account.apiValue, conversation.key.jid, quotedMessageId
+        ) != null) { "The quoted message is not in this conversation's saved history." }
+        dao.putOutgoingMessage(
+            ChatOutgoingMessageRow(
+                account = conversation.key.account.apiValue,
+                jid = conversation.key.jid,
+                clientMessageId = clientMessageId,
+                text = text,
+                quotedMessageId = quotedMessageId,
+                queuedAtMillis = System.currentTimeMillis(),
+                state = "PENDING",
+                lastError = null,
+                remoteMessageId = null
+            )
+        )
+        return clientMessageId
+    }
+
+    suspend fun outgoingMessage(key: ConversationKey, clientMessageId: String): ChatOutgoingMessageRow? =
+        dao.outgoingMessage(key.account.apiValue, key.jid, clientMessageId)
+
+    suspend fun outgoingMessages(key: ConversationKey): List<ChatOutgoingMessageRow> =
+        dao.outgoingMessages(key.account.apiValue, key.jid)
+
+    suspend fun pendingOutgoingMessages(account: ChatAccount, limit: Int = 100): List<ChatOutgoingMessageRow> =
+        dao.pendingOutgoingMessages(account.apiValue, limit.coerceIn(1, 200))
+
+    suspend fun updateOutgoingMessage(
+        key: ConversationKey,
+        clientMessageId: String,
+        state: String,
+        error: String? = null,
+        remoteMessageId: String? = null
+    ) {
+        require(state in setOf("PENDING", "SENDING", "SENT", "FAILED"))
+        dao.updateOutgoingMessage(key.account.apiValue, key.jid, clientMessageId, state, error, remoteMessageId)
+    }
+
+    suspend fun resetInterruptedOutgoingMessages() {
+        listOf(ChatAccount.PRIVATE, ChatAccount.PUBLIC).forEach { account ->
+            dao.conversations(account.apiValue).forEach { conversation ->
+                dao.outgoingMessages(account.apiValue, conversation.jid)
+                    .filter { it.state == "SENDING" }
+                    .forEach { row ->
+                        dao.updateOutgoingMessage(
+                            account.apiValue, row.jid, row.clientMessageId,
+                            "FAILED", "The app stopped during sending. Safe retry uses the same server idempotency key.", null
+                        )
+                    }
+            }
+        }
+    }
+
     suspend fun applyDeletedMessages(key: ConversationKey, messageIds: List<String>) {
         messageIds.distinct().take(2000).forEach { id ->
             if (id.isNotBlank()) dao.deleteMessage(key.account.apiValue, key.jid, id)
@@ -38,7 +100,10 @@ class LocalChatRepository(context: Context) {
     suspend fun saveMessages(conversation: ChatSummary, messages: List<ChatMessage>, hasOlder: Boolean? = null) {
         require(messages.all { it.key == conversation.key }) { "A message crossed its account or conversation boundary." }
         val rows = messages.map { it.toRow() }
-        if (rows.isNotEmpty()) dao.putMessages(rows)
+        if (rows.isNotEmpty()) {
+            dao.putMessages(rows)
+            rows.forEach { dao.reconcileOutgoingMessage(it.account, it.jid, it.messageId) }
+        }
         val old = dao.conversation(conversation.key.account.apiValue, conversation.key.jid)
         val latestIncoming = rows.maxWithOrNull(compareBy<ChatMessageRow> { it.timestampMillis }.thenBy { it.messageId })
         val earliestIncoming = rows.minWithOrNull(compareBy<ChatMessageRow> { it.timestampMillis }.thenBy { it.messageId })
@@ -75,8 +140,11 @@ class LocalChatRepository(context: Context) {
         ))
     }
 
-    suspend fun messages(key: ConversationKey): List<ChatMessage> =
-        dao.messages(key.account.apiValue, key.jid).map { it.toModel() }
+    suspend fun messages(key: ConversationKey): List<ChatMessage> {
+        val saved = dao.messages(key.account.apiValue, key.jid).map { it.toModel() }
+        val queued = dao.outgoingMessages(key.account.apiValue, key.jid).map { it.toChatMessage(key) }
+        return (saved + queued).distinctBy { it.messageId }.sortedBy { it.timestampMillis }
+    }
 
     suspend fun olderMessages(key: ConversationKey, before: Long, limit: Int = 100): List<ChatMessage> =
         dao.olderMessages(key.account.apiValue, key.jid, before, limit)
@@ -154,6 +222,23 @@ class LocalChatRepository(context: Context) {
 
     fun close() = secureDatabase.database.close()
 }
+
+private fun ChatOutgoingMessageRow.toChatMessage(key: ConversationKey): ChatMessage = ChatMessage(
+    key = key,
+    messageId = remoteMessageId?.takeIf { it.isNotBlank() } ?: "local-$clientMessageId",
+    direction = MessageDirection.OUTGOING,
+    kind = MessageKind.TEXT,
+    text = text,
+    timestampMillis = queuedAtMillis,
+    status = when (state) {
+        "SENT" -> MessageStatus.SENT
+        "FAILED" -> MessageStatus.FAILED
+        else -> MessageStatus.PENDING
+    },
+    replyToMessageId = quotedMessageId,
+    localOutboxState = state,
+    localOutboxError = lastError
+)
 
 private fun ChatSummary.toRow() = ChatConversationRow(
     account = key.account.apiValue, jid = key.jid, title = title, lastMessagePreview = lastMessagePreview,

@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.aharane.studio.core.design.AharaneTheme
+import com.aharane.studio.core.network.AharaneConnectionManager
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -20,6 +21,7 @@ class MainActivity : ComponentActivity() {
         val preferences = getSharedPreferences("aharane-studio-ui", MODE_PRIVATE)
 
         setContent {
+            val connectionManager = androidx.compose.runtime.remember { AharaneConnectionManager(applicationContext) }
             var themeMode by rememberSaveable {
                 mutableStateOf(preferences.getString("themeMode", "system") ?: "system")
             }
@@ -70,6 +72,7 @@ class MainActivity : ComponentActivity() {
                 rowScale = rowScale
             ) {
                 AharaneApp(
+                    connectionManager = connectionManager,
                     previewMode = previewMode,
                     themeMode = themeMode,
                     onThemeModeChanged = {

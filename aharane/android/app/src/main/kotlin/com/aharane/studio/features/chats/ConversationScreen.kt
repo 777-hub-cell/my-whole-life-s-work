@@ -2,6 +2,7 @@ package com.aharane.studio.features.chats
 
 import androidx.activity.compose.BackHandler
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -42,6 +43,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -93,6 +97,7 @@ fun ConversationScreen(
     audioFiles: Map<String, File> = emptyMap(),
     audioLoading: Set<String> = emptySet(),
     audioErrors: Map<String, String> = emptyMap(),
+    audioWaveforms: Map<String, List<Float>> = emptyMap(),
     onLoadMediaPreview: (ChatMessage) -> Unit = {},
     onLoadAudio: (ChatMessage) -> Unit = {},
     onDownloadMedia: (ChatMessage) -> Unit = {},
@@ -285,6 +290,7 @@ fun ConversationScreen(
                             audioFile = audioFiles[mediaKey(message)],
                             audioLoading = message.messageId in audioLoading,
                             audioError = audioErrors[message.messageId],
+                            audioWaveform = audioWaveforms[mediaKey(message)].orEmpty(),
                             onLoadAudio = { onLoadAudio(message) },
                             onDownloadMedia = { onDownloadMedia(message) },
                             onOpenLocation = { onOpenLocation(message) }
@@ -615,6 +621,7 @@ private fun MessageBubble(
     audioFile: File?,
     audioLoading: Boolean,
     audioError: String?,
+    audioWaveform: List<Float>,
     onLoadAudio: () -> Unit,
     onDownloadMedia: () -> Unit,
     onOpenLocation: () -> Unit
@@ -829,6 +836,7 @@ private fun MessageContent(
         }
         MessageKind.AUDIO -> AudioMessagePlayer(
             message = message, file = audioFile, loading = audioLoading, error = audioError,
+            waveform = audioWaveform,
             foreground = foreground, surface = soft, onLoad = onLoadAudio
         )
         MessageKind.DOCUMENT -> {
@@ -898,6 +906,7 @@ private fun AudioMessagePlayer(
     file: File?,
     loading: Boolean,
     error: String?,
+    waveform: List<Float>,
     foreground: Color,
     surface: Color,
     onLoad: () -> Unit
@@ -970,6 +979,25 @@ private fun AudioMessagePlayer(
             } else if (!prepared) {
                 Text("Preparing audio…", color = foreground.copy(alpha = .72f), fontSize = 10.5.sp)
             } else {
+                if (message.isVoiceNote && waveform.isNotEmpty()) {
+                    Canvas(Modifier.fillMaxWidth().height(28.dp)) {
+                        val gap = size.width / (waveform.size * 1.7f)
+                        val barWidth = gap * .62f
+                        val played = if (duration > 0) progress.toFloat() / duration.toFloat() else 0f
+                        waveform.forEachIndexed { index, amplitude ->
+                            val height = (size.height * (.12f + amplitude * .82f)).coerceAtMost(size.height)
+                            val x = index * gap
+                            drawRoundRect(
+                                color = if (index.toFloat() / waveform.size <= played) foreground else foreground.copy(alpha = .48f),
+                                topLeft = Offset(x, (size.height - height) / 2f),
+                                size = Size(barWidth, height),
+                                cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f)
+                            )
+                        }
+                    }
+                } else if (message.isVoiceNote) {
+                    Text("Waveform unavailable for this audio codec.", color = foreground.copy(alpha = .65f), fontSize = 9.5.sp)
+                }
                 Slider(
                     value = progress.toFloat().coerceIn(0f, duration.coerceAtLeast(1).toFloat()),
                     onValueChange = { progress = it.toInt() },

@@ -139,7 +139,7 @@ data class VisualWorkflow(
                 config = mapOf("text" to "Hello, {{sender}}!")
             )
             return VisualWorkflow(
-                name = "New command",
+                name = "hello",
                 account = account,
                 enabled = false,
                 nodes = listOf(trigger, reply),

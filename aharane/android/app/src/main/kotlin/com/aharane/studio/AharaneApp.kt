@@ -232,6 +232,19 @@ fun AharaneApp(
     var serverReachable by remember { mutableStateOf(false) }
     var owners by remember { mutableStateOf(ServerOwnerSettings()) }
     var environmentRows by remember { mutableStateOf<List<ServerEnvironmentValue>>(emptyList()) }
+    var previewEnvironmentValues by remember {
+        mutableStateOf(
+            listOf(
+                EnvironmentValue("BOT_NAME", "Aharane Preview", valueType = "string"),
+                EnvironmentValue("PRIVATE_PREFIX", ".", readOnly = true, valueType = "string"),
+                EnvironmentValue("PUBLIC_PREFIX", "!", readOnly = true, valueType = "string"),
+                EnvironmentValue("AUTO_READ", "false", valueType = "boolean"),
+                EnvironmentValue("SHOW_TYPING", "true", valueType = "boolean"),
+                EnvironmentValue("COMMAND_COOLDOWN", "3", valueType = "number"),
+                EnvironmentValue("WELCOME_MESSAGE", "Welcome to Aharane Preview!", valueType = "string")
+            )
+        )
+    }
     var activityRows by remember { mutableStateOf<List<ServerActivityEntry>>(emptyList()) }
     var storageSnapshot by remember { mutableStateOf<ServerStorageSnapshot?>(null) }
     var serverFiles by remember { mutableStateOf<List<ServerFileEntry>>(emptyList()) }
@@ -925,7 +938,7 @@ fun AharaneApp(
             modifiedLabel = pkg.validatedAt ?: pkg.createdAt
         )
     }
-    val environmentValues = if (previewMode) emptyList() else environmentRows.map {
+    val environmentValues = if (previewMode) previewEnvironmentValues else environmentRows.map {
         EnvironmentValue(it.key, it.value, it.readOnly, it.type, it.secret)
     }
 
@@ -1571,15 +1584,19 @@ fun AharaneApp(
                         values = environmentValues,
                         connected = connected,
                         onSave = { values ->
-                            if (previewMode || !connected) {
-                                Toast.makeText(context, "Preview mode cannot save environment values to a server.", Toast.LENGTH_SHORT).show()
+                            if (previewMode) {
+                                previewEnvironmentValues = values
+                                Toast.makeText(context, "Preview ENV values saved on this screen only.", Toast.LENGTH_SHORT).show()
+                                true
+                            } else if (!connected) {
+                                Toast.makeText(context, "Connect to your Aharane server before saving ENV values.", Toast.LENGTH_SHORT).show()
                                 false
                             } else {
-                            repository.saveEnvironment(values.map {
-                                ServerEnvironmentValue(it.key, it.value, it.readOnly, it.secret, it.valueType)
-                            })
-                            environmentRows = repository.environment()
-                            true
+                                repository.saveEnvironment(values.map {
+                                    ServerEnvironmentValue(it.key, it.value, it.readOnly, it.secret, it.valueType)
+                                })
+                                environmentRows = repository.environment()
+                                true
                             }
                         },
                         previewMode = previewMode

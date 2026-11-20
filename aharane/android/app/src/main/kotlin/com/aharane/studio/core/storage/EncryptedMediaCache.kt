@@ -25,17 +25,38 @@ data class EncryptedMediaRecord(val relativePath: String, val sha256: String, va
 class EncryptedMediaCache(context: Context) {
     private val root = File(context.noBackupFilesDir, "aharane-secure-media")
     private val alias = "com.aharane.chat.media.wrap.v1"
+    private val preferences = context.applicationContext.getSharedPreferences("aharane-media-cache", Context.MODE_PRIVATE)
+
+    fun maximumCacheBytes(account: String): Long {
+        require(account == "private" || account == "public")
+        return preferences.getLong("maximum-bytes-" + account, 512L * 1024L * 1024L)
+    }
+
+    fun setMaximumCacheMegabytes(account: String, megabytes: Int) {
+        require(account == "private" || account == "public")
+        require(megabytes in 100..4096) { "Choose a cache limit between 100 MB and 4096 MB." }
+        check(preferences.edit().putLong("maximum-bytes-" + account, megabytes.toLong() * 1024L * 1024L).commit())
+    }
+
+    fun cacheSizeBytes(account: String): Long {
+        require(account == "private" || account == "public")
+        return File(root, hash(account)).walkTopDown().filter { it.isFile && it.extension == "enc" }.sumOf { it.length() }
+    }
 
     fun store(account: String, jid: String, messageId: String, bytes: ByteArray, viewOnce: Boolean = false): EncryptedMediaRecord {
         require(account == "private" || account == "public") { "Unknown WhatsApp account." }
         require(!viewOnce) { "View-once media must never be cached." }
         require(bytes.isNotEmpty()) { "The attachment is empty." }
-        require(bytes.size <= 64 * 1024 * 1024) { "Offline media is limited to 64 MB per item." }
+        require(bytes.size <= 256 * 1024 * 1024) { "Offline media is limited to 256 MB per item." }
         val ownership = account + "|" + jid + "|" + messageId
         val folder = File(root, hash(account) + "/" + hash(jid)).apply {
             if (!exists() && !mkdirs()) error("Could not create the private media cache.")
         }
         val target = File(folder, hash(messageId) + ".enc")
+        val existingBytes = if (target.exists()) target.length() else 0L
+        require(cacheSizeBytes(account) - existingBytes + bytes.size <= maximumCacheBytes(account)) {
+            "The offline media cache is full. Increase its limit or clear older cached media."
+        }
         val temporary = File(folder, target.name + ".part")
         val iv = ByteArray(12).also(SecureRandom()::nextBytes)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -73,6 +94,11 @@ class EncryptedMediaCache(context: Context) {
     fun clearAccount(account: String) {
         require(account == "private" || account == "public")
         File(root, hash(account)).deleteRecursively()
+    }
+
+    fun clearAll() {
+        if (root.exists()) root.deleteRecursively()
+        if (!root.exists() && !root.mkdirs()) throw IllegalStateException("Could not clear the offline media cache.")
     }
 
     private fun readEncryptedFile(file: File, aad: String): ByteArray {

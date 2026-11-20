@@ -139,6 +139,21 @@ data class ChatSyncPage(
 class AharaneRepository(private val connection: AharaneConnectionManager) {
     private val api: AharaneApiClient
         get() = connection.api ?: throw IllegalStateException("Connect to your Aharane server first.")
+    suspend fun visualCommands(account: String): JSONObject =
+        api.get("visual-commands", mapOf("account" to account))
+
+    suspend fun createVisualCommand(workflow: JSONObject): JSONObject =
+        api.post("visual-commands", JSONObject().put("workflow", workflow))
+
+    suspend fun updateVisualCommand(id: String, workflow: JSONObject): JSONObject =
+        api.put("visual-commands/" + encodePath(id), JSONObject().put("workflow", workflow))
+
+    suspend fun deleteVisualCommand(id: String): JSONObject =
+        api.delete("visual-commands/" + encodePath(id), JSONObject().put("confirm", true))
+
+    suspend fun testVisualCommand(id: String, messageText: String = ""): JSONObject =
+        api.post("visual-commands/" + encodePath(id) + "/test", JSONObject().put("messageText", messageText))
+
     suspend fun runtimeSnapshot(): ServerRuntimeSnapshot {
         val payload = api.get("studio/snapshot")
         val runtime = payload.optJSONObject("runtime") ?: JSONObject()

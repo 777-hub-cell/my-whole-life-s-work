@@ -306,3 +306,70 @@ test('replayed message IDs are deduplicated by a bounded in-memory key index', a
     assert.equal(rows.length, 1)
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
+
+test('contact cards retain vCards, locations retain coordinates and polls retain their options', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-structured-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348012345678@s.whatsapp.net'
+    const messages = [
+      {
+        key: { id: 'contact-card-1', remoteJid: jid, fromMe: false },
+        message: {
+          contactMessage: {
+            displayName: 'Ada Lovelace',
+            vcard: 'BEGIN:VCARD\\nVERSION:3.0\\nFN:Ada Lovelace\\nTEL;TYPE=CELL:+2348012345678\\nEMAIL:ada@example.test\\nEND:VCARD',
+          },
+        },
+      },
+      {
+        key: { id: 'location-1', remoteJid: jid, fromMe: false },
+        message: {
+          locationMessage: {
+            name: 'Ibadan City Hall',
+            address: 'Oyo State, Nigeria',
+            degreesLatitude: 7.3775,
+            degreesLongitude: 3.947,
+          },
+        },
+      },
+      {
+        key: { id: 'poll-1', remoteJid: jid, fromMe: false },
+        message: {
+          pollCreationMessage: {
+            name: 'Where should we meet?',
+            options: [{ optionName: 'Ibadan' }, { optionName: 'Lagos' }],
+          },
+        },
+      },
+    ]
+
+    for (const message of messages) {
+      await store.recordMessage({ sessionId: 'private', message })
+    }
+
+    const rows = await store.getMessages('private', jid)
+    const contact = rows.find(row => row.id === 'contact-card-1')
+    const location = rows.find(row => row.id === 'location-1')
+    const poll = rows.find(row => row.id === 'poll-1')
+
+    assert.equal(contact.type, 'contact')
+    assert.match(contact.text, /Ada Lovelace/)
+    assert.match(contact.text, /TEL;TYPE=CELL:\+2348012345678/)
+    assert.match(contact.text, /EMAIL:ada@example.test/)
+
+    assert.equal(location.type, 'location')
+    assert.match(location.text, /Ibadan City Hall/)
+    assert.match(location.text, /Oyo State, Nigeria/)
+    assert.match(location.text, /Coordinates: 7\.3775, 3\.947/)
+
+    assert.equal(poll.type, 'poll')
+    assert.match(poll.text, /Where should we meet\?/)
+    assert.match(poll.text, /Ibadan/)
+    assert.match(poll.text, /Lagos/)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+

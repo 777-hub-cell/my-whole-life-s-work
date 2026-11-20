@@ -1561,7 +1561,7 @@ fun AharaneApp(
                             connectionScope.launch {
                                 try {
                                     repository.deleteMessage(activeConversation!!, message)
-                                    activeMessages = repository.messages(activeConversation!!)
+                                    activeMessages = refreshConversationIncrementally(activeConversation!!)
                                     chatsByAccount[activeConversation!!.key.account] = localChatRepository?.saveConversations(repository.chats(activeConversation!!.key.account))
                                         ?: repository.chats(activeConversation!!.key.account)
                                     Toast.makeText(context, "Message deleted.", Toast.LENGTH_SHORT).show()

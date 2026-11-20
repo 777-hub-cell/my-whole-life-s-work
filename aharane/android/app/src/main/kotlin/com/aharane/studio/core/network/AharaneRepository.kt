@@ -607,8 +607,21 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
     suspend fun exportFiles(paths: List<String>): ByteArray =
         api.postBytes("files/export-selection", JSONObject().put("paths", JSONArray(paths)))
 
-    suspend fun mediaBytes(account: ChatAccount, message: ChatMessage): ByteArray =
-        api.getBytes("chats/${account.apiValue}/media/${encodePath(message.messageId)}")
+    suspend fun mediaBytes(conversation: ChatSummary, message: ChatMessage): ByteArray {
+        require(conversation.key.account == message.key.account) {
+            "The attachment does not belong to the selected WhatsApp account."
+        }
+        val mediaPath = "chats/${conversation.key.account.apiValue}/media/${encodePath(message.messageId)}"
+        return try {
+            api.getBytes(mediaPath)
+        } catch (error: AharaneApiException) {
+            if (error.statusCode != 404) throw error
+            // Incoming media is indexed before its bytes are cached. Ask the
+            // connected WhatsApp session to fetch it, then read the cached file.
+            downloadUnavailableMedia(conversation, message)
+            api.getBytes(mediaPath)
+        }
+    }
 
     suspend fun viewOnceMedia(account: ChatAccount, message: ChatMessage): ByteArray {
         require(message.isViewOnce) { "This message is not view-once media." }

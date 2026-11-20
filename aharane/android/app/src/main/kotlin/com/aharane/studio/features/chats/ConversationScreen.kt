@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -143,6 +144,8 @@ fun ConversationScreen(
     var draft by rememberSaveable(conversation.key.jid) { mutableStateOf("") }
     var replyTo by remember { mutableStateOf<ChatMessage?>(null) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var mediaGalleryOpen by rememberSaveable { mutableStateOf(false) }
+    var mediaGalleryFilter by rememberSaveable { mutableStateOf("All") }
     var search by rememberSaveable { mutableStateOf("") }
     var selectedSearchDay by rememberSaveable { mutableStateOf<Long?>(null) }
     var moreOpen by remember { mutableStateOf(false) }
@@ -264,6 +267,17 @@ fun ConversationScreen(
                 )
             }
             ConversationTool(
+                Icons.Outlined.Image,
+                if (mediaGalleryOpen) "Close media gallery" else "Browse conversation media"
+            ) {
+                mediaGalleryOpen = !mediaGalleryOpen
+                if (mediaGalleryOpen) {
+                    searchOpen = false
+                    search = ""
+                    selectedSearchDay = null
+                }
+            }
+            ConversationTool(
                 Icons.Outlined.Search,
                 if (searchOpen) "Close conversation search" else "Search in conversation"
             ) {
@@ -336,7 +350,120 @@ fun ConversationScreen(
             Box(Modifier.fillMaxWidth().height(1.dp).background(StudioPalette.Line))
         }
 
-        Box(Modifier.weight(1f).fillMaxWidth().background(wallpaperBrush)) {
+        if (mediaGalleryOpen) {
+            val gallerySource = messages.filter { message ->
+                !message.isViewOnce && message.kind in setOf(
+                    MessageKind.IMAGE, MessageKind.VIDEO, MessageKind.AUDIO,
+                    MessageKind.STICKER, MessageKind.DOCUMENT
+                )
+            }
+            val galleryItems = gallerySource.filter { message ->
+                when (mediaGalleryFilter) {
+                    "Photos" -> message.kind == MessageKind.IMAGE
+                    "Videos" -> message.kind == MessageKind.VIDEO
+                    "Audio" -> message.kind == MessageKind.AUDIO
+                    "Files" -> message.kind == MessageKind.DOCUMENT
+                    "Stickers" -> message.kind == MessageKind.STICKER
+                    else -> true
+                }
+            }.sortedByDescending { it.timestampMillis }
+            Column(
+                Modifier.weight(1f).fillMaxWidth().background(StudioPalette.Background)
+            ) {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth().background(StudioPalette.Surface)
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(listOf("All", "Photos", "Videos", "Audio", "Files", "Stickers")) { filter ->
+                        val selected = mediaGalleryFilter == filter
+                        Text(
+                            filter,
+                            color = if (selected) Color.White else StudioPalette.Muted,
+                            fontSize = 11.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            modifier = Modifier.clip(RoundedCornerShape(14.dp))
+                                .background(if (selected) StudioPalette.Accent else StudioPalette.Background)
+                                .clickable { mediaGalleryFilter = filter }
+                                .padding(horizontal = 11.dp, vertical = 7.dp)
+                        )
+                    }
+                }
+                Box(Modifier.fillMaxWidth().height(1.dp).background(StudioPalette.Line))
+                if (galleryItems.isEmpty()) {
+                    Column(
+                        Modifier.fillMaxSize().padding(28.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text("No saved ${mediaGalleryFilter.lowercase()} in this conversation", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Media appears here as messages are synchronised. View-once media is excluded.", color = StudioPalette.Muted, fontSize = 11.5.sp, lineHeight = 17.sp)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(1.dp)
+                    ) {
+                        items(galleryItems, key = { it.messageId }) { item ->
+                            val localReady = mediaPreviews.containsKey(mediaKey(item)) ||
+                                audioFiles.containsKey(mediaKey(item)) ||
+                                videoFiles.containsKey(mediaKey(item))
+                            Row(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        when (item.kind) {
+                                            MessageKind.AUDIO -> onLoadAudio(item)
+                                            MessageKind.VIDEO -> onLoadVideo(item)
+                                            else -> onOpenMedia(item)
+                                        }
+                                    }
+                                    .padding(horizontal = 9.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    Modifier.size(38.dp).clip(RoundedCornerShape(7.dp)).background(StudioPalette.Soft),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        when (item.kind) {
+                                            MessageKind.IMAGE -> "IMG"
+                                            MessageKind.VIDEO -> "VID"
+                                            MessageKind.AUDIO -> "AUD"
+                                            MessageKind.STICKER -> "STK"
+                                            else -> "DOC"
+                                        },
+                                        color = StudioPalette.Accent, fontSize = 9.sp, fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        item.mediaFileName?.takeIf { it.isNotBlank() }
+                                            ?: item.text.takeIf { it.isNotBlank() }?.take(52)
+                                            ?: messageAttachmentLabel(item.kind),
+                                        color = StudioPalette.Ink, fontSize = 12.5.sp,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        SimpleDateFormat("d MMM yyyy · h:mm a", Locale.getDefault()).format(Date(item.timestampMillis)) +
+                                            if (item.deletedByRemote) " · Deleted on WhatsApp" else "",
+                                        color = StudioPalette.Muted, fontSize = 10.sp,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Text(
+                                    if (localReady) "On phone" else if (mediaServerAvailable) "Open" else "Not saved",
+                                    color = if (localReady) StudioPalette.Accent else StudioPalette.Muted,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            Box(Modifier.weight(1f).fillMaxWidth().background(wallpaperBrush)) {
             if (appearance.wallpaper == "photo" && wallpaperBitmap != null) {
                 val matrix = ColorMatrix().apply {
                     setToScale(
@@ -442,6 +569,7 @@ fun ConversationScreen(
                         )
                     }
                 }
+            }
             }
         }
 

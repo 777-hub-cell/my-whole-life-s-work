@@ -217,6 +217,12 @@ class LocalChatRepository(context: Context) {
     suspend fun cachedMediaInfo(key: ConversationKey, messageId: String): ChatMessageRow? =
         dao.message(key.account.apiValue, key.jid, messageId)
 
+    suspend fun cachedMediaIds(key: ConversationKey): Set<String> =
+        dao.messages(key.account.apiValue, key.jid)
+            .filter { !it.cachedMediaPath.isNullOrBlank() && !it.cachedMediaSha256.isNullOrBlank() }
+            .map { it.messageId }
+            .toSet()
+
     suspend fun cachedMediaForAccount(account: ChatAccount): List<ChatMessageRow> =
         dao.conversations(account.apiValue).flatMap { conversation ->
             dao.messages(account.apiValue, conversation.jid).filter { !it.cachedMediaPath.isNullOrBlank() }

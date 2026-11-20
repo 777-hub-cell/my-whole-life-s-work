@@ -32,6 +32,9 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
     { type: 'message.replyText', name: 'Reply to message', description: 'Reply to the triggering WhatsApp message with a quote.', ports: ports([execIn, { id: 'text', label: 'Text', type: 'string' }], [execOut, { id: 'sent', label: 'Sent message', type: 'message' }]) },
     { type: 'message.react', name: 'React to message', description: 'React to the triggering message with an emoji.', ports: ports([execIn, { id: 'emoji', label: 'Emoji', type: 'string' }], [execOut]) },
   ] },
+  { category: 'Polls and reactions', nodes: [
+    { type: 'message.sendPoll', name: 'Create poll', description: 'Send a WhatsApp poll with two to twelve answer options.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Poll message', type: 'message' }]) },
+  ] },
   { category: 'Message information', nodes: [
     { type: 'message.text', name: 'Message text', description: 'Read the text of the triggering WhatsApp message.', ports: ports([], [{ id: 'value', label: 'Text', type: 'string' }]) },
     { type: 'message.sender', name: 'Message sender', description: 'Read the sender JID of the triggering message.', ports: ports([], [{ id: 'value', label: 'Sender JID', type: 'string' }]) },
@@ -157,6 +160,18 @@ export function validateWorkflow(input) {
     if (node.type === 'message.react' && !textValue(config.emoji, 24).trim() && !inputEdge(workflow, node.id, 'emoji')) {
       issue(node.id, 'error', 'A reaction emoji is required.', 'Enter an emoji or connect a text output.')
     }
+    if (node.type === 'message.sendPoll') {
+      const options = textValue(config.options, 1000).split(/\\r?\\n/).map(value => value.trim()).filter(Boolean)
+      const uniqueOptions = new Set(options.map(value => value.toLocaleLowerCase()))
+      if (!textValue(config.title, 180).trim()) issue(node.id, 'error', 'A poll question is required.', 'Enter a short poll question.')
+      if (options.length < 2 || options.length > 12 || uniqueOptions.size !== options.length) {
+        issue(node.id, 'error', 'A poll needs 2 to 12 unique options.', 'Put one unique answer on each line.')
+      }
+      const selectable = Number(config.selectableCount == null ? 1 : config.selectableCount)
+      if (!Number.isInteger(selectable) || selectable < 1 || selectable > Math.max(options.length, 1)) {
+        issue(node.id, 'error', 'The selectable answer count is invalid.', 'Choose a whole number from 1 up to the number of poll options.')
+      }
+    }
     if (['variable.set', 'variable.get', 'counter.increment'].includes(node.type) && !SAFE_KEY.test(textValue(config.key, 48))) {
       issue(node.id, 'error', 'The variable or counter name is invalid.', 'Use a name beginning with a letter and no spaces.')
     }
@@ -225,9 +240,19 @@ export function validateWorkflow(input) {
   if (trigger && !outputEdges(workflow, trigger.id, 'next').length) issue(trigger.id, 'error', 'The trigger has no next action.', 'Connect its Next output to an action.')
 
   const reached = new Set()
+  const visitData = (id, seen = new Set()) => {
+    if (seen.has(id)) return
+    seen.add(id)
+    for (const edge of workflow.edges) {
+      if (edge.from !== id || isExec(byId.get(id), edge.fromSocket)) continue
+      reached.add(edge.to)
+      visitData(edge.to, seen)
+    }
+  }
   const visit = id => {
     if (reached.has(id)) return
     reached.add(id)
+    visitData(id)
     for (const edge of workflow.edges) if (edge.from === id && isExec(byId.get(id), edge.fromSocket)) visit(edge.to)
   }
   if (trigger) visit(trigger.id)
@@ -369,6 +394,27 @@ export async function executeVisualWorkflow(input, options = {}) {
           else {
             await event.socket.sendMessage(event.remoteJid, { react: { text: emoji, key } })
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the reaction.' })
+          }
+        } else if (node.type === 'message.sendPoll') {
+          const title = textValue(node.config.title, 180).trim()
+          const values = textValue(node.config.options, 1000).split(/\\r?\\n/).map(value => value.trim()).filter(Boolean)
+          const selectableCount = Number(node.config.selectableCount == null ? 1 : node.config.selectableCount)
+          if (!title || values.length < 2 || values.length > 12 || new Set(values.map(value => value.toLowerCase())).size !== values.length) {
+            throw new Error('A poll needs a question and 2 to 12 unique options.')
+          }
+          if (!Number.isInteger(selectableCount) || selectableCount < 1 || selectableCount > values.length) {
+            throw new Error('The poll selectable count is invalid.')
+          }
+          if (dryRun) {
+            trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would send poll: ' + title })
+            outputs.set(node.id, { sent: { simulated: true, title, values } })
+          } else {
+            const sent = await event.socket.sendMessage(event.remoteJid, {
+              poll: { name: title, values, selectableCount },
+            })
+            if (!sent?.key?.id) throw new Error('WhatsApp did not return a poll message.')
+            outputs.set(node.id, { sent })
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the poll.' })
           }
         } else if (node.type === 'condition.equals') {
           const left = textValue(readInput(workflow, node, 'left', 'left', state))

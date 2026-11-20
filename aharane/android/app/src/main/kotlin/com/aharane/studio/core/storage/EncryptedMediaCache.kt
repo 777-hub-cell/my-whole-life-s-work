@@ -3,7 +3,9 @@ package com.aharane.studio.core.storage
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.KeyStore
@@ -64,12 +66,22 @@ class EncryptedMediaCache(context: Context) {
             raw.write(iv)
             CipherOutputStream(raw, cipher).use { encrypted -> encrypted.write(bytes) }
         }
-        val digest = sha256(bytes)
-        val verifiedBytes = readEncryptedFile(temporary, ownership)
-        check(sha256(verifiedBytes) == digest && verifiedBytes.size == bytes.size) { "Encrypted media verification failed." }
-        if (target.exists() && !target.delete()) throw IllegalStateException("Could not replace the older media cache entry.")
-        if (!temporary.renameTo(target)) throw IllegalStateException("Could not commit the encrypted media file.")
-        return EncryptedMediaRecord(root.toPath().relativize(target.toPath()).toString(), digest, bytes.size.toLong())
+        try {
+            val digest = sha256(bytes)
+            val verifiedBytes = readEncryptedFile(temporary, ownership)
+            check(sha256(verifiedBytes) == digest && verifiedBytes.size == bytes.size) { "Encrypted media verification failed." }
+            val backup = File(folder, target.name + ".bak")
+            if (backup.exists() && !backup.delete()) throw IllegalStateException("Could not clear the previous media backup.")
+            if (target.exists() && !target.renameTo(backup)) throw IllegalStateException("Could not preserve the previous offline media copy.")
+            if (!temporary.renameTo(target)) {
+                if (backup.exists()) backup.renameTo(target)
+                throw IllegalStateException("Could not commit the encrypted media file.")
+            }
+            backup.delete()
+            return EncryptedMediaRecord(root.toPath().relativize(target.toPath()).toString(), digest, bytes.size.toLong())
+        } finally {
+            temporary.delete()
+        }
     }
 
     fun read(account: String, jid: String, messageId: String, relativePath: String, expectedSha256: String): ByteArray {
@@ -101,16 +113,30 @@ class EncryptedMediaCache(context: Context) {
 
     private fun readEncryptedFile(file: File, aad: String): ByteArray {
         require(file.isFile && file.length() > 12) { "Encrypted media file is missing or incomplete." }
-        val stored = file.readBytes()
-        check(stored.size > 12) { "Encrypted media header is incomplete." }
-        val iv = stored.copyOfRange(0, 12)
-        val encrypted = stored.copyOfRange(12, stored.size)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, mediaKey(), GCMParameterSpec(128, iv))
-        cipher.updateAAD(aad.toByteArray(Charsets.UTF_8))
-        // Use doFinal directly so AES-GCM authentication/tag failures propagate
-        // instead of being masked by a streaming wrapper.
-        return cipher.doFinal(encrypted)
+        FileInputStream(file).use { input ->
+            val iv = ByteArray(12)
+            var headerOffset = 0
+            while (headerOffset < iv.size) {
+                val count = input.read(iv, headerOffset, iv.size - headerOffset)
+                if (count < 0) throw IllegalStateException("Encrypted media header is incomplete.")
+                headerOffset += count
+            }
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, mediaKey(), GCMParameterSpec(128, iv))
+            cipher.updateAAD(aad.toByteArray(Charsets.UTF_8))
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                val plain = cipher.update(buffer, 0, count)
+                if (plain != null && plain.isNotEmpty()) output.write(plain)
+            }
+            // The final call validates the GCM authentication tag. Any tampering
+            // throws here; partial plaintext is never returned to the caller.
+            output.write(cipher.doFinal())
+            return output.toByteArray()
+        }
     }
 
     private fun mediaKey(): java.security.Key {

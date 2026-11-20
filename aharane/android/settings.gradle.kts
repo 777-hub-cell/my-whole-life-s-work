@@ -1,4 +1,13 @@
 pluginManagement {
+    // Resolve the Compose compiler plugin directly to its published implementation
+    // artifact. This avoids requiring the separate plugin-marker POM in CI mirrors.
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == "org.jetbrains.kotlin.plugin.compose") {
+                useModule("org.jetbrains.kotlin:compose-compiler-gradle-plugin:${requested.version}")
+            }
+        }
+    }
     repositories {
         google()
         maven { url = uri("https://repo1.maven.org/maven2") }

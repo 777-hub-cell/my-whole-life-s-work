@@ -238,8 +238,7 @@ def main():
     tap_label("Open Appearance Studio", scroll_to_find=True)
     capture("06b-chat-appearance-studio.png", 1)
     tap_label("Photo", scroll_to_find=True, required=False)
-    tap_label("Choose photo", scroll_to_find=True, required=False)
-    if tap_label("Choose photo", required=False):
+    if tap_label("Choose photo", scroll_to_find=True, required=False):
         capture("06c-android-photo-picker.png", 1)
         back()
     tap_label("Message bubbles", scroll_to_find=True)

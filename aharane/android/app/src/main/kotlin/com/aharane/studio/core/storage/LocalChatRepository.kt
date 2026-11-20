@@ -138,6 +138,10 @@ class LocalChatRepository(context: Context) {
 
     suspend fun cachedMediaBytes(account: ChatAccount): Long = dao.cachedMediaBytes(account.apiValue) ?: 0L
 
+    suspend fun clearCachedMediaMetadata(account: ChatAccount) {
+        dao.clearCachedMediaMetadata(account.apiValue)
+    }
+
     fun close() = secureDatabase.database.close()
 }
 

@@ -571,7 +571,7 @@ fun AharaneApp(
                     }
                     if (bytes.size > 24 * 1024 * 1024) error("WhatsApp attachments are limited to 24 MB in Aharane.")
                     repository.sendMedia(conversation, bytes, mime, name, "")
-                    activeMessages = repository.messages(conversation)
+                    activeMessages = refreshConversationIncrementally(conversation)
                     chatsByAccount[conversation.key.account] = repository.chats(conversation.key.account)
                 } catch (error: Exception) {
                     Toast.makeText(context, error.message ?: "Attachment could not be sent.", Toast.LENGTH_LONG).show()
@@ -1516,7 +1516,7 @@ fun AharaneApp(
                             connectionScope.launch {
                                 try {
                                     repository.react(activeConversation!!, message, emoji)
-                                    activeMessages = repository.messages(activeConversation!!)
+                                    activeMessages = refreshConversationIncrementally(activeConversation!!)
                                 } catch (error: Exception) {
                                     Toast.makeText(context, error.message ?: "Could not react to this message.", Toast.LENGTH_LONG).show()
                                 }

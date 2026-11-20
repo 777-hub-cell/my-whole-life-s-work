@@ -683,6 +683,7 @@ fun VisualCommandBuilderScreen(
         NodeConfigurationDialog(
             node = configuredNode,
             definition = definitions.firstOrNull { it.type == configuredNode.type },
+            allowGroupScope = account == "public",
             issues = validation.errors.filter { it.nodeId == configuredNode.id } + validation.warnings.filter { it.nodeId == configuredNode.id },
             onDismiss = { configNodeId = null },
             onApply = { config ->
@@ -919,6 +920,7 @@ private fun SocketDot(color: Color) {
 private fun NodeConfigurationDialog(
     node: VisualNode,
     definition: VisualNodeDefinition?,
+    allowGroupScope: Boolean,
     issues: List<VisualWorkflowIssue>,
     onDismiss: () -> Unit,
     onApply: (Map<String, String>) -> Unit,
@@ -963,7 +965,7 @@ private fun NodeConfigurationDialog(
                 BasicTextField(
                     value = config[key].orEmpty(),
                     onValueChange = { config = config + (key to it) },
-                    singleLine = key !in setOf("text", "options", "buttons"),
+                    singleLine = key !in setOf("text", "options", "buttons", "participants", "description"),
                     textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 11.sp),
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)
                         .clip(RoundedCornerShape(6.dp)).background(StudioPalette.Background)
@@ -980,13 +982,18 @@ private fun NodeConfigurationDialog(
                             Modifier.clip(RoundedCornerShape(6.dp))
                                 .background(if (active) StudioPalette.Accent else StudioPalette.Background)
                                 .border(1.dp, if (active) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(6.dp))
-                                .clickable(enabled = node.config["account"] != "private") {
+                                .clickable(enabled = allowGroupScope || value == "direct") {
                                     config = config + ("chatScope" to value)
                                 }.padding(horizontal = 8.dp, vertical = 5.dp)
                         ) {
                             Text(label, color = if (active) Color.White else StudioPalette.Ink, fontSize = 9.5.sp)
                         }
                     }
+                }
+                if (!allowGroupScope) {
+                    Text("Private account commands stay in the owner self-chat.", color = StudioPalette.Muted, fontSize = 9.sp)
+                } else {
+                    Text("Group runs still require the sender to be on the Public allow-list.", color = StudioPalette.Muted, fontSize = 9.sp)
                 }
             }
             if (node.type == "trigger.command") {

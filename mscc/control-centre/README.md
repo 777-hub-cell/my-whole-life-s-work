@@ -19,7 +19,7 @@ Open the local preview at `http://127.0.0.1:3000`. It has no live API and cannot
 
 ## Live website deployment
 
-For Bot-Hosting.net, follow `HOSTING-QUICKSTART.md` and `hosting/README.md`: upload the website ZIP, use the start command `node server.mjs`, and activate the provider's HTTPS subdomain. The bundled Node server selects live mode when `NIGHT_API_UPSTREAM` is set and proxies the API server-side. Never expose the bot admin listener publicly. `deployment/README.md` retains the alternative static-web-server/Nginx setup.
+For Vercel, follow `deployment/VERCEL.md`. For legacy Bot-Hosting.net hosting, follow `HOSTING-QUICKSTART.md` and `hosting/README.md`: upload the website ZIP, use the start command `node server.mjs`, and activate the provider's HTTPS subdomain. The bundled Node server selects live mode when `NIGHT_API_UPSTREAM` is set and proxies the API server-side. Never expose the bot admin listener publicly. `deployment/README.md` retains the alternative static-web-server/Nginx setup.
 
 ## Supported live operations
 

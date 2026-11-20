@@ -358,6 +358,49 @@ fun FilesScreen(
         }
     }
 
+    if (draftConfirmation.isNotBlank()) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { draftConfirmation = "" }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(StudioPalette.Surface).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    if (draftConfirmation == "apply") "Apply saved source changes?"
+                    else "Discard saved source changes?",
+                    color = StudioPalette.Ink,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    if (draftConfirmation == "apply")
+                        "Aharane will validate the project, switch to the staged release and restart. If the health check fails, the previous release is restored."
+                    else
+                        "The staged edits will be deleted. The currently running Aharane release will not be changed.",
+                    color = StudioPalette.Muted,
+                    fontSize = 12.5.sp,
+                    lineHeight = 18.sp
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    StudioActionButton("Cancel", compact = true, onClick = { draftConfirmation = "" })
+                    Spacer(Modifier.width(8.dp))
+                    StudioActionButton(
+                        if (draftConfirmation == "apply") "Apply" else "Discard",
+                        compact = true,
+                        primary = true,
+                        destructive = draftConfirmation == "discard",
+                        onClick = {
+                            val action = draftConfirmation
+                            draftConfirmation = ""
+                            if (action == "apply") onApplyEdits() else onDiscardEdits()
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+
 }
 
 @Composable
@@ -439,46 +482,5 @@ private fun FileEntryRow(
         }
     }
 
-    if (draftConfirmation.isNotBlank()) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = { draftConfirmation = "" }) {
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                    .background(StudioPalette.Surface).padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    if (draftConfirmation == "apply") "Apply saved source changes?"
-                    else "Discard saved source changes?",
-                    color = StudioPalette.Ink,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    if (draftConfirmation == "apply")
-                        "Aharane will validate the project, switch to the staged release and restart. If the health check fails, the previous release is restored."
-                    else
-                        "The staged edits will be deleted. The currently running Aharane release will not be changed.",
-                    color = StudioPalette.Muted,
-                    fontSize = 12.5.sp,
-                    lineHeight = 18.sp
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    StudioActionButton("Cancel", compact = true, onClick = { draftConfirmation = "" })
-                    Spacer(Modifier.width(8.dp))
-                    StudioActionButton(
-                        if (draftConfirmation == "apply") "Apply" else "Discard",
-                        compact = true,
-                        primary = true,
-                        destructive = draftConfirmation == "discard",
-                        onClick = {
-                            val action = draftConfirmation
-                            draftConfirmation = ""
-                            if (action == "apply") onApplyEdits() else onDiscardEdits()
-                        }
-                    )
-                }
-            }
-        }
-    }
 
 }

@@ -350,7 +350,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     await ensureReady(account)
     const rows = await readRows(account)
     return rows
-      .filter(row => row.jid === jid && row.fromMe === false && row.deletedByRemote === true && row.viewOnce !== true)
+      .filter(row => row.jid === jid && row.directionKnown === true && row.fromMe === false && row.deletedByRemote === true && row.viewOnce !== true)
       .sort((a, b) => (Number(a.deletedAt) || 0) - (Number(b.deletedAt) || 0))
       .slice(-Math.max(1, Math.min(2000, Number(limit) || 1000)))
       .map(row => ({ id: row.id, deletedAt: Number(row.deletedAt) || 0 }))

@@ -323,6 +323,8 @@ fun AharaneApp(
     var editorDiagnosticRequestId by remember { mutableIntStateOf(0) }
     var conversationSearchResults by remember { mutableStateOf<List<ChatMessage>?>(null) }
     var conversationSearchRequestId by remember { mutableIntStateOf(0) }
+    var inboxMessageSearchResults by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
+    var inboxSearchRequestId by remember { mutableIntStateOf(0) }
     var serverError by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
 
@@ -1900,7 +1902,57 @@ fun AharaneApp(
                         savedShowAvatars = chatAppearance.optBoolean("showAvatars", true),
                         savedShowPreviews = chatAppearance.optBoolean("showPreviews", true),
                         savedShowTimestamps = chatAppearance.optBoolean("showTimestamps", true),
-                        localStorageError = localChatStorageError
+                        localStorageError = localChatStorageError,
+                        messageSearchResults = inboxMessageSearchResults,
+                        onInboxSearchChanged = { query, fromMillis, toMillis ->
+                            inboxSearchRequestId += 1
+                            val requestId = inboxSearchRequestId
+                            if (query.isBlank()) {
+                                inboxMessageSearchResults = emptyList()
+                            } else {
+                                connectionScope.launch {
+                                    val matches = if (previewMode) {
+                                        previewMessages.filter { message ->
+                                            message.key.account == selectedAccount &&
+                                                (message.text.contains(query, true) ||
+                                                    message.senderName.orEmpty().contains(query, true) ||
+                                                    message.mediaFileName.orEmpty().contains(query, true)) &&
+                                                (fromMillis == 0L || message.timestampMillis >= fromMillis) &&
+                                                (toMillis == 0L || message.timestampMillis <= toMillis)
+                                        }.sortedByDescending { it.timestampMillis }
+                                    } else {
+                                        runCatching {
+                                            localChatRepository?.search(
+                                                selectedAccount,
+                                                query,
+                                                fromMillis = fromMillis,
+                                                toMillis = toMillis,
+                                                limit = 100
+                                            ).orEmpty()
+                                        }.getOrElse {
+                                            localChatStorageError = it.message ?: "Offline message search is unavailable."
+                                            emptyList()
+                                        }
+                                    }
+                                    if (requestId == inboxSearchRequestId && selectedAccount == account) {
+                                        inboxMessageSearchResults = matches
+                                    }
+                                }
+                            }
+                        },
+                        onInboxMessageSelected = { message ->
+                            connectionScope.launch {
+                                val target = chatsByAccount[message.key.account].orEmpty()
+                                    .firstOrNull { it.key == message.key }
+                                    ?: localChatRepository?.conversations(message.key.account)
+                                        ?.firstOrNull { it.key == message.key }
+                                if (target != null) {
+                                    activeConversation = target
+                                } else {
+                                    Toast.makeText(context, "The conversation is not available in the saved inbox.", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
                     )
                     MainDestination.FILES -> FilesScreen(
                         entries = studioFileEntries,

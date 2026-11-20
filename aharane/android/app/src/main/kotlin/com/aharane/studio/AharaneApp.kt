@@ -1579,6 +1579,22 @@ fun AharaneApp(
                             microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         }
                     },
+                    onKeepMediaOffline = { message ->
+                        val target = activeConversation
+                        if (previewMode || target == null || message.isViewOnce) {
+                            Toast.makeText(context, "This media cannot be kept offline in Preview or view-once mode.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            connectionScope.launch {
+                                runCatching { obtainCachedOrRemoteMedia(target, message) }
+                                    .onSuccess {
+                                        Toast.makeText(context, "Media verified and saved offline on this phone.", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .onFailure {
+                                        Toast.makeText(context, it.message ?: "Media could not be saved offline.", Toast.LENGTH_LONG).show()
+                                    }
+                            }
+                        }
+                    },
                     onOpenMedia = { message ->
                         if (previewMode) {
                             Toast.makeText(context, "Preview mode does not contain the original attachment bytes.", Toast.LENGTH_SHORT).show()

@@ -32,6 +32,7 @@ The WhatsApp sessions, bot commands, persistent chat history and workspace files
 ## Privacy and behaviour
 
 - The app uses HTTPS only; cleartext traffic is disabled.
+- Optional app lock uses the device’s existing secure screen credential. Aharane does not store a second PIN or password; enabling the lock is refused if Android has no secure device credential.
 - The password is used for the sign-in request only. The received session cookie is encrypted with an Android Keystore key.
 - Opening a conversation reads cached history and calls the read-only incremental sync endpoint when connected. It does not update Aharane's inbox read marker, call WhatsApp's read-receipt API, or expose online presence.
 - View-once media is requested through the server's single-use endpoint. View-once video is played from a temporary app-cache file and that file is deleted when its viewer closes.
@@ -84,4 +85,4 @@ Normal attachments can be encrypted using AES-GCM after downloading. The file is
 
 ### Remaining release acceptance
 
-This implementation still needs a clean current-head Android build, unit and instrumentation tests, emulator walkthrough and screenshot review, and real Galaxy A16 / Android 16 testing. It is not yet release-complete. There is no durable idempotent outgoing message queue, optional app lock, WorkManager constrained sync, full cross-conversation/date search UI, complete state reconciliation for every edit/delete/pin/mute/archive event, or fully implemented animated/vector sticker, inline video-control and poll interaction parity. Migration and Keystore invalidation recovery also need dedicated test coverage. No production deployment or merge is authorised by this development work.
+This implementation still needs a clean current-head Android build, unit and instrumentation tests, emulator walkthrough and screenshot review, and real Galaxy A16 / Android 16 testing. It is not yet release-complete. There is no durable idempotent outgoing message queue or media-gallery browser yet. Poll options are read-only because the existing server has no voting endpoint; Lottie/TGS vector sticker payloads and full reconciliation of archive/pin/mute state remain incomplete. Encrypted database migrations, Keystore-loss handling and media-tamper tests are now in the instrumentation suite but still need a passing emulator run. No production deployment or merge is authorised by this development work.

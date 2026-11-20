@@ -1463,6 +1463,31 @@ app.post('/api/update/upload/chunk', requireAdmin, async (req, res) => {
 })
 
 
+app.post('/api/update/upload/abort', requireAdmin, async (req, res) => {
+  try {
+    const updateId = String(req.body?.updateId || '')
+    if (!validUpdateId(updateId)) {
+      return res.status(400).json({ ok: false, error: 'Invalid ZIP upload ID.' })
+    }
+    if (updateInProgress) {
+      return res.status(409).json({ ok: false, error: 'An update is being deployed; the upload cannot be aborted now.' })
+    }
+    const directory = uploadDirectory(updateId)
+    const metadata = await readJsonFile(join(directory, 'upload.json'))
+    if (!metadata) return res.status(404).json({ ok: false, error: 'The ZIP upload was not found.' })
+    if (metadata.status === 'validated') {
+      return res.status(409).json({ ok: false, error: 'This ZIP has already been validated. Remove it from Update packages instead.' })
+    }
+    if (metadata.status !== 'uploading') {
+      return res.status(409).json({ ok: false, error: 'This ZIP upload cannot be aborted in its current state.' })
+    }
+    await rm(directory, { recursive: true, force: true })
+    res.json({ ok: true, updateId, removed: true })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not abort the ZIP upload.') })
+  }
+})
+
 function chatAccount(value) {
   const accountId = String(value || '').toLowerCase()
   if (!['private', 'public'].includes(accountId)) throw Object.assign(new Error('Unknown WhatsApp account.'), { status: 404 })
@@ -2773,6 +2798,10 @@ app.post('/api/update/validate', requireAdmin, async (req, res) => {
       currentVersion: await currentBotVersion(),
     })
   } catch (error) {
+    const failedUploadId = String(req.body?.updateId || '')
+    if (validUpdateId(failedUploadId)) {
+      await rm(uploadDirectory(failedUploadId), { recursive: true, force: true }).catch(() => {})
+    }
     res.status(400).json({ ok: false, error: String(error?.message || 'ZIP validation failed.') })
   }
 })

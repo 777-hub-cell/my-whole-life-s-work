@@ -353,7 +353,9 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
                     isStarred = row.optBoolean("starred"),
                     isVoiceNote = row.optBoolean("ptt"),
                     replyToMessageId = row.optString("quotedMessageId").takeIf { it.isNotBlank() },
-                    reactions = reactions
+                    reactions = reactions,
+                    deletedByRemote = row.optBoolean("deletedByRemote"),
+                    deletedAtMillis = row.optLong("deletedAt")
                 ))
             }
         }

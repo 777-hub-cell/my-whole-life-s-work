@@ -115,6 +115,7 @@ fun ConversationScreen(
     onAttach: () -> Unit = {},
     onRecordVoice: () -> Unit = {},
     onOpenMedia: (ChatMessage) -> Unit = {},
+    onKeepMediaOffline: (ChatMessage) -> Unit = {},
     onViewOnce: (ChatMessage) -> Unit = {},
     onStarMessage: (ChatMessage) -> Unit = {},
     onReactMessage: (ChatMessage, String) -> Unit = { _, _ -> },
@@ -545,6 +546,7 @@ fun ConversationScreen(
                             onReply = { replyTo = message },
                             onRetryOutgoing = { onRetryOutgoingMessage(message) },
                             onOpenMedia = { onOpenMedia(message) },
+                            onKeepOffline = { onKeepMediaOffline(message) },
                             onViewOnce = { onViewOnce(message) },
                             onStar = { actionMessage = message },
                             connected = connected,
@@ -722,6 +724,15 @@ fun ConversationScreen(
                         }
                     }
                 }
+                if (!selected.isViewOnce && selected.kind in setOf(
+                    MessageKind.IMAGE, MessageKind.VIDEO, MessageKind.AUDIO,
+                    MessageKind.STICKER, MessageKind.DOCUMENT
+                )) {
+                    StudioPaletteAction("Keep media offline") {
+                        onKeepMediaOffline(selected)
+                        actionMessage = null
+                    }
+                }
                 StudioPaletteAction("Copy message") {
                     onCopyMessage(selected)
                     actionMessage = null
@@ -889,6 +900,7 @@ private fun MessageBubble(
     onReply: () -> Unit,
     onRetryOutgoing: () -> Unit,
     onOpenMedia: () -> Unit,
+    onKeepOffline: () -> Unit,
     onViewOnce: () -> Unit,
     onStar: () -> Unit,
     connected: Boolean,

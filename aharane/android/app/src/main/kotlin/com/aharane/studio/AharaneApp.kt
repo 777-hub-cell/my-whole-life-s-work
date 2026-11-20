@@ -147,6 +147,9 @@ fun AharaneApp(
     }
 
     var authenticated by remember(previewMode) { mutableStateOf(previewMode) }
+    var restoringSession by remember(connectionManager, previewMode) {
+        mutableStateOf(!previewMode && connectionManager.hasSavedSession())
+    }
     LaunchedEffect(authenticated, previewMode) {
         when {
             previewMode -> Unit
@@ -160,6 +163,63 @@ fun AharaneApp(
     var connectionBusy by remember { mutableStateOf(false) }
     var setupRequired by remember { mutableStateOf(false) }
     var connectionError by remember { mutableStateOf("") }
+
+    LaunchedEffect(connectionManager, connectionUrl, restoringSession) {
+        if (!restoringSession) return@LaunchedEffect
+        connectionBusy = true
+        try {
+            if (connectionManager.restoreSession()) {
+                authenticated = true
+            } else {
+                val result = connectionManager.connect(connectionUrl)
+                val auth = result.optJSONObject("auth") ?: JSONObject()
+                serverVerified = true
+                setupRequired = auth.optBoolean("setupRequired")
+                connectionUrl = connectionManager.savedStudioUrl
+                if (connectionManager.api?.hasSavedSession() == true) {
+                    runCatching {
+                        connectionManager.api?.get("status")
+                        authenticated = true
+                    }.onFailure {
+                        authenticated = true
+                        connectionError = "Offline access · showing chats saved on this phone."
+                    }
+                }
+            }
+        } catch (error: Exception) {
+            if (connectionManager.hasSavedSession()) {
+                authenticated = true
+                connectionError = "Offline access · showing chats saved on this phone."
+            } else {
+                connectionError = error.message ?: "Could not restore your Aharane session."
+            }
+        } finally {
+            restoringSession = false
+            connectionBusy = false
+        }
+    }
+
+    if (restoringSession) {
+        Box(
+            Modifier.fillMaxSize().background(StudioPalette.Background),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                Box(
+                    Modifier.size(48.dp).clip(RoundedCornerShape(15.dp)).background(StudioPalette.Accent),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("A", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                }
+                Text("Aharane", color = StudioPalette.Ink, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                Text("Restoring your workspace…", color = StudioPalette.Muted, fontSize = 12.5.sp)
+            }
+        }
+        return
+    }
 
     if (!authenticated) {
         LaunchedEffect(connectionManager, connectionUrl) {
@@ -1178,6 +1238,24 @@ fun AharaneApp(
     val selectedFilter = ChatFilter.valueOf(filterName)
     val connected = authenticated && !previewMode && serverReachable
 
+    suspend fun beginAccountLink(target: ChatAccount) {
+        val latest = repository.runtimeSnapshot()
+        runtime = latest
+        val state = if (target == ChatAccount.PRIVATE) latest.privateAccount else latest.publicAccount
+        if (state.registered) {
+            accountControlTarget = target
+            return
+        }
+        if (state.state.equals("needs-pairing", ignoreCase = true)) {
+            // WhatsApp rejected the saved credentials. The server first stores
+            // a protected backup, then prepares an empty auth directory.
+            repository.repair(target)
+            runtime = repository.runtimeSnapshot()
+        }
+        pairingAccount = target
+        pairingCode = repository.pairCode(target)
+    }
+
     suspend fun obtainCachedOrRemoteMedia(
         conversation: ChatSummary,
         message: ChatMessage,
@@ -1959,6 +2037,13 @@ fun AharaneApp(
                         publicAccountStatus = if (previewMode) "Preview session" else runtime?.publicAccount?.let(::accountStateLabel) ?: "Status not loaded",
                         privateActionLabel = if (previewMode) "Preview" else runtime?.privateAccount?.let(::accountActionLabel) ?: "Link account",
                         publicActionLabel = if (previewMode) "Preview" else runtime?.publicAccount?.let(::accountActionLabel) ?: "Link account",
+                        storageAvailable = storageSnapshot != null && connected,
+                        storageUsageFraction = storageSnapshot?.let {
+                            if (it.totalBytes > 0L) it.usedBytes.toFloat() / it.totalBytes.toFloat() else 0f
+                        } ?: 0f,
+                        storageUsedSummary = storageSnapshot?.let { formatBytes(it.usedBytes) } ?: "—",
+                        storageTotalSummary = storageSnapshot?.let { formatBytes(it.totalBytes) } ?: "—",
+                        storageFreeSummary = storageSnapshot?.let { formatBytes(it.freeBytes) } ?: "—",
                         onAccountAction = { target ->
                             if (previewMode) {
                                 pairingAccount = target
@@ -1966,16 +2051,7 @@ fun AharaneApp(
                             } else {
                                 connectionScope.launch {
                                     try {
-                                        val state = when (target) {
-                                            ChatAccount.PRIVATE -> runtime?.privateAccount
-                                            ChatAccount.PUBLIC -> runtime?.publicAccount
-                                        }
-                                        if (state?.registered == true) {
-                                            accountControlTarget = target
-                                        } else {
-                                            pairingAccount = target
-                                            pairingCode = repository.pairCode(target)
-                                        }
+                                        beginAccountLink(target)
                                     } catch (error: Exception) {
                                         pairingAccount = null
                                         Toast.makeText(context, error.message ?: "Account action failed.", Toast.LENGTH_LONG).show()
@@ -2271,13 +2347,7 @@ fun AharaneApp(
                             } else if (target != null && connected) {
                                 connectionScope.launch {
                                     try {
-                                        val state = if (target == ChatAccount.PRIVATE) runtime?.privateAccount else runtime?.publicAccount
-                                        if (state?.registered == true) {
-                                            accountControlTarget = target
-                                        } else {
-                                            pairingAccount = target
-                                            pairingCode = repository.pairCode(target)
-                                        }
+                                        beginAccountLink(target)
                                     } catch (error: Exception) {
                                         pairingAccount = null
                                         Toast.makeText(context, error.message ?: "Account action failed.", Toast.LENGTH_LONG).show()

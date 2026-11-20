@@ -223,6 +223,10 @@ fun AharaneApp(
     var serverFiles by remember { mutableStateOf<List<ServerFileEntry>>(emptyList()) }
     var fileDraft by remember { mutableStateOf<ServerFileTree?>(null) }
     val chatsByAccount = remember { mutableStateMapOf<ChatAccount, List<ChatSummary>>() }
+    var showIndividualChats by remember { mutableStateOf(true) }
+    var showGroupChats by remember { mutableStateOf(true) }
+    var starredPreviews by remember { mutableStateOf<List<String>>(emptyList()) }
+    var chatAppearance by remember { mutableStateOf(JSONObject()) }
     var activeMessages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
     var serverError by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
@@ -617,6 +621,23 @@ fun AharaneApp(
     val selectedAccount = ChatAccount.valueOf(accountName)
     val selectedFilter = ChatFilter.valueOf(filterName)
     val connected = authenticated && !previewMode
+
+    LaunchedEffect(selectedAccount, connected, previewMode) {
+        if (connected) {
+            try {
+                val visibility = repository.visibility(selectedAccount)
+                showIndividualChats = visibility.optJSONObject("individuals")?.optString("mode") != "selected"
+                showGroupChats = visibility.optJSONObject("groups")?.optString("mode") != "selected"
+                starredPreviews = repository.starredPreviews(selectedAccount)
+                chatAppearance = repository.chatAppearance()
+            } catch (error: Exception) {
+                serverError = error.message ?: "Could not load chat preferences."
+            }
+        } else if (previewMode) {
+            showIndividualChats = true
+            showGroupChats = true
+        }
+    }
     val currentAccountState = when (selectedAccount) {
         ChatAccount.PRIVATE -> runtime?.privateAccount
         ChatAccount.PUBLIC -> runtime?.publicAccount
@@ -868,7 +889,64 @@ fun AharaneApp(
                         onFilterSelected = { filterName = it.name },
                         conversations = currentChats,
                         accountConnected = if (previewMode) true else runtime?.let { if (selectedAccount == ChatAccount.PRIVATE) it.privateAccount.connected else it.publicAccount.connected } == true,
-                        onConversationSelected = { activeConversation = it }
+                        onConversationSelected = { activeConversation = it },
+                        onChatAction = { chat, action ->
+                            if (previewMode) return@ChatsScreen
+                            connectionScope.launch {
+                                try {
+                                    when (action) {
+                                        "pin" -> repository.setChatPreferences(chat.key.account, chat.key.jid, pinned = !chat.isPinned)
+                                        "mute" -> repository.setChatPreferences(chat.key.account, chat.key.jid, muted = !chat.isMuted)
+                                        "archive" -> repository.archive(chat, !chat.isArchived)
+                                        "unread" -> repository.markUnread(chat)
+                                    }
+                                    chatsByAccount[chat.key.account] = repository.chats(chat.key.account)
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Chat action failed.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        showIndividuals = showIndividualChats,
+                        showGroups = showGroupChats,
+                        starredItems = if (previewMode) emptyList() else starredPreviews,
+                        savedChatTheme = chatAppearance.optString("theme", "system"),
+                        savedShowAvatars = chatAppearance.optBoolean("showAvatars", true),
+                        savedShowPreviews = chatAppearance.optBoolean("showPreviews", true),
+                        savedShowTimestamps = chatAppearance.optBoolean("showTimestamps", true),
+                        onVisibilityModeChange = { kind, show ->
+                            if (connected) {
+                                connectionScope.launch {
+                                    try {
+                                        repository.setVisibilityModes(
+                                            selectedAccount,
+                                            showIndividuals = if (kind == "individuals") show else showIndividualChats,
+                                            showGroups = if (kind == "groups") show else showGroupChats
+                                        )
+                                        if (kind == "individuals") showIndividualChats = show else showGroupChats = show
+                                        chatsByAccount[selectedAccount] = repository.chats(selectedAccount)
+                                    } catch (error: Exception) {
+                                        Toast.makeText(context, error.message ?: "Visibility could not be saved.", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        },
+                        onChatAppearanceChange = { theme, avatars, previews, timestamps ->
+                            if (connected) {
+                                connectionScope.launch {
+                                    try {
+                                        val updated = repository.chatAppearance()
+                                            .put("theme", theme)
+                                            .put("showAvatars", avatars)
+                                            .put("showPreviews", previews)
+                                            .put("showTimestamps", timestamps)
+                                        repository.saveChatAppearance(updated)
+                                        chatAppearance = updated
+                                    } catch (error: Exception) {
+                                        Toast.makeText(context, error.message ?: "Chat appearance could not be saved.", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        }
                     )
                     MainDestination.FILES -> FilesScreen(
                         entries = studioFileEntries,

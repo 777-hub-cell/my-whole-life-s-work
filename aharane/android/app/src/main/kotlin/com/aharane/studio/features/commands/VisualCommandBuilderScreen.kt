@@ -116,6 +116,8 @@ fun VisualCommandBuilderScreen(
         loading = true
         try {
             val response = repository.visualCommands(account)
+            val warning = response.optString("storageWarning")
+            if (warning.isNotBlank() && warning != "null") notice = warning
             val categories = response.optJSONArray("library") ?: JSONArray()
             library = buildList {
                 for (index in 0 until categories.length()) {

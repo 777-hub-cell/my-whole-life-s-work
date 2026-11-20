@@ -4,6 +4,8 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import java.io.File
 import java.io.FileOutputStream
@@ -33,7 +35,9 @@ data class ChatConversationRow(
     val lastMessageFromMe: Boolean,
     val lastSyncAtMillis: Long = 0L,
     val newestSyncedTimestampMillis: Long = 0L,
+    val newestSyncedMessageId: String = "",
     val oldestSyncedTimestampMillis: Long = 0L,
+    val oldestSyncedMessageId: String = "",
     val hasOlderMessages: Boolean = true
 )
 
@@ -112,8 +116,8 @@ interface ChatDao {
     """)
     suspend fun search(account: String, jid: String?, query: String, fromMillis: Long, toMillis: Long, limit: Int): List<ChatMessageRow>
 
-    @Query("UPDATE chat_conversations SET lastSyncAtMillis = :syncedAt, newestSyncedTimestampMillis = MAX(newestSyncedTimestampMillis, :newest), oldestSyncedTimestampMillis = CASE WHEN oldestSyncedTimestampMillis = 0 THEN :oldest ELSE MIN(oldestSyncedTimestampMillis, :oldest) END, hasOlderMessages = :hasOlder WHERE account = :account AND jid = :jid")
-    suspend fun updateSync(account: String, jid: String, syncedAt: Long, newest: Long, oldest: Long, hasOlder: Boolean)
+    @Query("UPDATE chat_conversations SET lastSyncAtMillis = :syncedAt, newestSyncedTimestampMillis = :newest, newestSyncedMessageId = :newestId, oldestSyncedTimestampMillis = :oldest, oldestSyncedMessageId = :oldestId, hasOlderMessages = :hasOlder WHERE account = :account AND jid = :jid")
+    suspend fun updateSync(account: String, jid: String, syncedAt: Long, newest: Long, newestId: String, oldest: Long, oldestId: String, hasOlder: Boolean)
 
     @Query("UPDATE chat_messages SET cachedMediaPath = :path, cachedMediaSha256 = :sha256, cachedMediaBytes = :size WHERE account = :account AND jid = :jid AND messageId = :messageId")
     suspend fun setCachedMedia(account: String, jid: String, messageId: String, path: String?, sha256: String?, size: Long)
@@ -130,7 +134,7 @@ interface ChatDao {
 
 @Database(
     entities = [ChatConversationRow::class, ChatMessageRow::class],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 abstract class AharaneChatDatabase : RoomDatabase() {
@@ -145,6 +149,13 @@ class EncryptedChatDatabase private constructor(
         private const val KEY_ALIAS = "com.aharane.chat.database.wrap.v1"
         private const val KEY_FILE = "chat-database-key.wrap"
 
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE chat_conversations ADD COLUMN newestSyncedMessageId TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE chat_conversations ADD COLUMN oldestSyncedMessageId TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun open(context: Context): EncryptedChatDatabase {
             System.loadLibrary("sqlcipher")
             val root = File(context.noBackupFilesDir, "aharane-secure-chat").apply {
@@ -156,6 +167,7 @@ class EncryptedChatDatabase private constructor(
             val factory = SupportOpenHelperFactory(passphrase)
             val db = Room.databaseBuilder(context.applicationContext, AharaneChatDatabase::class.java, file.absolutePath)
                 .openHelperFactory(factory)
+                .addMigrations(MIGRATION_1_2)
                 .build()
             try {
                 // Force the encrypted open now. A bad or missing key fails closed here.

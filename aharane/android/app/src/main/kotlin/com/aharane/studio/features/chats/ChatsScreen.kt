@@ -194,7 +194,7 @@ fun ChatsScreen(
                             val chatName = accountConversations.firstOrNull { it.key == message.key }?.title ?: message.key.jid
                             Row(
                                 Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
-                                    .background(StudioPalette.Surface).clickable { onMessageSearchResultSelected(message) }
+                                    .background(StudioPalette.Surface).clickable { onInboxMessageSelected(message) }
                                     .padding(horizontal = 10.dp, vertical = 9.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically

@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.delay
 import com.aharane.studio.core.design.*
+import com.aharane.studio.core.model.ChatAccount
 import kotlinx.coroutines.delay
 
 private val AccentChoices = listOf(
@@ -83,7 +84,20 @@ fun MoreScreen(
     onCopyActivity: () -> Unit = {},
     onExportActivity: () -> Unit = {},
     onSignOut: () -> Unit = {},
-    onChangePassword: (String, String) -> Unit
+    onChangePassword: (String, String) -> Unit,
+    selectedChatAccount: ChatAccount = ChatAccount.PRIVATE,
+    showIndividualChats: Boolean = true,
+    showGroupChats: Boolean = true,
+    starredItems: List<String> = emptyList(),
+    chatTheme: String = "system",
+    showChatAvatars: Boolean = true,
+    showChatPreviews: Boolean = true,
+    showChatTimestamps: Boolean = true,
+    chatMessageSize: Int = 14,
+    onChatAccountSelected: (ChatAccount) -> Unit = {},
+    onVisibilityModeChange: (String, Boolean) -> Unit = { _, _ -> },
+    onChatAppearanceChange: (String, Boolean, Boolean, Boolean) -> Unit = { _, _, _, _ -> },
+    onChatMessageSizeChanged: (Int) -> Unit = {}
 ) {
     var dialog by rememberSaveable { mutableStateOf("") }
     var customColorOpen by rememberSaveable { mutableStateOf(false) }
@@ -267,6 +281,183 @@ fun MoreScreen(
                             onEditorLineNumbersChanged(true)
                         }
                     )
+                }
+            }
+        }
+    } else if (page == "chat-settings") {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            item {
+                BackToMore { onPageChange("more") }
+                Spacer(Modifier.height(12.dp))
+                StudioPageTitle("Chat settings", "Manage your inbox and conversation appearance here.")
+                Spacer(Modifier.height(14.dp))
+            }
+            item {
+                StudioCard(padding = PaddingValues(14.dp)) {
+                    Text("WhatsApp account", color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(8.dp))
+                    StudioSegmented(
+                        options = listOf("Private", "Public"),
+                        selected = selectedChatAccount.label,
+                        onSelect = { label ->
+                            onChatAccountSelected(if (label == "Public") ChatAccount.PUBLIC else ChatAccount.PRIVATE)
+                        }
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Inbox visibility is configured separately for each account.",
+                        color = StudioPalette.Muted,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+            item {
+                StudioSectionHeading("Inbox visibility")
+                StudioCard(padding = PaddingValues(14.dp)) {
+                    PreferenceSwitch(
+                        title = "Show individual chats",
+                        description = "Include one-to-one conversations in this account’s inbox.",
+                        checked = showIndividualChats,
+                        enabled = connected,
+                        onCheckedChange = { onVisibilityModeChange("individuals", it) }
+                    )
+                    StudioDivider()
+                    PreferenceSwitch(
+                        title = "Show groups",
+                        description = "Include group conversations in this account’s inbox.",
+                        checked = showGroupChats,
+                        enabled = connected,
+                        onCheckedChange = { onVisibilityModeChange("groups", it) }
+                    )
+                    if (!connected) {
+                        Text(
+                            "Connect to your Aharane server to change inbox visibility.",
+                            color = StudioPalette.Muted,
+                            fontSize = 11.5.sp,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                }
+            }
+            item {
+                StudioSectionHeading("Chat appearance")
+                StudioCard(padding = PaddingValues(14.dp)) {
+                    Text("Theme", color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                    StudioSegmented(
+                        options = listOf("System", "Light", "Dark"),
+                        selected = when (chatTheme.lowercase()) {
+                            "light" -> "Light"
+                            "dark" -> "Dark"
+                            else -> "System"
+                        },
+                        onSelect = {
+                            onChatAppearanceChange(it.lowercase(), showChatAvatars, showChatPreviews, showChatTimestamps)
+                        }
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    StudioDivider()
+                    PreferenceSwitch(
+                        title = "Show avatars",
+                        description = "Display contact and group avatars in the inbox.",
+                        checked = showChatAvatars,
+                        enabled = connected,
+                        onCheckedChange = {
+                            onChatAppearanceChange(chatTheme, it, showChatPreviews, showChatTimestamps)
+                        }
+                    )
+                    StudioDivider()
+                    PreferenceSwitch(
+                        title = "Show message previews",
+                        description = "Show the latest message under each chat name.",
+                        checked = showChatPreviews,
+                        enabled = connected,
+                        onCheckedChange = {
+                            onChatAppearanceChange(chatTheme, showChatAvatars, it, showChatTimestamps)
+                        }
+                    )
+                    StudioDivider()
+                    PreferenceSwitch(
+                        title = "Show timestamps",
+                        description = "Show the last-message time on each inbox row.",
+                        checked = showChatTimestamps,
+                        enabled = connected,
+                        onCheckedChange = {
+                            onChatAppearanceChange(chatTheme, showChatAvatars, showChatPreviews, it)
+                        }
+                    )
+                    if (!connected) {
+                        Text(
+                            "Connect to save chat appearance preferences to your Aharane server.",
+                            color = StudioPalette.Muted,
+                            fontSize = 11.5.sp,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                }
+            }
+            item {
+                StudioSectionHeading("Message text size")
+                StudioCard(padding = PaddingValues(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Message text", color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.weight(1f))
+                        Text("${chatMessageSize} sp", color = StudioPalette.Muted, fontSize = 12.sp)
+                    }
+                    Slider(
+                        value = chatMessageSize.toFloat(),
+                        onValueChange = { onChatMessageSizeChanged(it.toInt()) },
+                        valueRange = 12f..22f,
+                        steps = 9,
+                        colors = SliderDefaults.colors(
+                            thumbColor = StudioPalette.Accent,
+                            activeTrackColor = StudioPalette.Accent,
+                            inactiveTrackColor = StudioPalette.Line
+                        )
+                    )
+                    Text(
+                        "Changes the size of message text inside conversations.",
+                        color = StudioPalette.Muted,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+        }
+    } else if (page == "starred") {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            item {
+                BackToMore { onPageChange("more") }
+                Spacer(Modifier.height(12.dp))
+                StudioPageTitle("Starred messages", "Saved messages from the ${selectedChatAccount.label} WhatsApp account.")
+                Spacer(Modifier.height(14.dp))
+            }
+            item {
+                StudioCard {
+                    if (!connected || starredItems.isEmpty()) {
+                        StudioEmpty(
+                            title = "No starred messages.",
+                            description = if (connected) "Star a message inside a conversation to keep it here."
+                            else "Connect to your Aharane server to load starred messages."
+                        )
+                    } else {
+                        starredItems.take(100).forEachIndexed { index, item ->
+                            if (index > 0) StudioDivider()
+                            Text(
+                                item,
+                                color = StudioPalette.Ink,
+                                fontSize = 12.5.sp,
+                                lineHeight = 18.sp,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 10.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -558,6 +749,14 @@ fun MoreScreen(
                         trailing = "›",
                         onClick = { onPageChange("storage") }
                     )
+                    StudioDivider()
+                    StudioRow(
+                        "Starred messages",
+                        "Messages you have saved from your chats",
+                        icon = null,
+                        trailing = "›",
+                        onClick = { onPageChange("starred") }
+                    )
                 }
             }
 
@@ -566,10 +765,18 @@ fun MoreScreen(
                 StudioCard {
                     StudioRow(
                         "Appearance",
-                        "Theme, accent color, text size and editor",
+                        "App theme, icon, accent color and editor",
                         icon = null,
                         trailing = "›",
                         onClick = { onPageChange("appearance") }
+                    )
+                    StudioDivider()
+                    StudioRow(
+                        "Chat settings",
+                        "Inbox visibility, themes and message text",
+                        icon = null,
+                        trailing = "›",
+                        onClick = { onPageChange("chat-settings") }
                     )
                 }
             }
@@ -753,16 +960,17 @@ private fun PreferenceSwitch(
     title: String,
     description: String,
     checked: Boolean,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        Modifier.fillMaxWidth().clickable { onCheckedChange(!checked) }
+        Modifier.fillMaxWidth().clickable(enabled = enabled) { onCheckedChange(!checked) }
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+            Text(title, color = if (enabled) StudioPalette.Ink else StudioPalette.Muted, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
             Text(description, color = StudioPalette.Muted, fontSize = 12.sp, lineHeight = 16.sp)
         }
         Box(

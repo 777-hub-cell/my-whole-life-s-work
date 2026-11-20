@@ -73,7 +73,9 @@ fun ConversationScreen(
     onForwardMessage: (ChatMessage, ChatSummary) -> Unit = { _, _ -> },
     onDeleteMessage: (ChatMessage) -> Unit = {},
     onCopyMessage: (ChatMessage) -> Unit = {},
-    forwardTargets: List<ChatSummary> = emptyList()
+    forwardTargets: List<ChatSummary> = emptyList(),
+    searchResults: List<ChatMessage>? = null,
+    onSearchChanged: (String) -> Unit = {}
 ) {
     var draft by rememberSaveable(conversation.key.jid) { mutableStateOf("") }
     var replyTo by remember { mutableStateOf<ChatMessage?>(null) }
@@ -85,18 +87,32 @@ fun ConversationScreen(
     var deleteMessage by remember { mutableStateOf<ChatMessage?>(null) }
 
     val listState = rememberLazyListState()
-    val visible = remember(messages, search, conversation.key) {
-        messages.asSequence()
+    val visible = remember(messages, searchResults, search, conversation.key) {
+        val source = if (search.isNotBlank() && searchResults != null) searchResults else messages
+        source.asSequence()
             .filter { it.key == conversation.key }
             .filter {
-                search.isBlank() || it.text.contains(search, ignoreCase = true) ||
+                search.isBlank() || searchResults != null ||
+                    it.text.contains(search, ignoreCase = true) ||
                     (it.mediaFileName?.contains(search, ignoreCase = true) == true)
             }
             .toList()
     }
 
-    LaunchedEffect(messages, search, conversation.key) {
-        if (visible.isNotEmpty() && search.isBlank()) {
+    LaunchedEffect(search, connected, conversation.key) {
+        val query = search.trim()
+        if (query.isBlank()) {
+            onSearchChanged("")
+        } else if (query.length >= 2) {
+            kotlinx.coroutines.delay(350)
+            onSearchChanged(query)
+        } else {
+            onSearchChanged("")
+        }
+    }
+
+    LaunchedEffect(messages, searchResults, search, conversation.key) {
+        if (visible.isNotEmpty()) {
             listState.animateScrollToItem(visible.lastIndex)
         }
     }

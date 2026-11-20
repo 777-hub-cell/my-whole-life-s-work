@@ -811,6 +811,52 @@ fun AharaneApp(
                             }
                         }
                     },
+                    onReactMessage = { message, emoji ->
+                        if (!previewMode) {
+                            connectionScope.launch {
+                                try {
+                                    repository.react(activeConversation!!, message, emoji)
+                                    activeMessages = repository.messages(activeConversation!!)
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Could not react to this message.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    onForwardMessage = { message, target ->
+                        if (!previewMode) {
+                            connectionScope.launch {
+                                try {
+                                    repository.forwardMessage(activeConversation!!, message, target)
+                                    activeMessages = repository.messages(activeConversation!!)
+                                    Toast.makeText(context, "Message forwarded.", Toast.LENGTH_SHORT).show()
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Could not forward this message.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    onDeleteMessage = { message ->
+                        if (!previewMode) {
+                            connectionScope.launch {
+                                try {
+                                    repository.deleteMessage(activeConversation!!, message)
+                                    activeMessages = repository.messages(activeConversation!!)
+                                    chatsByAccount[activeConversation!!.key.account] = repository.chats(activeConversation!!.key.account)
+                                    Toast.makeText(context, "Message deleted.", Toast.LENGTH_SHORT).show()
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Could not delete this message.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    onCopyMessage = { message ->
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val value = message.text.ifBlank { message.mediaFileName ?: message.kind.name.lowercase() }
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Aharane message", value))
+                        Toast.makeText(context, "Copied.", Toast.LENGTH_SHORT).show()
+                    },
+                    forwardTargets = chatsByAccount[activeConversation!!.key.account].orEmpty(),
                     onViewOnce = { message ->
                         if (message.messageId !in openedViewOnceIds) {
                             connectionScope.launch {

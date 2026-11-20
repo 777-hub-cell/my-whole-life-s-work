@@ -109,9 +109,19 @@ function messageContent(message) {
     const mimeType = String(value.mimetype || '')
     const fileName = String(value.fileName || '')
     const size = Number(value.fileLength?.toString?.() || value.fileLength || 0) || 0
-    return { type, text: text.slice(0, MAX_TEXT), mimeType, fileName, size, duration: Math.max(0, Number(value.seconds || value.duration || 0) || 0), media: MEDIA_TYPES.has(type), viewOnce: viewOnce && VIEW_ONCE_TYPES.has(type) }
+    return {
+      type,
+      text: text.slice(0, MAX_TEXT),
+      mimeType,
+      fileName,
+      size,
+      duration: Math.max(0, Number(value.seconds || value.duration || 0) || 0),
+      ptt: type === 'audio' && value.ptt === true,
+      media: MEDIA_TYPES.has(type),
+      viewOnce: viewOnce && VIEW_ONCE_TYPES.has(type),
+    }
   }
-  return { type: 'unsupported', text: '', mimeType: '', fileName: '', size: 0, media: false, viewOnce: false }
+  return { type: 'unsupported', text: '', mimeType: '', fileName: '', size: 0, duration: 0, ptt: false, media: false, viewOnce: false }
 }
 function timestamp(value) {
   const n = Number(value?.toString?.() || value || 0)
@@ -264,7 +274,8 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       pushName: String(message.pushName || '').slice(0, 120),
       timestamp: ts, type: extracted.type, text: extracted.text,
       mimeType: extracted.mimeType, fileName: extracted.fileName ? safeName(extracted.fileName) : '',
-      size: extracted.size, duration: extracted.duration || 0, mediaFile: '', mediaUrl: '', sourceMessage,
+      size: extracted.size, duration: extracted.duration || 0, ptt: extracted.ptt === true,
+      mediaFile: '', mediaUrl: '', sourceMessage,
       quotedMessageId: quotedMessageId(message),
       viewOnce: extracted.viewOnce, viewOnceViewed: false, status: '',
       reactions: [], starred: false,

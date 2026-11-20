@@ -698,10 +698,7 @@ fun AharaneApp(
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
         if (!editorOpen && activeConversation == null) {
-            StudioHeader(
-                onStatusClick = { destinationName = MainDestination.HOME.name },
-                online = runtime != null && !previewMode
-            )
+            StudioHeader()
         }
 
         if (serverError.isNotBlank() && connected) {

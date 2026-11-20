@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.Manifest
 import android.content.pm.PackageManager
@@ -289,6 +290,13 @@ fun AharaneApp(
     var sharedMediaFile by remember { mutableStateOf<File?>(null) }
     var mediaMessageError by remember { mutableStateOf("") }
     var viewOnceVideoFile by remember { mutableStateOf<File?>(null) }
+    var inlineMediaPreviews by remember { mutableStateOf<Map<String, androidx.compose.ui.graphics.ImageBitmap>>(emptyMap()) }
+    var inlineMediaPreviewErrors by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var audioFiles by remember { mutableStateOf<Map<String, File>>(emptyMap()) }
+    var audioLoading by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var audioErrors by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var pendingMediaDownload by remember { mutableStateOf<ByteArray?>(null) }
+    var pendingMediaDownloadName by remember { mutableStateOf("attachment") }
     val openedViewOnceIds = remember { mutableStateListOf<String>() }
     var voiceRecorder by remember { mutableStateOf<VoiceNoteRecorder?>(null) }
     var voiceRecording by remember { mutableStateOf(false) }
@@ -358,6 +366,12 @@ fun AharaneApp(
             voiceRecorder?.cancel()
             voiceRecorder = null
             voiceRecording = false
+            audioFiles.values.forEach { it.delete() }
+            audioFiles = emptyMap()
+            audioLoading = emptySet()
+            audioErrors = emptyMap()
+            inlineMediaPreviews = emptyMap()
+            inlineMediaPreviewErrors = emptySet()
         }
     }
 
@@ -378,6 +392,23 @@ fun AharaneApp(
                 Toast.makeText(context, "ZIP saved.", Toast.LENGTH_SHORT).show()
             }.onFailure {
                 Toast.makeText(context, it.message ?: "Could not save ZIP.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    val downloadMediaLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        val bytes = pendingMediaDownload
+        pendingMediaDownload = null
+        if (uri != null && bytes != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    ?: error("Could not save the selected attachment.")
+            }.onSuccess {
+                Toast.makeText(context, "Attachment saved.", Toast.LENGTH_SHORT).show()
+            }.onFailure {
+                Toast.makeText(context, it.message ?: "Could not save this attachment.", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -1141,6 +1172,105 @@ fun AharaneApp(
                         Toast.makeText(context, "Copied.", Toast.LENGTH_SHORT).show()
                     },
                     forwardTargets = chatsByAccount[activeConversation!!.key.account].orEmpty(),
+                    mediaPreviews = inlineMediaPreviews,
+                    mediaPreviewErrors = inlineMediaPreviewErrors,
+                    audioFiles = audioFiles,
+                    audioLoading = audioLoading,
+                    audioErrors = audioErrors,
+                    onLoadMediaPreview = { message ->
+                        val key = mediaCacheKey(message)
+                        if (previewMode) {
+                            inlineMediaPreviewErrors = inlineMediaPreviewErrors + message.messageId
+                        } else if (connected && key !in inlineMediaPreviews && message.messageId !in inlineMediaPreviewErrors) {
+                            connectionScope.launch {
+                                try {
+                                    val bytes = repository.mediaBytes(message.key.account, message)
+                                    val mime = message.mediaMimeType.orEmpty()
+                                    val bitmap = withContext(Dispatchers.IO) {
+                                        if (mime.startsWith("video/")) {
+                                            val extension = message.mediaFileName?.substringAfterLast('.', "mp4")
+                                                ?.takeIf { it.matches(Regex("[A-Za-z0-9]{2,5}")) } ?: "mp4"
+                                            val previewFile = File.createTempFile("aharane-video-preview-", ".$extension", context.cacheDir)
+                                            try {
+                                                previewFile.writeBytes(bytes)
+                                                val retriever = MediaMetadataRetriever()
+                                                try {
+                                                    retriever.setDataSource(previewFile.absolutePath)
+                                                    retriever.getFrameAtTime(750_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)?.asImageBitmap()
+                                                } finally {
+                                                    retriever.release()
+                                                }
+                                            } finally {
+                                                previewFile.delete()
+                                            }
+                                        } else {
+                                            val options = BitmapFactory.Options().apply { inSampleSize = 2 }
+                                            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
+                                        }
+                                    }
+                                    if (bitmap == null) {
+                                        inlineMediaPreviewErrors = inlineMediaPreviewErrors + message.messageId
+                                    } else {
+                                        inlineMediaPreviews = inlineMediaPreviews + (key to bitmap)
+                                    }
+                                } catch (error: Exception) {
+                                    inlineMediaPreviewErrors = inlineMediaPreviewErrors + message.messageId
+                                    serverError = error.message ?: "Media preview is unavailable."
+                                }
+                            }
+                        }
+                    },
+                    onLoadAudio = { message ->
+                        val key = mediaCacheKey(message)
+                        if (previewMode) {
+                            audioErrors = audioErrors + (message.messageId to "Preview audio bytes are not bundled.")
+                        } else if (connected && key !in audioFiles && message.messageId !in audioLoading) {
+                            audioLoading = audioLoading + message.messageId
+                            connectionScope.launch {
+                                try {
+                                    val bytes = repository.mediaBytes(message.key.account, message)
+                                    val extension = message.mediaFileName?.substringAfterLast('.', "")
+                                        ?.takeIf { it.matches(Regex("[A-Za-z0-9]{2,5}")) }
+                                        ?: if (message.isVoiceNote) "ogg" else "audio"
+                                    val file = File.createTempFile("aharane-audio-", ".$extension", context.cacheDir)
+                                    withContext(Dispatchers.IO) { file.writeBytes(bytes) }
+                                    audioFiles = audioFiles + (key to file)
+                                    audioErrors = audioErrors - message.messageId
+                                } catch (error: Exception) {
+                                    audioErrors = audioErrors + (message.messageId to (error.message ?: "Audio could not be downloaded."))
+                                } finally {
+                                    audioLoading = audioLoading - message.messageId
+                                }
+                            }
+                        }
+                    },
+                    onDownloadMedia = { message ->
+                        if (previewMode) {
+                            Toast.makeText(context, "Preview mode does not contain downloadable sample attachments.", Toast.LENGTH_SHORT).show()
+                        } else if (connected) {
+                            connectionScope.launch {
+                                try {
+                                    pendingMediaDownload = repository.mediaBytes(message.key.account, message)
+                                    pendingMediaDownloadName = message.mediaFileName ?: "aharane-attachment"
+                                    downloadMediaLauncher.launch(pendingMediaDownloadName)
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Attachment could not be downloaded.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    onOpenLocation = { message ->
+                        val match = Regex("(-?\\d{1,3}(?:\\.\\d+)?)[,\\s]+(-?\\d{1,3}(?:\\.\\d+)?)").find(message.text)
+                        val latitude = match?.groupValues?.getOrNull(1)?.toDoubleOrNull()
+                        val longitude = match?.groupValues?.getOrNull(2)?.toDoubleOrNull()
+                        if (latitude != null && longitude != null && latitude in -90.0..90.0 && longitude in -180.0..180.0) {
+                            val map = Intent(Intent.ACTION_VIEW, Uri.parse("geo:$latitude,$longitude?q=$latitude,$longitude"))
+                            runCatching { context.startActivity(map) }
+                                .onFailure { Toast.makeText(context, it.message ?: "No map app can open this location.", Toast.LENGTH_LONG).show() }
+                        } else {
+                            Toast.makeText(context, "This location message did not include readable coordinates.", Toast.LENGTH_LONG).show()
+                        }
+                    },
                     searchResults = conversationSearchResults,
                     onSearchChanged = { query ->
                         conversationSearchRequestId += 1

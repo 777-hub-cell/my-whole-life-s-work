@@ -661,13 +661,17 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     })
   }
 
-  async function markMessageDeletedRemotely(id, jidValue, messageId) {
+  async function markMessageDeletedRemotely(id, jidValue, messageId, explicitFromMe = null) {
     const account = accountId(id), jid = safeJid(jidValue), key = String(messageId || '')
     if (!jid || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw Object.assign(new Error('Invalid message reference.'), { status: 400 })
     return enqueue(account, async () => {
       const rows = await readRows(account)
       const row = rows.find(item => item.jid === jid && item.id === key)
-      if (!row || row.directionKnown !== true || row.fromMe === true || row.viewOnce === true || row.deletedByRemote === true) return Boolean(row?.deletedByRemote)
+      if (!row || explicitFromMe === true || row.fromMe === true || row.viewOnce === true || row.deletedByRemote === true) return Boolean(row?.deletedByRemote)
+      const directionVerified = explicitFromMe === false || (row.directionKnown === true && row.fromMe === false)
+      if (!directionVerified) return false
+      row.fromMe = false
+      row.directionKnown = true
       row.deletedByRemote = true
       row.deletedAt = Date.now()
       // Keep the original message body and its server-side media reference.

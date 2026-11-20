@@ -93,6 +93,8 @@ fun ConversationScreen(
     hasOlderMessages: Boolean = false,
     loadingOlderMessages: Boolean = false,
     lastSyncedAt: Long = 0L,
+    autoDownloadImages: Boolean = true,
+    autoDownloadVideoPreviews: Boolean = true,
     onSyncConversation: () -> Unit = {},
     onLoadOlderMessages: () -> Unit = {},
     onBack: () -> Unit,
@@ -363,6 +365,8 @@ fun ConversationScreen(
                         MessageBubble(
                             message = message,
                             appearance = appearance,
+                            autoDownloadImages = autoDownloadImages,
+                            autoDownloadVideoPreviews = autoDownloadVideoPreviews,
                             showTimestamp = appearance.showTimestamps,
                             groupedWithPrevious = appearance.groupMessages && previous != null &&
                                 previous.direction == message.direction && previous.senderName == message.senderName && sameDay(previous.timestampMillis, message.timestampMillis),
@@ -699,6 +703,8 @@ private fun ConversationDayDivider(timestamp: Long) {
 private fun MessageBubble(
     message: ChatMessage,
     appearance: ChatAppearance,
+    autoDownloadImages: Boolean,
+    autoDownloadVideoPreviews: Boolean,
     showTimestamp: Boolean,
     groupedWithPrevious: Boolean,
     reply: ChatMessage?,
@@ -832,6 +838,8 @@ private fun MessageBubble(
                     audioError = audioError,
                     audioWaveform = if (appearance.audioStyle == "minimal") emptyList() else audioWaveform,
                     appearance = appearance,
+                    autoDownloadImages = autoDownloadImages,
+                    autoDownloadVideoPreviews = autoDownloadVideoPreviews,
                     onLoadMedia = onOpenMedia,
                     onLoadAudio = onLoadAudio,
                     onDownloadMedia = onDownloadMedia,
@@ -884,6 +892,8 @@ private fun MessageContent(
     audioError: String?,
     audioWaveform: List<Float>,
     appearance: ChatAppearance,
+    autoDownloadImages: Boolean,
+    autoDownloadVideoPreviews: Boolean,
     onLoadMedia: () -> Unit,
     onLoadAudio: () -> Unit,
     onDownloadMedia: () -> Unit,
@@ -909,7 +919,7 @@ private fun MessageContent(
             )
         MessageKind.IMAGE, MessageKind.STICKER -> {
             LaunchedEffect(message.messageId, mediaPreview, mediaPreviewUnavailable) {
-                if (mediaConnected && mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
+                if (mediaConnected && autoDownloadImages && mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
             }
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 if (mediaPreview != null) {
@@ -933,7 +943,8 @@ private fun MessageContent(
                             Text(
                                 when {
                                     mediaPreviewUnavailable -> message.mediaUnavailable?.ifBlank { "Preview unavailable · tap to open" } ?: "Preview unavailable · tap to open"
-                                    !mediaConnected -> "Connect to your Aharane server to load this image."
+                                    !mediaConnected -> "Not saved offline · reconnect to load."
+                                    !autoDownloadImages -> "Preview not auto-downloaded · tap to open"
                                     else -> "Loading preview · tap to open"
                                 },
                                 color = foreground.copy(alpha = .72f),
@@ -952,7 +963,7 @@ private fun MessageContent(
         }
         MessageKind.VIDEO -> {
             LaunchedEffect(message.messageId, mediaPreview, mediaPreviewUnavailable) {
-                if (mediaConnected && mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
+                if (mediaConnected && autoDownloadVideoPreviews && mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
             }
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(appearance.mediaRadius.dp)).background(soft).clickable(onClick = onLoadMedia)) {
                 if (mediaPreview != null) {
@@ -970,7 +981,8 @@ private fun MessageContent(
                             Text(
                                 when {
                                     mediaPreviewUnavailable -> message.mediaUnavailable ?: "Video preview unavailable"
-                                    !mediaConnected -> "Connect to your Aharane server to load this video."
+                                    !mediaConnected -> "Not saved offline · reconnect to load."
+                                    !autoDownloadVideoPreviews -> "Preview not auto-downloaded · tap to play"
                                     else -> "Preparing video preview…"
                                 },
                                 color = foreground.copy(alpha = .7f),

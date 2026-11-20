@@ -399,7 +399,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return enqueue(account, async () => {
       const rows = await readRows(account), row = rows.find(item => item.jid === jid && item.id === key)
       if (!row || !MEDIA_TYPES.has(row.type) || row.viewOnceViewed) return null
-      if (row.mediaFile && /^[a-f0-9]{64}\\.[a-z0-9]{1,8}$/.test(row.mediaFile)) {
+      if (row.mediaFile && /^[a-f0-9]{64}\.[a-z0-9]{1,8}$/.test(row.mediaFile)) {
         const cachedPath = join(mediaRoot, account, row.mediaFile)
         const cachedInfo = await stat(cachedPath).catch(() => null)
         if (cachedInfo?.isFile() && cachedInfo.size <= MAX_MEDIA_BYTES) {

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Mic
@@ -68,6 +69,8 @@ import android.media.MediaPlayer
 import android.media.PlaybackParams
 import android.os.Build
 import java.io.File
+import java.util.Calendar
+import android.app.DatePickerDialog
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.graphics.drawable.Animatable
@@ -119,7 +122,7 @@ fun ConversationScreen(
     onCopyMessage: (ChatMessage) -> Unit = {},
     forwardTargets: List<ChatSummary> = emptyList(),
     searchResults: List<ChatMessage>? = null,
-    onSearchChanged: (String) -> Unit = {},
+    onSearchChanged: (String, Long, Long) -> Unit = { query, _, _ -> },
     mediaPreviews: Map<String, ImageBitmap> = emptyMap(),
     mediaPreviewErrors: Set<String> = emptySet(),
     audioFiles: Map<String, File> = emptyMap(),
@@ -140,6 +143,7 @@ fun ConversationScreen(
     var replyTo by remember { mutableStateOf<ChatMessage?>(null) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var search by rememberSaveable { mutableStateOf("") }
+    var selectedSearchDay by rememberSaveable { mutableStateOf<Long?>(null) }
     var moreOpen by remember { mutableStateOf(false) }
     var actionMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var forwardMessage by remember { mutableStateOf<ChatMessage?>(null) }
@@ -166,27 +170,27 @@ fun ConversationScreen(
 
     val listState = rememberLazyListState()
     val visible = remember(messages, searchResults, search, conversation.key) {
-        val source = if (search.isNotBlank() && searchResults != null) searchResults else messages
+        val source = if ((search.isNotBlank() || selectedSearchDay != null) && searchResults != null) searchResults else messages
         source.asSequence()
             .filter { it.key == conversation.key }
             .filter {
-                search.isBlank() || searchResults != null ||
+                (search.isBlank() || searchResults != null ||
                     it.text.contains(search, ignoreCase = true) ||
-                    (it.mediaFileName?.contains(search, ignoreCase = true) == true)
+                    (it.senderName?.contains(search, ignoreCase = true) == true) ||
+                    (it.mediaFileName?.contains(search, ignoreCase = true) == true)) &&
+                    (selectedSearchDay == null || it.timestampMillis in selectedSearchDay!!..(selectedSearchDay!! + 86_399_999L))
             }
             .toList()
     }
 
-    LaunchedEffect(search, connected, conversation.key) {
+    LaunchedEffect(search, selectedSearchDay, connected, conversation.key) {
         val query = search.trim()
-        if (query.isBlank()) {
-            onSearchChanged("")
-        } else if (query.length >= 2) {
-            kotlinx.coroutines.delay(350)
-            onSearchChanged(query)
-        } else {
-            onSearchChanged("")
-        }
+        if (query.length >= 2) kotlinx.coroutines.delay(350)
+        onSearchChanged(
+            query,
+            selectedSearchDay ?: 0L,
+            selectedSearchDay?.plus(86_399_999L) ?: 0L
+        )
     }
 
     LaunchedEffect(messages, searchResults, search, conversation.key) {
@@ -263,7 +267,10 @@ fun ConversationScreen(
                 if (searchOpen) "Close conversation search" else "Search in conversation"
             ) {
                 searchOpen = !searchOpen
-                if (!searchOpen) search = ""
+                if (!searchOpen) {
+                    search = ""
+                    selectedSearchDay = null
+                }
             }
             ConversationTool(Icons.Outlined.MoreVert, "Conversation options") {
                 moreOpen = !moreOpen
@@ -293,13 +300,37 @@ fun ConversationScreen(
                         }
                     }
                 )
+                ConversationTool(Icons.Outlined.DateRange, "Filter by date") {
+                    val calendar = Calendar.getInstance().apply {
+                        selectedSearchDay?.let { timeInMillis = it }
+                    }
+                    DatePickerDialog(
+                        context,
+                        { _, year, month, day ->
+                            selectedSearchDay = Calendar.getInstance().apply {
+                                set(year, month, day, 0, 0, 0)
+                                set(Calendar.MILLISECOND, 0)
+                            }.timeInMillis
+                        },
+                        calendar.get(Calendar.YEAR),
+                        calendar.get(Calendar.MONTH),
+                        calendar.get(Calendar.DAY_OF_MONTH)
+                    ).show()
+                }
                 Text(
-                    if (search.isBlank()) "${visible.size} messages" else "${visible.size} matches",
+                    when {
+                        selectedSearchDay != null -> "${visible.size} · " + java.text.SimpleDateFormat("d MMM", java.util.Locale.getDefault()).format(java.util.Date(selectedSearchDay!!))
+                        search.isBlank() -> "${visible.size} messages"
+                        else -> "${visible.size} matches"
+                    },
                     color = StudioPalette.Muted,
-                    fontSize = 11.5.sp,
-                    modifier = Modifier.padding(start = 8.dp)
+                    fontSize = 10.5.sp,
+                    modifier = Modifier.padding(start = 4.dp)
                 )
-                ConversationTool(Icons.Outlined.Close, "Clear search") { search = "" }
+                ConversationTool(Icons.Outlined.Close, "Clear search") {
+                    search = ""
+                    selectedSearchDay = null
+                }
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(StudioPalette.Line))
         }

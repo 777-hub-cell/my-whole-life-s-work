@@ -72,7 +72,7 @@ fun MoreScreen(
     onSaveOwnerSettings: (String, String, String, String) -> Unit = { _, _, _, _ -> },
     onClearActivity: () -> Unit = {},
     onSignOut: () -> Unit = {},
-    onChangePassword: (String, String) -> Unit = { _, _ -> }
+    onChangePassword: (String, String) -> Unit
 ) {
     var dialog by rememberSaveable { mutableStateOf("") }
     var customColorOpen by rememberSaveable { mutableStateOf(false) }

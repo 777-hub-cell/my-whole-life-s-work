@@ -1727,37 +1727,37 @@ fun AharaneApp(
                         }
                     },
                     searchResults = conversationSearchResults,
-                    onSearchChanged = { query ->
+                    onSearchChanged = { query, fromMillis, toMillis ->
                         conversationSearchRequestId += 1
                         val requestId = conversationSearchRequestId
                         val target = activeConversation
-                        if (query.isBlank() || previewMode || target == null) {
+                        if (previewMode || target == null || (query.length < 2 && fromMillis == 0L && toMillis == 0L)) {
                             conversationSearchResults = null
-                        } else if (query.trim().length >= 2) {
+                        } else {
                             connectionScope.launch {
                                 val cached = runCatching {
-                                    localChatRepository?.search(target.key.account, query, target.key.jid).orEmpty()
+                                    localChatRepository?.search(target.key.account, query, target.key.jid, fromMillis, toMillis).orEmpty()
                                 }.getOrDefault(emptyList())
                                 if (requestId == conversationSearchRequestId && activeConversation?.key == target.key) {
                                     conversationSearchResults = cached
                                 }
-                                if (connected) {
+                                if (connected && query.length >= 2) {
                                     try {
-                                        val remote = repository.searchMessages(target, query)
+                                        val remote = repository.searchMessages(target, query).filter {
+                                            (fromMillis == 0L || it.timestampMillis >= fromMillis) &&
+                                                (toMillis == 0L || it.timestampMillis <= toMillis)
+                                        }
                                         localChatRepository?.saveMessages(target, remote)
                                         if (requestId == conversationSearchRequestId && activeConversation?.key == target.key) {
                                             conversationSearchResults = (cached + remote).distinctBy { it.messageId }.sortedByDescending { it.timestampMillis }
                                         }
                                     } catch (error: Exception) {
-                                        // Offline search results stay visible when server search fails.
                                         if (requestId == conversationSearchRequestId && activeConversation?.key == target.key) {
                                             serverError = error.message ?: "Server search failed; showing saved messages."
                                         }
                                     }
                                 }
                             }
-                        } else {
-                            conversationSearchResults = null
                         }
                     },
                     onViewOnce = { message ->

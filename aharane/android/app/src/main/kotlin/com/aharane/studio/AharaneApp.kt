@@ -1100,16 +1100,22 @@ fun AharaneApp(
         }
         if (!connected) error("This attachment is not saved for offline use. Reconnect to download it.")
         val bytes = repository.mediaBytes(conversation, message)
-        val record = withContext(Dispatchers.IO) {
-            encryptedMediaCache.store(
-                conversation.key.account.apiValue,
-                conversation.key.jid,
-                message.messageId,
-                bytes,
-                viewOnce = message.isViewOnce
-            )
+        runCatching {
+            val record = withContext(Dispatchers.IO) {
+                encryptedMediaCache.store(
+                    conversation.key.account.apiValue,
+                    conversation.key.jid,
+                    message.messageId,
+                    bytes,
+                    viewOnce = message.isViewOnce
+                )
+            }
+            local?.recordMediaCache(conversation.key, message.messageId, record.relativePath, record.sha256, record.sizeBytes)
+        }.onFailure { error ->
+            // Media still opens online, but it is not labelled offline-ready unless
+            // the authenticated encrypted copy and metadata commit both succeed.
+            serverError = "Attachment opened but not saved offline: " + (error.message ?: "cache unavailable")
         }
-        local?.recordMediaCache(conversation.key, message.messageId, record.relativePath, record.sha256, record.sizeBytes)
         return bytes
     }
 

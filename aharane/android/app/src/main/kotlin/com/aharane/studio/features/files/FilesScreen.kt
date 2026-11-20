@@ -25,6 +25,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -621,7 +623,14 @@ private fun FileEntryRow(
             )
         }
         Column(
-            Modifier.weight(1f).clickable(onClick = onOpen).padding(vertical = 9.dp),
+            Modifier.weight(1f)
+                .then(
+                    if (entry.path == "Update packages") {
+                        Modifier.semantics { contentDescription = "Open update packages folder" }
+                    } else Modifier
+                )
+                .clickable(onClick = onOpen)
+                .padding(vertical = 9.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Text(

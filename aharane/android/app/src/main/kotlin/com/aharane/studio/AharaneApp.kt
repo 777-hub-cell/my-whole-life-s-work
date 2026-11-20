@@ -365,6 +365,10 @@ fun AharaneApp(
     var audioWaveforms by remember { mutableStateOf<Map<String, List<Float>>>(emptyMap()) }
     var audioLoading by remember { mutableStateOf<Set<String>>(emptySet()) }
     var audioErrors by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var animatedMediaFiles by remember { mutableStateOf<Map<String, File>>(emptyMap()) }
+    var videoFiles by remember { mutableStateOf<Map<String, File>>(emptyMap()) }
+    var videoLoading by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var videoErrors by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var pendingMediaDownload by remember { mutableStateOf<ByteArray?>(null) }
     var pendingMediaDownloadName by remember { mutableStateOf("attachment") }
     val openedViewOnceIds = remember { mutableStateListOf<String>() }
@@ -476,10 +480,16 @@ fun AharaneApp(
             voiceRecorder = null
             voiceRecording = false
             audioFiles.values.forEach { it.delete() }
+            animatedMediaFiles.values.forEach { it.delete() }
+            videoFiles.values.forEach { it.delete() }
             audioFiles = emptyMap()
             audioWaveforms = emptyMap()
             audioLoading = emptySet()
             audioErrors = emptyMap()
+            animatedMediaFiles = emptyMap()
+            videoFiles = emptyMap()
+            videoLoading = emptySet()
+            videoErrors = emptyMap()
             inlineMediaPreviews = emptyMap()
             inlineMediaPreviewErrors = emptySet()
         }
@@ -1572,6 +1582,10 @@ fun AharaneApp(
                     audioLoading = audioLoading,
                     audioErrors = audioErrors,
                     audioWaveforms = audioWaveforms,
+                    animatedMediaFiles = animatedMediaFiles,
+                    videoFiles = videoFiles,
+                    videoLoading = videoLoading,
+                    videoErrors = videoErrors,
                     onLoadMediaPreview = { message ->
                         val key = mediaCacheKey(message)
                         if (previewMode) {
@@ -1582,6 +1596,16 @@ fun AharaneApp(
                                     val target = activeConversation ?: return@launch
                                     val bytes = obtainCachedOrRemoteMedia(target, message)
                                     val mime = message.mediaMimeType.orEmpty()
+                                    var animatedFile: File? = null
+                                    val canAnimate = Build.VERSION.SDK_INT >= 28 &&
+                                        (mime.equals("image/gif", true) ||
+                                            (message.kind == MessageKind.STICKER && mime.equals("image/webp", true)))
+                                    if (canAnimate) {
+                                        val extension = if (mime.equals("image/gif", true)) "gif" else "webp"
+                                        animatedFile = File.createTempFile("aharane-animated-media-", ".$extension", context.cacheDir)
+                                        withContext(Dispatchers.IO) { animatedFile!!.writeBytes(bytes) }
+                                        animatedMediaFiles = animatedMediaFiles + (key to animatedFile!!)
+                                    }
                                     val bitmap = withContext(Dispatchers.IO) {
                                         if (mime.startsWith("video/")) {
                                             val extension = message.mediaFileName?.substringAfterLast('.', "mp4")
@@ -1604,14 +1628,41 @@ fun AharaneApp(
                                             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
                                         }
                                     }
-                                    if (bitmap == null) {
+                                    if (bitmap == null && animatedFile == null) {
                                         inlineMediaPreviewErrors = inlineMediaPreviewErrors + message.messageId
                                     } else {
-                                        inlineMediaPreviews = inlineMediaPreviews + (key to bitmap)
+                                        if (bitmap != null) inlineMediaPreviews = inlineMediaPreviews + (key to bitmap)
+                                        inlineMediaPreviewErrors = inlineMediaPreviewErrors - message.messageId
                                     }
                                 } catch (error: Exception) {
                                     inlineMediaPreviewErrors = inlineMediaPreviewErrors + message.messageId
                                     serverError = error.message ?: "Media preview is unavailable."
+                                }
+                            }
+                        }
+                    },
+                    onLoadVideo = { message ->
+                        val key = mediaCacheKey(message)
+                        if (previewMode) {
+                            videoErrors = videoErrors + (message.messageId to "Preview mode does not include original video bytes.")
+                        } else if (key !in videoFiles && message.messageId !in videoLoading) {
+                            videoLoading = videoLoading + message.messageId
+                            connectionScope.launch {
+                                var temporary: File? = null
+                                try {
+                                    val target = activeConversation ?: return@launch
+                                    val bytes = obtainCachedOrRemoteMedia(target, message)
+                                    val extension = message.mediaFileName?.substringAfterLast('.', "")
+                                        ?.takeIf { it.matches(Regex("[A-Za-z0-9]{2,5}")) } ?: "mp4"
+                                    temporary = File.createTempFile("aharane-inline-video-", ".$extension", context.cacheDir)
+                                    withContext(Dispatchers.IO) { temporary!!.writeBytes(bytes) }
+                                    videoFiles = videoFiles + (key to temporary!!)
+                                    videoErrors = videoErrors - message.messageId
+                                } catch (error: Exception) {
+                                    temporary?.delete()
+                                    videoErrors = videoErrors + (message.messageId to (error.message ?: "Video could not be loaded."))
+                                } finally {
+                                    videoLoading = videoLoading - message.messageId
                                 }
                             }
                         }

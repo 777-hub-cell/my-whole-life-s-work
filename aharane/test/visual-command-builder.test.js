@@ -171,6 +171,64 @@ test('Repeat is bounded and executes its body exactly the configured count', asy
   assert.equal(result.trace.filter(item => item.type === 'message.sendText').length, 3)
 })
 
+test('counter outputs can be converted and passed into a WhatsApp text payload', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft()
+  const trigger = draft.nodes[0]
+  const counter = { id: 'counter', type: 'counter.increment', x: 250, y: 100, config: { key: 'visits' } }
+  const convert = { id: 'convert', type: 'value.toText', x: 500, y: 100, config: {} }
+  const send = { id: 'send', type: 'message.sendText', x: 750, y: 100, config: { text: '' } }
+  draft.nodes = [trigger, counter, convert, send]
+  draft.edges = [
+    { id: 'exec-1', from: trigger.id, fromSocket: 'next', to: counter.id, toSocket: 'in' },
+    { id: 'exec-2', from: counter.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
+    { id: 'data-1', from: counter.id, fromSocket: 'value', to: convert.id, toSocket: 'value' },
+    { id: 'data-2', from: convert.id, fromSocket: 'value', to: send.id, toSocket: 'text' },
+  ]
+  assert.equal(validateWorkflow(draft).valid, true, JSON.stringify(validateWorkflow(draft).errors))
+  const sent = []
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({ socket: { sendMessage: async (_jid, body) => { sent.push(body.text); return { key: { id: 'sent-counter' } } } } }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.deepEqual(sent, ['1'])
+})
+
+test('message-event triggers are unavailable to the private self-chat account', () => {
+  const draft = createWorkflowDraft('private')
+  draft.nodes[0].type = 'trigger.message'
+  draft.nodes[0].config = {}
+  const validation = validateWorkflow(draft)
+  assert.equal(validation.valid, false)
+  assert.ok(validation.errors.some(item => item.message.includes('Private message-event triggers')))
+})
+
+test('repeat stops immediately when an action inside its body fails', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft()
+  const trigger = draft.nodes[0]
+  const repeat = { id: 'repeat', type: 'flow.repeat', x: 260, y: 100, config: { count: 3 } }
+  const send = { id: 'send', type: 'message.sendText', x: 490, y: 100, config: { text: 'again' } }
+  const repeatEnd = { id: 'repeat-end', type: 'flow.repeatEnd', x: 720, y: 100, config: {} }
+  const end = { id: 'end', type: 'flow.end', x: 490, y: 250, config: {} }
+  draft.nodes = [trigger, repeat, send, repeatEnd, end]
+  draft.edges = [
+    { id: 'a', from: trigger.id, fromSocket: 'next', to: repeat.id, toSocket: 'in' },
+    { id: 'b', from: repeat.id, fromSocket: 'body', to: send.id, toSocket: 'in' },
+    { id: 'c', from: send.id, fromSocket: 'next', to: repeatEnd.id, toSocket: 'in' },
+    { id: 'd', from: repeat.id, fromSocket: 'next', to: end.id, toSocket: 'in' },
+  ]
+  let calls = 0
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({ socket: { sendMessage: async () => { calls += 1; throw new Error('simulated WhatsApp failure') } } }),
+  })
+  assert.equal(result.ok, false)
+  assert.equal(calls, 1)
+  assert.match(result.error, /simulated WhatsApp failure/)
+})
+
 test('persistent counters are saved atomically and survive a fresh store instance', async t => {
   const { store, path } = await makeStore(t)
   assert.equal(await store.incrementCounter('workflow-1', 'daily'), 1)

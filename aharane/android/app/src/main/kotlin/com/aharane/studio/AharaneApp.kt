@@ -400,6 +400,55 @@ fun AharaneApp(
         }
     }
 
+    val updatePackageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null && !previewMode) {
+            connectionScope.launch {
+                activePackageId = "uploading"
+                packageProgress = 0f
+                packageProgressLabel = "Reading ZIP package"
+                packageError = ""
+                try {
+                    val filename = queryDisplayName(context, uri)
+                    require(filename.endsWith(".zip", ignoreCase = true)) { "Choose a file ending in .zip." }
+                    val bytes = withContext(Dispatchers.IO) {
+                        val input = context.contentResolver.openInputStream(uri)
+                            ?: error("Could not read the selected ZIP file.")
+                        input.use { stream ->
+                            val output = ByteArrayOutputStream()
+                            val buffer = ByteArray(64 * 1024)
+                            var total = 0
+                            while (true) {
+                                val count = stream.read(buffer)
+                                if (count < 0) break
+                                total += count
+                                require(total <= 50 * 1024 * 1024) { "The ZIP package exceeds the 50 MB limit." }
+                                output.write(buffer, 0, count)
+                            }
+                            output.toByteArray()
+                        }
+                    }
+                    val result = repository.uploadUpdatePackage(filename, bytes) { label, progress ->
+                        packageProgressLabel = label
+                        packageProgress = progress
+                    }
+                    updatePackages = repository.updatePackages()
+                    updateStatus = repository.updateStatus()
+                    val manifest = result.optJSONObject("manifest") ?: JSONObject()
+                    packageProgressLabel = "Validated ${filename} · version ${manifest.optString("bot_version")}"
+                    Toast.makeText(context, "Aharane update ZIP validated and saved.", Toast.LENGTH_LONG).show()
+                } catch (error: Exception) {
+                    packageError = error.message ?: "ZIP upload or validation failed."
+                    packageProgressLabel = "Package upload or validation failed"
+                    Toast.makeText(context, packageError, Toast.LENGTH_LONG).show()
+                } finally {
+                    activePackageId = null
+                }
+            }
+        }
+    }
+
     val chatAttachmentLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -654,6 +703,99 @@ fun AharaneApp(
                 Toast.makeText(context, fileDialogError, Toast.LENGTH_LONG).show()
             } finally {
                 busy = false
+            }
+        }
+    }
+
+    fun removeUpdatePackage(pkg: AharaneUpdatePackage) {
+        if (previewMode) {
+            updatePackages = updatePackages.filterNot { it.updateId == pkg.updateId }
+            packageProgressLabel = "Preview sample package removed locally. No server change was made."
+            return
+        }
+        if (!connected) {
+            packageError = "Connect to the Aharane server before removing a package."
+            return
+        }
+        connectionScope.launch {
+            activePackageId = pkg.updateId
+            packageError = ""
+            packageProgressLabel = "Removing ${pkg.filename}"
+            try {
+                repository.removeUpdatePackage(pkg.updateId)
+                updatePackages = repository.updatePackages()
+                updateStatus = repository.updateStatus()
+                packageProgressLabel = "Package removed. The running bot was not changed."
+            } catch (error: Exception) {
+                packageError = error.message ?: "Could not remove the update package."
+            } finally {
+                activePackageId = null
+            }
+        }
+    }
+
+    fun deployUpdatePackage(pkg: AharaneUpdatePackage) {
+        if (previewMode) {
+            packageProgressLabel = "Preview only · deployment was not sent to a server."
+            Toast.makeText(context, "Preview mode cannot deploy updates.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!connected) {
+            packageError = "Connect to the Aharane server before deploying an update."
+            return
+        }
+        connectionScope.launch {
+            activePackageId = pkg.updateId
+            packageProgress = 0f
+            packageProgressLabel = "Submitting deployment request"
+            packageError = ""
+            try {
+                val accepted = repository.deployUpdatePackage(pkg.updateId)
+                packageProgressLabel = accepted.optString(
+                    "message",
+                    "The server accepted the update and is preparing a separate release."
+                )
+                var terminalStatus = false
+                repeat(45) {
+                    delay(2_000)
+                    try {
+                        updateStatus = repository.updateStatus()
+                        val state = updateStatus.optJSONObject("update") ?: JSONObject()
+                        val status = state.optString("status", "idle")
+                        when (status) {
+                            "failed" -> {
+                                packageError = state.optString("message").ifBlank { "The server reported that deployment failed." }
+                                packageProgressLabel = "Deployment failed"
+                                terminalStatus = true
+                                return@repeat
+                            }
+                            "succeeded", "success", "healthy", "complete" -> {
+                                packageProgressLabel = "Deployment health check completed."
+                                terminalStatus = true
+                                return@repeat
+                            }
+                            "awaiting-healthcheck" -> packageProgressLabel = "Release activated · waiting for service startup health-check confirmation."
+                            "preparing" -> packageProgressLabel = "Preparing the new release · the running bot has not yet switched."
+                        }
+                    } catch (error: Exception) {
+                        packageProgressLabel = "Aharane is restarting or temporarily unreachable. Waiting for its health-check status…"
+                    }
+                    if (terminalStatus) return@repeat
+                }
+                updatePackages = runCatching { repository.updatePackages() }.getOrDefault(updatePackages)
+                if (!terminalStatus && packageError.isBlank()) {
+                    val state = updateStatus.optJSONObject("update") ?: JSONObject()
+                    packageProgressLabel = when (state.optString("status")) {
+                        "awaiting-healthcheck" -> "The new release is active, but final health-check confirmation has not been received yet. Check Home and refresh status."
+                        "failed" -> "Deployment failed: ${state.optString("message")}"
+                        else -> "The deployment request was accepted. The server has not yet returned a final result."
+                    }
+                }
+            } catch (error: Exception) {
+                packageError = error.message ?: "Could not deploy the update package."
+                packageProgressLabel = "Deployment request failed"
+            } finally {
+                activePackageId = null
             }
         }
     }

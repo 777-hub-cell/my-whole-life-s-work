@@ -263,7 +263,9 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
         bytes: ByteArray,
         mimeType: String,
         fileName: String,
-        caption: String
+        caption: String,
+        isVoiceNote: Boolean = false,
+        durationSeconds: Int = 0
     ): String {
         val result = api.sendChatMedia(
             conversation.key.account.apiValue,
@@ -271,7 +273,9 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
             bytes,
             mimeType,
             fileName,
-            caption
+            caption,
+            isVoiceNote,
+            durationSeconds
         )
         return result.optString("message")
     }

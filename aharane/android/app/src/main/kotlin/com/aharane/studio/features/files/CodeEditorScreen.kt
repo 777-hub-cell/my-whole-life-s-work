@@ -486,7 +486,7 @@ private class RegexCodeHighlight(
 }
 
 private val HtmlCodeHighlight = RegexCodeHighlight(
-    Regex("""<!--[\\s\\S]*?-->|</?[A-Za-z][^>]*>|[A-Za-z_:][-A-Za-z0-9_:.]*(?=\\s*=)|"(?:\\\\.|[^"])*"|'(?:\\\\.|[^'])*'""")
+    Regex("""<!--[\s\S]*?-->|</?[A-Za-z][^>]*>|[A-Za-z_:][-A-Za-z0-9_:.]*(?=\s*=)|"(?:\\.|[^"])*"|'(?:\\.|[^'])*'""")
 ) { token ->
     when {
         token.startsWith("<!--") -> Color(0xFF6A9955)
@@ -497,7 +497,7 @@ private val HtmlCodeHighlight = RegexCodeHighlight(
 }
 
 private val CssCodeHighlight = RegexCodeHighlight(
-    Regex("""/\\*[\\s\\S]*?\\*/|//[^\\n]*|#[0-9A-Fa-f]{3,8}\\b|@[A-Za-z-]+|[A-Za-z-]+(?=\\s*:)|\\b\\d+(?:\\.\\d+)?(?:px|rem|em|vh|vw|%)?\\b|"(?:\\\\.|[^"])*"|'(?:\\\\.|[^'])*'""")
+    Regex("""/\*[\s\S]*?\*/|//[^\n]*|#[0-9A-Fa-f]{3,8}\b|@[A-Za-z-]+|[A-Za-z-]+(?=\s*:)|\b\d+(?:\.\d+)?(?:px|rem|em|vh|vw|%)?\b|"(?:\\.|[^"])*"|'(?:\\.|[^'])*'""")
 ) { token ->
     when {
         token.startsWith("/*") || token.startsWith("//") -> Color(0xFF6A9955)
@@ -510,7 +510,7 @@ private val CssCodeHighlight = RegexCodeHighlight(
 }
 
 private val YamlCodeHighlight = RegexCodeHighlight(
-    Regex("""#[^\\n]*|^\\s*[A-Za-z0-9_.-]+(?=\\s*:)|"(?:\\\\.|[^"])*"|'(?:\\\\.|[^'])*'|\\b(true|false|null|yes|no)\\b|\\b\\d+(?:\\.\\d+)?\\b""", RegexOption.MULTILINE)
+    Regex("""#[^\n]*|^\s*[A-Za-z0-9_.-]+(?=\s*:)|"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\b(true|false|null|yes|no)\b|\b\d+(?:\.\d+)?\b""", RegexOption.MULTILINE)
 ) { token ->
     when {
         token.startsWith("#") -> Color(0xFF6A9955)

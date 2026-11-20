@@ -80,6 +80,10 @@ import java.util.Locale
 fun AharaneApp(
     connectionManager: AharaneConnectionManager,
     previewMode: Boolean = false,
+    notificationAccount: String? = null,
+    notificationJid: String? = null,
+    notificationRequestId: Long = 0L,
+    onNotificationHandled: () -> Unit = {},
     themeMode: String,
     onThemeModeChanged: (String) -> Unit,
     accentColor: String,
@@ -420,6 +424,30 @@ fun AharaneApp(
                 serverError = error.message ?: "Could not load this conversation."
                 activeMessages = emptyList()
             }
+        }
+    }
+
+    LaunchedEffect(notificationAccount, notificationJid, notificationRequestId, authenticated) {
+        if (!authenticated || previewMode || notificationAccount.isNullOrBlank() || notificationJid.isNullOrBlank() || notificationRequestId == 0L) {
+            return@LaunchedEffect
+        }
+        val target = ChatAccount.fromApiValue(notificationAccount) ?: run {
+            onNotificationHandled()
+            return@LaunchedEffect
+        }
+        try {
+            accountName = target.name
+            destinationName = MainDestination.CHATS.name
+            val conversations = repository.chats(target)
+            chatsByAccount[target] = conversations
+            activeConversation = conversations.firstOrNull { it.key.jid == notificationJid }
+            if (activeConversation == null) {
+                Toast.makeText(context, "That conversation is no longer available.", Toast.LENGTH_SHORT).show()
+            }
+        } catch (error: Exception) {
+            Toast.makeText(context, error.message ?: "Could not open this conversation.", Toast.LENGTH_LONG).show()
+        } finally {
+            onNotificationHandled()
         }
     }
 

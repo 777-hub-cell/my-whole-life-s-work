@@ -153,7 +153,11 @@ class EncryptedOfflineStorageTest {
         )
         dao.putMessages(
             listOf(
-                row("incoming-retained", "INCOMING"),
+                row("incoming-retained", "INCOMING").copy(
+                    cachedMediaPath = "private/retained-media.enc",
+                    cachedMediaSha256 = "a".repeat(64),
+                    cachedMediaBytes = 512L
+                ),
                 row("outgoing-kept", "OUTGOING"),
                 row("view-once-not-marked", "INCOMING", viewOnce = true)
             )
@@ -169,6 +173,9 @@ class EncryptedOfflineStorageTest {
         assertEquals("Original content incoming-retained", incoming?.text)
         assertTrue(incoming?.deletedByRemote == true)
         assertEquals(1765000001000L, incoming?.deletedAtMillis)
+        assertEquals("private/retained-media.enc", incoming?.cachedMediaPath)
+        assertEquals("a".repeat(64), incoming?.cachedMediaSha256)
+        assertEquals(512L, incoming?.cachedMediaBytes)
         assertTrue("A remotely revoked outgoing message is retained too.", outgoing?.deletedByRemote == true)
         assertFalse(viewOnce?.deletedByRemote == true)
 

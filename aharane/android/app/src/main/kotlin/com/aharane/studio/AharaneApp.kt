@@ -52,6 +52,7 @@ import com.aharane.studio.core.notifications.AharaneNotificationScheduler
 import com.aharane.studio.core.network.AharaneRepository
 import com.aharane.studio.core.network.AharaneUpdatePackage
 import com.aharane.studio.core.network.EditorDiagnostic
+import com.aharane.studio.core.network.EditorDiagnosticsResult
 import com.aharane.studio.core.network.ServerAccountState
 import com.aharane.studio.core.network.ServerActivityEntry
 import com.aharane.studio.core.network.ServerEnvironmentValue
@@ -260,6 +261,9 @@ fun AharaneApp(
     var starredPreviews by remember { mutableStateOf<List<String>>(emptyList()) }
     var chatAppearance by remember { mutableStateOf(JSONObject()) }
     var activeMessages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
+    var editorDiagnosticsByPath by remember { mutableStateOf<Map<String, EditorDiagnosticsResult>>(emptyMap()) }
+    var editorDiagnosticsStateByPath by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var editorDiagnosticRequestId by remember { mutableIntStateOf(0) }
     var conversationSearchResults by remember { mutableStateOf<List<ChatMessage>?>(null) }
     var conversationSearchRequestId by remember { mutableIntStateOf(0) }
     var serverError by remember { mutableStateOf("") }
@@ -756,7 +760,7 @@ fun AharaneApp(
                     "The server accepted the update and is preparing a separate release."
                 )
                 var terminalStatus = false
-                repeat(45) {
+                for (attempt in 0 until 45) {
                     delay(2_000)
                     try {
                         updateStatus = repository.updateStatus()
@@ -767,20 +771,20 @@ fun AharaneApp(
                                 packageError = state.optString("message").ifBlank { "The server reported that deployment failed." }
                                 packageProgressLabel = "Deployment failed"
                                 terminalStatus = true
-                                return@repeat
                             }
                             "succeeded", "success", "healthy", "complete" -> {
                                 packageProgressLabel = "Deployment health check completed."
                                 terminalStatus = true
-                                return@repeat
                             }
                             "awaiting-healthcheck" -> packageProgressLabel = "Release activated · waiting for service startup health-check confirmation."
                             "preparing" -> packageProgressLabel = "Preparing the new release · the running bot has not yet switched."
                         }
                     } catch (error: Exception) {
+                        serverReachable = false
+                        runtime = null
                         packageProgressLabel = "Aharane is restarting or temporarily unreachable. Waiting for its health-check status…"
                     }
-                    if (terminalStatus) return@repeat
+                    if (terminalStatus) break
                 }
                 updatePackages = runCatching { repository.updatePackages() }.getOrDefault(updatePackages)
                 if (!terminalStatus && packageError.isBlank()) {
@@ -955,6 +959,53 @@ fun AharaneApp(
                             } catch (error: Exception) {
                                 serverError = error.message ?: "Could not save this file."
                                 false
+                            }
+                        }
+                    }
+                    ,connected = connected,
+                    diagnostics = editorDiagnosticsByPath[activeEditorPath]?.diagnostics.orEmpty(),
+                    diagnosticsState = if (previewMode) "preview" else editorDiagnosticsStateByPath[activeEditorPath] ?: "not-run",
+                    onRunDiagnostics = { path, content ->
+                        if (previewMode) {
+                            editorDiagnosticsStateByPath = editorDiagnosticsStateByPath + (path to "preview")
+                        } else if (connected) {
+                            editorDiagnosticRequestId += 1
+                            val requestId = editorDiagnosticRequestId
+                            editorDiagnosticsStateByPath = editorDiagnosticsStateByPath + (path to "checking")
+                            connectionScope.launch {
+                                try {
+                                    val result = repository.diagnoseSource(path, content)
+                                    if (requestId == editorDiagnosticRequestId && activeEditorPath == path) {
+                                        editorDiagnosticsByPath = editorDiagnosticsByPath + (path to result)
+                                        editorDiagnosticsStateByPath = editorDiagnosticsStateByPath + (path to if (result.supported) "ready" else "unsupported")
+                                    }
+                                } catch (error: Exception) {
+                                    if (requestId == editorDiagnosticRequestId && activeEditorPath == path) {
+                                        editorDiagnosticsStateByPath = editorDiagnosticsStateByPath + (path to "failed")
+                                        serverError = error.message ?: "Source diagnostics failed."
+                                    }
+                                }
+                            }
+                        } else {
+                            editorDiagnosticsStateByPath = editorDiagnosticsStateByPath + (path to "failed")
+                        }
+                    },
+                    consoleEntries = if (previewMode) emptyList() else activityRows,
+                    onRefreshConsole = {
+                        if (connected) {
+                            connectionScope.launch {
+                                runCatching { activityRows = repository.activity(100) }
+                                    .onFailure { serverError = it.message ?: "Could not refresh server activity." }
+                            }
+                        }
+                    },
+                    onClearConsole = {
+                        if (connected) {
+                            connectionScope.launch {
+                                runCatching {
+                                    repository.clearActivity()
+                                    activityRows = repository.activity(100)
+                                }.onFailure { serverError = it.message ?: "Could not clear server activity." }
                             }
                         }
                     }

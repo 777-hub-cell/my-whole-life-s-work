@@ -314,7 +314,7 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
         return result.values.toList()
     }
 
-    suspend fun fileTree(path: String = "") {
+    suspend fun fileTree(path: String = ""): ServerFileTree {
         val response = api.get("files/tree", mapOf("item" to path))
         val children = response.optJSONArray("children") ?: JSONArray()
         return ServerFileTree(

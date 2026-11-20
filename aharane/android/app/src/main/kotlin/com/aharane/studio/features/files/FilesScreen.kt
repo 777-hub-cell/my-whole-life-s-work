@@ -47,6 +47,8 @@ fun FilesScreen(
     onEditorVisibility: (Boolean) -> Unit,
     entries: List<StudioFileEntry> = emptyList(),
     connected: Boolean = false,
+    initialPath: String = "",
+    onDirectoryChanged: (String) -> Unit = {},
     previewOnly: Boolean = false,
     onCreateFile: () -> Unit = {},
     onCreateFolder: () -> Unit = {},
@@ -56,7 +58,8 @@ fun FilesScreen(
     onBulkAction: (List<StudioFileEntry>, String) -> Unit = { _, _ -> }
 ) {
     var query by rememberSaveable { mutableStateOf("") }
-    var currentPath by rememberSaveable { mutableStateOf("") }
+    var currentPath by rememberSaveable { mutableStateOf(initialPath) }
+    LaunchedEffect(currentPath) { onDirectoryChanged(currentPath) }
     var menuPath by remember { mutableStateOf<String?>(null) }
     val selectedPaths = remember { mutableStateListOf<String>() }
     var packagesOpen by rememberSaveable { mutableStateOf(false) }

@@ -71,11 +71,11 @@ fun ChatsScreen(
     val context = LocalContext.current
     LaunchedEffect(query, fromMillis, toMillis, account) {
         val term = query.trim()
-        if (term.length < 2) {
-            onInboxSearchChanged("", 0L, 0L)
-        } else {
-            delay(350)
+        if (term.length >= 2) delay(350)
+        if (term.length >= 2 || fromMillis > 0L || toMillis > 0L) {
             onInboxSearchChanged(term, fromMillis, toMillis)
+        } else {
+            onInboxSearchChanged("", 0L, 0L)
         }
     }
     val chatTheme = savedChatTheme.replaceFirstChar { it.uppercase() }
@@ -178,12 +178,42 @@ fun ChatsScreen(
             StudioSearchField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = "Search chats",
+                placeholder = "Search chats and saved messages",
                 showIcon = false
             )
-            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(onClick = {
+                    val calendar = Calendar.getInstance().apply {
+                        if (fromMillis > 0L) timeInMillis = fromMillis
+                    }
+                    DatePickerDialog(
+                        context,
+                        { _, year, month, day ->
+                            val start = Calendar.getInstance().apply {
+                                set(year, month, day, 0, 0, 0)
+                                set(Calendar.MILLISECOND, 0)
+                            }.timeInMillis
+                            fromMillis = start
+                            toMillis = start + 86_399_999L
+                        },
+                        calendar.get(Calendar.YEAR),
+                        calendar.get(Calendar.MONTH),
+                        calendar.get(Calendar.DAY_OF_MONTH)
+                    ).show()
+                }) {
+                    Text(if (fromMillis > 0L) SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(fromMillis)) else "Filter by date")
+                }
+                if (fromMillis > 0L || toMillis > 0L) {
+                    TextButton(onClick = { fromMillis = 0L; toMillis = 0L }) { Text("Clear date") }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
         }
-        if (query.trim().length >= 2) {
+        if (query.trim().length >= 2 || fromMillis > 0L || toMillis > 0L) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text("Saved message matches", color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)

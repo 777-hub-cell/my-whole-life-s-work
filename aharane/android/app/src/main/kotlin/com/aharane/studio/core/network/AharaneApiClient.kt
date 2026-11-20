@@ -150,11 +150,13 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
         account: String,
         jid: String,
         text: String,
-        quotedMessageId: String? = null
+        quotedMessageId: String? = null,
+        clientMessageId: String? = null
     ): JSONObject = post(
         "chats/$account/${encodePath(jid)}/send",
         JSONObject().put("text", text).apply {
             quotedMessageId?.takeIf { it.isNotBlank() }?.let { put("quotedMessageId", it) }
+            clientMessageId?.takeIf { it.isNotBlank() }?.let { put("clientMessageId", it) }
         }
     )
 

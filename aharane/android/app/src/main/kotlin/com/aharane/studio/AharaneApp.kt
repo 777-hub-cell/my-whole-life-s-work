@@ -657,19 +657,32 @@ fun AharaneApp(
 
     suspend fun refreshConversationIncrementally(conversation: ChatSummary): List<ChatMessage> {
         val local = localChatRepository
-        var cursor = local?.newestTimestamp(conversation.key) ?: 0L
-        var page = repository.syncMessages(conversation, afterMillis = cursor, limit = 200)
+        var cursor = local?.newestCursor(conversation.key)
+            ?: LocalChatRepository.MessageCursor(0L, "")
+        var page = repository.syncMessages(
+            conversation,
+            afterMillis = cursor.timestampMillis,
+            afterMessageId = cursor.messageId,
+            limit = 200
+        )
         val received = mutableListOf<ChatMessage>()
         var rounds = 0
         do {
             received += page.messages
-            local?.saveMessages(conversation, page.messages, if (cursor == 0L) page.hasOlder else null)
-            val nextCursor = page.messages.maxOfOrNull { it.timestampMillis } ?: cursor
-            if (cursor > 0L && nextCursor <= cursor) break
-            cursor = maxOf(cursor, nextCursor)
+            local?.saveMessages(conversation, page.messages, if (cursor.timestampMillis == 0L) page.hasOlder else null)
+            val next = page.messages.maxWithOrNull(compareBy<ChatMessage> { it.timestampMillis }.thenBy { it.messageId })
+            if (next != null && cursor.timestampMillis > 0L &&
+                (next.timestampMillis < cursor.timestampMillis ||
+                    (next.timestampMillis == cursor.timestampMillis && next.messageId <= cursor.messageId))) break
+            if (next != null) cursor = LocalChatRepository.MessageCursor(next.timestampMillis, next.messageId)
             rounds += 1
             if (!page.hasNewer || page.messages.isEmpty() || rounds >= 5) break
-            page = repository.syncMessages(conversation, afterMillis = cursor, limit = 200)
+            page = repository.syncMessages(
+                conversation,
+                afterMillis = cursor.timestampMillis,
+                afterMessageId = cursor.messageId,
+                limit = 200
+            )
         } while (true)
         return local?.messages(conversation.key)
             ?: (activeMessages + received).distinctBy { it.messageId }.sortedBy { it.timestampMillis }
@@ -1375,10 +1388,16 @@ fun AharaneApp(
                                 connectionScope.launch {
                                     loadingOlderMessages = true
                                     try {
-                                        val before = localChatRepository?.oldestTimestamp(target.key)
-                                            ?: activeMessages.minOfOrNull { it.timestampMillis } ?: 0L
-                                        if (before > 0L) {
-                                            val page = repository.syncMessages(target, beforeMillis = before, limit = 100)
+                                        val before = localChatRepository?.oldestCursor(target.key)
+                                            ?: activeMessages.minWithOrNull(compareBy<ChatMessage> { it.timestampMillis }.thenBy { it.messageId })
+                                                ?.let { LocalChatRepository.MessageCursor(it.timestampMillis, it.messageId) }
+                                        if (before != null && before.timestampMillis > 0L) {
+                                            val page = repository.syncMessages(
+                                                target,
+                                                beforeMillis = before.timestampMillis,
+                                                beforeMessageId = before.messageId,
+                                                limit = 100
+                                            )
                                             localChatRepository?.recordOlderPage(target.key, page.messages, page.hasOlder)
                                             activeMessages = localChatRepository?.messages(target.key)
                                                 ?: (page.messages + activeMessages).distinctBy { it.messageId }.sortedBy { it.timestampMillis }
@@ -2158,21 +2177,7 @@ fun AharaneApp(
                                         localChatRepository?.saveConversations(conversations)
                                         conversations.take(300).forEach { conversation ->
                                             try {
-                                                var cursor = localChatRepository?.newestTimestamp(conversation.key) ?: 0L
-                                                var page = repository.syncMessages(conversation, afterMillis = cursor, limit = 200)
-                                                var pages = 0
-                                                do {
-                                                    localChatRepository?.saveMessages(
-                                                        conversation, page.messages,
-                                                        if (cursor == 0L) page.hasOlder else null
-                                                    )
-                                                    val latest = page.messages.maxOfOrNull { it.timestampMillis } ?: cursor
-                                                    if (latest <= cursor && cursor > 0L) break
-                                                    cursor = maxOf(cursor, latest)
-                                                    pages += 1
-                                                    if (!page.hasNewer || page.messages.isEmpty() || pages >= 3) break
-                                                    page = repository.syncMessages(conversation, afterMillis = cursor, limit = 200)
-                                                } while (true)
+                                                refreshConversationIncrementally(conversation)
                                                 syncedCount += 1
                                             } catch (_: Exception) {
                                                 failureCount += 1

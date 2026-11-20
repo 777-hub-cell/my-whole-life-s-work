@@ -76,6 +76,12 @@ class AharaneConnectionManager(context: Context) {
         }
     }
 
+    fun forgetServer() {
+        client?.clearSession()
+        client = null
+        preferences.edit().remove(KEY_STUDIO_URL).apply()
+    }
+
     private companion object {
         const val KEY_STUDIO_URL = "studio_url"
     }

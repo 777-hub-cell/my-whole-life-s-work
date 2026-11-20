@@ -76,6 +76,8 @@ data class ChatAppearance(
     val mediaRadius: Int = 12,
     val attachmentStyle: String = "compact",
     val audioStyle: String = "waveform",
+    val autoDownloadImages: Boolean = true,
+    val autoDownloadVideoPreviews: Boolean = true,
     val showPreviews: Boolean = true
 ) {
     fun toJson(): JSONObject = JSONObject()
@@ -93,6 +95,8 @@ data class ChatAppearance(
         .put("groupMessages", groupMessages).put("showTimestamps", showTimestamps)
         .put("showDateSeparators", showDateSeparators).put("mediaRadius", mediaRadius)
         .put("attachmentStyle", attachmentStyle).put("audioStyle", audioStyle)
+        .put("autoDownloadImages", autoDownloadImages)
+        .put("autoDownloadVideoPreviews", autoDownloadVideoPreviews)
         .put("showPreviews", showPreviews)
 
     companion object {
@@ -125,6 +129,8 @@ data class ChatAppearance(
             mediaRadius = json.optInt("mediaRadius", 12).coerceIn(0, 24),
             attachmentStyle = json.optString("attachmentStyle", "compact"),
             audioStyle = json.optString("audioStyle", "waveform"),
+            autoDownloadImages = json.optBoolean("autoDownloadImages", true),
+            autoDownloadVideoPreviews = json.optBoolean("autoDownloadVideoPreviews", true),
             showPreviews = json.optBoolean("showPreviews", true)
         )
     }
@@ -180,7 +186,7 @@ class ChatAppearanceStore(context: Context) {
             "bubbleRadius", "bubbleSpacing", "messageSize", "mediaRadius" ->
                 rawValue.toIntOrNull() ?: error("Enter a valid whole number.")
             "bubbleBorder", "showAvatars", "showSenderLabels", "groupMessages",
-            "showTimestamps", "showDateSeparators", "showPreviews" -> rawValue.toBooleanStrict()
+            "showTimestamps", "showDateSeparators", "showPreviews", "autoDownloadImages", "autoDownloadVideoPreviews" -> rawValue.toBooleanStrict()
             else -> rawValue
         }
         layer.put(field, value)
@@ -556,6 +562,12 @@ fun ChatAppearanceStudioScreen(
             }
             SegmentRow(listOf("Waveform", "Minimal"), appearance.audioStyle.replaceFirstChar { it.uppercase() }) {
                 change("audioStyle", it.lowercase())
+            }
+            ToggleSetting("Automatically load image previews", appearance.autoDownloadImages) {
+                change("autoDownloadImages", it.toString())
+            }
+            ToggleSetting("Automatically load video previews", appearance.autoDownloadVideoPreviews) {
+                change("autoDownloadVideoPreviews", it.toString())
             }
         }
         item {

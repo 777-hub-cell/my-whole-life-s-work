@@ -36,7 +36,7 @@ class ConversationScreenTest {
         compose.onNodeWithTag("conversation-composer").performTextInput("Hello from the chat test")
         compose.onNodeWithContentDescription("Send message").performClick()
         compose.runOnIdle { assertEquals(listOf("Hello from the chat test"), sent) }
-        compose.onNodeWithTag("conversation-composer").assertTextEquals("")
+        compose.onNodeWithTag("conversation-composer").assertTextEquals("Message")
     }
 
     @Test

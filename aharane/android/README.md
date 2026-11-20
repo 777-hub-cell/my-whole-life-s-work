@@ -72,3 +72,16 @@ app/build/outputs/apk/debug/app-debug.apk
 - Do not read, modify, deploy or share NIGHT/MSCC services, data, auth directories or environment files.
 - Do not place permanent server secrets, admin tokens or WhatsApp credentials in the APK, source tree, preferences or logs.
 - Merge, production deployment and signed release publication are separate approval steps.
+
+
+## Chat appearance and offline storage work on this branch
+
+The existing Chat settings now include the native Chat Appearance Studio. It supports global defaults, separate Private/Public account overrides and individual conversation overrides. Current controls include Android Photo Picker wallpapers, built-in solid/gradient choices, crop/fit and blur/dim/brightness, incoming/outgoing bubble styling, typography, conversation density, avatar/sender/date/time visibility, media radius and audio style, and reusable starter/custom profiles with JSON import/export. The resolved appearance is applied to the full-screen Compose conversation UI.
+
+The local-first chat foundation uses Room with SQLCipher. A random database passphrase is wrapped by an Android Keystore AES key; encrypted database/key material and cached media live under app-private no-backup storage. Conversation identity is account plus WhatsApp JID; message identity adds the server message ID. The native app loads cached rows before syncing. A separate read-only GET /api/chats/:accountId/:jid/sync endpoint accepts timestamp cursors for incremental and older-page reads without advancing WhatsApp inbox/read markers. Cached search covers message text, sender and media filename. Failed sync keeps prior cached rows.
+
+Normal attachments can be encrypted using AES-GCM after downloading. The file is verified before the database records it as available offline. Private/Public media is isolated and separately limited. View-once media is excluded from permanent storage.
+
+### Remaining release acceptance
+
+This implementation still needs a clean current-head Android build, unit and instrumentation tests, emulator walkthrough and screenshot review, and real Galaxy A16 / Android 16 testing. It is not yet release-complete. There is no durable idempotent outgoing message queue, optional app lock, WorkManager constrained sync, full cross-conversation/date search UI, complete state reconciliation for every edit/delete/pin/mute/archive event, or fully implemented animated/vector sticker, inline video-control and poll interaction parity. Migration and Keystore invalidation recovery also need dedicated test coverage. No production deployment or merge is authorised by this development work.

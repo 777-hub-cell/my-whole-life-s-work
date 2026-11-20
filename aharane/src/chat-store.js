@@ -509,6 +509,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         mediaUnavailable: row.mediaUnavailable || '', mediaAvailable: Boolean(row.sourceMessage && MEDIA_TYPES.has(row.type) && !row.mediaUnavailable),
         quotedMessageId: row.quotedMessageId || quotedMessageIdFromSource(row.sourceMessage),
         reactions: Array.isArray(row.reactions) ? row.reactions : [], starred: row.starred === true, ptt: row.ptt === true, status: row.status || '',
+        deletedByRemote: row.deletedByRemote === true, deletedAt: Number(row.deletedAt) || 0,
       }))
   }
 

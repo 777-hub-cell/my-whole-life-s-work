@@ -97,6 +97,19 @@ class LocalChatRepository(context: Context) {
         }
     }
 
+    suspend fun applyRemoteDeletedMessages(key: ConversationKey, markers: List<Pair<String, Long>>) {
+        markers.distinctBy { it.first }.take(2000).forEach { (messageId, deletedAtMillis) ->
+            if (messageId.isNotBlank()) {
+                dao.markMessageDeletedRemotely(
+                    key.account.apiValue,
+                    key.jid,
+                    messageId,
+                    deletedAtMillis.coerceAtLeast(0L)
+                )
+            }
+        }
+    }
+
     suspend fun saveMessages(conversation: ChatSummary, messages: List<ChatMessage>, hasOlder: Boolean? = null) {
         require(messages.all { it.key == conversation.key }) { "A message crossed its account or conversation boundary." }
         val rows = messages.map { it.toRow() }

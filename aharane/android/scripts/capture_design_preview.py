@@ -127,6 +127,20 @@ def scroll_until_label_visible(label: str, max_swipes: int = 6):
     raise RuntimeError(f"Could not scroll to visible UI label: {label!r}")
 
 
+def scroll_back_until_label_visible(label: str, max_swipes: int = 6):
+    """Scroll toward the top of a LazyColumn until an earlier section is visible."""
+    for _ in range(max_swipes + 1):
+        visible = [
+            node.attrib.get("text", "") or node.attrib.get("content-desc", "")
+            for node in nodes()
+        ]
+        if any(label.casefold() in value.casefold() for value in visible):
+            return
+        run("adb", "shell", "input", "swipe", "540", "980", "540", "2050", "350")
+        time.sleep(0.5)
+    raise RuntimeError(f"Could not scroll back to visible UI label: {label!r}")
+
+
 def back():
     run("adb", "shell", "input", "keyevent", "4")
     time.sleep(0.8)
@@ -245,8 +259,8 @@ def main():
     capture("06d-message-bubble-customisation.png")
     tap_label("Typography", scroll_to_find=True)
     capture("06e-typography-settings.png")
-    tap_label("Apply to", scroll_to_find=True)
-    tap_label("Conversation", scroll_to_find=True)
+    scroll_back_until_label_visible("Apply to")
+    tap_label("Conversation")
     capture("06f-conversation-override-selector.png")
     tap_label("Mira", scroll_to_find=True, required=False)
     capture("06g-per-conversation-override.png")

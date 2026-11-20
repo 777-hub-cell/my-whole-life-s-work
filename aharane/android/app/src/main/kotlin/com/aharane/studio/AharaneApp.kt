@@ -1905,6 +1905,7 @@ fun AharaneApp(
                         localStorageError = localChatStorageError,
                         messageSearchResults = inboxMessageSearchResults,
                         onInboxSearchChanged = { query, fromMillis, toMillis ->
+                            val account = selectedAccount
                             inboxSearchRequestId += 1
                             val requestId = inboxSearchRequestId
                             if (query.isBlank()) {
@@ -1913,7 +1914,7 @@ fun AharaneApp(
                                 connectionScope.launch {
                                     val matches = if (previewMode) {
                                         previewMessages.filter { message ->
-                                            message.key.account == selectedAccount &&
+                                            message.key.account == account &&
                                                 (message.text.contains(query, true) ||
                                                     message.senderName.orEmpty().contains(query, true) ||
                                                     message.mediaFileName.orEmpty().contains(query, true)) &&
@@ -1923,7 +1924,7 @@ fun AharaneApp(
                                     } else {
                                         runCatching {
                                             localChatRepository?.search(
-                                                selectedAccount,
+                                                account,
                                                 query,
                                                 fromMillis = fromMillis,
                                                 toMillis = toMillis,

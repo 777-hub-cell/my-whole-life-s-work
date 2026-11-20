@@ -84,6 +84,14 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
         }
     }
 
+    suspend fun changePassword(currentPassword: String, newPassword: String): JSONObject =
+        post(
+            "auth/change-password",
+            JSONObject()
+                .put("currentPassword", currentPassword)
+                .put("newPassword", newPassword)
+        )
+
     suspend fun get(path: String): JSONObject = requestJson(endpoint.apiUrl(path), "GET")
 
     suspend fun get(path: String, query: Map<String, String>): JSONObject {

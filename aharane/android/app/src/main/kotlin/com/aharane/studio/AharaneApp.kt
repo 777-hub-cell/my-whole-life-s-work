@@ -345,7 +345,7 @@ fun AharaneApp(
         }
         voiceRecorder = null
         voiceRecording = false
-        if (previewMode || !connected) {
+        if (previewMode || !authenticated || !serverReachable) {
             recorded.file.delete()
             Toast.makeText(context, "Voice notes can only be sent to a connected live WhatsApp account.", Toast.LENGTH_SHORT).show()
             return
@@ -439,7 +439,7 @@ fun AharaneApp(
     ) { uri ->
         if (uri != null && previewMode) {
             Toast.makeText(context, "Preview mode does not upload files to a server.", Toast.LENGTH_SHORT).show()
-        } else if (uri != null && connected) {
+        } else if (uri != null && authenticated && serverReachable && !previewMode) {
             connectionScope.launch {
                 try {
                     val name = queryDisplayName(context, uri)
@@ -736,7 +736,7 @@ fun AharaneApp(
             Toast.makeText(context, "Preview mode does not modify server files.", Toast.LENGTH_SHORT).show()
             return
         }
-        if (!connected) {
+        if (!authenticated || !serverReachable) {
             Toast.makeText(context, "Connect to the Aharane server before modifying files.", Toast.LENGTH_SHORT).show()
             return
         }

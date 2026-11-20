@@ -43,11 +43,9 @@ fun HomeScreen(
     publicAccountStatus: String = "Status not loaded",
     privateActionLabel: String = "Link account",
     publicActionLabel: String = "Link account",
-    storageAvailable: Boolean = false,
-    storageUsageFraction: Float = 0f,
-    storageUsedSummary: String = "—",
-    storageTotalSummary: String = "—",
-    storageFreeSummary: String = "—",
+    metricsAvailable: Boolean = false,
+    messagesLast24h: Int = 0,
+    hourlyMessageCounts: List<Int> = emptyList(),
     onAccountAction: (ChatAccount) -> Unit = {},
     recentActivity: List<String> = emptyList()
 ) {
@@ -100,41 +98,48 @@ fun HomeScreen(
                 StudioDivider()
                 Column(
                     Modifier.fillMaxWidth().padding(top = 11.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "Server storage",
+                            "Messages handled, last 24 hours",
                             color = StudioPalette.Ink,
                             fontSize = 12.5.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                         Spacer(Modifier.weight(1f))
                         Text(
-                            if (storageAvailable) "$storageUsedSummary / $storageTotalSummary" else "Usage unavailable",
+                            if (metricsAvailable) messagesLast24h.toString() else "—",
                             color = StudioPalette.Muted,
-                            fontSize = 11.sp
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
-                    Box(
-                        Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(99.dp))
-                            .background(StudioPalette.Line)
+                    val samples = (0 until 24).map { hourlyMessageCounts.getOrNull(it) ?: 0 }
+                    val peak = samples.maxOrNull()?.coerceAtLeast(1) ?: 1
+                    Row(
+                        Modifier.fillMaxWidth().height(48.dp),
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        verticalAlignment = Alignment.Bottom
                     ) {
-                        if (storageAvailable) {
+                        samples.forEach { count ->
+                            val fraction = if (count == 0) 0.045f else (count.toFloat() / peak).coerceIn(0.08f, 1f)
                             Box(
-                                Modifier.fillMaxHeight()
-                                    .fillMaxWidth(storageUsageFraction.coerceIn(0f, 1f))
-                                    .clip(RoundedCornerShape(99.dp))
-                                    .background(StudioPalette.Accent)
-                            )
+                                Modifier.weight(1f).fillMaxHeight(),
+                                contentAlignment = Alignment.BottomCenter
+                            ) {
+                                Box(
+                                    Modifier.fillMaxWidth().fillMaxHeight(fraction)
+                                        .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                                        .background(if (count == 0) StudioPalette.Line else StudioPalette.Accent)
+                                )
+                            }
                         }
                     }
-                    if (storageAvailable) {
-                        Text(
-                            "$storageFreeSummary free",
-                            color = StudioPalette.Muted,
-                            fontSize = 10.5.sp
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("24 hours ago", color = StudioPalette.Muted, fontSize = 9.5.sp)
+                        Spacer(Modifier.weight(1f))
+                        Text("Now", color = StudioPalette.Muted, fontSize = 9.5.sp)
                     }
                 }
             }

@@ -132,3 +132,8 @@ The native Chat settings expand into a Chat Appearance Studio with layered globa
 Room plus SQLCipher provides the local database foundation. The random database passphrase is wrapped with Android Keystore, and the encrypted database plus media cache use app-private no-backup storage. A read-only server sync API supports timestamp-based deltas and older message pages; native chat loading reads local history first, then updates it without wiping history on failure. Offline search operates on saved messages. Normal media can be stored with AES-GCM and integrity verification, while view-once media is never cached.
 
 This remains a development branch, not a completed release. Current-head CI, encrypted storage/migration/key-loss/media/search instrumentation, emulator screenshots and visual parity review must pass. Remaining work includes a durable idempotent outgoing-message queue, media-gallery browser, more complete state reconciliation for archive/pin/mute state, vector sticker support and poll voting if the server adds that API. Galaxy A16 / Android 16 live testing is required.
+
+
+### Remote deletion retention
+
+When WhatsApp reports that another participant deleted an incoming message, the native Hub retains the original message content and marks it as deleted on WhatsApp. The marker is persisted in SQLCipher-backed Room using the 3→4 schema migration and appears in the conversation UI. The account owner's own deletion path remains unchanged. This does not bypass view-once protections; view-once media is not cached or restored by the retained-message marker.

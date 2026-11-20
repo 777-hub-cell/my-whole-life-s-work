@@ -1,8 +1,17 @@
+buildscript {
+    repositories { gradlePluginPortal(); mavenCentral() }
+    dependencies {
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.21")
+        classpath("org.jetbrains.kotlin.plugin.compose:org.jetbrains.kotlin.plugin.compose.gradle.plugin:2.4.21")
+    }
+}
+
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
+
+apply(plugin = "org.jetbrains.kotlin.plugin.compose")
 
 android {
     namespace = "com.aharane.studio"

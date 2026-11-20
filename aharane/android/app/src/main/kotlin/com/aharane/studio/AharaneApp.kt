@@ -242,6 +242,7 @@ fun AharaneApp(
 
     var pairingAccount by remember { mutableStateOf<ChatAccount?>(null) }
     var pairingCode by remember { mutableStateOf("") }
+    var accountControlTarget by remember { mutableStateOf<ChatAccount?>(null) }
     var fileDialogMode by remember { mutableStateOf("") }
     var fileDialogName by remember { mutableStateOf("") }
     var fileDialogError by remember { mutableStateOf("") }
@@ -966,11 +967,8 @@ fun AharaneApp(
                                         ChatAccount.PRIVATE -> runtime?.privateAccount
                                         ChatAccount.PUBLIC -> runtime?.publicAccount
                                     }
-                                    if (state?.connected == true) {
-                                        Toast.makeText(context, "${target.label} WhatsApp is already connected.", Toast.LENGTH_SHORT).show()
-                                    } else if (state?.registered == true) {
-                                        repository.reconnect(target)
-                                        runtime = repository.runtimeSnapshot()
+                                    if (state?.registered == true) {
+                                        accountControlTarget = target
                                     } else {
                                         pairingAccount = target
                                         pairingCode = repository.pairCode(target)
@@ -1173,8 +1171,7 @@ fun AharaneApp(
                                 try {
                                     val state = if (target == ChatAccount.PRIVATE) runtime?.privateAccount else runtime?.publicAccount
                                     if (state?.registered == true) {
-                                        repository.reconnect(target)
-                                        runtime = repository.runtimeSnapshot()
+                                        accountControlTarget = target
                                     } else {
                                         pairingAccount = target
                                         pairingCode = repository.pairCode(target)
@@ -1261,6 +1258,74 @@ fun AharaneApp(
                     destinationName = it.name
                 }
             )
+        }
+    }
+
+    if (accountControlTarget != null) {
+        val target = accountControlTarget!!
+        val targetState = if (target == ChatAccount.PRIVATE) runtime?.privateAccount else runtime?.publicAccount
+        Dialog(onDismissRequest = { if (!busy) accountControlTarget = null }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(StudioPalette.Surface).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("${target.label} WhatsApp", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    targetState?.let(::accountStateLabel) ?: "Status not loaded",
+                    color = StudioPalette.Muted,
+                    fontSize = 12.5.sp
+                )
+                StudioActionButton("Reconnect", modifier = Modifier.fillMaxWidth(), enabled = !busy, onClick = {
+                    connectionScope.launch {
+                        busy = true
+                        try {
+                            repository.reconnect(target)
+                            runtime = repository.runtimeSnapshot()
+                            Toast.makeText(context, "${target.label} account reconnect requested.", Toast.LENGTH_SHORT).show()
+                        } catch (error: Exception) {
+                            Toast.makeText(context, error.message ?: "Reconnect failed.", Toast.LENGTH_LONG).show()
+                        } finally { busy = false }
+                    }
+                })
+                StudioActionButton("Repair session", modifier = Modifier.fillMaxWidth(), enabled = !busy, onClick = {
+                    connectionScope.launch {
+                        busy = true
+                        try {
+                            repository.repair(target)
+                            runtime = repository.runtimeSnapshot()
+                            Toast.makeText(context, "${target.label} session repair requested.", Toast.LENGTH_SHORT).show()
+                        } catch (error: Exception) {
+                            Toast.makeText(context, error.message ?: "Session repair failed.", Toast.LENGTH_LONG).show()
+                        } finally { busy = false }
+                    }
+                })
+                StudioActionButton("Restart connection", modifier = Modifier.fillMaxWidth(), enabled = !busy, onClick = {
+                    connectionScope.launch {
+                        busy = true
+                        try {
+                            repository.restart(target)
+                            runtime = repository.runtimeSnapshot()
+                            Toast.makeText(context, "${target.label} account restart requested.", Toast.LENGTH_SHORT).show()
+                        } catch (error: Exception) {
+                            Toast.makeText(context, error.message ?: "Restart failed.", Toast.LENGTH_LONG).show()
+                        } finally { busy = false }
+                    }
+                })
+                StudioActionButton("Stop account", modifier = Modifier.fillMaxWidth(), destructive = true, enabled = !busy, onClick = {
+                    connectionScope.launch {
+                        busy = true
+                        try {
+                            repository.stop(target)
+                            runtime = repository.runtimeSnapshot()
+                            Toast.makeText(context, "${target.label} account stopped.", Toast.LENGTH_SHORT).show()
+                        } catch (error: Exception) {
+                            Toast.makeText(context, error.message ?: "Could not stop account.", Toast.LENGTH_LONG).show()
+                        } finally { busy = false }
+                    }
+                })
+                StudioActionButton("Close", modifier = Modifier.fillMaxWidth(), enabled = !busy, onClick = { accountControlTarget = null })
+            }
         }
     }
 

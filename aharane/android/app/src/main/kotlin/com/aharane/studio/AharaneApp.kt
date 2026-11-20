@@ -534,19 +534,49 @@ fun AharaneApp(
     }
 
     suspend fun reloadServerData() {
+        // The authenticated status response is the connectivity signal. A
+        // secondary module (storage, activity, files, or packages) may fail
+        // independently without falsely marking a reachable server Offline.
         runtime = repository.runtimeSnapshot()
-        owners = repository.ownerSettings()
-        environmentRows = repository.environment()
-        activityRows = repository.activity(30)
-        storageSnapshot = repository.storage()
-        fileDraft = repository.fileTree()
-        serverFiles = repository.allFiles()
-        chatsByAccount[ChatAccount.PRIVATE] = repository.chats(ChatAccount.PRIVATE)
-        chatsByAccount[ChatAccount.PUBLIC] = repository.chats(ChatAccount.PUBLIC)
-        updatePackages = repository.updatePackages()
-        packageLibraryLoaded = true
-        updateStatus = repository.updateStatus()
         serverReachable = true
+        serverError = ""
+        val failures = mutableListOf<String>()
+
+        runCatching { repository.ownerSettings() }
+            .onSuccess { owners = it }
+            .onFailure { failures += "Owner settings: ${it.message ?: "unavailable"}" }
+        runCatching { repository.environment() }
+            .onSuccess { environmentRows = it }
+            .onFailure { failures += "ENV: ${it.message ?: "unavailable"}" }
+        runCatching { repository.activity(30) }
+            .onSuccess { activityRows = it }
+            .onFailure { failures += "Activity: ${it.message ?: "unavailable"}" }
+        runCatching { repository.storage() }
+            .onSuccess { storageSnapshot = it }
+            .onFailure { failures += "Storage: ${it.message ?: "unavailable"}" }
+        runCatching { repository.fileTree() }
+            .onSuccess { fileDraft = it }
+            .onFailure { failures += "Files draft: ${it.message ?: "unavailable"}" }
+        runCatching { repository.allFiles() }
+            .onSuccess { serverFiles = it }
+            .onFailure { failures += "Files: ${it.message ?: "unavailable"}" }
+        runCatching { repository.chats(ChatAccount.PRIVATE) }
+            .onSuccess { chatsByAccount[ChatAccount.PRIVATE] = it }
+            .onFailure { failures += "Private inbox: ${it.message ?: "unavailable"}" }
+        runCatching { repository.chats(ChatAccount.PUBLIC) }
+            .onSuccess { chatsByAccount[ChatAccount.PUBLIC] = it }
+            .onFailure { failures += "Public inbox: ${it.message ?: "unavailable"}" }
+        runCatching { repository.updatePackages() }
+            .onSuccess {
+                updatePackages = it
+                packageLibraryLoaded = true
+            }
+            .onFailure { failures += "Update packages: ${it.message ?: "unavailable"}" }
+        runCatching { repository.updateStatus() }
+            .onSuccess { updateStatus = it }
+            .onFailure { failures += "Update status: ${it.message ?: "unavailable"}" }
+
+        if (failures.isNotEmpty()) serverError = failures.joinToString(" · ")
     }
 
     LaunchedEffect(authenticated, previewMode) {
@@ -593,20 +623,30 @@ fun AharaneApp(
         while (true) {
             delay(20_000)
             try {
-                val openConversation = activeConversation
-                val account = openConversation?.key?.account ?: ChatAccount.valueOf(accountName)
                 runtime = repository.runtimeSnapshot()
                 serverReachable = true
-                chatsByAccount[account] = repository.chats(account)
-                if (openConversation != null) {
-                    activeMessages = repository.messages(openConversation)
-                }
-                updateStatus = repository.updateStatus()
             } catch (error: Exception) {
                 serverReachable = false
                 runtime = null
-                serverError = error.message ?: "Aharane refresh failed."
+                serverError = error.message ?: "Aharane server is unreachable."
+                continue
             }
+
+            val openConversation = activeConversation
+            val account = openConversation?.key?.account ?: ChatAccount.valueOf(accountName)
+            val failures = mutableListOf<String>()
+            runCatching { repository.chats(account) }
+                .onSuccess { chatsByAccount[account] = it }
+                .onFailure { failures += "Inbox: ${it.message ?: "unavailable"}" }
+            if (openConversation != null) {
+                runCatching { repository.messages(openConversation) }
+                    .onSuccess { activeMessages = it }
+                    .onFailure { failures += "Conversation: ${it.message ?: "unavailable"}" }
+            }
+            runCatching { repository.updateStatus() }
+                .onSuccess { updateStatus = it }
+                .onFailure { failures += "Update status: ${it.message ?: "unavailable"}" }
+            if (failures.isNotEmpty()) serverError = failures.joinToString(" · ")
         }
     }
 

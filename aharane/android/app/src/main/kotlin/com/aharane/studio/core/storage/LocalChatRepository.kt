@@ -15,7 +15,7 @@ class LocalChatRepository(context: Context) {
                 lastSyncAtMillis = previous?.lastSyncAtMillis ?: 0L,
                 newestSyncedTimestampMillis = previous?.newestSyncedTimestampMillis ?: 0L,
                 oldestSyncedTimestampMillis = previous?.oldestSyncedTimestampMillis ?: 0L,
-                hasOlderMessages = previous?.hasOlderMessages ?: true
+                hasOlderMessages = previous?.hasOlderMessages ?: false
             )
         }
         dao.putConversations(preserved)

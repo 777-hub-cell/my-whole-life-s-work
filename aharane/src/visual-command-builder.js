@@ -237,6 +237,9 @@ export function validateWorkflow(input) {
   }
 
   const trigger = triggers[0]
+  if (workflow.account === 'private' && trigger?.type === 'trigger.message') {
+    issue(trigger.id, 'error', 'Private message-event triggers are not supported.', 'Use Command trigger. The Private account only accepts owner self-chat commands.')
+  }
   if (trigger && !outputEdges(workflow, trigger.id, 'next').length) issue(trigger.id, 'error', 'The trigger has no next action.', 'Connect its Next output to an action.')
 
   const reached = new Set()

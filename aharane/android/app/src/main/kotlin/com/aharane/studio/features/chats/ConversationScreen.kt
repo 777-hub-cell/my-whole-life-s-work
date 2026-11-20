@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import com.aharane.studio.core.design.AharaneInstrumentSans
 import com.aharane.studio.core.design.StudioPalette
 import com.aharane.studio.core.model.ChatMessage
@@ -606,7 +607,7 @@ fun ConversationScreen(
                 BasicTextField(
                     value = draft,
                     onValueChange = { draft = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().testTag("conversation-composer"),
                     minLines = 1,
                     maxLines = 4,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(
@@ -648,7 +649,7 @@ fun ConversationScreen(
                         } else {
                             onRecordVoice()
                         }
-                    },
+                    }.testTag("conversation-send"),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(

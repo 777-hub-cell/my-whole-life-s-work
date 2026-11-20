@@ -321,15 +321,38 @@ fun ConversationScreen(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                    verticalArrangement = Arrangement.spacedBy(
+                        when (appearance.density) {
+                            "compact" -> 2.dp
+                            "spacious" -> 10.dp
+                            else -> appearance.bubbleSpacing.dp
+                        }
+                    )
                 ) {
+                    if (hasOlderMessages) {
+                        item(key = "older-messages") {
+                            Text(
+                                if (loadingOlderMessages) "Loading older messages…" else "Load older messages",
+                                color = StudioPalette.Accent,
+                                fontSize = 12.sp,
+                                modifier = Modifier.fillMaxWidth()
+                                    .clickable(enabled = !loadingOlderMessages) { onLoadOlderMessages() }
+                                    .padding(vertical = 8.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
                     itemsIndexed(visible, key = { _, item -> item.messageId }) { index, message ->
                         val previous = visible.getOrNull(index - 1)
-                        if (previous == null || !sameDay(previous.timestampMillis, message.timestampMillis)) {
+                        if (appearance.showDateSeparators && (previous == null || !sameDay(previous.timestampMillis, message.timestampMillis))) {
                             ConversationDayDivider(message.timestampMillis)
                         }
                         MessageBubble(
                             message = message,
+                            appearance = appearance,
+                            showTimestamp = appearance.showTimestamps,
+                            groupedWithPrevious = appearance.groupMessages && previous != null &&
+                                previous.direction == message.direction && previous.senderName == message.senderName && sameDay(previous.timestampMillis, message.timestampMillis),
                             reply = message.replyToMessageId?.let { id -> messages.firstOrNull { it.messageId == id && it.key == conversation.key } },
                             onReply = { replyTo = message },
                             onOpenMedia = { onOpenMedia(message) },
@@ -662,6 +685,9 @@ private fun ConversationDayDivider(timestamp: Long) {
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
+    appearance: ChatAppearance,
+    showTimestamp: Boolean,
+    groupedWithPrevious: Boolean,
     reply: ChatMessage?,
     onReply: () -> Unit,
     onOpenMedia: () -> Unit,
@@ -681,8 +707,8 @@ private fun MessageBubble(
     onOpenLocation: () -> Unit
 ) {
     val outgoing = message.direction == MessageDirection.OUTGOING
-    val bubble = if (outgoing) StudioPalette.Accent else StudioPalette.Surface
-    val foreground = if (outgoing) Color.White else StudioPalette.Ink
+    val bubble = appearanceColor(if (outgoing) appearance.outgoingBubble else appearance.incomingBubble)
+    val foreground = readableAppearanceText(bubble)
     val timestamp = remember(message.timestampMillis) {
         SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(message.timestampMillis))
     }
@@ -694,22 +720,18 @@ private fun MessageBubble(
             Modifier.widthIn(max = 310.dp)
                 .clip(
                     RoundedCornerShape(
-                        topStart = 15.dp,
-                        topEnd = 15.dp,
-                        bottomEnd = if (outgoing) 5.dp else 15.dp,
-                        bottomStart = if (outgoing) 15.dp else 5.dp
+                        topStart = if (groupedWithPrevious) 5.dp else appearance.bubbleRadius.dp,
+                        topEnd = if (groupedWithPrevious) 5.dp else appearance.bubbleRadius.dp,
+                        bottomEnd = if (outgoing) 5.dp else appearance.bubbleRadius.dp,
+                        bottomStart = if (outgoing) appearance.bubbleRadius.dp else 5.dp
                     )
                 )
                 .background(bubble)
-                .border(
-                    1.dp,
-                    if (outgoing) StudioPalette.Accent else StudioPalette.Line,
-                    RoundedCornerShape(
-                        topStart = 15.dp,
-                        topEnd = 15.dp,
-                        bottomEnd = if (outgoing) 5.dp else 15.dp,
-                        bottomStart = if (outgoing) 15.dp else 5.dp
-                    )
+                .then(
+                    if (appearance.bubbleBorder) Modifier.border(
+                        1.dp, StudioPalette.Line.copy(alpha = .75f),
+                        RoundedCornerShape(appearance.bubbleRadius.dp)
+                    ) else Modifier
                 )
                 .combinedClickable(
                     onClick = onReply,

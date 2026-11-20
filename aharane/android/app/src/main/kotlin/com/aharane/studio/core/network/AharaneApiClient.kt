@@ -71,14 +71,9 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
     fun clearSession() = cookies.clear()
 
     suspend fun checkServer(): JSONObject {
-        return try {
-            requestJson(url = endpoint.healthUrl(), method = "GET")
-        } catch (error: AharaneApiException) {
-            // Some deployments expose /aharane/api through the reverse proxy
-            // but do not publish /aharane/healthz. The Studio itself verifies
-            // availability through auth/status, so use that same API probe.
-            if (error.statusCode == 404) authStatus() else throw error
-        }
+        // Probe the same public API endpoint used by the web Studio. Some
+        // reverse proxies publish /aharane/api but not /aharane/healthz.
+        return authStatus()
     }
 
     suspend fun authStatus(): JSONObject = get("auth/status")

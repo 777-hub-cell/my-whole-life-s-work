@@ -43,6 +43,11 @@ fun HomeScreen(
     publicAccountStatus: String = "Status not loaded",
     privateActionLabel: String = "Link account",
     publicActionLabel: String = "Link account",
+    storageAvailable: Boolean = false,
+    storageUsageFraction: Float = 0f,
+    storageUsedSummary: String = "—",
+    storageTotalSummary: String = "—",
+    storageFreeSummary: String = "—",
     onAccountAction: (ChatAccount) -> Unit = {},
     recentActivity: List<String> = emptyList()
 ) {
@@ -93,13 +98,45 @@ fun HomeScreen(
                     }
                 }
                 StudioDivider()
-                Text(
-                    "Each WhatsApp account has its own connection and controls. An offline account does not stop the other one.",
-                    color = StudioPalette.Muted,
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp,
-                    modifier = Modifier.padding(top = 9.dp)
-                )
+                Column(
+                    Modifier.fillMaxWidth().padding(top = 11.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Server storage",
+                            color = StudioPalette.Ink,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            if (storageAvailable) "$storageUsedSummary / $storageTotalSummary" else "Usage unavailable",
+                            color = StudioPalette.Muted,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Box(
+                        Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(99.dp))
+                            .background(StudioPalette.Line)
+                    ) {
+                        if (storageAvailable) {
+                            Box(
+                                Modifier.fillMaxHeight()
+                                    .fillMaxWidth(storageUsageFraction.coerceIn(0f, 1f))
+                                    .clip(RoundedCornerShape(99.dp))
+                                    .background(StudioPalette.Accent)
+                            )
+                        }
+                    }
+                    if (storageAvailable) {
+                        Text(
+                            "$storageFreeSummary free",
+                            color = StudioPalette.Muted,
+                            fontSize = 10.5.sp
+                        )
+                    }
+                }
             }
         }
 

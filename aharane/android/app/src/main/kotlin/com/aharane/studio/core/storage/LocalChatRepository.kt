@@ -60,6 +60,9 @@ class LocalChatRepository(context: Context) {
     suspend fun newestTimestamp(key: ConversationKey): Long =
         dao.conversation(key.account.apiValue, key.jid)?.newestSyncedTimestampMillis ?: 0L
 
+    suspend fun lastSyncedAt(key: ConversationKey): Long =
+        dao.conversation(key.account.apiValue, key.jid)?.lastSyncAtMillis ?: 0L
+
     suspend fun oldestTimestamp(key: ConversationKey): Long =
         dao.conversation(key.account.apiValue, key.jid)?.oldestSyncedTimestampMillis ?: 0L
 

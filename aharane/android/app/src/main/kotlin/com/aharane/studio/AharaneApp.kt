@@ -1385,7 +1385,7 @@ fun AharaneApp(
                         onOpenMore = { destinationName = MainDestination.MORE.name; morePage = "more" },
                         onOpenConfiguration = { configurationOpen = true },
                         onOpenActivity = { destinationName = MainDestination.MORE.name; morePage = "activity" },
-                        serviceConnected = serverReachable && !previewMode,
+                        serviceConnected = connected,
                         serviceSubtitle = if (previewMode) "Preview only" else if (connected) "Connected to Aharane server" else "Not connected to Aharane service",
                         privateAccountStatus = if (previewMode) "Preview session" else runtime?.privateAccount?.let(::accountStateLabel) ?: "Status not loaded",
                         publicAccountStatus = if (previewMode) "Preview session" else runtime?.publicAccount?.let(::accountStateLabel) ?: "Status not loaded",
@@ -1694,6 +1694,8 @@ fun AharaneApp(
                                     .onFailure { Toast.makeText(context, it.message ?: "Could not sign out.", Toast.LENGTH_LONG).show() }
                                 AharaneNotificationScheduler.cancel(context)
                                 authenticated = false
+                                serverReachable = false
+                                runtime = null
                                 connectionPassword = ""
                                 serverVerified = true
                             }

@@ -9,7 +9,6 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.KeyStore
 import java.security.MessageDigest
-import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.CipherOutputStream
 import javax.crypto.KeyGenerator
@@ -58,9 +57,11 @@ class EncryptedMediaCache(context: Context) {
         }
         val temporary = File(folder, target.name + ".part")
         try {
-            val iv = ByteArray(12).also(SecureRandom()::nextBytes)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.ENCRYPT_MODE, mediaKey(), GCMParameterSpec(128, iv))
+            // Android Keystore requires randomized encryption to generate its own
+            // GCM nonce; a caller-supplied IV is rejected by Keystore-backed keys.
+            cipher.init(Cipher.ENCRYPT_MODE, mediaKey())
+            val iv = cipher.iv ?: throw IllegalStateException("Android Keystore did not return a media encryption nonce.")
             cipher.updateAAD(ownership.toByteArray(Charsets.UTF_8))
             FileOutputStream(temporary).use { raw ->
                 raw.write(iv)

@@ -1081,7 +1081,16 @@ fun AharaneApp(
                         }
                     }
                     ,connected = connected,
-                    diagnostics = editorDiagnosticsByPath[activeEditorPath]?.diagnostics.orEmpty(),
+                    diagnostics = if (previewMode) {
+                        listOf(
+                            EditorDiagnostic(
+                                severity = "warning",
+                                message = "Preview sample: validate the owner allowlist before enabling this command.",
+                                line = 3,
+                                column = 1
+                            )
+                        )
+                    } else editorDiagnosticsByPath[activeEditorPath]?.diagnostics.orEmpty(),
                     diagnosticsState = if (previewMode) "preview" else editorDiagnosticsStateByPath[activeEditorPath] ?: "not-run",
                     onRunDiagnostics = { path, content ->
                         if (previewMode) {
@@ -1108,7 +1117,34 @@ fun AharaneApp(
                             editorDiagnosticsStateByPath = editorDiagnosticsStateByPath + (path to "failed")
                         }
                     },
-                    consoleEntries = if (previewMode) emptyList() else activityRows,
+                    consoleEntries = if (previewMode) {
+                        listOf(
+                            ServerActivityEntry(
+                                id = "preview-console-1",
+                                timestamp = "Preview · 08:21:14",
+                                level = "info",
+                                source = "preview",
+                                message = "Sample editor workspace loaded.",
+                                details = "{}"
+                            ),
+                            ServerActivityEntry(
+                                id = "preview-console-2",
+                                timestamp = "Preview · 08:21:19",
+                                level = "warn",
+                                source = "preview",
+                                message = "Sample diagnostic: owner allowlist should be configured.",
+                                details = "{\"path\":\"admin/auth.js\",\"line\":3}"
+                            ),
+                            ServerActivityEntry(
+                                id = "preview-console-3",
+                                timestamp = "Preview · 08:21:25",
+                                level = "info",
+                                source = "preview",
+                                message = "Preview mode is isolated; no server commands were executed.",
+                                details = "{}"
+                            )
+                        )
+                    } else activityRows,
                     onRefreshConsole = {
                         if (connected) {
                             connectionScope.launch {

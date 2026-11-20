@@ -146,23 +146,15 @@ def main():
     capture("06-appearance.png")
     back()
 
-    # Repeat the comparison screens with normal (non-preview) app state so
-    # empty/disconnected UI can be compared directly to the web reference.
+    # A normal first launch now requires secure HTTPS sign-in before any Studio
+    # content is available. Capture that gate separately; never bypass auth in
+    # the production launch just to reach the screen previews.
     run("adb", "shell", "am", "force-stop", "com.aharane.studio")
     run("adb", "shell", "am", "start", "-n", "com.aharane.studio/.MainActivity")
-    capture("07-home-disconnected.png", 8)
-    tap_label("Files")
-    capture("08-files-disconnected.png")
-    tap_label("ENV")
-    capture("09-env-disconnected.png")
-    tap_label("Chats")
-    capture("10-chats-disconnected.png")
-    tap_label("More")
-    capture("11-more-disconnected.png")
-    tap_label("Appearance")
-    capture("12-appearance-disconnected.png")
+    capture("07-server-connection.png", 8)
+    assert_visible_texts(["Aharane", "Connect your private Studio", "Server address", "HTTPS only"])
 
-    print("Captured debug-preview interaction screens and matching normal disconnected screens.")
+    print("Captured debug-only native UI flows and the normal secure first-launch connection screen.")
 
 
 if __name__ == "__main__":

@@ -806,11 +806,21 @@ fun AharaneApp(
                                 packageProgressLabel = "Deployment failed"
                                 terminalStatus = true
                             }
-                            "succeeded", "success", "healthy", "complete" -> {
-                                packageProgressLabel = "Deployment health check completed."
+                            "rolled_back" -> {
+                                packageError = state.optString("message").ifBlank { "The new release failed its health check and the previous release was restored." }
+                                packageProgressLabel = "Deployment rolled back · previous release restored."
                                 terminalStatus = true
                             }
-                            "awaiting-healthcheck" -> packageProgressLabel = "Release activated · waiting for service startup health-check confirmation."
+                            "rollback_failed" -> {
+                                packageError = state.optString("message").ifBlank { "Automatic rollback failed. Manual recovery is required." }
+                                packageProgressLabel = "CRITICAL · automatic rollback failed."
+                                terminalStatus = true
+                            }
+                            "succeeded" -> {
+                                packageProgressLabel = "Deployment passed the systemd startup health check."
+                                terminalStatus = true
+                            }
+                            "awaiting-healthcheck" -> packageProgressLabel = "Release activated · waiting for systemd startup health-check confirmation."
                             "preparing" -> packageProgressLabel = "Preparing the new release · the running bot has not yet switched."
                         }
                     } catch (error: Exception) {
@@ -1500,6 +1510,9 @@ fun AharaneApp(
                                 "idle" -> "Current bot version: ${updateStatus.optString("currentVersion").ifBlank { "not reported" }}"
                                 "preparing" -> "Preparing update ${state.optString("version")}. Do not stop the server."
                                 "awaiting-healthcheck" -> "Release activated · awaiting service startup health check."
+                                "succeeded" -> "Update ${state.optString("version")} passed the systemd startup health check."
+                                "rolled_back" -> "Update rolled back: ${state.optString("message").ifBlank { "The previous release was restored after the new release failed its health check." }}"
+                                "rollback_failed" -> "CRITICAL · automatic rollback failed: ${state.optString("message").ifBlank { "Manual recovery is required." }}"
                                 "failed" -> "Deployment failed: ${state.optString("message").ifBlank { "The server reported a failure." }}"
                                 else -> "Update status: ${state.optString("status")}"
                             }

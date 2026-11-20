@@ -408,7 +408,8 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
     suspend fun sendText(
         conversation: ChatSummary,
         text: String,
-        replyTo: ChatMessage? = null
+        replyTo: ChatMessage? = null,
+        clientMessageId: String? = null
     ): String {
         require(replyTo == null || replyTo.key == conversation.key) {
             "A reply must reference a message in the same conversation."
@@ -417,7 +418,8 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
             conversation.key.account.apiValue,
             conversation.key.jid,
             text,
-            replyTo?.messageId
+            replyTo?.messageId,
+            clientMessageId
         )
         return result.optString("message")
     }

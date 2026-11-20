@@ -82,9 +82,14 @@ function messageContent(message) {
         String(contact.vcard || '').trim(),
       ].filter(Boolean).join('\n')).filter(Boolean).join('\n\n')
     } else if (type === 'location') {
-      const latitude = Number(value.degreesLatitude)
-      const longitude = Number(value.degreesLongitude)
-      const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude) &&
+      const hasLatitude = value.degreesLatitude !== null &&
+        value.degreesLatitude !== undefined && String(value.degreesLatitude).trim() !== ''
+      const hasLongitude = value.degreesLongitude !== null &&
+        value.degreesLongitude !== undefined && String(value.degreesLongitude).trim() !== ''
+      const latitude = hasLatitude ? Number(value.degreesLatitude) : NaN
+      const longitude = hasLongitude ? Number(value.degreesLongitude) : NaN
+      const hasCoordinates = hasLatitude && hasLongitude &&
+        Number.isFinite(latitude) && Number.isFinite(longitude) &&
         Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180
       text = [
         String(value.name || '').trim(),

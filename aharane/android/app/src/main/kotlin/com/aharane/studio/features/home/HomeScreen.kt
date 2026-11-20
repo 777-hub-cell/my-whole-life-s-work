@@ -162,9 +162,14 @@ fun HomeScreen(
             StudioCard {
                 if (recentActivity.isEmpty()) {
                     Text(
-                        "No recent activity.",
+                        when {
+                            serviceSubtitle == "Preview only" -> "Preview activity samples are not available."
+                            !serviceConnected -> "Connect to your Aharane server to load recent activity."
+                            else -> "No recent activity."
+                        },
                         color = StudioPalette.Muted,
                         fontSize = 13.sp,
+                        lineHeight = 18.sp,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 18.dp)
                     )
                 } else {

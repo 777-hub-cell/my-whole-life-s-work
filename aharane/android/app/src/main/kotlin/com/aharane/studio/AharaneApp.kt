@@ -635,12 +635,31 @@ fun AharaneApp(
                 )
                 configurationOpen -> ConfigurationScreen(
                     previewMode = previewMode,
+                    connected = connected,
+                    serverValues = environmentRows.associate { it.key to it.value },
+                    ownerNumberValue = if (accountName == ChatAccount.PRIVATE.name) owners.privateOwnerNumber else owners.publicBotNumber,
                     onBack = { configurationOpen = false },
                     onEditConfig = {
                         editorFromConfiguration = true
                         configurationOpen = false
                         if (previewMode) openPreviewDocument("config.js")
-                        else openSourceDocument("config.js")
+                        else openSourceDocument("src/index.js")
+                    },
+                    onSave = { profile, values ->
+                        val updatedOwners = if (profile == "Private") {
+                            owners.copy(privateOwnerNumber = values["PRIVATE_OWNER_NUMBER"] ?: owners.privateOwnerNumber)
+                        } else {
+                            owners.copy(publicBotNumber = values["PUBLIC_BOT_NUMBER"] ?: owners.publicBotNumber)
+                        }
+                        repository.saveOwnerSettings(updatedOwners)
+                        val nextEnvironment = environmentRows.map { row ->
+                            val nextValue = values[row.key]
+                            if (row.readOnly || nextValue == null) row else row.copy(value = nextValue)
+                        }
+                        repository.saveEnvironment(nextEnvironment)
+                        owners = repository.ownerSettings()
+                        environmentRows = repository.environment()
+                        true
                     }
                 )
                 else -> when (currentDestination) {

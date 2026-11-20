@@ -89,6 +89,13 @@ data class ServerStorageSnapshot(
     val mediaBytes: Long
 )
 
+data class ServerMessageMetrics(
+    val messagesLast24h: Int,
+    val totalMessages: Int,
+    val hourlyMessages: List<Int>
+)
+
+
 data class AharaneUpdatePackage(
     val updateId: String,
     val filename: String,
@@ -955,6 +962,18 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
                 )
             }
         }
+    }
+
+    suspend fun metrics(): ServerMessageMetrics {
+        val response = api.get("metrics")
+        val hourly = response.optJSONArray("hourlyMessages") ?: JSONArray()
+        return ServerMessageMetrics(
+            messagesLast24h = response.optInt("messagesLast24h"),
+            totalMessages = response.optInt("totalMessages"),
+            hourlyMessages = buildList {
+                for (index in 0 until hourly.length()) add(hourly.optInt(index))
+            }
+        )
     }
 
     suspend fun storage(): ServerStorageSnapshot {

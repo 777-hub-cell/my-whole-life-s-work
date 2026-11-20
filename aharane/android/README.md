@@ -96,3 +96,8 @@ Incoming WhatsApp messages removed by their sender are retained in the Aharane H
 ## Remote message deletion retention
 
 When WhatsApp reports that the other participant deleted an incoming message, Aharane retains the original saved message content and any already-downloaded non-view-once attachment in the Hub. The conversation displays “Deleted by the other person on WhatsApp · retained in Hub.” The server stores a remote-deletion marker and timestamp without creating a deletion tombstone. Outgoing messages, unknown-direction messages and view-once media are not converted by this incoming-message retention path. Whole-conversation remote clear events mark known incoming messages rather than wiping the Hub's saved history. Incremental sync includes a separate remote-deletion marker feed so an already-cached message receives the marker even when its original message timestamp is old; Android updates the encrypted Room row and retains its content. The explicit owner-side Delete message action remains separate and keeps its existing delete semantics.
+
+
+### Baileys revoke protocol handling
+
+Baileys v7 can report a delete-for-everyone action as a REVOKE protocol update through `messages.update`. Aharane now handles this separately from generic `messages.delete` keys: a REVOKE authored by the other participant retains the targeted message in Hub, regardless of whether the original message was incoming or outgoing, and marks it as deleted on WhatsApp. A REVOKE authored by the linked owner account retains the pre-existing owner-side deletion behavior. Edited-message protocol updates are also reconciled into the existing Hub message row. View-once media remains outside this retained-media path.

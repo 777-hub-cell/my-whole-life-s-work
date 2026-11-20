@@ -83,7 +83,6 @@ android {
     namespace = "com.aharane.studio"
     compileSdk = 36
     defaultConfig {
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         applicationId = "com.aharane.studio"
         minSdk = 26
         targetSdk = 36

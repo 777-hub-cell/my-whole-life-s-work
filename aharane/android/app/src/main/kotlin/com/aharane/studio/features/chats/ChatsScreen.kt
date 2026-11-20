@@ -151,7 +151,7 @@ fun ChatsScreen(
                 }
             }
             Text(
-                `${account.label} account · ${accountConversations.size} conversations`,
+                "${account.label} account · ${accountConversations.size} conversations",
                 color = StudioPalette.Muted,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,

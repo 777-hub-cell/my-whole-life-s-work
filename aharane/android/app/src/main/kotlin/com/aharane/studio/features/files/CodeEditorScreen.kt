@@ -717,6 +717,7 @@ private fun EditorBottomPanel(
                 when {
                     !connected -> "Connect to Aharane to run the server syntax checker."
                     diagnosticsState == "checking" -> "Checking source…"
+                    diagnosticsState == "preview" -> "Preview mode · no live server syntax check was requested."
                     diagnosticsState == "unsupported" -> "No server syntax checker is configured for this file type."
                     diagnosticsState == "failed" -> "The server diagnostics request failed."
                     diagnosticsState == "ready" && diagnostics.isEmpty() -> "No syntax errors or warnings found."

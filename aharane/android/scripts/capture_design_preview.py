@@ -234,7 +234,7 @@ def main():
     back()
     back()  # Return from chat settings to More.
 
-    tap_label("Visual command builder")
+    tap_label("Visual command builder", scroll_to_find=True)
     capture("06h-visual-command-builder.png", 1)
     assert_visible_texts(["WORKSPACE", "NODE LIBRARY", "Test safely", "Search WhatsApp nodes"])
     back()

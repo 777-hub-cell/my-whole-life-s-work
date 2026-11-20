@@ -659,8 +659,10 @@ fun AharaneApp(
         val local = localChatRepository
         var cursor = local?.newestTimestamp(conversation.key) ?: 0L
         var page = repository.syncMessages(conversation, afterMillis = cursor, limit = 200)
+        val received = mutableListOf<ChatMessage>()
         var rounds = 0
         do {
+            received += page.messages
             local?.saveMessages(conversation, page.messages, if (cursor == 0L) page.hasOlder else null)
             val nextCursor = page.messages.maxOfOrNull { it.timestampMillis } ?: cursor
             if (cursor > 0L && nextCursor <= cursor) break
@@ -670,7 +672,7 @@ fun AharaneApp(
             page = repository.syncMessages(conversation, afterMillis = cursor, limit = 200)
         } while (true)
         return local?.messages(conversation.key)
-            ?: (activeMessages + page.messages).distinctBy { it.messageId }.sortedBy { it.timestampMillis }
+            ?: (activeMessages + received).distinctBy { it.messageId }.sortedBy { it.timestampMillis }
     }
 
     LaunchedEffect(activeConversation?.key, authenticated, previewMode, serverReachable, localChatRepository) {

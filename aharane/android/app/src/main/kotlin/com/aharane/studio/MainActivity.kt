@@ -1,11 +1,16 @@
 package com.aharane.studio
 
 import android.os.Bundle
+import android.app.KeyguardManager
+import android.content.Intent
+import android.widget.Toast
 import android.content.ComponentName
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
@@ -19,9 +24,20 @@ import com.aharane.studio.core.network.AharaneConnectionManager
 
 class MainActivity : ComponentActivity() {
     private val notificationTarget = mutableStateOf<Triple<String, String, Long>?>(null)
+    private val appLockPreferences by lazy { getSharedPreferences("aharane-app-lock", MODE_PRIVATE) }
+    private lateinit var credentialPromptLauncher: ActivityResultLauncher<Intent>
+    private var appLockPromptInFlight = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        credentialPromptLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            appLockPromptInFlight = false
+            if (result.resultCode == RESULT_OK) {
+                appLockPreferences.edit().putBoolean("locked", false).apply()
+            } else {
+                finish()
+            }
+        }
         enableEdgeToEdge()
         val isDebuggable = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
         val previewMode = isDebuggable && intent?.getBooleanExtra("aharane_preview_mode", false) == true
@@ -147,6 +163,55 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    fun setAppLockEnabled(enabled: Boolean): Boolean {
+        if (enabled) {
+            val keyguard = getSystemService(KeyguardManager::class.java)
+            if (keyguard?.isDeviceSecure != true) return false
+        }
+        appLockPreferences.edit()
+            .putBoolean("enabled", enabled)
+            .putBoolean("locked", enabled)
+            .apply()
+        if (enabled) promptForDeviceCredential()
+        return true
+    }
+
+    override fun onStart() {
+        super.onStart()
+        promptForDeviceCredential()
+    }
+
+    override fun onStop() {
+        if (appLockPreferences.getBoolean("enabled", false) && !isChangingConfigurations) {
+            appLockPreferences.edit().putBoolean("locked", true).apply()
+        }
+        super.onStop()
+    }
+
+    private fun promptForDeviceCredential() {
+        if (!appLockPreferences.getBoolean("enabled", false) ||
+            !appLockPreferences.getBoolean("locked", false) ||
+            appLockPromptInFlight || isFinishing
+        ) return
+        val keyguard = getSystemService(KeyguardManager::class.java)
+        if (keyguard?.isDeviceSecure != true) {
+            appLockPreferences.edit().putBoolean("enabled", false).putBoolean("locked", false).apply()
+            Toast.makeText(this, "Aharane app lock was disabled because this device no longer has a secure screen lock.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val intent = keyguard.createConfirmDeviceCredentialIntent(
+            "Unlock Aharane",
+            "Confirm your device screen lock to continue."
+        )
+        if (intent == null) {
+            Toast.makeText(this, "Android could not open the device credential screen.", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
+        appLockPromptInFlight = true
+        credentialPromptLauncher.launch(intent)
     }
 
     companion object {

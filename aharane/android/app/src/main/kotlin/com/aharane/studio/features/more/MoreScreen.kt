@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.delay
 import com.aharane.studio.core.design.*
+import kotlinx.coroutines.delay
 
 private val AccentChoices = listOf(
     "#0E7A5C", "#3867D6", "#8752C7", "#B34D76", "#B56C22", "#4D7779"
@@ -90,6 +91,14 @@ fun MoreScreen(
     var activityQuery by rememberSaveable { mutableStateOf("") }
     var activityFilter by rememberSaveable { mutableStateOf("All") }
     var activityLive by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(page, activityLive, connected) {
+        if (page == "activity" && activityLive && connected) {
+            while (true) {
+                delay(10_000)
+                onRefreshActivity()
+            }
+        }
+    }
     var privateOwnerDraft by rememberSaveable { mutableStateOf(privateOwnerNumber) }
     var publicOwnerDraft by rememberSaveable { mutableStateOf(publicOwnerNumber) }
     var publicBotDraft by rememberSaveable { mutableStateOf(publicBotNumber) }
@@ -390,7 +399,7 @@ fun MoreScreen(
                 ) {
                     StudioActionButton(if (activityLive) "Pause live" else "Live", compact = true, enabled = connected, onClick = {
                         activityLive = !activityLive
-                        onRefreshActivity()
+                        if (!activityLive) onRefreshActivity()
                     })
                     StudioActionButton("Copy", compact = true, enabled = connected && activityEntries.isNotEmpty(), onClick = onCopyActivity)
                     StudioActionButton("Export", compact = true, enabled = connected && activityEntries.isNotEmpty(), onClick = onExportActivity)

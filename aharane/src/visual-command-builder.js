@@ -159,6 +159,9 @@ export function validateWorkflow(input) {
     if (['variable.set', 'variable.get', 'counter.increment'].includes(node.type) && !SAFE_KEY.test(textValue(config.key, 48))) {
       issue(node.id, 'error', 'The variable or counter name is invalid.', 'Use a name beginning with a letter and no spaces.')
     }
+    if (node.type === 'variable.set' && !textValue(config.value).trim() && !inputEdge(workflow, node.id, 'value')) {
+      issue(node.id, 'error', 'A variable value is required.', 'Enter a value or connect a text output.')
+    }
     if (node.type === 'flow.delay') {
       const ms = Number(config.milliseconds == null ? 1000 : config.milliseconds)
       if (!Number.isInteger(ms) || ms < 0 || ms > MAX_DELAY_MS) issue(node.id, 'error', 'Wait duration is outside the supported range.', 'Choose a whole number from 0 to 10000 milliseconds.')
@@ -394,7 +397,8 @@ export async function executeVisualWorkflow(input, options = {}) {
           if (!body) throw new Error('Repeat body is not connected.')
           for (let index = 0; index < count && !terminated; index += 1) {
             trace.push({ nodeId: node.id, type: node.type, status: 'running', message: 'Repeat ' + (index + 1) + ' of ' + count + '.' })
-            await chain(body, true, depth + 1)
+            const bodyResult = await chain(body, true, depth + 1)
+            if (bodyResult?.error) return bodyResult
           }
           trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'Repeated ' + count + ' time(s).' })
         } else {

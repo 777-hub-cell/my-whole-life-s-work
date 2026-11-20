@@ -39,6 +39,7 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
     { type: 'message.text', name: 'Message text', description: 'Read the text of the triggering WhatsApp message.', ports: ports([], [{ id: 'value', label: 'Text', type: 'string' }]) },
     { type: 'message.sender', name: 'Message sender', description: 'Read the sender JID of the triggering message.', ports: ports([], [{ id: 'value', label: 'Sender JID', type: 'string' }]) },
     { type: 'message.arguments', name: 'Command arguments', description: 'Read the command arguments as one string.', ports: ports([], [{ id: 'value', label: 'Arguments', type: 'string' }]) },
+    { type: 'message.quotedText', name: 'Quoted message text', description: 'Read text from a quoted or replied-to WhatsApp message, when available.', ports: ports([], [{ id: 'value', label: 'Quoted text', type: 'string' }]) },
   ] },
   { category: 'Conditions and comparisons', nodes: [
     { type: 'condition.equals', name: 'Text equals', description: 'Compare two values and follow YES or NO.', ports: ports([execIn, { id: 'left', label: 'Left value', type: 'string' }, { id: 'right', label: 'Right value', type: 'string' }], [{ id: 'yes', label: 'YES', type: 'exec' }, { id: 'no', label: 'NO', type: 'exec' }]) },
@@ -63,6 +64,29 @@ const definitions = new Map(VISUAL_NODE_LIBRARY.flatMap(group => group.nodes.map
 const triggerTypes = new Set(['trigger.command', 'trigger.message'])
 const textValue = (value, max = 2000) => String(value == null ? '' : value).slice(0, max)
 const isExec = (node, socket) => definitions.get(node && node.type)?.ports.outputs.find(item => item.id === socket)?.type === 'exec'
+
+function isEnabled(value) {
+  return value === true || value === 'true' || value === 1 || value === '1'
+}
+
+function messageContextInfo(message) {
+  const content = message?.message || {}
+  const direct = content.extendedTextMessage?.contextInfo
+  if (direct) return direct
+  for (const value of Object.values(content)) {
+    if (value?.contextInfo) return value.contextInfo
+    if (value?.message?.extendedTextMessage?.contextInfo) return value.message.extendedTextMessage.contextInfo
+  }
+  return null
+}
+
+function quotedMessageText(message) {
+  const quoted = messageContextInfo(message)?.quotedMessage
+  if (!quoted) return ''
+  const content = quoted.ephemeralMessage?.message || quoted.viewOnceMessageV2?.message || quoted
+  return textValue(content.conversation || content.extendedTextMessage?.text ||
+    content.imageMessage?.caption || content.videoMessage?.caption || '')
+}
 
 function cleanConfig(config) {
   if (!config || typeof config !== 'object' || Array.isArray(config)) return {}
@@ -152,6 +176,12 @@ export function validateWorkflow(input) {
       if (!COMMAND_NAME.test(name)) issue(node.id, 'error', 'The command name is missing or invalid.', 'Use a letter first, then letters, numbers, underscores or hyphens.')
       for (const alias of Array.isArray(config.aliases) ? config.aliases : []) {
         if (!COMMAND_NAME.test(textValue(alias, 64).trim().toLowerCase())) issue(node.id, 'error', 'A command alias is invalid.', 'Correct or remove the alias.')
+      }
+      if (config.requireQuoted != null && typeof config.requireQuoted !== 'boolean' && !['true', 'false'].includes(String(config.requireQuoted))) {
+        issue(node.id, 'error', 'The quoted-message setting is invalid.', 'Use the toggle to enable or disable it.')
+      }
+      if (config.requireReply != null && typeof config.requireReply !== 'boolean' && !['true', 'false'].includes(String(config.requireReply))) {
+        issue(node.id, 'error', 'The reply requirement setting is invalid.', 'Use the toggle to enable or disable it.')
       }
     }
     if (['message.sendText', 'message.replyText'].includes(node.type) && !textValue(config.text).trim() && !inputEdge(workflow, node.id, 'text')) {
@@ -299,6 +329,7 @@ function resolveSource(workflow, edge, context) {
   if (sourceNode.type === 'message.text') return context.event.messageText || ''
   if (sourceNode.type === 'message.sender') return context.event.sender || ''
   if (sourceNode.type === 'message.arguments') return context.event.rawArgs || ''
+  if (sourceNode.type === 'message.quotedText') return quotedMessageText(context.event.message)
   if (sourceNode.type === 'variable.get') return context.variables[textValue(sourceNode.config.key, 48)] ?? ''
   if (sourceNode.type === 'value.toText') {
     const valueEdge = inputEdge(workflow, sourceNode.id, 'value')
@@ -342,6 +373,13 @@ export async function executeVisualWorkflow(input, options = {}) {
     const aliases = Array.isArray(trigger.config.aliases) ? trigger.config.aliases.map(value => textValue(value, 64).toLowerCase()) : []
     if (![textValue(trigger.config.command, 64).toLowerCase(), ...aliases].includes(name)) {
       return { ok: false, dryRun, validation, trace, error: 'The test message does not match this command.' }
+    }
+    const contextInfo = messageContextInfo(event.message)
+    if (isEnabled(trigger.config.requireQuoted) && !contextInfo?.quotedMessage) {
+      return { ok: false, dryRun, validation, trace, error: 'This command requires a quoted message.' }
+    }
+    if (isEnabled(trigger.config.requireReply) && !contextInfo?.stanzaId) {
+      return { ok: false, dryRun, validation, trace, error: 'This command requires a reply to an existing WhatsApp message.' }
     }
   }
 

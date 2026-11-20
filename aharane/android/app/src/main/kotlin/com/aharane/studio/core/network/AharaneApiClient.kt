@@ -139,6 +139,45 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
     suspend fun sendChatMessage(account: String, jid: String, text: String): JSONObject =
         post("chats/$account/${encodePath(jid)}/send", JSONObject().put("text", text))
 
+    suspend fun reactToMessage(account: String, jid: String, messageId: String, reaction: String): JSONObject =
+        post(
+            "chats/$account/${encodePath(jid)}/reaction",
+            JSONObject().put("messageId", messageId).put("reaction", reaction)
+        )
+
+    suspend fun starMessage(account: String, jid: String, messageId: String, starred: Boolean): JSONObject =
+        post(
+            "chats/$account/${encodePath(jid)}/star",
+            JSONObject().put("messageId", messageId).put("starred", starred)
+        )
+
+    suspend fun deleteMessage(account: String, jid: String, messageId: String): JSONObject =
+        post(
+            "chats/$account/${encodePath(jid)}/delete",
+            JSONObject().put("messageId", messageId)
+        )
+
+    suspend fun archiveChat(account: String, jid: String, archived: Boolean): JSONObject =
+        post(
+            "chats/$account/${encodePath(jid)}/archive",
+            JSONObject().put("archived", archived)
+        )
+
+    suspend fun markChatUnread(account: String, jid: String): JSONObject =
+        post("chats/$account/${encodePath(jid)}/mark-unread", JSONObject())
+
+    suspend fun downloadChatMedia(account: String, jid: String, messageId: String): JSONObject =
+        post(
+            "chats/$account/${encodePath(jid)}/media/$messageId/download",
+            JSONObject()
+        )
+
+    suspend fun forwardMessage(account: String, jid: String, messageId: String, destinationJid: String): JSONObject =
+        post(
+            "chats/$account/${encodePath(jid)}/forward",
+            JSONObject().put("messageId", messageId).put("destinationJid", destinationJid)
+        )
+
     suspend fun sendChatMedia(
         account: String,
         jid: String,

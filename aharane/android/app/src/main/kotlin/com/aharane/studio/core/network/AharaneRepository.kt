@@ -260,7 +260,7 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
 
     suspend fun sendText(conversation: ChatSummary, text: String): String {
         val result = api.sendChatMessage(conversation.key.account.apiValue, conversation.key.jid, text)
-        return result.optJSONObject("message")?.optString("id").orEmpty()
+        return result.optString("message")
     }
 
     suspend fun sendMedia(
@@ -554,6 +554,22 @@ class AharaneRepository(private val connection: AharaneConnectionManager) {
             conversation.key.account.apiValue,
             conversation.key.jid,
             message.messageId
+        )
+    }
+
+    suspend fun forwardMessage(
+        conversation: ChatSummary,
+        message: ChatMessage,
+        destination: ChatSummary
+    ) {
+        require(conversation.key.account == destination.key.account) {
+            "Messages can only be forwarded within the same WhatsApp account."
+        }
+        api.forwardMessage(
+            conversation.key.account.apiValue,
+            conversation.key.jid,
+            message.messageId,
+            destination.key.jid
         )
     }
 

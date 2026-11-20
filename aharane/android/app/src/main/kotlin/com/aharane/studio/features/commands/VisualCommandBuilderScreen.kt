@@ -378,9 +378,34 @@ fun VisualCommandBuilderScreen(
             }
             StudioActionButton("Load", compact = true, enabled = connected && savedWorkflows.isNotEmpty(), onClick = { showLoad = true })
             Spacer(Modifier.width(5.dp))
-            StudioActionButton("Save", compact = true, primary = true, enabled = connected && dirty && !saving, onClick = {
+            StudioActionButton("Save", compact = true, primary = true, enabled = connected && !saving && (!saved || dirty), onClick = {
                 scope.launch { saveDraft() }
             })
+        }
+
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Text("Name", color = StudioPalette.Muted, fontSize = 10.sp)
+            BasicTextField(
+                value = workflow.name,
+                onValueChange = { value ->
+                    if (value.length <= 80) edit { it.copy(name = value) }
+                },
+                singleLine = true,
+                textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
+                modifier = Modifier.weight(1f).clip(RoundedCornerShape(7.dp))
+                    .background(StudioPalette.Surface).border(1.dp, StudioPalette.Line, RoundedCornerShape(7.dp))
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                decorationBox = { inner ->
+                    Box {
+                        if (workflow.name.isBlank()) Text("Command name", color = StudioPalette.Muted, fontSize = 11.sp)
+                        inner()
+                    }
+                }
+            )
         }
 
         Row(

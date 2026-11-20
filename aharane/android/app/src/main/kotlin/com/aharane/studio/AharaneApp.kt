@@ -269,6 +269,30 @@ fun AharaneApp(
         }
     }
 
+    val chatAttachmentLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        val conversation = activeConversation
+        if (uri != null && conversation != null) {
+            connectionScope.launch {
+                try {
+                    val name = queryDisplayName(context, uri)
+                    val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+                    val bytes = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                            ?: error("Could not read the selected attachment.")
+                    }
+                    if (bytes.size > 24 * 1024 * 1024) error("WhatsApp attachments are limited to 24 MB in Aharane.")
+                    repository.sendMedia(conversation, bytes, mime, name, "")
+                    activeMessages = repository.messages(conversation)
+                    chatsByAccount[conversation.key.account] = repository.chats(conversation.key.account)
+                } catch (error: Exception) {
+                    Toast.makeText(context, error.message ?: "Attachment could not be sent.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
     suspend fun reloadServerData() {
         runtime = repository.runtimeSnapshot()
         owners = repository.ownerSettings()
@@ -564,7 +588,7 @@ fun AharaneApp(
                     },
                     onAttach = {
                         if (connected && currentAccountState?.connected == true) {
-                            uploadLauncher.launch(arrayOf("*/*"))
+                            chatAttachmentLauncher.launch(arrayOf("image/*", "video/*", "audio/*", "application/*"))
                         }
                     },
                     onRecordVoice = {
@@ -574,7 +598,12 @@ fun AharaneApp(
                         connectionScope.launch {
                             try {
                                 val bytes = repository.mediaBytes(message.key.account, message)
-                                showImageBytes(bytes, message.mediaFileName.orEmpty())
+                                showImageBytes(
+                                    bytes,
+                                    message.mediaFileName.orEmpty(),
+                                    onBitmap = { mediaTitle = message.mediaFileName.orEmpty(); mediaImage = it; mediaMessageError = "" },
+                                    onError = { mediaTitle = message.mediaFileName.orEmpty(); mediaMessageError = it }
+                                )
                             } catch (error: Exception) {
                                 serverError = error.message ?: "Media could not be opened."
                             }
@@ -586,7 +615,12 @@ fun AharaneApp(
                                 try {
                                     val bytes = repository.viewOnceMedia(message.key.account, message)
                                     openedViewOnceIds.add(message.messageId)
-                                    showImageBytes(bytes, "View-once media")
+                                    showImageBytes(
+                                        bytes,
+                                        "View-once media",
+                                        onBitmap = { mediaTitle = "View-once media"; mediaImage = it; mediaMessageError = "" },
+                                        onError = { mediaTitle = "View-once media"; mediaMessageError = it }
+                                    )
                                 } catch (error: Exception) {
                                     serverError = error.message ?: "View-once media is no longer available."
                                 }

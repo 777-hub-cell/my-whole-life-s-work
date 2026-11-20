@@ -171,6 +171,40 @@ test('Repeat is bounded and executes its body exactly the configured count', asy
   assert.equal(result.trace.filter(item => item.type === 'message.sendText').length, 3)
 })
 
+test('poll node builds a documented WhatsApp poll payload; safe test never sends it', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft()
+  const trigger = draft.nodes[0]
+  const poll = {
+    id: 'poll',
+    type: 'message.sendPoll',
+    x: 280,
+    y: 100,
+    config: { title: 'Choose one', options: 'Tea\nCoffee', selectableCount: 1 },
+  }
+  draft.nodes = [trigger, poll]
+  draft.edges = [{ id: 'poll-exec', from: trigger.id, fromSocket: 'next', to: poll.id, toSocket: 'in' }]
+  assert.equal(validateWorkflow(draft).valid, true, JSON.stringify(validateWorkflow(draft).errors))
+
+  let liveCalls = 0
+  const dry = await executeVisualWorkflow(draft, {
+    store,
+    dryRun: true,
+    context: context({ socket: { sendMessage: async () => { liveCalls += 1; throw new Error('must not send') } } }),
+  })
+  assert.equal(dry.ok, true, dry.error)
+  assert.equal(liveCalls, 0)
+  assert.ok(dry.trace.some(item => item.type === 'message.sendPoll' && item.status === 'simulated'))
+
+  let payload
+  const live = await executeVisualWorkflow(draft, {
+    store,
+    context: context({ socket: { sendMessage: async (_jid, content) => { payload = content; return { key: { id: 'poll-id' } } } } }),
+  })
+  assert.equal(live.ok, true, live.error)
+  assert.deepEqual(payload, { poll: { name: 'Choose one', values: ['Tea', 'Coffee'], selectableCount: 1 } })
+})
+
 test('counter outputs can be converted and passed into a WhatsApp text payload', async t => {
   const { store } = await makeStore(t)
   const draft = createWorkflowDraft()

@@ -511,6 +511,49 @@ test('edited messages reconcile duplicate IDs and preserve reactions, stars and 
   }
 })
 
+test('messages deleted by the other participant stay in the Hub store with a deletion marker', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-remote-delete-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348777777777@s.whatsapp.net'
+    await store.recordMessage({
+      sessionId: 'private',
+      message: {
+        key: { id: 'kept-after-delete', remoteJid: jid, fromMe: false },
+        messageTimestamp: 1764000000,
+        pushName: 'Other participant',
+        message: { conversation: 'Please keep this message in Hub.' },
+      },
+    })
+    assert.equal(
+      await store.markMessageDeletedRemotely('private', jid, 'kept-after-delete'),
+      true
+    )
+    const messages = await store.getMessages('private', jid, { limit: 20 })
+    assert.equal(messages.length, 1)
+    assert.equal(messages[0].text, 'Please keep this message in Hub.')
+    assert.equal(messages[0].deletedByRemote, true)
+    assert.ok(messages[0].deletedAt > 0)
+    assert.deepEqual(await store.listDeletedMessageIds('private', jid), [])
+
+    // Only the other participant's message is retained this way. Owner-side
+    // deletion continues to use the existing explicit delete/tombstone path.
+    await store.recordMessage({
+      sessionId: 'private',
+      message: {
+        key: { id: 'own-message', remoteJid: jid, fromMe: true },
+        messageTimestamp: 1764000001,
+        message: { conversation: 'An outgoing message.' },
+      },
+    })
+    assert.equal(await store.markMessageDeletedRemotely('private', jid, 'own-message'), false)
+    assert.equal((await store.getMessages('private', jid, { limit: 20 })).length, 2)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('incremental chat sync uses a composite timestamp/message cursor and preserves unread markers', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-sync-'))
   try {

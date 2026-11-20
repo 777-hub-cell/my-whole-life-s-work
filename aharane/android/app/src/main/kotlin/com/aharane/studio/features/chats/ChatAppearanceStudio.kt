@@ -29,7 +29,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -38,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aharane.studio.core.design.AharaneInstrumentSans
 import com.aharane.studio.core.design.StudioPalette
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatSummary
@@ -482,7 +486,21 @@ fun ChatAppearanceStudioScreen(
                     .border(1.dp, StudioPalette.Line, RoundedCornerShape(16.dp))
             ) {
                 if (appearance.wallpaper == "photo" && previewBitmap != null) {
-                    Image(previewBitmap!!, null, Modifier.fillMaxSize(), contentScale = if (appearance.photoFit == "fit") ContentScale.Fit else ContentScale.Crop)
+                    val matrix = ColorMatrix().apply {
+                        setToScale(
+                            appearance.wallpaperBrightness,
+                            appearance.wallpaperBrightness,
+                            appearance.wallpaperBrightness,
+                            1f
+                        )
+                    }
+                    Image(
+                        previewBitmap!!,
+                        null,
+                        Modifier.fillMaxSize().blur(appearance.wallpaperBlur.dp),
+                        contentScale = if (appearance.photoFit == "fit") ContentScale.Fit else ContentScale.Crop,
+                        colorFilter = ColorFilter.colorMatrix(matrix)
+                    )
                 }
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = appearance.wallpaperDim)))
                 Column(Modifier.align(Alignment.Center).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(appearance.bubbleSpacing.dp)) {
@@ -717,6 +735,16 @@ private fun PreviewBubble(text: String, outgoing: Boolean, appearance: ChatAppea
             color = foreground,
             fontSize = appearance.messageSize.sp,
             lineHeight = (appearance.messageSize + appearance.lineSpacing).sp,
+            fontWeight = when (appearance.fontWeight) {
+                "bold" -> FontWeight.Bold
+                "medium" -> FontWeight.Medium
+                else -> FontWeight.Normal
+            },
+            fontFamily = when (appearance.fontFamily) {
+                "Mono" -> androidx.compose.ui.text.font.FontFamily.Monospace
+                "System" -> androidx.compose.ui.text.font.FontFamily.SansSerif
+                else -> AharaneInstrumentSans
+            },
             modifier = Modifier.widthIn(max = 265.dp).clip(RoundedCornerShape(appearance.bubbleRadius.dp))
                 .background(background)
                 .then(if (appearance.bubbleBorder) Modifier.border(1.dp, StudioPalette.Line, RoundedCornerShape(appearance.bubbleRadius.dp)) else Modifier)

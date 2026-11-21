@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -19,30 +21,43 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.PI
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.res.painterResource
 import com.aharane.studio.R
 import com.aharane.studio.core.navigation.MainDestination
+import android.graphics.Color as AndroidColor
 
 val LocalStudioCornerScale = staticCompositionLocalOf { 1f }
 val LocalStudioRowScale = staticCompositionLocalOf { 1f }
@@ -262,13 +277,13 @@ fun StudioActionButton(
     }
     val fg = when {
         !enabled -> StudioPalette.Muted
-        primary -> Color.White
+        primary -> MaterialTheme.colorScheme.onPrimary
         destructive -> StudioPalette.Bad
         else -> StudioPalette.Ink
     }
     val shape = RoundedCornerShape(12.dp * LocalStudioCornerScale.current)
     Box(
-        modifier = modifier.defaultMinSize(minHeight = if (compact) 36.dp else 44.dp)
+        modifier = modifier.defaultMinSize(minHeight = if (compact) 40.dp else 48.dp)
             .clip(shape)
             .background(bg)
              .border(1.dp, if (primary && enabled) StudioPalette.Accent else StudioPalette.Line, shape)
@@ -292,7 +307,7 @@ fun StudioSearchField(
     showIcon: Boolean = false
 ) {
     Surface(
-        modifier = modifier.fillMaxWidth().heightIn(min = 46.dp),
+        modifier = modifier.fillMaxWidth().heightIn(min = 48.dp),
         shape = RoundedCornerShape(12.dp * LocalStudioCornerScale.current),
         color = StudioPalette.Surface,
         border = BorderStroke(1.dp, StudioPalette.Line)
@@ -311,6 +326,7 @@ fun StudioSearchField(
                     value = value,
                     onValueChange = onValueChange,
                     singleLine = true,
+                    cursorBrush = SolidColor(StudioPalette.Accent),
                     textStyle = TextStyle(
                         color = StudioPalette.Ink, fontSize = 14.sp, lineHeight = 20.sp,
                         fontWeight = FontWeight.Normal, fontFamily = MaterialTheme.typography.bodyLarge.fontFamily
@@ -324,6 +340,165 @@ fun StudioSearchField(
 }
 
 @Composable
+fun StudioTextInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+    minHeight: androidx.compose.ui.unit.Dp = 48.dp,
+    textSize: androidx.compose.ui.unit.TextUnit = 14.sp,
+    tag: String? = null
+) {
+    val shape = RoundedCornerShape(12.dp * LocalStudioCornerScale.current)
+    Surface(
+        modifier = modifier.fillMaxWidth().heightIn(min = minHeight),
+        color = StudioPalette.Surface,
+        shape = shape,
+        border = BorderStroke(1.dp, StudioPalette.Line)
+    ) {
+        Box(
+            Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 11.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            if (value.isEmpty()) {
+                Text(placeholder, color = StudioPalette.Muted, fontSize = textSize, lineHeight = (textSize.value * 1.45f).sp)
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = singleLine,
+                minLines = minLines,
+                textStyle = TextStyle(
+                    color = StudioPalette.Ink,
+                    fontSize = textSize,
+                    lineHeight = (textSize.value * 1.45f).sp,
+                    fontFamily = MaterialTheme.typography.bodyLarge.fontFamily
+                ),
+                cursorBrush = SolidColor(StudioPalette.Accent),
+                modifier = Modifier.fillMaxWidth().then(tag?.let { Modifier.testTag(it) } ?: Modifier)
+            )
+        }
+    }
+}
+
+@Composable
+fun StudioColorWheel(
+    colorHex: String,
+    onColorChanged: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val hsv = remember(colorHex) {
+        FloatArray(3).also { values ->
+            val parsed = runCatching { AndroidColor.parseColor(colorHex) }.getOrDefault(AndroidColor.GREEN)
+            AndroidColor.colorToHSV(parsed, values)
+        }
+    }
+    val latestColorChanged = rememberUpdatedState(onColorChanged)
+    val latestSaturation = rememberUpdatedState(hsv[1].coerceIn(0f, 1f))
+    val latestBrightness = rememberUpdatedState(hsv[2].coerceIn(0f, 1f))
+    val hue = hsv[0].coerceIn(0f, 360f)
+    val saturation = hsv[1].coerceIn(0f, 1f)
+    val brightness = hsv[2].coerceIn(0f, 1f)
+    val surfaceColor = StudioPalette.Surface
+    val inkColor = StudioPalette.Ink
+
+    fun emit(
+        nextHue: Float = hue,
+        nextSaturation: Float = latestSaturation.value,
+        nextBrightness: Float = latestBrightness.value
+    ) {
+        val value = floatArrayOf(
+            nextHue.coerceIn(0f, 360f),
+            nextSaturation.coerceIn(0f, 1f),
+            nextBrightness.coerceIn(0f, 1f)
+        )
+        val argb = AndroidColor.HSVToColor(value)
+        latestColorChanged.value(String.format(java.util.Locale.ROOT, "#%06X", 0xFFFFFF and argb))
+    }
+    fun chooseHue(x: Float, y: Float, width: Float, height: Float) {
+        val dx = x - width / 2f
+        val dy = y - height / 2f
+        val angle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+        emit((angle + 90f + 360f) % 360f)
+    }
+
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Canvas(
+            Modifier.fillMaxWidth().height(194.dp)
+                .pointerInput(Unit) {
+                    detectTapGestures { point ->
+                        chooseHue(point.x, point.y, size.width.toFloat(), size.height.toFloat())
+                    }
+                }
+                .pointerInput(Unit) {
+                    detectDragGestures(
+                        onDragStart = { point -> chooseHue(point.x, point.y, size.width.toFloat(), size.height.toFloat()) }
+                    ) { change, _ ->
+                        chooseHue(change.position.x, change.position.y, size.width.toFloat(), size.height.toFloat())
+                        change.consume()
+                    }
+                }
+        ) {
+            val radius = size.minDimension * .46f
+            val center = Offset(size.width / 2f, size.height / 2f)
+            drawCircle(
+                brush = Brush.sweepGradient(
+                    listOf(
+                        Color(0xFFFF3030), Color(0xFFFFD52A), Color(0xFF43C95A),
+                        Color(0xFF28C9CF), Color(0xFF376BFF), Color(0xFFB54DDE),
+                        Color(0xFFFF3030)
+                    ),
+                    center
+                ),
+                radius = radius,
+                center = center
+            )
+            drawCircle(surfaceColor, radius = radius * .43f, center = center)
+            val markerAngle = (hue - 90f) * (PI.toFloat() / 180f)
+            val marker = Offset(
+                center.x + cos(markerAngle) * radius * .76f,
+                center.y + sin(markerAngle) * radius * .76f
+            )
+            val selectedColor = Color(AndroidColor.HSVToColor(floatArrayOf(hue, saturation, brightness)))
+            drawCircle(Color.White, radius = 12.dp.toPx(), center = marker)
+            drawCircle(inkColor, radius = 12.dp.toPx(), center = marker, style = androidx.compose.ui.graphics.drawscope.Stroke(1.2.dp.toPx()))
+            drawCircle(selectedColor, radius = 8.dp.toPx(), center = marker)
+            drawCircle(selectedColor, radius = radius * .25f, center = center)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Saturation", color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.weight(1f))
+            Text("${(saturation * 100).toInt()}%", color = StudioPalette.Muted, fontSize = 12.sp)
+        }
+        Slider(
+            value = saturation,
+            onValueChange = { emit(nextSaturation = it) },
+            colors = SliderDefaults.colors(
+                thumbColor = StudioPalette.Accent,
+                activeTrackColor = StudioPalette.Accent,
+                inactiveTrackColor = StudioPalette.Line
+            )
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Brightness", color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.weight(1f))
+            Text("${(brightness * 100).toInt()}%", color = StudioPalette.Muted, fontSize = 12.sp)
+        }
+        Slider(
+            value = brightness,
+            onValueChange = { emit(nextBrightness = it) },
+            colors = SliderDefaults.colors(
+                thumbColor = StudioPalette.Accent,
+                activeTrackColor = StudioPalette.Accent,
+                inactiveTrackColor = StudioPalette.Line
+            )
+        )
+    }
+}
+
+@Composable
 fun StudioSegmented(options: List<String>, selected: String, onSelect: (String) -> Unit) {
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp * LocalStudioCornerScale.current)).background(StudioPalette.Background).padding(3.dp),
@@ -333,13 +508,16 @@ fun StudioSegmented(options: List<String>, selected: String, onSelect: (String) 
             val active = option == selected
             val shape = RoundedCornerShape(9.dp * LocalStudioCornerScale.current)
             Box(
-                Modifier.weight(1f).defaultMinSize(minHeight = 38.dp).clip(shape)
-                    .then(if (active) Modifier.shadow(1.dp, shape).background(StudioPalette.Surface)
-                        .border(1.dp, StudioPalette.Line, shape) else Modifier.background(Color.Transparent))
-                    .clickable { onSelect(option) }.padding(horizontal = 4.dp, vertical = 8.dp),
+                Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).clip(shape)
+                    .then(
+                        if (active) Modifier.background(StudioPalette.Soft)
+                            .border(1.dp, StudioPalette.Accent, shape)
+                        else Modifier.background(Color.Transparent)
+                    )
+                    .clickable { onSelect(option) }.padding(horizontal = 6.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(option, color = if (active) StudioPalette.Ink else StudioPalette.Muted,
+                Text(option, color = if (active) StudioPalette.Accent else StudioPalette.Muted,
                     fontSize = 13.sp, lineHeight = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
         }
@@ -400,6 +578,7 @@ fun StudioFloatingMenu(
 object StudioPalette {
     val Background: Color @Composable get() = MaterialTheme.colorScheme.background
     val Surface: Color @Composable get() = MaterialTheme.colorScheme.surface
+    val SurfaceVariant: Color @Composable get() = MaterialTheme.colorScheme.surfaceVariant
     val Ink: Color @Composable get() = MaterialTheme.colorScheme.onSurface
     val Muted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
     val Line: Color @Composable get() = MaterialTheme.colorScheme.outline

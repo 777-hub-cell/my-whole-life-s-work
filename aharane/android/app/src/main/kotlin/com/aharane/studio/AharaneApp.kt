@@ -2125,7 +2125,13 @@ fun AharaneApp(
                         onOpenCommandBuilder = { commandBuilderOpen = true },
                         onOpenActivity = { destinationName = MainDestination.MORE.name; morePage = "activity" },
                         serviceConnected = connected,
-                        serviceSubtitle = if (previewMode) "Preview only" else if (connected) "Connected to Aharane server" else "Not connected to Aharane service",
+                        serviceDegraded = connected && serverError.isNotBlank(),
+                        serviceSubtitle = when {
+                            previewMode -> "Preview only"
+                            !connected -> "Not connected to Aharane service"
+                            serverError.isNotBlank() -> "Server connected · some features unavailable"
+                            else -> "Connected to Aharane server"
+                        },
                         privateAccountStatus = if (previewMode) "Preview session" else runtime?.privateAccount?.let(::accountStateLabel) ?: "Status not loaded",
                         publicAccountStatus = if (previewMode) "Preview session" else runtime?.publicAccount?.let(::accountStateLabel) ?: "Status not loaded",
                         privateActionLabel = if (previewMode) "Preview" else runtime?.privateAccount?.let(::accountActionLabel) ?: "Link account",
@@ -2957,8 +2963,10 @@ private fun queryDisplayName(context: Context, uri: Uri): String {
 }
 
 private fun formatBytes(bytes: Long): String = when {
-    bytes >= 1024L * 1024L -> String.format(Locale.ROOT, "%.1f MB", bytes / (1024f * 1024f))
-    bytes >= 1024L -> String.format(Locale.ROOT, "%.1f KB", bytes / 1024f)
+    bytes >= 1024L * 1024L * 1024L * 1024L -> String.format(Locale.ROOT, "%.1f TB", bytes / (1024.0 * 1024.0 * 1024.0 * 1024.0))
+    bytes >= 1024L * 1024L * 1024L -> String.format(Locale.ROOT, "%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+    bytes >= 1024L * 1024L -> String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0))
+    bytes >= 1024L -> String.format(Locale.ROOT, "%.1f KB", bytes / 1024.0)
     else -> "$bytes B"
 }
 

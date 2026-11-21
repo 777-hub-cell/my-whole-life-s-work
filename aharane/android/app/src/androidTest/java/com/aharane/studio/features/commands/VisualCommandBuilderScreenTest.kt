@@ -1,6 +1,7 @@
 package com.aharane.studio.features.commands
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.performClick
@@ -35,6 +36,8 @@ class VisualCommandBuilderScreenTest {
         }
         compose.waitUntil(5_000) { source.readCount > 0 }
 
+        compose.onNodeWithText("TRIGGER").assertIsDisplayed()
+        compose.onNodeWithTag("workflow-save").assertIsEnabled()
         compose.onNodeWithTag("node-card-trigger.command").performClick()
         compose.onNodeWithTag("node-config-field-command").performTextClearance()
         compose.onNodeWithTag("node-config-field-command").performTextInput("welcome")
@@ -51,6 +54,8 @@ class VisualCommandBuilderScreenTest {
 
         compose.onNodeWithTag("workflow-save").performClick()
         compose.waitUntil(5_000) { source.createCount == 1 }
+        compose.onNodeWithText("Saved draft").assertIsDisplayed()
+        compose.onNodeWithTag("workflow-save").assertIsEnabled()
         // The command name belongs to the trigger node; there is no separate
         // workflow-name text field. Change it locally, then reload the saved
         // version to verify the command name comes back from that node.

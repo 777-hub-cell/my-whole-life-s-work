@@ -7,6 +7,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +35,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -170,15 +173,6 @@ fun MoreScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
         ) {
             item {
-                Text(
-                    "‹  Back to More",
-                    color = StudioPalette.Accent,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                        .clickable { onPageChange("more") }.padding(vertical = 6.dp)
-                )
-                Spacer(Modifier.height(10.dp))
                 StudioPageTitle("Appearance", "Changes apply instantly and are remembered on this phone.")
             }
             item { StudioSectionHeading("App") }
@@ -321,16 +315,16 @@ fun MoreScreen(
     } else if (page == "chat-settings") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                BackToMore { onPageChange("more") }
                 Spacer(Modifier.height(12.dp))
                 StudioPageTitle("Chat settings", "Manage your inbox and conversation appearance here.")
                 Spacer(Modifier.height(14.dp))
             }
             item {
-                StudioCard(padding = PaddingValues(14.dp)) {
+                StudioCard(padding = PaddingValues(18.dp)) {
                     Text("WhatsApp account", color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(8.dp))
                     StudioSegmented(
@@ -340,7 +334,7 @@ fun MoreScreen(
                             onChatAccountSelected(if (label == "Public") ChatAccount.PUBLIC else ChatAccount.PRIVATE)
                         }
                     )
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(10.dp))
                     Text(
                         "Inbox visibility is configured separately for each account.",
                         color = StudioPalette.Muted,
@@ -351,7 +345,7 @@ fun MoreScreen(
             }
             item {
                 StudioSectionHeading("Inbox visibility")
-                StudioCard(padding = PaddingValues(14.dp)) {
+                StudioCard(padding = PaddingValues(18.dp)) {
                     PreferenceSwitch(
                         title = "Show individual chats",
                         description = "Include one-to-one conversations in this account’s inbox.",
@@ -379,7 +373,7 @@ fun MoreScreen(
             }
             item {
                 StudioSectionHeading("Chat appearance")
-                StudioCard(padding = PaddingValues(14.dp)) {
+                StudioCard(padding = PaddingValues(18.dp)) {
                     Text("Theme", color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
                     StudioSegmented(
                         options = listOf("System", "Light", "Dark"),
@@ -392,7 +386,7 @@ fun MoreScreen(
                             onChatAppearanceChange(it.lowercase(), showChatAvatars, showChatPreviews, showChatTimestamps)
                         }
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(12.dp))
                     StudioDivider()
                     PreferenceSwitch(
                         title = "Show avatars",
@@ -433,7 +427,7 @@ fun MoreScreen(
             }
             item {
                 StudioSectionHeading("Offline chat storage")
-                StudioCard(padding = PaddingValues(14.dp)) {
+                StudioCard(padding = PaddingValues(18.dp)) {
                     val accountKey = selectedChatAccount.apiValue
                     var cacheLimitMb by rememberSaveable(accountKey) {
                         mutableIntStateOf(((mediaCache?.maximumCacheBytes(accountKey) ?: 536870912L) / (1024L * 1024L)).toInt())
@@ -444,11 +438,11 @@ fun MoreScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Encrypted media cache", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.weight(1f))
-                        SliderValueChip("$cacheLimitMb MB")
+                        SliderValueChip(formatStorageBytes(cacheLimitMb.toLong() * 1024L * 1024L))
                     }
                     Text(
-                        "Saved media: " + (cachedBytes / (1024L * 1024L)).toString() + " MB · Limit: " + cacheLimitMb + " MB",
-                        color = StudioPalette.Muted, fontSize = 11.5.sp,
+                        "Saved media: ${formatStorageBytes(cachedBytes)} · Limit: ${formatStorageBytes(cacheLimitMb.toLong() * 1024L * 1024L)}",
+                        color = StudioPalette.Muted, fontSize = 12.sp,
                         modifier = Modifier.padding(top = 4.dp)
                     )
                     StudioPreferenceSlider(
@@ -459,10 +453,10 @@ fun MoreScreen(
                         onValueChangeFinished = { mediaCache?.setMaximumCacheMegabytes(accountKey, cacheLimitMb) }
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        StudioActionButton("Clear " + selectedChatAccount.label + " media cache", primary = false, onClick = {
+                        StudioActionButton("Clear cache", modifier = Modifier.weight(1f), primary = false, onClick = {
                             onClearMediaCache(selectedChatAccount)
                         })
-                        StudioActionButton(if (syncingAllChats) "Syncing…" else "Sync all chats", primary = true, enabled = connected && !syncingAllChats, onClick = onSyncAllChats)
+                        StudioActionButton(if (syncingAllChats) "Syncing…" else "Sync all chats", modifier = Modifier.weight(1f), primary = true, enabled = connected && !syncingAllChats, onClick = onSyncAllChats)
                     }
                     Text(
                         "Only completed, verified attachments are marked offline-ready. View-once media is never cached.",
@@ -473,14 +467,14 @@ fun MoreScreen(
             }
             item {
                 StudioSectionHeading("Advanced appearance")
-                StudioCard(padding = PaddingValues(14.dp)) {
+                StudioCard(padding = PaddingValues(18.dp)) {
                     Text("Chat Appearance Studio", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     Text(
                         "Wallpapers, bubbles, typography, layout, media styling and reusable theme profiles.",
                         color = StudioPalette.Muted, fontSize = 12.sp, lineHeight = 17.sp,
                         modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
                     )
-                    StudioActionButton("Open Appearance Studio", primary = true, onClick = { onPageChange("chat-appearance-studio") })
+                    StudioActionButton("Open Appearance Studio", modifier = Modifier.fillMaxWidth(), primary = true, onClick = { onPageChange("chat-appearance-studio") })
                     Text(
                         "Global defaults, separate Private/Public overrides and individual conversation customisation.",
                         color = StudioPalette.Muted, fontSize = 11.sp, lineHeight = 15.sp,
@@ -490,7 +484,7 @@ fun MoreScreen(
             }
             item {
                 StudioSectionHeading("Message text size")
-                StudioCard(padding = PaddingValues(14.dp)) {
+                StudioCard(padding = PaddingValues(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Message text", color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.weight(1f))
@@ -533,7 +527,6 @@ fun MoreScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
         ) {
             item {
-                BackToMore { onPageChange("more") }
                 Spacer(Modifier.height(12.dp))
                 StudioPageTitle("Starred messages", "Saved messages from the ${selectedChatAccount.label} WhatsApp account.")
                 Spacer(Modifier.height(14.dp))
@@ -567,7 +560,6 @@ fun MoreScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
         ) {
             item {
-                BackToMore { onPageChange("more") }
                 Spacer(Modifier.height(12.dp))
                 StudioPageTitle("Accounts", "Two independent WhatsApp sessions. Pairing numbers are saved in Configuration.")
                 Spacer(Modifier.height(14.dp))
@@ -633,7 +625,6 @@ fun MoreScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
         ) {
             item {
-                BackToMore { onPageChange("more") }
                 Spacer(Modifier.height(12.dp))
                 StudioPageTitle("Activity and logs", if (connected) "Recent activity from your Aharane server." else "No server activity is available while disconnected.")
                 Text(
@@ -706,7 +697,6 @@ fun MoreScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
         ) {
             item {
-                BackToMore { onPageChange("more") }
                 Spacer(Modifier.height(12.dp))
                 StudioPageTitle("Storage", "What the bot’s files take up.")
                 Spacer(Modifier.height(14.dp))
@@ -900,21 +890,30 @@ fun MoreScreen(
     if (customColorOpen) {
         Dialog(onDismissRequest = { customColorOpen = false }) {
             Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                Modifier.fillMaxWidth().heightIn(max = 720.dp).verticalScroll(rememberScrollState())
+                    .clip(RoundedCornerShape(20.dp))
                     .background(StudioPalette.Surface).padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Custom accent", color = StudioPalette.Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text("Enter a six-digit hex color.", color = StudioPalette.Muted, fontSize = 12.5.sp)
-                BasicTextField(
-                    value = customHex,
-                    onValueChange = { customHex = it },
-                    singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(color = StudioPalette.Ink, fontSize = 15.sp),
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                        .background(StudioPalette.Background).border(1.dp, StudioPalette.Line, RoundedCornerShape(10.dp))
-                        .padding(horizontal = 12.dp, vertical = 12.dp)
-                )
+                Text("Choose your accent", color = StudioPalette.Ink, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                Text("Pick a colour visually or enter its exact hex value.", color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 18.sp)
+                StudioColorWheel(colorHex = customHex, onColorChanged = { customHex = it })
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    val preview = runCatching { Color(android.graphics.Color.parseColor(customHex.trim())) }.getOrDefault(StudioPalette.Accent)
+                    Box(Modifier.size(42.dp).clip(RoundedCornerShape(11.dp)).background(preview).border(1.dp, StudioPalette.Line, RoundedCornerShape(11.dp)))
+                    Column(Modifier.weight(1f)) {
+                        Text("Hex value", color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                        StudioTextInput(
+                            value = customHex,
+                            onValueChange = { value ->
+                                customHex = value.trim().let { if (it.isNotEmpty() && !it.startsWith("#")) "#$it" else it }
+                            },
+                            placeholder = "#RRGGBB",
+                            singleLine = true,
+                            textSize = 14.sp
+                        )
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.align(Alignment.End)) {
                     StudioActionButton("Cancel", compact = true, onClick = { customColorOpen = false })
                     StudioActionButton(
@@ -964,7 +963,7 @@ fun MoreScreen(
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Box(Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)).background(StudioPalette.Accent),
                                 contentAlignment = Alignment.Center) {
-                                Text("A", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                Text("A", color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                             }
                             Column {
                                 Text("Aharane Local Studio", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
@@ -1002,6 +1001,13 @@ fun MoreScreen(
     }
 }
 
+private fun formatStorageBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024L * 1024L -> String.format(java.util.Locale.ROOT, "%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+    bytes >= 1024L * 1024L -> String.format(java.util.Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0))
+    bytes >= 1024L -> String.format(java.util.Locale.ROOT, "%.1f KB", bytes / 1024.0)
+    else -> "$bytes B"
+}
+
 @Composable
 private fun RowScope.LauncherIconOption(
     label: String,
@@ -1029,18 +1035,6 @@ private fun RowScope.LauncherIconOption(
 }
 
 @Composable
-private fun BackToMore(onClick: () -> Unit) {
-    Text(
-        "‹  Back to More",
-        color = StudioPalette.Accent,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick).padding(vertical = 6.dp)
-    )
-}
-
-@Composable
 private fun PreferenceChoice(
     title: String,
     options: List<String>,
@@ -1062,8 +1056,9 @@ private fun PreferenceSwitch(
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        Modifier.fillMaxWidth().toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange)
-            .padding(vertical = 2.dp),
+        Modifier.fillMaxWidth().defaultMinSize(minHeight = 58.dp)
+            .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange)
+            .padding(vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -1076,7 +1071,7 @@ private fun PreferenceSwitch(
             onCheckedChange = null,
             enabled = enabled,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
+                checkedThumbColor = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
                 checkedTrackColor = StudioPalette.Accent,
                 uncheckedThumbColor = StudioPalette.Muted,
                 uncheckedTrackColor = StudioPalette.Line
@@ -1111,9 +1106,9 @@ private fun StudioPreferenceSlider(
         onValueChangeFinished = onValueChangeFinished,
         valueRange = valueRange,
         steps = steps,
-        modifier = Modifier.fillMaxWidth().height(42.dp),
+        modifier = Modifier.fillMaxWidth().height(52.dp),
         colors = SliderDefaults.colors(
-            thumbColor = StudioPalette.Ink,
+            thumbColor = StudioPalette.Accent,
             activeTrackColor = StudioPalette.Accent,
             inactiveTrackColor = StudioPalette.Line,
             activeTickColor = StudioPalette.Surface,
@@ -1156,9 +1151,10 @@ private fun OwnerNumberField(
             onValueChange = onValueChange,
             readOnly = !enabled,
             singleLine = true,
+            cursorBrush = SolidColor(StudioPalette.Accent),
             textStyle = androidx.compose.ui.text.TextStyle(
                 color = if (enabled) StudioPalette.Ink else StudioPalette.Muted,
-                fontSize = 13.sp
+                fontSize = 14.sp
             ),
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
                 .background(StudioPalette.Background)
@@ -1177,7 +1173,8 @@ private fun PasswordField(label: String, value: String, onValueChange: (String) 
             onValueChange = onValueChange,
             singleLine = true,
             visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-            textStyle = androidx.compose.ui.text.TextStyle(color = StudioPalette.Ink, fontSize = 13.sp),
+            cursorBrush = SolidColor(StudioPalette.Accent),
+            textStyle = androidx.compose.ui.text.TextStyle(color = StudioPalette.Ink, fontSize = 14.sp),
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
                 .background(StudioPalette.Background)
                 .border(1.dp, StudioPalette.Line, RoundedCornerShape(9.dp))

@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -104,6 +105,7 @@ fun EnvironmentScreen(
                                 }
                             } else {
                                 BasicTextField(
+                    cursorBrush = SolidColor(StudioPalette.Accent),
                                     value = item.value,
                                     onValueChange = { value ->
                                         if ((connected || previewMode) && !item.readOnly) drafts[index] = item.copy(value = value)

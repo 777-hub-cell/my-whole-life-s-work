@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -377,6 +378,7 @@ private fun ConfigField(
             modifier = Modifier.padding(top = 2.dp, bottom = 7.dp)
         )
         BasicTextField(
+                    cursorBrush = SolidColor(StudioPalette.Accent),
             value = value,
             onValueChange = onValueChange,
             enabled = enabled,

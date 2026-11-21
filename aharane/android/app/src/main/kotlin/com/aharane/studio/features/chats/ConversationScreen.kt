@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.ColorFilter
@@ -290,6 +291,7 @@ fun ConversationScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BasicTextField(
+                    cursorBrush = SolidColor(StudioPalette.Accent),
                     value = search,
                     onValueChange = { search = it },
                     singleLine = true,
@@ -605,6 +607,7 @@ fun ConversationScreen(
                 contentAlignment = Alignment.CenterStart
             ) {
                 BasicTextField(
+                    cursorBrush = SolidColor(StudioPalette.Accent),
                     value = draft,
                     onValueChange = { draft = it },
                     modifier = Modifier.fillMaxWidth().testTag("conversation-composer"),

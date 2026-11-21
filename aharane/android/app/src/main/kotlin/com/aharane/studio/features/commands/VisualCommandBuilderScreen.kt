@@ -986,17 +986,19 @@ private fun NodeCard(
     }
 }
 
-private fun nodeCategoryLabel(type: String): String = when (type.substringBefore('.')) {
-    "trigger" -> "TRIGGER"
-    "message", "media" -> "MESSAGE"
-    "contact" -> "CONTACT"
-    "group" -> "GROUP"
-    "moderation" -> "MODERATION"
-    "profile" -> "PROFILE"
-    "newsletter" -> "NEWSLETTER"
-    "condition" -> "CONDITION"
-    "variable", "counter", "value" -> "DATA"
-    "flow" -> "FLOW"
+private fun nodeCategoryLabel(type: String): String = when {
+    type.startsWith("trigger.") -> "TRIGGER"
+    type == "message.sendText" || type == "message.replyText" -> "TEXT"
+    type.startsWith("message.") -> "MESSAGE"
+    type.startsWith("media.") -> "MEDIA"
+    type.startsWith("contact.") -> "CONTACT"
+    type.startsWith("group.") -> "GROUP"
+    type.startsWith("moderation.") -> "MODERATION"
+    type.startsWith("profile.") -> "PROFILE"
+    type.startsWith("newsletter.") -> "NEWSLETTER"
+    type.startsWith("condition.") -> "CONDITION"
+    type.startsWith("variable.") || type.startsWith("counter.") || type.startsWith("value.") -> "DATA"
+    type.startsWith("flow.") -> "FLOW"
     else -> "ACTION"
 }
 
@@ -1126,6 +1128,24 @@ private fun NodeConfigurationDialog(
             Spacer(Modifier.height(5.dp))
             Text(definition?.description.orEmpty(), color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 18.sp)
             Spacer(Modifier.height(15.dp))
+            if (fields.isEmpty() && node.type !in setOf("trigger.command", "trigger.message")) {
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                        .background(StudioPalette.SurfaceVariant)
+                        .border(1.dp, StudioPalette.Line, RoundedCornerShape(12.dp))
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Text("No settings to enter", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "This node uses the values coming from its connected inputs. Connect its sockets in the workspace to decide when it runs and what data it receives.",
+                        color = StudioPalette.Muted,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                }
+                Spacer(Modifier.height(13.dp))
+            }
             fields.forEach { (key, label) ->
                 Text(label, color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(6.dp))

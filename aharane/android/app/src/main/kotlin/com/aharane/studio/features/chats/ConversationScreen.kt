@@ -766,7 +766,6 @@ fun ConversationScreen(
         }
         val quotedText = selected.quotedMessageText?.takeIf { it.isNotBlank() }
             ?: loadedQuote?.let { it.text.ifBlank { messageAttachmentLabel(it.kind) } }.orEmpty()
-        val quoteMissing = !selected.replyToMessageId.isNullOrBlank() && quotedText.isBlank()
         androidx.compose.ui.window.Dialog(onDismissRequest = {
             if (!aiReplyLoading) aiReplyMessage = null
         }) {
@@ -802,7 +801,7 @@ fun ConversationScreen(
                             Text(quotedText, color = StudioPalette.Ink, fontSize = 13.sp, lineHeight = 18.sp)
                         } else {
                             Text(
-                                "The original quoted text is unavailable. Aharane will not generate a reply without it.",
+                                "The original quoted text is unavailable. Aharane will use only the selected message and will not load chat history.",
                                 color = StudioPalette.Bad,
                                 fontSize = 12.sp,
                                 lineHeight = 17.sp
@@ -870,7 +869,7 @@ fun ConversationScreen(
                         if (aiReplyLoading) "Generating…" else "Generate reply",
                         modifier = Modifier.fillMaxWidth(),
                         primary = true,
-                        enabled = !aiReplyLoading && !quoteMissing,
+                        enabled = !aiReplyLoading,
                         onClick = {
                             aiReplyScope.launch {
                                 aiReplyLoading = true

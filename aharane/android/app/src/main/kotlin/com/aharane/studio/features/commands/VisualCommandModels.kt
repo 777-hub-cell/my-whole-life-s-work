@@ -49,8 +49,8 @@ data class VisualNode(
             return VisualNode(
                 id = json.optString("id").ifBlank { UUID.randomUUID().toString() },
                 type = json.optString("type"),
-                x = json.optDouble("x", 32.0).toFloat().coerceIn(-10_000f, 10_000f),
-                y = json.optDouble("y", 80.0).toFloat().coerceIn(-10_000f, 10_000f),
+                x = json.optDouble("x", 32.0).takeIf { it.isFinite() }?.toFloat()?.coerceIn(0f, 10_000f) ?: 32f,
+                y = json.optDouble("y", 80.0).takeIf { it.isFinite() }?.toFloat()?.coerceIn(0f, 10_000f) ?: 80f,
                 config = config
             )
         }

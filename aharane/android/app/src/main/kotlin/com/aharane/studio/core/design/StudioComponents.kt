@@ -1,6 +1,6 @@
 package com.aharane.studio.core.design
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,11 +24,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -53,21 +52,11 @@ fun StudioHeader() {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-            Box(
-                modifier = Modifier.size(26.dp).clip(RoundedCornerShape(8.dp))
-                    .background(StudioPalette.Accent),
-                contentAlignment = Alignment.Center
-            ) {
-                Canvas(Modifier.size(15.dp)) {
-                    val sw = 2.1.dp.toPx()
-                    drawLine(Color.White, Offset(size.width * .12f, size.height * .88f),
-                        Offset(size.width * .50f, size.height * .12f), sw, cap = StrokeCap.Round)
-                    drawLine(Color.White, Offset(size.width * .50f, size.height * .12f),
-                        Offset(size.width * .88f, size.height * .88f), sw, cap = StrokeCap.Round)
-                    drawLine(Color.White, Offset(size.width * .34f, size.height * .58f),
-                        Offset(size.width * .66f, size.height * .58f), sw, cap = StrokeCap.Round)
-                }
-            }
+            Image(
+                painter = painterResource(com.aharane.studio.R.drawable.ic_aharane_logo),
+                contentDescription = "Aharane logo",
+                modifier = Modifier.size(30.dp)
+            )
             Text(
                 "Aharane",
                 color = StudioPalette.Ink,

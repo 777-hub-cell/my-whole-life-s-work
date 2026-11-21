@@ -55,6 +55,10 @@ import java.util.UUID
 
 private data class ActiveSocket(val nodeId: String, val socketId: String, val type: String)
 
+internal const val WORKSPACE_CANVAS_PADDING_DP = 48f
+internal fun workspaceNodeOffset(node: VisualNode): Offset =
+    Offset(node.x + WORKSPACE_CANVAS_PADDING_DP, node.y + WORKSPACE_CANVAS_PADDING_DP)
+
 @Composable
 fun VisualCommandBuilderScreen(
     repository: VisualCommandDataSource,
@@ -394,8 +398,12 @@ fun VisualCommandBuilderScreen(
 
     fun moveNode(id: String, delta: Offset) {
         workflow = workflow.copy(nodes = workflow.nodes.map { node ->
-            if (node.id == id) node.copy(x = (node.x + delta.x).coerceIn(-400f, 10000f), y = (node.y + delta.y).coerceIn(0f, 2000f))
-            else node
+            if (node.id == id) {
+                node.copy(
+                    x = (node.x + delta.x).coerceIn(0f, 10_000f),
+                    y = (node.y + delta.y).coerceIn(0f, 10_000f)
+                )
+            } else node
         })
         dirty = true
     }
@@ -522,7 +530,7 @@ fun VisualCommandBuilderScreen(
             }
             Box(Modifier.fillMaxSize().onSizeChanged { workspaceViewportSize = it }.clip(RoundedCornerShape(9.dp)).background(Color(0xFFF2F5F2))) {
                 Box(
-                    Modifier.fillMaxSize().horizontalScroll(workspaceScroll).verticalScroll(workspaceVerticalScroll).pointerInput(Unit) {
+                    Modifier.horizontalScroll(workspaceScroll).verticalScroll(workspaceVerticalScroll).testTag("workflow-workspace").pointerInput(Unit) {
                         awaitEachGesture {
                             awaitFirstDown(requireUnconsumed = false)
                             var lastDistance = 0f
@@ -543,16 +551,16 @@ fun VisualCommandBuilderScreen(
                         }
                     }
                 ) {
-                    val minNodeX = workflow.nodes.minOfOrNull { it.x } ?: 0f
-                    val minNodeY = workflow.nodes.minOfOrNull { it.y } ?: 0f
-                    val canvasOriginX = 48f - minNodeX
-                    val canvasOriginY = 48f - minNodeY
+                    // A stable origin prevents dragging one node from shifting every other node.
+                    val canvasOriginX = WORKSPACE_CANVAS_PADDING_DP
+                    val canvasOriginY = WORKSPACE_CANVAS_PADDING_DP
                     val maxNodeRight = workflow.nodes.maxOfOrNull { it.x + 206f } ?: 206f
                     val maxNodeBottom = workflow.nodes.maxOfOrNull { node ->
                         node.y + (measuredNodeSizes[node.id]?.height?.let { with(density) { it.toDp().value } } ?: 132f)
                     } ?: 180f
-                    val canvasWidth = maxOf(900.dp, (canvasOriginX + maxNodeRight + 48f).dp)
-                    val canvasHeight = maxOf(430.dp, (canvasOriginY + maxNodeBottom + 48f).dp)
+                    // Extra blank canvas makes one-finger panning useful on a phone.
+                    val canvasWidth = maxOf(1600.dp, (canvasOriginX + maxNodeRight + 48f).dp)
+                    val canvasHeight = maxOf(1200.dp, (canvasOriginY + maxNodeBottom + 48f).dp)
                     // Outer box owns scaled scroll dimensions; inner box preserves
                     // unscaled coordinates for socket measurements.
                     Box(Modifier.width(canvasWidth * zoom).height(canvasHeight * zoom)) {
@@ -614,14 +622,19 @@ fun VisualCommandBuilderScreen(
                                 onMeasured = { size -> if (measuredNodeSizes[node.id] != size) measuredNodeSizes[node.id] = size },
                                 onSocketPosition = { socket, output, coordinates ->
                                     val canvas = workspaceCoordinates
-                                    if (canvas != null) {
-                                        val center = canvas.localPositionOf(coordinates, Offset(coordinates.size.width / 2f, coordinates.size.height / 2f))
-                                        val key = socketPositionKey(node.id, socket.id, output)
-                                        if (measuredSocketPositions[key] != center) measuredSocketPositions[key] = center
+                                    if (canvas != null && canvas.isAttached && coordinates.isAttached) {
+                                        val center = runCatching {
+                                            canvas.localPositionOf(
+                                                coordinates,
+                                                Offset(coordinates.size.width / 2f, coordinates.size.height / 2f)
+                                            )
+                                        }.getOrNull()
+                                        if (center != null) {
+                                            val key = socketPositionKey(node.id, socket.id, output)
+                                            if (measuredSocketPositions[key] != center) measuredSocketPositions[key] = center
+                                        }
                                     }
                                 },
-                                canvasOriginX = canvasOriginX,
-                                canvasOriginY = canvasOriginY
                             )
                         }
                     }
@@ -865,24 +878,25 @@ private fun NodeCard(
     onMove: (Offset) -> Unit,
     onSocket: (VisualSocket, Boolean) -> Unit,
     onMeasured: (IntSize) -> Unit,
-    onSocketPosition: (VisualSocket, Boolean, LayoutCoordinates) -> Unit,
-    canvasOriginX: Float,
-    canvasOriginY: Float
+    onSocketPosition: (VisualSocket, Boolean, LayoutCoordinates) -> Unit
 ) {
+    val currentOnMove by rememberUpdatedState(onMove)
+    val currentOnDragStart by rememberUpdatedState(onDragStart)
+    val nodeOffset = workspaceNodeOffset(node)
     val borderColor = when {
         error != null -> StudioPalette.Bad
         selected -> StudioPalette.Accent
         else -> Color(0xFFD9E2DC)
     }
     Column(
-        Modifier.offset((node.x + canvasOriginX).dp, (node.y + canvasOriginY).dp).width(206.dp)
+        Modifier.offset(nodeOffset.x.dp, nodeOffset.y.dp).width(206.dp)
             .onSizeChanged(onMeasured).testTag("node-card-" + node.type)
             .clip(RoundedCornerShape(8.dp)).background(Color.White)
             .border(if (selected || error != null) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(8.dp))
             .pointerInput(node.id) {
-                detectDragGestures(onDragStart = { onDragStart() }) { change, amount ->
+                detectDragGestures(onDragStart = { currentOnDragStart() }) { change, amount ->
                     change.consume()
-                    onMove(Offset(amount.x / density, amount.y / density))
+                    currentOnMove(Offset(amount.x / density, amount.y / density))
                 }
             }
             .clickable(onClick = onSelect)

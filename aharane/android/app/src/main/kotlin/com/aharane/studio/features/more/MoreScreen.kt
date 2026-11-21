@@ -21,6 +21,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -453,7 +455,14 @@ fun MoreScreen(
                         onValueChange = { cacheLimitMb = it.toInt().coerceIn(100, 2048) },
                         onValueChangeFinished = { mediaCache?.setMaximumCacheMegabytes(accountKey, cacheLimitMb) },
                         valueRange = 100f..2048f,
-                        steps = 18
+                        steps = 18,
+                        colors = SliderDefaults.colors(
+                            thumbColor = StudioPalette.Accent,
+                            activeTrackColor = StudioPalette.Accent,
+                            inactiveTrackColor = StudioPalette.Line,
+                            activeTickColor = StudioPalette.Accent.copy(alpha = 0.55f),
+                            inactiveTickColor = StudioPalette.Line
+                        )
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         StudioActionButton("Clear " + selectedChatAccount.label + " media cache", primary = false, onClick = {
@@ -1064,23 +1073,35 @@ private fun PreferenceSwitch(
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        Modifier.fillMaxWidth().clickable(enabled = enabled) { onCheckedChange(!checked) }
-            .padding(vertical = 2.dp),
+        Modifier.fillMaxWidth().padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(
+            Modifier.weight(1f).clip(RoundedCornerShape(6.dp))
+                .clickable(enabled = enabled) { onCheckedChange(!checked) }
+                .padding(vertical = 3.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
             Text(title, color = if (enabled) StudioPalette.Ink else StudioPalette.Muted, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
             Text(description, color = StudioPalette.Muted, fontSize = 12.sp, lineHeight = 16.sp)
         }
-        Box(
-            Modifier.width(42.dp).height(24.dp).clip(CircleShape)
-                .background(if (checked) StudioPalette.Accent else StudioPalette.Line)
-                .padding(3.dp),
-            contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
-        ) {
-            Box(Modifier.size(18.dp).clip(CircleShape).background(Color.White))
-        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = StudioPalette.Accent,
+                checkedBorderColor = StudioPalette.Accent,
+                uncheckedThumbColor = StudioPalette.Muted,
+                uncheckedTrackColor = StudioPalette.Surface,
+                uncheckedBorderColor = StudioPalette.Line,
+                disabledCheckedThumbColor = Color.White,
+                disabledCheckedTrackColor = StudioPalette.Accent.copy(alpha = 0.45f),
+                disabledUncheckedTrackColor = StudioPalette.Line.copy(alpha = 0.5f)
+            )
+        )
     }
 }
 

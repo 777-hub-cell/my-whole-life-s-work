@@ -2868,6 +2868,7 @@ private fun accountRateLimitMessage(state: ServerAccountState): String? {
 private fun accountStateLabel(state: ServerAccountState): String = when {
     accountRateLimitMessage(state) != null -> "WhatsApp rate limited"
     state.connected -> "Connected"
+    !state.lastError.isNullOrBlank() -> "Connection issue · " + state.lastError.take(72)
     state.registered && state.state == "reconnecting" -> "Reconnecting"
     state.registered -> "Paired · ${state.state.replace('-', ' ')}"
     state.state == "not-paired" -> "Not paired"

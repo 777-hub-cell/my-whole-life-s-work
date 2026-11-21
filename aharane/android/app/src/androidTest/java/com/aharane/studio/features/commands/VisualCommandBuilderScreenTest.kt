@@ -84,7 +84,7 @@ class VisualCommandBuilderScreenTest {
         compose.waitUntil(5_000) { source.readCount > 0 }
         compose.waitForIdle()
         val first = compose.onNodeWithTag("node-card-trigger.command").fetchSemanticsNode().boundsInRoot
-        val second = compose.onNodeWithTag("node-card-message.sendText").fetchSemanticsNode().boundsInRoot
+        val second = compose.onNodeWithTag("node-card-message.replyText").fetchSemanticsNode().boundsInRoot
         compose.onNodeWithTag("node-card-trigger.command").performTouchInput {
             val start = center
             down(start)
@@ -93,7 +93,7 @@ class VisualCommandBuilderScreenTest {
         }
         compose.waitForIdle()
         val firstAfter = compose.onNodeWithTag("node-card-trigger.command").fetchSemanticsNode().boundsInRoot
-        val secondAfter = compose.onNodeWithTag("node-card-message.sendText").fetchSemanticsNode().boundsInRoot
+        val secondAfter = compose.onNodeWithTag("node-card-message.replyText").fetchSemanticsNode().boundsInRoot
         assertTrue("Dragged node should move down", firstAfter.top > first.top + 40f)
         assertEquals("The other node must keep its position", second.top, secondAfter.top, 2f)
         compose.onNodeWithTag("workflow-canvas-background").assertIsDisplayed()

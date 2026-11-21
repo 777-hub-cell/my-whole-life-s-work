@@ -36,6 +36,7 @@ if (!baileysRuntime.includes("from '@itsliaaa/baileys'")) throw new Error('Ahara
 const socketOptions = baileysRuntime.slice(baileysRuntime.indexOf('makeSocket: ({ auth })'), baileysRuntime.indexOf('loggedOutCode:'))
 if (socketOptions.includes('shouldSyncHistoryMessage: () => false')) throw new Error('Aharane must not disable Baileys initial LID/history sync')
 if (!socketOptions.includes('enableRecentMessageCache: false')) throw new Error('Aharane must avoid the broken 0.5.6 messageRetryManager.flushAll close handler')
+if (!socketOptions.includes('globalThis.WebSocket = undefined') || !socketOptions.includes('finally')) throw new Error('Aharane must use the ws transport fallback and restore Node WebSocket safely')
 if (packageJson.dependencies?.yauzl !== '3.4.0') throw new Error('Aharane ZIP validation must use the reviewed yauzl 3.4.0 release')
 if (packageJson.dependencies?.ws !== '8.23.0') throw new Error('Aharane studio WebSocket support must use ws 8.23.0')
 

@@ -237,7 +237,7 @@ fun WhatsAppPairingScreen(
             if (errorMessage.isNotBlank()) {
                 Text(
                     errorMessage,
-                    color = if (connected) StudioPalette.Accent else StudioPalette.Bad,
+                    color = if (errorMessage.contains("is connected", ignoreCase = true)) StudioPalette.Accent else StudioPalette.Bad,
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
                     modifier = Modifier.fillMaxWidth()

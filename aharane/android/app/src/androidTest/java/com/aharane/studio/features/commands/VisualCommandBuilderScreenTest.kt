@@ -36,7 +36,7 @@ class VisualCommandBuilderScreenTest {
         }
         compose.waitUntil(5_000) { source.readCount > 0 }
 
-        compose.onNodeWithText("Trigger").assertIsDisplayed()
+        compose.onNodeWithText("TRIGGER").assertIsDisplayed()
         compose.onNodeWithTag("workflow-save").assertIsEnabled()
         compose.onNodeWithTag("node-card-trigger.command").performClick()
         compose.onNodeWithTag("node-config-field-command").performTextClearance()

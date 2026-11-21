@@ -1609,6 +1609,9 @@ app.get('/api/accounts/:accountId/qr', requireAdmin, async (req, res) => {
     const accountId = String(req.params.accountId || '').toLowerCase()
     if (!['private', 'public'].includes(accountId)) return res.status(404).json({ ok: false, error: 'Unknown WhatsApp account.' })
     const session = accountRuntime.get(accountId)
+    if (session.pairingBlockedUntil > Date.now()) {
+      return res.status(429).json({ ok: false, error: 'WhatsApp has temporarily rate-limited pairing for this account. Wait at least 15 minutes before trying again.' })
+    }
     if (session.registered || session.state === 'connected') {
       return res.status(409).json({ ok: false, error: 'This WhatsApp account is already paired. Reconnect it instead of requesting a QR code.' })
     }
@@ -1625,6 +1628,9 @@ app.post('/api/accounts/:accountId/qr', requireAdmin, async (req, res) => {
     const accountId = String(req.params.accountId || '').toLowerCase()
     if (!['private', 'public'].includes(accountId)) return res.status(404).json({ ok: false, error: 'Unknown WhatsApp account.' })
     const session = accountRuntime.get(accountId)
+    if (session.pairingBlockedUntil > Date.now()) {
+      return res.status(429).json({ ok: false, error: 'WhatsApp has temporarily rate-limited pairing for this account. Wait at least 15 minutes before trying again.' })
+    }
     if (session.registered || session.state === 'connected') {
       return res.status(409).json({ ok: false, error: 'This WhatsApp account is already paired. Reconnect it instead of requesting a QR code.' })
     }

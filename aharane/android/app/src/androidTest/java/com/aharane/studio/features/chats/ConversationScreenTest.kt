@@ -12,6 +12,7 @@ import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import com.aharane.studio.core.design.AharaneTheme
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatMessage

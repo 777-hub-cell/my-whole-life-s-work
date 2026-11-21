@@ -73,9 +73,15 @@ test('pairing code is requested only from the selected account socket', async t 
   await runtime.start('public')
   sockets[0].ev.emit('connection.update', { qr: 'pair-device-ready' })
   sockets[1].ev.emit('connection.update', { qr: 'pair-device-ready' })
-  const code = await runtime.requestPairingCode('private', '2348012345678')
+  const pending = runtime.requestPairingCode('private', '2348012345678')
+  await new Promise(resolveWait => setTimeout(resolveWait, 0))
+  const pairingSocket = sockets[2]
+  pairingSocket.ev.emit('connection.update', { qr: 'private-pair-ready' })
+  const code = await pending
   assert.equal(code, 'private-5678')
   assert.equal(runtime.get('public').pairRequestActive, false)
+  assert.equal(runtime.get('private').socket, sockets[0], 'The active session is not replaced just by requesting a code.')
+  assert.equal(runtime.get('private').pairingInProgress, true)
   await runtime.shutdown()
 })
 
@@ -233,7 +239,7 @@ test('never-paired accounts stay dormant at startup until an explicit pairing re
   await assert.rejects(runtime.reconnect('public'), /not been paired/i)
   const pending = runtime.requestPairingCode('public', '447700900123')
   await new Promise(resolveWait => setTimeout(resolveWait, 0))
-  runtime.get('public').socket.ev.emit('connection.update', { qr: 'pair-device-ready' })
+  sockets[0].ev.emit('connection.update', { qr: 'pair-device-ready' })
   assert.equal(await pending, 'public-0123')
   assert.equal(sockets.length, 1)
   await runtime.shutdown()
@@ -245,39 +251,83 @@ test('phone-number pairing waits for WhatsApp pair-device readiness, not only co
   await runtime.start('private')
   const pending = runtime.requestPairingCode('private', '2348012345678')
   await new Promise(resolveWait => setTimeout(resolveWait, 0))
-  sockets[0].ev.emit('connection.update', { connection: 'connecting' })
+  const pairingSocket = sockets[1]
+  pairingSocket.ev.emit('connection.update', { connection: 'connecting' })
   await new Promise(resolveWait => setTimeout(resolveWait, 0))
-  assert.deepEqual(sockets[0].pairingRequests, [])
-  sockets[0].ev.emit('connection.update', { qr: 'pair-device-ready' })
+  assert.deepEqual(pairingSocket.pairingRequests, [])
+  pairingSocket.ev.emit('connection.update', { qr: 'pair-device-ready' })
   assert.equal(await pending, 'private-5678')
-  assert.deepEqual(sockets[0].pairingRequests, ['2348012345678'])
+  assert.deepEqual(pairingSocket.pairingRequests, ['2348012345678'])
   await runtime.shutdown()
 })
 
-test('WhatsApp rate limiting closes the failed pairing socket and blocks immediate retries', async t => {
+test('WhatsApp rate limits do not create an Aharane pairing cooldown', async t => {
   const error = Object.assign(new Error('rate-overlimit'), { output: { statusCode: 429 } })
-  const { runtime, sockets, authContexts } = await fixture(t, { pairingError: error })
+  const { runtime, sockets } = await fixture(t, { pairingError: error, registered: true })
   await runtime.start('private')
+  const originalSocket = runtime.get('private').socket
+  const first = runtime.requestPairingCode('private', '2348012345678')
+  await new Promise(resolveWait => setTimeout(resolveWait, 0))
+  sockets[1].ev.emit('connection.update', { qr: 'pair-device-ready' })
+  await assert.rejects(first, /Aharane has not added a cooldown/i)
+  assert.equal(runtime.get('private').socket, originalSocket)
+  assert.equal(runtime.get('private').registered, true)
+  assert.equal(runtime.get('private').pairingInProgress, false)
+
+  const second = runtime.requestPairingCode('private', '2348012345678')
+  await new Promise(resolveWait => setTimeout(resolveWait, 0))
+  assert.equal(sockets.length, 3, 'A new explicit attempt is allowed immediately.')
+  sockets[2].ev.emit('connection.update', { qr: 'pair-device-ready-again' })
+  await assert.rejects(second, /Aharane has not added a cooldown/i)
+  await runtime.shutdown()
+})
+
+test('a failed replacement keeps the old linked authentication and socket', async t => {
+  const { runtime, sockets } = await fixture(t, { registered: true })
+  await runtime.start('private')
+  const originalSocket = runtime.get('private').socket
+  const originalAuthDir = runtime.get('private').authDir
   const pending = runtime.requestPairingCode('private', '2348012345678')
   await new Promise(resolveWait => setTimeout(resolveWait, 0))
-  sockets[0].ev.emit('connection.update', { qr: 'pair-device-ready' })
+  const replacementSocket = sockets[1]
+  replacementSocket.ev.emit('connection.update', { qr: 'replace-ready' })
+  assert.equal(await pending, 'private-5678')
+  replacementSocket.ev.emit('connection.update', {
+    connection: 'close',
+    lastDisconnect: { error: Object.assign(new Error('WebSocket error (0)'), { output: { statusCode: 0 } }) },
+  })
+  await new Promise(resolveWait => setTimeout(resolveWait, 20))
+  assert.equal(runtime.get('private').socket, originalSocket)
+  assert.equal(runtime.get('private').authDir, originalAuthDir)
+  assert.equal(runtime.get('private').registered, true)
+  assert.match(runtime.get('private').pairingError, /previous session was kept/i)
+  assert.equal(originalSocket.ended, false)
+  await runtime.shutdown()
+})
 
-  await assert.rejects(pending, /temporarily rate-limited/i)
-  assert.equal(runtime.get('private').state, 'rate-limited')
-  assert.equal(runtime.get('private').socket, null)
-  assert.equal(runtime.get('private').registered, false)
-  assert.equal(sockets[0].ended, true)
-  assert.equal(authContexts[0].state.creds.registered, false)
-  assert.equal(authContexts[0].state.creds.me, undefined)
-  assert.equal(authContexts[0].state.creds.pairingCode, undefined)
-  assert.equal(authContexts[0].state.creds.pairingEphemeralKeyPair, undefined)
-  assert.equal(authContexts[0].saveCount, 1)
-
-  await assert.rejects(
-    runtime.requestPairingCode('private', '2348012345678'),
-    /temporarily rate-limited/i
-  )
-  assert.equal(sockets.length, 1)
+test('successful replacement commits a new auth path and archives the previous one', async t => {
+  const { runtime, root, sockets } = await fixture(t, { registered: true })
+  await runtime.start('private')
+  const originalSocket = runtime.get('private').socket
+  const originalAuthDir = runtime.get('private').authDir
+  const pending = runtime.requestPairingCode('private', '2348012345678')
+  await new Promise(resolveWait => setTimeout(resolveWait, 0))
+  const replacementSocket = sockets[1]
+  replacementSocket.ev.emit('connection.update', { qr: 'replace-ready' })
+  assert.equal(await pending, 'private-5678')
+  replacementSocket.ev.emit('connection.update', { connection: 'open' })
+  const startedAt = Date.now()
+  while (runtime.get('private').socket !== replacementSocket && Date.now() - startedAt < 500) {
+    await new Promise(resolveWait => setTimeout(resolveWait, 5))
+  }
+  assert.equal(runtime.get('private').socket, replacementSocket)
+  assert.notEqual(runtime.get('private').authDir, originalAuthDir)
+  assert.equal(runtime.get('private').registered, true)
+  assert.equal(runtime.get('private').lastPairingSuccessAt > 0, true)
+  assert.equal(originalSocket.ended, true)
+  const locations = JSON.parse(await readFile(join(root, 'whatsapp-auth-locations.json'), 'utf8'))
+  assert.equal(locations.private, runtime.get('private').authDir)
+  assert.equal((await readdir(join(root, 'whatsapp-auth-backups'))).length, 1)
   await runtime.shutdown()
 })
 
@@ -286,12 +336,12 @@ test('phone-number pairing fails promptly when WhatsApp closes before readiness'
   await runtime.start('private')
   const pending = runtime.requestPairingCode('private', '2348012345678')
   await new Promise(resolveWait => setTimeout(resolveWait, 0))
-  sockets[0].ev.emit('connection.update', {
+  sockets[1].ev.emit('connection.update', {
     connection: 'close',
     lastDisconnect: { error: Object.assign(new Error('Connection Closed'), { output: { statusCode: 428 } }) },
   })
   await assert.rejects(pending, /Connection Closed/)
-  assert.deepEqual(sockets[0].pairingRequests, [])
+  assert.deepEqual(sockets[1].pairingRequests, [])
   await runtime.shutdown()
 })
 

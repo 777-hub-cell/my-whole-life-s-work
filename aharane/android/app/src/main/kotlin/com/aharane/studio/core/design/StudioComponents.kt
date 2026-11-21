@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -319,6 +320,49 @@ fun StudioSearchField(
                 )
             }
             trailing?.invoke()
+        }
+    }
+}
+
+@Composable
+fun StudioTextInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+    minHeight: androidx.compose.ui.unit.Dp = 48.dp,
+    textSize: androidx.compose.ui.unit.TextUnit = 14.sp
+) {
+    val shape = RoundedCornerShape(12.dp * LocalStudioCornerScale.current)
+    Surface(
+        modifier = modifier.fillMaxWidth().heightIn(min = minHeight),
+        color = StudioPalette.Surface,
+        shape = shape,
+        border = BorderStroke(1.dp, StudioPalette.Line)
+    ) {
+        Box(
+            Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 11.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            if (value.isEmpty()) {
+                Text(placeholder, color = StudioPalette.Muted, fontSize = textSize, lineHeight = (textSize.value * 1.45f).sp)
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = singleLine,
+                minLines = minLines,
+                textStyle = TextStyle(
+                    color = StudioPalette.Ink,
+                    fontSize = textSize,
+                    lineHeight = (textSize.value * 1.45f).sp,
+                    fontFamily = MaterialTheme.typography.bodyLarge.fontFamily
+                ),
+                cursorBrush = SolidColor(StudioPalette.Accent),
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }

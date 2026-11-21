@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.core.content.FileProvider
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -121,7 +122,8 @@ fun AharaneApp(
     launcherIcon: String,
     onLauncherIconChanged: (String) -> Unit,
     editorLineNumbers: Boolean,
-    onEditorLineNumbersChanged: (Boolean) -> Unit
+    onEditorLineNumbersChanged: (Boolean) -> Unit,
+    appLockEnabled: Boolean = false
 ) {
     val context = LocalContext.current
     val connectionScope = rememberCoroutineScope()
@@ -207,15 +209,19 @@ fun AharaneApp(
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(9.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Box(
-                    Modifier.size(48.dp).clip(RoundedCornerShape(15.dp)).background(StudioPalette.Accent),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("A", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                }
-                Text("Aharane", color = StudioPalette.Ink, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                Image(
+                    painter = painterResource(com.aharane.studio.R.drawable.ic_aharane_brand),
+                    contentDescription = "Aharane logo",
+                    modifier = Modifier.size(76.dp)
+                )
+                Text("Aharane", color = StudioPalette.Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    color = StudioPalette.Accent,
+                    strokeWidth = 2.dp
+                )
                 Text("Restoring your workspace…", color = StudioPalette.Muted, fontSize = 12.5.sp)
             }
         }
@@ -395,9 +401,6 @@ fun AharaneApp(
     var inboxSearchRequestId by remember { mutableIntStateOf(0) }
     var serverError by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    var appLockEnabled by remember(context) {
-        mutableStateOf(context.getSharedPreferences("aharane-app-lock", Context.MODE_PRIVATE).getBoolean("enabled", false))
-    }
 
     val previewMessages = remember { mutableStateListOf<ChatMessage>().apply {
         if (previewMode) addAll(DesignPreviewFixtures.messages)
@@ -2478,9 +2481,7 @@ fun AharaneApp(
                         onAppLockToggle = { enabled ->
                             val activity = generateSequence(context as android.content.Context?) { (it as? ContextWrapper)?.baseContext }
                                 .filterIsInstance<MainActivity>().firstOrNull()
-                            if (activity?.setAppLockEnabled(enabled) == true) {
-                                appLockEnabled = enabled
-                            } else if (enabled) {
+                            if (activity?.setAppLockEnabled(enabled) != true && enabled) {
                                 Toast.makeText(context, "Set a PIN, pattern or password in Android settings before enabling app lock.", Toast.LENGTH_LONG).show()
                             }
                         },

@@ -1,7 +1,5 @@
 package com.aharane.studio.core.network
 
-import org.json.JSONObject
-
 /**
  * Builds the intentionally narrow AI Reply request.
  *
@@ -16,20 +14,19 @@ internal object AiReplyRequestFields {
         quotedSender: String?,
         tone: String,
         instructions: String
-    ): JSONObject {
-        val message = JSONObject().put("text", selectedText).apply {
-            selectedSender?.takeIf { it.isNotBlank() }?.let { put("senderName", it) }
+    ): Map<String, Any> {
+        val message = linkedMapOf<String, Any>("text" to selectedText)
+        selectedSender?.takeIf { it.isNotBlank() }?.let { message["senderName"] = it }
+        val request = linkedMapOf<String, Any>(
+            "message" to message,
+            "tone" to tone,
+            "instructions" to instructions
+        )
+        if (!quotedText.isNullOrBlank()) {
+            val quoted = linkedMapOf<String, Any>("text" to quotedText)
+            quotedSender?.takeIf { it.isNotBlank() }?.let { quoted["senderName"] = it }
+            request["quotedMessage"] = quoted
         }
-        return JSONObject()
-            .put("message", message)
-            .apply {
-                if (!quotedText.isNullOrBlank()) {
-                    put("quotedMessage", JSONObject().put("text", quotedText).apply {
-                        quotedSender?.takeIf { it.isNotBlank() }?.let { put("senderName", it) }
-                    })
-                }
-                put("tone", tone)
-                put("instructions", instructions)
-            }
+        return request
     }
 }

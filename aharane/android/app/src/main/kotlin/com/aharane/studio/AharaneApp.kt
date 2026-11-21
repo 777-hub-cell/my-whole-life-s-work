@@ -432,6 +432,9 @@ fun AharaneApp(
     var pairingError by remember { mutableStateOf("") }
     var repairPromptAccount by remember { mutableStateOf<ChatAccount?>(null) }
     var dismissedRepairAccounts by remember { mutableStateOf(emptySet<ChatAccount>()) }
+    val latestPairingCode by rememberUpdatedState(pairingCode)
+    val latestPairingQrRequested by rememberUpdatedState(pairingQrRequested)
+    val latestPairingQrValue by rememberUpdatedState(pairingQrValue)
     var accountControlTarget by remember { mutableStateOf<ChatAccount?>(null) }
     var fileDialogMode by remember { mutableStateOf("") }
     var fileDialogName by remember { mutableStateOf("") }
@@ -1308,7 +1311,7 @@ fun AharaneApp(
                     return@LaunchedEffect
                 }
                 state.state == "not-paired" &&
-                    (pairingCode.isNotBlank() || pairingQrRequested || pairingQrValue.isNotBlank()) -> {
+                    (latestPairingCode.isNotBlank() || latestPairingQrRequested || latestPairingQrValue.isNotBlank()) -> {
                     pairingCode = ""
                     pairingQrValue = ""
                     pairingQrRequested = false

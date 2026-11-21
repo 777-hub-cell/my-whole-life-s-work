@@ -83,7 +83,10 @@ class ConversationScreenTest {
         compose.onNodeWithText("Professional").performClick()
         compose.onNodeWithTag("ai-reply-instruction").performTextInput("Keep it warm and brief.")
         compose.onNodeWithText("Generate reply").performClick()
-        compose.onNodeWithTag("ai-reply-draft").assertIsDisplayed()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("ai-reply-draft").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("ai-reply-draft").assertTextEquals("I can reply based on the message you sent.")
         compose.onNodeWithText("Send reply").performClick()
         compose.runOnIdle {
             assertEquals("This is the selected incoming message.", suppliedMessage)

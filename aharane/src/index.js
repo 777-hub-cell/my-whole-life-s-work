@@ -1578,6 +1578,9 @@ app.post('/api/accounts/:accountId/pair-code', requireAdmin, async (req, res) =>
     const accountId = String(req.params.accountId || '').toLowerCase()
     if (!['private', 'public'].includes(accountId)) return res.status(404).json({ ok: false, error: 'Unknown WhatsApp account.' })
     const session = accountRuntime.get(accountId)
+    if (session.pairingBlockedUntil > Date.now()) {
+      return res.status(429).json({ ok: false, error: 'WhatsApp has temporarily rate-limited pairing for this account. Wait at least 15 minutes before trying again.' })
+    }
     if (session.registered || session.state === 'connected') {
       return res.status(409).json({ ok: false, error: 'This WhatsApp account is already paired. Reconnect it instead of requesting another pairing code.' })
     }
@@ -1585,7 +1588,7 @@ app.post('/api/accounts/:accountId/pair-code', requireAdmin, async (req, res) =>
       return res.status(409).json({ ok: false, error: 'WhatsApp rejected the saved session. Choose Re-pair first; Aharane will back it up before creating a new link.' })
     }
     const ip = String(req.ip || 'local') + ':' + accountId
-    if (!allowPairAttempt(ip)) return res.status(429).json({ ok: false, error: 'Pairing rate limit reached for this account; try again later.' })
+    if (!allowPairAttempt(ip)) return res.status(429).json({ ok: false, error: 'Aharane has limited pairing attempts for this account. Wait 15 minutes before requesting another code.' })
     const phoneNumber = accountId === 'private' ? ownerConfig.privateOwnerNumber : ownerConfig.publicBotNumber
     if (!phoneNumber) {
       return res.status(409).json({

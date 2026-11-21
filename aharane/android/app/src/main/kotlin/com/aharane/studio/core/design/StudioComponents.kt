@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -375,7 +376,7 @@ fun StudioTextInput(
                     fontFamily = MaterialTheme.typography.bodyLarge.fontFamily
                 ),
                 cursorBrush = SolidColor(StudioPalette.Accent),
-                modifier = Modifier.fillMaxWidth().then(tag?.let { androidx.compose.ui.platform.testTag(it) } ?: Modifier)
+                modifier = Modifier.fillMaxWidth().then(tag?.let { Modifier.testTag(it) } ?: Modifier)
             )
         }
     }

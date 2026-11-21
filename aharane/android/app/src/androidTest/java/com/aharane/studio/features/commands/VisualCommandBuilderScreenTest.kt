@@ -7,7 +7,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -87,7 +86,10 @@ class VisualCommandBuilderScreenTest {
         val first = compose.onNodeWithTag("node-card-trigger.command").fetchSemanticsNode().boundsInRoot
         val second = compose.onNodeWithTag("node-card-message.sendText").fetchSemanticsNode().boundsInRoot
         compose.onNodeWithTag("node-card-trigger.command").performTouchInput {
-            swipe(start = center, end = center.copy(y = center.y + 140f), durationMillis = 400)
+            val start = center
+            down(start)
+            moveTo(start.copy(y = start.y + 140f), delayMillis = 400)
+            up()
         }
         compose.waitForIdle()
         val firstAfter = compose.onNodeWithTag("node-card-trigger.command").fetchSemanticsNode().boundsInRoot

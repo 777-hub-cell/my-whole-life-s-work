@@ -7,7 +7,7 @@ const DEFAULT_PROFILE = Object.freeze({
   rejectCalls: false, alwaysOnline: false, commandCooldown: 3, welcomeMessage: '',
 })
 const booleanKeys = ['autoRead', 'showTyping', 'rejectCalls', 'alwaysOnline']
-const DEFAULT_AI_REPLY = Object.freeze({ apiBaseUrl: 'https://api.openai.com/v1', model: '', apiKey: '', disableEnvironmentKey: false })
+const DEFAULT_AI_REPLY = Object.freeze({ apiBaseUrl: '', model: '', apiKey: '', disableEnvironmentKey: false })
 const DEFAULT_CHAT_FILTER = Object.freeze({ mode: 'all', overrides: [] })
 const CHAT_JID_PATTERNS = [
   /^\d{7,15}@s\.whatsapp\.net$/,

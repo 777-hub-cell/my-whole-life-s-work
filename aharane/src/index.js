@@ -1822,11 +1822,11 @@ app.put('/api/env', requireAdmin, async (req, res) => {
     let clearAiApiKey = false
     for (const row of rows) {
       const key = String(row?.key || '')
-      const value = String(row?.value ?? '')
-      if (key === 'AI_API_BASE_URL') { next.aiReply.apiBaseUrl = value.trim(); continue }
-      if (key === 'AI_MODEL') { next.aiReply.model = value.trim(); continue }
-      if (key === 'AI_API_KEY') { replacementAiApiKey = value.trim(); continue }
-      if (key === 'AI_CLEAR_API_KEY') { clearAiApiKey = value.toLowerCase() === 'true'; continue }
+      const aiValue = String(row?.value ?? '')
+      if (key === 'AI_API_BASE_URL') { next.aiReply.apiBaseUrl = aiValue.trim(); continue }
+      if (key === 'AI_MODEL') { next.aiReply.model = aiValue.trim(); continue }
+      if (key === 'AI_API_KEY') { replacementAiApiKey = aiValue.trim(); continue }
+      if (key === 'AI_CLEAR_API_KEY') { clearAiApiKey = aiValue.toLowerCase() === 'true'; continue }
       const match = key.match(/^(PRIVATE|PUBLIC)_(BOT_NAME|AUTO_READ|SHOW_TYPING|REJECT_CALLS|ALWAYS_ONLINE|COMMAND_COOLDOWN|WELCOME_MESSAGE)$/)
       if (!match) continue
       const scope = match[1].toLowerCase()

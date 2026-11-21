@@ -8,6 +8,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -63,6 +65,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import com.aharane.studio.core.design.AharaneInstrumentSans
 import com.aharane.studio.core.design.StudioPalette
+import com.aharane.studio.core.design.StudioActionButton
+import com.aharane.studio.core.design.StudioTag
+import com.aharane.studio.core.design.StudioTextInput
 import com.aharane.studio.core.model.ChatMessage
 import com.aharane.studio.core.model.ChatSummary
 import com.aharane.studio.core.model.MessageDirection
@@ -86,6 +91,7 @@ import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -102,6 +108,8 @@ fun ConversationScreen(
     conversation: ChatSummary,
     messages: List<ChatMessage>,
     connected: Boolean,
+    aiReplyAvailable: Boolean = false,
+    onGenerateAiReply: suspend (String, String, String, String) -> String = { _, _, _, _ -> "" },
     mediaRequestsAvailable: Boolean = connected,
     appearance: ChatAppearance = ChatAppearance(),
     hasOlderMessages: Boolean = false,
@@ -151,6 +159,14 @@ fun ConversationScreen(
     var selectedSearchDay by rememberSaveable { mutableStateOf<Long?>(null) }
     var moreOpen by remember { mutableStateOf(false) }
     var actionMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var aiReplyMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var aiReplyTone by rememberSaveable { mutableStateOf("Natural") }
+    var aiReplyInstruction by rememberSaveable { mutableStateOf("") }
+    var aiReplyDraft by remember { mutableStateOf("") }
+    var aiReplyLoading by remember { mutableStateOf(false) }
+    var aiReplyError by remember { mutableStateOf("") }
+    val aiReplyScope = rememberCoroutineScope()
+    val aiReplyTones = listOf("Natural", "Friendly", "Casual", "Professional", "Formal", "Empathetic", "Concise", "Apologetic", "Confident")
     var forwardMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var deleteMessage by remember { mutableStateOf<ChatMessage?>(null) }
     val context = LocalContext.current
@@ -681,6 +697,23 @@ fun ConversationScreen(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (
+                    aiReplyAvailable &&
+                    selected.direction == MessageDirection.INCOMING &&
+                    selected.kind == MessageKind.TEXT &&
+                    selected.text.isNotBlank() &&
+                    !selected.deletedByRemote
+                ) {
+                    StudioPaletteAction("AI Reply") {
+                        aiReplyMessage = selected
+                        aiReplyTone = "Natural"
+                        aiReplyInstruction = ""
+                        aiReplyDraft = ""
+                        aiReplyError = ""
+                        aiReplyLoading = false
+                        actionMessage = null
+                    }
+                }
                 StudioPaletteAction("Reply") {
                     replyTo = selected
                     actionMessage = null
@@ -722,6 +755,184 @@ fun ConversationScreen(
                     actionMessage = null
                 }
                 StudioPaletteAction("Cancel") { actionMessage = null }
+            }
+        }
+    }
+
+    if (aiReplyMessage != null) {
+        val selected = aiReplyMessage!!
+        val loadedQuote = selected.replyToMessageId?.let { id ->
+            messages.firstOrNull { it.messageId == id && it.key == selected.key }
+        }
+        val quotedText = selected.quotedMessageText?.takeIf { it.isNotBlank() }
+            ?: loadedQuote?.let { it.text.ifBlank { messageAttachmentLabel(it.kind) } }.orEmpty()
+        val quoteMissing = !selected.replyToMessageId.isNullOrBlank() && quotedText.isBlank()
+        androidx.compose.ui.window.Dialog(onDismissRequest = {
+            if (!aiReplyLoading) aiReplyMessage = null
+        }) {
+            Column(
+                Modifier.fillMaxWidth().widthIn(max = 520.dp).heightIn(max = 720.dp)
+                    .clip(RoundedCornerShape(20.dp)).background(StudioPalette.Surface)
+                    .verticalScroll(rememberScrollState()).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(11.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StudioTag("AI WRITING", accent = true)
+                    Spacer(Modifier.weight(1f))
+                    Text("Groq", color = StudioPalette.Muted, fontSize = 11.sp)
+                }
+                Text("AI Reply", color = StudioPalette.Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    "Aharane uses only this message, its explicit quote and the instructions you add below. It does not load chat history.",
+                    color = StudioPalette.Muted,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp
+                )
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                        .background(StudioPalette.Background).padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    Text("SELECTED MESSAGE", color = StudioPalette.Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(selected.text, color = StudioPalette.Ink, fontSize = 13.sp, lineHeight = 18.sp)
+                    if (!selected.replyToMessageId.isNullOrBlank()) {
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(StudioPalette.Line))
+                        Text("QUOTED MESSAGE", color = StudioPalette.Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        if (quotedText.isNotBlank()) {
+                            Text(quotedText, color = StudioPalette.Ink, fontSize = 13.sp, lineHeight = 18.sp)
+                        } else {
+                            Text(
+                                "The original quoted text is unavailable. Aharane will not generate a reply without it.",
+                                color = StudioPalette.Bad,
+                                fontSize = 12.sp,
+                                lineHeight = 17.sp
+                            )
+                        }
+                    }
+                }
+
+                Text("Choose a tone", color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    items(aiReplyTones, key = { it }) { tone ->
+                        val active = aiReplyTone == tone
+                        androidx.compose.material3.Surface(
+                            modifier = Modifier.clip(RoundedCornerShape(99.dp))
+                                .clickable(enabled = !aiReplyLoading) { aiReplyTone = tone },
+                            color = if (active) StudioPalette.Soft else StudioPalette.Background,
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (active) StudioPalette.Accent else StudioPalette.Line
+                            ),
+                            shape = RoundedCornerShape(99.dp)
+                        ) {
+                            Text(
+                                tone,
+                                color = if (active) StudioPalette.Accent else StudioPalette.Ink,
+                                fontSize = 12.sp,
+                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)
+                            )
+                        }
+                    }
+                }
+                Text("Additional context or instructions", color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                StudioTextInput(
+                    value = aiReplyInstruction,
+                    onValueChange = { aiReplyInstruction = it },
+                    placeholder = "Tell AI what you want to say, add context, or explain how the reply should sound…",
+                    singleLine = false,
+                    minLines = 3,
+                    minHeight = 104.dp,
+                    textSize = 13.5.sp,
+                    tag = "ai-reply-instruction"
+                )
+                if (aiReplyError.isNotBlank()) {
+                    Text(aiReplyError, color = StudioPalette.Bad, fontSize = 12.sp, lineHeight = 17.sp)
+                }
+                if (aiReplyDraft.isNotBlank()) {
+                    Text("REPLY DRAFT · EDITABLE", color = StudioPalette.Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    StudioTextInput(
+                        value = aiReplyDraft,
+                        onValueChange = { aiReplyDraft = it },
+                        placeholder = "Your generated reply",
+                        singleLine = false,
+                        minLines = 4,
+                        minHeight = 124.dp,
+                        textSize = 14.sp,
+                        tag = "ai-reply-draft"
+                    )
+                }
+                if (aiReplyLoading) {
+                    Text("Writing your reply…", color = StudioPalette.Muted, fontSize = 12.sp)
+                }
+                if (aiReplyDraft.isBlank()) {
+                    StudioActionButton(
+                        if (aiReplyLoading) "Generating…" else "Generate reply",
+                        modifier = Modifier.fillMaxWidth(),
+                        primary = true,
+                        enabled = !aiReplyLoading && !quoteMissing,
+                        onClick = {
+                            aiReplyScope.launch {
+                                aiReplyLoading = true
+                                aiReplyError = ""
+                                runCatching {
+                                    onGenerateAiReply(
+                                        selected.text,
+                                        quotedText,
+                                        aiReplyTone,
+                                        aiReplyInstruction
+                                    )
+                                }.onSuccess { aiReplyDraft = it }
+                                    .onFailure { aiReplyError = it.message ?: "The AI reply could not be generated." }
+                                aiReplyLoading = false
+                            }
+                        }
+                    )
+                } else {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        StudioActionButton(
+                            "Regenerate",
+                            modifier = Modifier.weight(1f),
+                            enabled = !aiReplyLoading && !quoteMissing,
+                            onClick = {
+                                aiReplyScope.launch {
+                                    aiReplyLoading = true
+                                    aiReplyError = ""
+                                    runCatching {
+                                        onGenerateAiReply(
+                                            selected.text,
+                                            quotedText,
+                                            aiReplyTone,
+                                            aiReplyInstruction
+                                        )
+                                    }.onSuccess { aiReplyDraft = it }
+                                        .onFailure { aiReplyError = it.message ?: "The AI reply could not be generated." }
+                                    aiReplyLoading = false
+                                }
+                            }
+                        )
+                        StudioActionButton(
+                            "Send reply",
+                            modifier = Modifier.weight(1f),
+                            primary = true,
+                            enabled = connected && !aiReplyLoading && aiReplyDraft.isNotBlank(),
+                            onClick = {
+                                val text = aiReplyDraft.trim()
+                                if (text.isNotBlank()) {
+                                    onSend(text, selected)
+                                    aiReplyMessage = null
+                                    aiReplyDraft = ""
+                                }
+                            }
+                        )
+                    }
+                }
+                StudioActionButton(
+                    "Cancel",
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !aiReplyLoading,
+                    onClick = { aiReplyMessage = null }
+                )
             }
         }
     }
@@ -943,6 +1154,7 @@ private fun MessageBubble(
                     onClick = onReply,
                     onLongClick = { if (connected) onStar() }
                 )
+                .testTag("message-bubble-" + message.messageId)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             if (!outgoing && appearance.showSenderLabels && !message.senderName.isNullOrBlank()) {
@@ -954,20 +1166,22 @@ private fun MessageBubble(
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
             }
-            if (reply != null) {
+            val quotedPreview = reply?.let { it.text.ifBlank { messageAttachmentLabel(it.kind) } }
+                ?.takeIf { it.isNotBlank() } ?: message.quotedMessageText?.takeIf { it.isNotBlank() }
+            if (!message.replyToMessageId.isNullOrBlank() && !quotedPreview.isNullOrBlank()) {
                 Column(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
                         .background(if (outgoing) Color.White.copy(alpha = .13f) else StudioPalette.Background)
                         .padding(horizontal = 8.dp, vertical = 6.dp)
                 ) {
                     Text(
-                        if (reply.direction == MessageDirection.OUTGOING) "You" else "Reply",
+                        if (reply?.direction == MessageDirection.OUTGOING) "You" else "Reply",
                         color = if (outgoing) Color.White.copy(alpha = .9f) else StudioPalette.Accent,
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        reply.text.ifBlank { messageAttachmentLabel(reply.kind) },
+                        quotedPreview,
                         color = foreground.copy(alpha = .78f),
                         fontSize = 11.5.sp,
                         maxLines = 2,

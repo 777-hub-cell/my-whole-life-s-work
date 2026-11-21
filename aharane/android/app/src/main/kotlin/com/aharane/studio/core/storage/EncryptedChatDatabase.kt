@@ -60,6 +60,7 @@ data class ChatMessageRow(
     val timestampMillis: Long,
     val status: String,
     val replyToMessageId: String?,
+    val quotedMessageText: String?,
     val mediaMimeType: String?,
     val mediaFileName: String?,
     val isViewOnce: Boolean,
@@ -189,7 +190,7 @@ interface ChatDao {
 
 @Database(
     entities = [ChatConversationRow::class, ChatMessageRow::class, ChatOutgoingMessageRow::class],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class AharaneChatDatabase : RoomDatabase() {
@@ -203,6 +204,12 @@ class EncryptedChatDatabase private constructor(
     companion object {
         private const val KEY_ALIAS = "com.aharane.chat.database.wrap.v1"
         private const val KEY_FILE = "chat-database-key.wrap"
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE chat_messages ADD COLUMN quotedMessageText TEXT")
+            }
+        }
 
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(database: SupportSQLiteDatabase) {
@@ -258,7 +265,7 @@ class EncryptedChatDatabase private constructor(
             val factory = SupportOpenHelperFactory(passphrase)
             val db = Room.databaseBuilder(context.applicationContext, AharaneChatDatabase::class.java, file.absolutePath)
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
             try {
                 // Force the encrypted open now. A bad or missing key fails closed here.

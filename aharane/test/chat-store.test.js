@@ -43,6 +43,38 @@ test('chat history persists by account, marks read and downloads incoming media 
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
 
+test('a selected reply keeps only its embedded quoted message text without a history lookup', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-quoted-'))
+  try {
+    const store = createChatStore({ dataDir: dir })
+    await store.init()
+    const jid = '2348012345678@s.whatsapp.net'
+    await store.recordMessage({
+      sessionId: 'private',
+      message: {
+        key: { id: 'selected-reply', remoteJid: jid, fromMe: false },
+        pushName: 'Contact',
+        messageTimestamp: 1760000002,
+        message: {
+          extendedTextMessage: {
+            text: 'I agree with that plan.',
+            contextInfo: {
+              stanzaId: 'quoted-message-not-loaded',
+              quotedMessage: { conversation: 'I can send the document tomorrow.' },
+            },
+          },
+        },
+      },
+    })
+
+    const [selected] = await store.getMessages('private', jid)
+    assert.equal(selected.id, 'selected-reply')
+    assert.equal(selected.quotedMessageId, 'quoted-message-not-loaded')
+    assert.equal(selected.quotedMessageText, 'I can send the document tomorrow.')
+    assert.equal(await store.getMessage('private', jid, 'quoted-message-not-loaded'), null)
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
 test('outgoing attachments are retained for conversation history', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-out-'))
   try {

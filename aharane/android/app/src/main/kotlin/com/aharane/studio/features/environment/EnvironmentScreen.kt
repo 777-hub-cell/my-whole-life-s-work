@@ -83,7 +83,17 @@ fun EnvironmentScreen(
                                 fontWeight = FontWeight.SemiBold,
                                 fontFamily = FontFamily.Monospace
                             )
-                            if (item.valueType == "boolean") {
+                            if (item.secret) {
+                                Text(
+                                    item.value,
+                                    color = StudioPalette.Muted,
+                                    fontSize = 12.5.sp,
+                                    modifier = Modifier.fillMaxWidth()
+                                        .clip(RoundedCornerShape(9.dp))
+                                        .background(StudioPalette.SurfaceVariant)
+                                        .padding(horizontal = 12.dp, vertical = 11.dp)
+                                )
+                            } else if (item.valueType == "boolean") {
                                 Row(
                                     Modifier.fillMaxWidth().clickable(enabled = (connected || previewMode) && !item.readOnly) {
                                         drafts[index] = item.copy(

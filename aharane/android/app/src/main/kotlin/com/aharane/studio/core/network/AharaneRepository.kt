@@ -35,6 +35,12 @@ data class ServerRuntimeSnapshot(
     val uptimeSeconds: Long?
 )
 
+data class ServerAiReplyAvailability(
+    val enabled: Boolean = false,
+    val provider: String? = null,
+    val model: String? = null
+)
+
 data class ServerOwnerSettings(
     val privateOwnerNumber: String = "",
     val publicOwnerNumber: String = "",
@@ -253,6 +259,34 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
         api.put("env", JSONObject().put("env", rows))
     }
 
+    suspend fun aiReplyAvailability(): ServerAiReplyAvailability {
+        val result = api.get("ai/availability")
+        return ServerAiReplyAvailability(
+            enabled = result.optBoolean("enabled"),
+            provider = result.optString("provider").takeIf { it.isNotBlank() },
+            model = result.optString("model").takeIf { it.isNotBlank() }
+        )
+    }
+
+    suspend fun generateAiReply(
+        message: String,
+        quotedMessage: String,
+        tone: String,
+        instruction: String
+    ): String {
+        val result = api.post(
+            "ai/reply",
+            JSONObject()
+                .put("message", message)
+                .put("quotedMessage", quotedMessage)
+                .put("tone", tone)
+                .put("instruction", instruction)
+        )
+        return result.optString("reply").trim().also {
+            require(it.isNotBlank()) { "The AI provider returned an empty reply. Try again." }
+        }
+    }
+
     suspend fun chats(account: ChatAccount, query: String = "", limit: Int = 200): List<ChatSummary> {
         val response = api.get(
             "chats/${account.apiValue}",
@@ -330,7 +364,8 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
                         mediaUnavailable = row.optString("mediaUnavailable").takeIf { it.isNotBlank() },
                         isStarred = row.optBoolean("starred"),
                         isVoiceNote = row.optBoolean("ptt"),
-                        replyToMessageId = row.optString("quotedMessageId").takeIf { it.isNotBlank() }
+                        replyToMessageId = row.optString("quotedMessageId").takeIf { it.isNotBlank() },
+                        quotedMessageText = row.optString("quotedMessageText").takeIf { it.isNotBlank() }
                     )
                 )
             }
@@ -391,6 +426,7 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
                     isStarred = row.optBoolean("starred"),
                     isVoiceNote = row.optBoolean("ptt"),
                     replyToMessageId = row.optString("quotedMessageId").takeIf { it.isNotBlank() },
+                    quotedMessageText = row.optString("quotedMessageText").takeIf { it.isNotBlank() },
                     reactions = reactions,
                     deletedByRemote = row.optBoolean("deletedByRemote"),
                     deletedAtMillis = row.optLong("deletedAt")
@@ -451,7 +487,8 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
                         senderName = row.optString("pushName").takeIf { it.isNotBlank() },
                         mediaFileName = row.optString("fileName").takeIf { it.isNotBlank() },
                         deletedByRemote = row.optBoolean("deletedByRemote"),
-                        deletedAtMillis = row.optLong("deletedAt")
+                        deletedAtMillis = row.optLong("deletedAt"),
+                        quotedMessageText = row.optString("quotedMessageText").takeIf { it.isNotBlank() }
                     )
                 )
             }

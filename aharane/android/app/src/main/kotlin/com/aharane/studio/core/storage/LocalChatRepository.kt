@@ -275,7 +275,7 @@ private fun ChatConversationRow.toModel() = ChatSummary(
 private fun ChatMessage.toRow() = ChatMessageRow(
     account = key.account.apiValue, jid = key.jid, messageId = messageId,
     direction = direction.name, kind = kind.name, text = text, timestampMillis = timestampMillis,
-    status = status.name, replyToMessageId = replyToMessageId, mediaMimeType = mediaMimeType,
+    status = status.name, replyToMessageId = replyToMessageId, quotedMessageText = quotedMessageText, mediaMimeType = mediaMimeType,
     mediaFileName = mediaFileName, isViewOnce = isViewOnce, senderName = senderName,
     mediaUrl = mediaUrl, mediaSizeBytes = mediaSizeBytes, mediaDurationSeconds = mediaDurationSeconds,
     viewOnceViewed = viewOnceViewed, mediaUnavailable = mediaUnavailable, isStarred = isStarred,
@@ -290,7 +290,7 @@ private fun ChatMessageRow.toModel() = ChatMessage(
     kind = runCatching { MessageKind.valueOf(kind) }.getOrDefault(MessageKind.UNSUPPORTED),
     text = text, timestampMillis = timestampMillis,
     status = runCatching { MessageStatus.valueOf(status) }.getOrDefault(MessageStatus.UNKNOWN),
-    replyToMessageId = replyToMessageId, mediaMimeType = mediaMimeType, mediaFileName = mediaFileName,
+    replyToMessageId = replyToMessageId, quotedMessageText = quotedMessageText, mediaMimeType = mediaMimeType, mediaFileName = mediaFileName,
     isViewOnce = isViewOnce, senderName = senderName, mediaUrl = mediaUrl, mediaSizeBytes = mediaSizeBytes,
     mediaDurationSeconds = mediaDurationSeconds, viewOnceViewed = viewOnceViewed,
     mediaUnavailable = mediaUnavailable, isStarred = isStarred, isVoiceNote = isVoiceNote,

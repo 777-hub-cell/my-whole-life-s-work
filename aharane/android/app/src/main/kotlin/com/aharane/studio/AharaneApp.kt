@@ -346,6 +346,7 @@ fun AharaneApp(
     var serverReachable by remember { mutableStateOf(false) }
     var owners by remember { mutableStateOf(ServerOwnerSettings()) }
     var environmentRows by remember { mutableStateOf<List<ServerEnvironmentValue>>(emptyList()) }
+    var aiReplyAvailable by remember { mutableStateOf(false) }
     var previewEnvironmentValues by remember {
         mutableStateOf(
             listOf(
@@ -779,6 +780,9 @@ fun AharaneApp(
         runCatching { repository.environment() }
             .onSuccess { environmentRows = it }
             .onFailure { failures += "ENV: ${it.message ?: "unavailable"}" }
+        runCatching { repository.aiReplyAvailability() }
+            .onSuccess { aiReplyAvailable = it.enabled }
+            .onFailure { aiReplyAvailable = false }
         runCatching { repository.activity(30) }
             .onSuccess { activityRows = it }
             .onFailure { failures += "Activity: ${it.message ?: "unavailable"}" }
@@ -1631,6 +1635,10 @@ fun AharaneApp(
                     conversation = activeConversation!!,
                     messages = if (previewMode) previewMessages.filter { it.key == activeConversation!!.key } else activeMessages,
                     connected = if (previewMode) true else currentAccountState?.connected == true,
+                    aiReplyAvailable = !previewMode && aiReplyAvailable,
+                    onGenerateAiReply = { message, quotedMessage, tone, instruction ->
+                        repository.generateAiReply(message, quotedMessage, tone, instruction)
+                    },
                     mediaRequestsAvailable = connected,
                     appearance = chatAppearanceStore.resolve(activeConversation!!.key.account, activeConversation!!.key.jid),
                     hasOlderMessages = !previewMode && hasOlderMessages,

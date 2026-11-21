@@ -9,6 +9,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,7 +32,8 @@ data class EnvironmentValue(
     val value: String,
     val readOnly: Boolean = false,
     val valueType: String? = null,
-    val secret: Boolean = false
+    val secret: Boolean = false,
+    val configured: Boolean = false
 )
 
 @Composable
@@ -72,6 +75,26 @@ fun EnvironmentScreen(
                 StudioCard {
                     drafts.forEachIndexed { index, item ->
                         if (index > 0) StudioDivider()
+                        if (item.key == "AI_API_BASE_URL") {
+                            Column(
+                                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
+                                verticalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Text(
+                                    "SHARED AI REPLY",
+                                    color = StudioPalette.Accent,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
+                                Text(
+                                    "One AI provider is shared by Private and Public chats. Add an API key and model to enable AI Reply on incoming messages.",
+                                    color = StudioPalette.Muted,
+                                    fontSize = 12.sp,
+                                    lineHeight = 17.sp
+                                )
+                            }
+                        }
                         Column(
                             Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp),
                             verticalArrangement = Arrangement.spacedBy(7.dp)
@@ -111,7 +134,8 @@ fun EnvironmentScreen(
                                         if ((connected || previewMode) && !item.readOnly) drafts[index] = item.copy(value = value)
                                     },
                                     readOnly = item.readOnly || (!connected && !previewMode),
-                                    singleLine = item.key.endsWith("BOT_NAME") || item.key.endsWith("COMMAND_COOLDOWN"),
+                                    visualTransformation = if (item.secret) PasswordVisualTransformation() else VisualTransformation.None,
+                                    singleLine = item.secret || item.key.endsWith("BOT_NAME") || item.key.endsWith("COMMAND_COOLDOWN") || item.key == "AI_API_BASE_URL" || item.key == "AI_MODEL",
                                     minLines = if (item.key.endsWith("WELCOME_MESSAGE")) 3 else 1,
                                     maxLines = if (item.key.endsWith("WELCOME_MESSAGE")) 5 else 1,
                                     textStyle = TextStyle(
@@ -124,6 +148,22 @@ fun EnvironmentScreen(
                                         .background(StudioPalette.Surface)
                                         .border(1.dp, StudioPalette.Line, RoundedCornerShape(10.dp))
                                         .padding(horizontal = 12.dp, vertical = 11.dp)
+                                )
+                            }
+                            if (item.key == "AI_API_KEY") {
+                                Text(
+                                    if (item.configured) "A key is already saved. Leave this blank to keep it, or enter a replacement."
+                                    else "No key is configured. Enter an API key to enable AI Reply.",
+                                    color = StudioPalette.Muted,
+                                    fontSize = 11.5.sp,
+                                    lineHeight = 16.sp
+                                )
+                            } else if (item.key == "AI_CLEAR_API_KEY") {
+                                Text(
+                                    "Turn on to remove the saved key and disable any server ENV key fallback, then save changes.",
+                                    color = StudioPalette.Muted,
+                                    fontSize = 11.5.sp,
+                                    lineHeight = 16.sp
                                 )
                             }
                         }

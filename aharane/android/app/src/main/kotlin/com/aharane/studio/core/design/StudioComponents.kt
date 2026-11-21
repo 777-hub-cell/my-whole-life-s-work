@@ -283,7 +283,7 @@ fun StudioActionButton(
     }
     val shape = RoundedCornerShape(12.dp * LocalStudioCornerScale.current)
     Box(
-        modifier = modifier.defaultMinSize(minHeight = if (compact) 36.dp else 44.dp)
+        modifier = modifier.defaultMinSize(minHeight = if (compact) 40.dp else 48.dp)
             .clip(shape)
             .background(bg)
              .border(1.dp, if (primary && enabled) StudioPalette.Accent else StudioPalette.Line, shape)
@@ -307,7 +307,7 @@ fun StudioSearchField(
     showIcon: Boolean = false
 ) {
     Surface(
-        modifier = modifier.fillMaxWidth().heightIn(min = 46.dp),
+        modifier = modifier.fillMaxWidth().heightIn(min = 48.dp),
         shape = RoundedCornerShape(12.dp * LocalStudioCornerScale.current),
         color = StudioPalette.Surface,
         border = BorderStroke(1.dp, StudioPalette.Line)
@@ -326,6 +326,7 @@ fun StudioSearchField(
                     value = value,
                     onValueChange = onValueChange,
                     singleLine = true,
+                    cursorBrush = SolidColor(StudioPalette.Accent),
                     textStyle = TextStyle(
                         color = StudioPalette.Ink, fontSize = 14.sp, lineHeight = 20.sp,
                         fontWeight = FontWeight.Normal, fontFamily = MaterialTheme.typography.bodyLarge.fontFamily
@@ -507,10 +508,10 @@ fun StudioSegmented(options: List<String>, selected: String, onSelect: (String) 
             val active = option == selected
             val shape = RoundedCornerShape(9.dp * LocalStudioCornerScale.current)
             Box(
-                Modifier.weight(1f).defaultMinSize(minHeight = 38.dp).clip(shape)
+                Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).clip(shape)
                     .then(if (active) Modifier.shadow(1.dp, shape).background(StudioPalette.Surface)
                         .border(1.dp, StudioPalette.Line, shape) else Modifier.background(Color.Transparent))
-                    .clickable { onSelect(option) }.padding(horizontal = 4.dp, vertical = 8.dp),
+                    .clickable { onSelect(option) }.padding(horizontal = 6.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(option, color = if (active) StudioPalette.Ink else StudioPalette.Muted,

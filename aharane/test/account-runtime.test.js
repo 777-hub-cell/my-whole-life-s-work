@@ -359,7 +359,29 @@ test('a failed replacement pairing leaves the existing connected session untouch
   assert.equal(runtime.get('private').authDir, oldAuthDir)
   assert.equal(runtime.get('private').registered, true)
   assert.match(runtime.get('private').pairingError, /previous session was kept/i)
+  assert.match(runtime.get('private').pairingError, /ECONNRESET/i)
   assert.equal(oldSocket.ended, false)
+  await runtime.shutdown()
+})
+
+test('canceling a replacement candidate leaves the existing socket and auth directory untouched', async t => {
+  const { runtime } = await fixture(t, { registered: true })
+  await runtime.start('private')
+  const oldSocket = runtime.get('private').socket
+  oldSocket.ev.emit('connection.update', { connection: 'open' })
+  const oldAuthDir = runtime.get('private').authDir
+
+  await runtime.startPairing('private')
+  const candidate = runtime.get('private').pairingCandidate
+  assert.ok(candidate)
+  const candidateDir = candidate.authDir
+  await runtime.cancelPairing('private')
+
+  assert.equal(runtime.get('private').pairingCandidate, null)
+  assert.equal(runtime.get('private').socket, oldSocket)
+  assert.equal(runtime.get('private').state, 'connected')
+  assert.equal(runtime.get('private').authDir, oldAuthDir)
+  await assert.rejects(import('node:fs/promises').then(fs => fs.stat(candidateDir)), { code: 'ENOENT' })
   await runtime.shutdown()
 })
 
@@ -389,6 +411,30 @@ test('a successful replacement candidate becomes active only after linking and k
   assert.equal(runtime.get('private').registered, true)
   assert.equal(runtime.get('private').authDir, candidate.authDir)
   assert.notEqual(runtime.get('private').authDir, oldAuthDir)
+  await runtime.shutdown()
+})
+
+test('an explicit stop cancels an in-flight replacement without restoring a running session', async t => {
+  const { runtime, sockets } = await fixture(t, { registered: true })
+  await runtime.start('private')
+  const oldSocket = runtime.get('private').socket
+  oldSocket.ev.emit('connection.update', { connection: 'open' })
+  const oldAuthDir = runtime.get('private').authDir
+
+  await runtime.startPairing('private')
+  const candidate = runtime.get('private').pairingCandidate
+  candidate.auth.state.creds.registered = true
+  candidate.socket.ev.emit('creds.update')
+  candidate.socket.ev.emit('connection.update', { connection: 'open' })
+  await waitFor(() => runtime.get('private').replacementPending !== null && sockets.length === 3)
+
+  await runtime.stop('private')
+  assert.equal(runtime.get('private').state, 'stopped')
+  assert.equal(runtime.get('private').socket, null)
+  assert.equal(runtime.get('private').replacementPending, null)
+  assert.equal(runtime.get('private').authDir, oldAuthDir)
+  await new Promise(resolveWait => setTimeout(resolveWait, 40))
+  assert.equal(sockets.length, 3, 'An explicit stop must not schedule rollback or automatic restart.')
   await runtime.shutdown()
 })
 

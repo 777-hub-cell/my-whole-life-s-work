@@ -47,7 +47,8 @@ data class ServerEnvironmentValue(
     val value: String,
     val readOnly: Boolean,
     val secret: Boolean,
-    val type: String?
+    val type: String?,
+    val configured: Boolean = false
 )
 
 data class ServerFileEntry(
@@ -236,7 +237,8 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
                         value = row.optString("value"),
                         readOnly = row.optBoolean("readOnly"),
                         secret = row.optBoolean("secret"),
-                        type = row.optString("type").takeIf { it.isNotBlank() }
+                        type = row.optString("type").takeIf { it.isNotBlank() },
+                        configured = row.optBoolean("configured")
                     )
                 )
             }
@@ -251,6 +253,37 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
             }
         }
         api.put("env", JSONObject().put("env", rows))
+    }
+
+    suspend fun generateAiReply(
+        selectedMessage: ChatMessage,
+        quotedMessage: ChatMessage?,
+        tone: String,
+        instructions: String
+    ): String {
+        require(selectedMessage.direction == MessageDirection.INCOMING) {
+            "AI Reply is available only for incoming messages."
+        }
+        require(quotedMessage == null || quotedMessage.key == selectedMessage.key) {
+            "The quoted message must belong to the same conversation."
+        }
+        val selectedText = selectedMessage.text.ifBlank {
+            "[${selectedMessage.kind.name.lowercase()} message]"
+        }
+        val quotedText = quotedMessage?.let { quoted ->
+            quoted.text.ifBlank { "[${quoted.kind.name.lowercase()} message]" }
+        }
+        val request = AiReplyRequestFields.build(
+            selectedText = selectedText,
+            selectedSender = selectedMessage.senderName,
+            quotedText = quotedText,
+            quotedSender = quotedMessage?.senderName,
+            tone = tone,
+            instructions = instructions
+        )
+        val response = api.post("ai-reply", request)
+        return response.optString("reply").trim().takeIf { it.isNotBlank() }
+            ?: error("The AI provider returned an empty reply draft.")
     }
 
     suspend fun chats(account: ChatAccount, query: String = "", limit: Int = 200): List<ChatSummary> {

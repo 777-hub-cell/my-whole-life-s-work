@@ -1,5 +1,5 @@
-import { chmod, lstat, mkdir, realpath, rename, stat } from 'node:fs/promises'
-import { join, resolve, sep } from 'node:path'
+import { chmod, lstat, mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 const SESSION_IDS = Object.freeze(['private', 'public'])
@@ -87,6 +87,53 @@ export function createAccountRuntime({
     return authDirectoriesReady
   }
 
+  function candidateRoot(id) {
+    return resolve(dirname(directories[id]), '.aharane-auth-candidates', id)
+  }
+
+  async function readActiveAuthDirectory(session) {
+    const pointerPath = directories[session.id] + '.active'
+    const pointer = await readFile(pointerPath, 'utf8').catch(error => {
+      if (error.code === 'ENOENT') return ''
+      throw error
+    })
+    if (!pointer.trim()) return directories[session.id]
+    const active = resolve(pointer.trim())
+    const root = candidateRoot(session.id)
+    if (!active.startsWith(root + sep)) {
+      throw new Error('The saved WhatsApp authentication pointer is outside its protected account directory.')
+    }
+    const info = await lstat(active).catch(error => {
+      if (error.code === 'ENOENT') throw new Error('The active WhatsApp authentication directory is missing; the previous session backup has been preserved.')
+      throw error
+    })
+    if (!info.isDirectory() || info.isSymbolicLink()) {
+      throw new Error('The active WhatsApp authentication path must be a real directory.')
+    }
+    return active
+  }
+
+  async function writeActiveAuthDirectory(session, directory) {
+    const pointerPath = directories[session.id] + '.active'
+    const target = resolve(directory)
+    if (target === directories[session.id]) {
+      await rm(pointerPath, { force: true })
+      return
+    }
+    const root = candidateRoot(session.id)
+    if (!target.startsWith(root + sep)) {
+      throw new Error('A replacement WhatsApp session must use its own protected candidate directory.')
+    }
+    const temporary = pointerPath + '.' + randomUUID() + '.tmp'
+    await writeFile(temporary, target + '\\n', { mode: 0o600 })
+    try {
+      await rename(temporary, pointerPath)
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => {})
+      throw error
+    }
+  }
+
   const sessions = new Map(SESSION_IDS.map(id => [id, {
     id,
     authDir: directories[id],
@@ -105,6 +152,10 @@ export function createAccountRuntime({
     pairingCodeIssued: false,
     pairingBlockedUntil: 0,
     qr: '',
+    pairingCandidate: null,
+    pairingSucceeded: false,
+    pairingError: '',
+    replacementPending: null,
     manuallyStopped: false,
   }]))
   let shuttingDown = false
@@ -117,18 +168,20 @@ export function createAccountRuntime({
     return {
       id: session.id,
       state: session.state,
-      pairingRetryAt: session.pairingBlockedUntil || null,
+      pairingRetryAt: null,
       connected: session.state === 'connected',
       registered: session.registered,
       reconnectAttempts: session.reconnectAttempts,
       lastConnectedAt: session.lastConnectedAt || null,
-      pairingInProgress: session.pairRequestActive,
+      pairingInProgress: session.pairRequestActive || Boolean(session.pairingCandidate),
+      pairingSucceeded: session.pairingSucceeded,
+      pairingError: session.pairingError,
     }
   }
 
   function pairingQr(id) {
     const session = get(id)
-    return session.state === 'connected' ? '' : session.qr
+    return session.pairingCandidate?.qr || ''
   }
 
   function snapshot() {
@@ -143,7 +196,7 @@ export function createAccountRuntime({
     }
   }
 
-  function scheduleReconnect(id) {
+  function scheduleReconnect(id, { immediate = false } = {}) {
     const session = get(id)
     if (shuttingDown || session.manuallyStopped || session.reconnectTimer ||
         session.state === 'needs-pairing' || session.state === 'reconnect-exhausted' ||
@@ -161,7 +214,7 @@ export function createAccountRuntime({
       return
     }
     session.reconnectAttempts += 1
-    const delayMs = Math.min(
+    const delayMs = immediate ? 0 : Math.min(
       reconnectMaxMs,
       reconnectBaseMs * (2 ** Math.min(5, session.reconnectAttempts - 1)),
     )
@@ -188,6 +241,7 @@ export function createAccountRuntime({
 
     session.startPromise = (async () => {
       await verifyAuthDirectories()
+      session.authDir = await readActiveAuthDirectory(session)
       const auth = await loadAuthState(session.authDir)
       session.auth = auth
       session.registered = auth.state?.creds?.registered === true
@@ -235,6 +289,11 @@ export function createAccountRuntime({
           session.state = 'connected'
           session.reconnectAttempts = 0
           session.lastConnectedAt = Date.now()
+          if (session.replacementPending) {
+            session.replacementPending = null
+            session.pairingSucceeded = true
+            session.pairingError = ''
+          }
           logger.info?.({ event: 'whatsapp.connected', accountId: id })
           emit()
           return
@@ -249,6 +308,20 @@ export function createAccountRuntime({
           session.rejectReady = null
           const disconnectError = update.lastDisconnect?.error
           const code = disconnectError?.output?.statusCode
+          const replacement = session.replacementPending
+          if (replacement) {
+            session.socket = null
+            session.qr = ''
+            logger.error?.({
+              event: 'whatsapp.replacement-session-restart-failed',
+              accountId: id,
+              disconnect: disconnectDetails(disconnectError),
+            })
+            void serializeSessionOperation(id, () => rollbackReplacementInternal(id, replacement, disconnectError))
+              .catch(error => logger.error?.({ event: 'whatsapp.replacement-rollback-failed', accountId: id, error: String(error?.message || error) }))
+            emit()
+            return
+          }
           const wasUnregisteredPairing = !session.registered &&
             (session.pairRequestActive || session.state === 'pairing')
           const pairingRateLimited = (session.pairingCodeIssued || session.pairRequestActive || session.state === 'pairing') && isPairingRateLimit(disconnectError)
@@ -276,6 +349,15 @@ export function createAccountRuntime({
               reason: String(disconnectError?.message || 'Pairing connection closed').slice(0, 240),
             })
             emit()
+            return
+          }
+          if (code === 515 && session.registered) {
+            // Baileys emits restartRequired (515) after a successful device link.
+            // Re-open the socket with the freshly persisted credentials immediately.
+            session.state = 'reconnecting'
+            session.reconnectAttempts = 0
+            emit()
+            scheduleReconnect(id, { immediate: true })
             return
           }
           if (code === loggedOutCode || code === 401 || code === 403) {
@@ -334,6 +416,14 @@ export function createAccountRuntime({
         // Initial pairing failures must wait for an explicit user request.
         session.state = 'not-paired'
         emit()
+      } else if (session.replacementPending) {
+        const replacement = session.replacementPending
+        session.state = 'disconnected'
+        emit()
+        queueMicrotask(() => {
+          void serializeSessionOperation(id, () => rollbackReplacementInternal(id, replacement, error))
+            .catch(rollbackError => logger.error?.({ event: 'whatsapp.replacement-rollback-failed', accountId: id, error: String(rollbackError?.message || rollbackError) }))
+        })
       } else {
         session.state = 'disconnected'
         emit()
@@ -345,27 +435,256 @@ export function createAccountRuntime({
     }
   }
 
+  function disconnectDetails(error) {
+    if (!error) return { name: null, message: 'Connection closed without an error object.' }
+    return {
+      name: String(error?.name || 'Error'),
+      message: String(error?.message || error).slice(0, 400),
+      statusCode: error?.output?.statusCode ?? error?.statusCode ?? error?.status ?? null,
+      code: error?.code ?? error?.cause?.code ?? null,
+      errno: error?.errno ?? error?.cause?.errno ?? null,
+      syscall: error?.syscall ?? error?.cause?.syscall ?? null,
+      address: error?.address ?? error?.cause?.address ?? null,
+      port: error?.port ?? error?.cause?.port ?? null,
+      cause: error?.cause?.message ? String(error.cause.message).slice(0, 240) : null,
+    }
+  }
+
   function isPairingRateLimit(error) {
     const statusCode = error?.output?.statusCode ?? error?.statusCode ?? error?.status
     const message = String(error?.message || error || '')
-    return statusCode === 429 || /rate[-_\s]?overlimit|peer.{0,24}rate|rate.{0,24}limit/i.test(message)
+    return statusCode === 429 || /rate[-_\\s]?overlimit|peer.{0,24}rate|rate.{0,24}limit/i.test(message)
   }
 
   function pairingRateLimitError() {
-    return Object.assign(new Error('WhatsApp has temporarily rate-limited pairing for this account. Wait at least 15 minutes before trying again; repeated requests can extend the limit.'), { status: 429 })
+    return Object.assign(new Error('WhatsApp refused this pairing attempt because of its own rate limit. The existing account session has not been changed; try again when WhatsApp allows it.'), { status: 429 })
   }
 
-  function clearUnfinishedPairingCredentials(session) {
-    const auth = session.auth
-    const creds = auth?.state?.creds
-    if (!creds) return
-    creds.registered = false
-    delete creds.me
-    delete creds.pairingCode
-    delete creds.pairingEphemeralKeyPair
-    void Promise.resolve(auth.saveCreds?.()).catch(() => {
-      logger.warn?.({ event: 'auth.pairing-reset-save-failed', accountId: session.id })
+  function candidateFailureMessage(error) {
+    if (isPairingRateLimit(error)) return pairingRateLimitError().message
+    const details = disconnectDetails(error)
+    return 'The replacement WhatsApp link did not complete (' + details.message + '). Your previous session was kept. You can try pairing again.'
+  }
+
+  async function saveCandidate(candidate) {
+    candidate.saveChain = candidate.saveChain.catch(() => {}).then(() => candidate.auth.saveCreds?.())
+    await candidate.saveChain
+  }
+
+  async function discardCandidateInternal(session, candidate, error) {
+    if (session.pairingCandidate !== candidate) return
+    session.pairingCandidate = null
+    candidate.closed = true
+    session.qr = ''
+    session.pairingError = candidateFailureMessage(error)
+    try { candidate.socket?.end?.(error) } catch {}
+    await rm(candidate.authDir, { recursive: true, force: true }).catch(() => {})
+    logger.warn?.({
+      event: 'whatsapp.replacement-pairing-failed',
+      accountId: session.id,
+      disconnect: disconnectDetails(error),
     })
+    emit()
+  }
+
+  async function rollbackReplacementInternal(id, replacement, error) {
+    const session = get(id)
+    if (session.replacementPending !== replacement) return
+    const failedSocket = session.socket
+    session.socket = null
+    if (failedSocket) {
+      try { failedSocket.end?.(error) } catch {}
+    }
+    await writeActiveAuthDirectory(session, replacement.previousAuthDir)
+    session.authDir = replacement.previousAuthDir
+    session.auth = null
+    session.registered = replacement.previousRegistered
+    session.replacementPending = null
+    session.pairingSucceeded = false
+    session.pairingError = candidateFailureMessage(error)
+    session.qr = ''
+    session.reconnectAttempts = 0
+    if (replacement.previousSocketActive ||
+        (replacement.previousRegistered && !['stopped', 'needs-pairing', 'reconnect-exhausted'].includes(replacement.previousState))) {
+      session.manuallyStopped = false
+      try {
+        await startInternal(id)
+      } catch (restoreError) {
+        logger.error?.({
+          event: 'whatsapp.previous-session-restore-failed',
+          accountId: id,
+          error: String(restoreError?.message || restoreError),
+        })
+      }
+    } else {
+      session.state = replacement.previousState
+    }
+    logger.warn?.({
+      event: 'whatsapp.replacement-rolled-back',
+      accountId: id,
+      previousAuthPreserved: true,
+      reason: disconnectDetails(error),
+    })
+    emit()
+  }
+
+  async function promoteCandidateInternal(id, candidate) {
+    const session = get(id)
+    if (session.pairingCandidate !== candidate || candidate.promoting || candidate.closed) return
+    candidate.promoting = true
+    try {
+      await saveCandidate(candidate)
+      if (candidate.auth.state?.creds) candidate.auth.state.creds.registered = true
+      await saveCandidate(candidate)
+      const previousAuthDir = session.authDir
+      const previousRegistered = session.registered
+      const previousState = session.state
+      const previousSocketActive = Boolean(session.socket)
+      if (session.auth?.saveCreds) await session.auth.saveCreds()
+      if (session.socket) {
+        const previousSocket = session.socket
+        session.socket = null
+        try { previousSocket.end?.(undefined) } catch {}
+      }
+      await writeActiveAuthDirectory(session, candidate.authDir)
+      session.authDir = candidate.authDir
+      session.auth = null
+      session.registered = true
+      session.manuallyStopped = false
+      session.qr = ''
+      session.pairingCandidate = null
+      candidate.closed = true
+      session.replacementPending = {
+        previousAuthDir,
+        previousRegistered,
+        previousState,
+        previousSocketActive,
+      }
+      try { candidate.socket?.end?.(undefined) } catch {}
+      session.state = 'connecting'
+      session.reconnectAttempts = 0
+      emit()
+      await startInternal(id)
+      logger.info?.({
+        event: 'whatsapp.replacement-session-promoted',
+        accountId: id,
+        previousSessionPreserved: true,
+        candidateAuthDirectory: candidate.authDir,
+      })
+    } catch (error) {
+      if (session.pairingCandidate === candidate) {
+        await discardCandidateInternal(session, candidate, error)
+      } else if (session.replacementPending) {
+        await rollbackReplacementInternal(id, session.replacementPending, error)
+      } else {
+        session.pairingError = candidateFailureMessage(error)
+        emit()
+      }
+    }
+  }
+
+  async function createPairingCandidateInternal(id) {
+    const session = get(id)
+    if (session.pairingCandidate && !session.pairingCandidate.closed) {
+      session.pairingError = ''
+      session.pairingSucceeded = false
+      return session.pairingCandidate
+    }
+    await verifyAuthDirectories()
+    const directory = join(candidateRoot(id), randomUUID())
+    await mkdir(directory, { recursive: true, mode: 0o700 })
+    await chmod(directory, 0o700)
+    const auth = await loadAuthState(directory)
+    const candidate = {
+      authDir: directory,
+      auth,
+      socket: null,
+      qr: '',
+      registered: false,
+      pairingCodeIssued: false,
+      readyPromise: null,
+      resolveReady: null,
+      rejectReady: null,
+      saveChain: Promise.resolve(),
+      closed: false,
+      promoting: false,
+    }
+    candidate.readyPromise = new Promise((resolveReady, rejectReady) => {
+      candidate.resolveReady = resolveReady
+      candidate.rejectReady = rejectReady
+    })
+    void candidate.readyPromise.catch(() => {})
+    try {
+      const socket = makeSocket({ sessionId: id, auth: auth.state, pairingCandidate: true })
+      if (!socket?.ev?.on) throw new Error('WhatsApp pairing socket factory returned an invalid socket.')
+      candidate.socket = socket
+      session.pairingCandidate = candidate
+      session.pairingError = ''
+      session.pairingSucceeded = false
+      socket.ev.on('creds.update', () => {
+        candidate.registered = auth.state?.creds?.registered === true
+        void saveCandidate(candidate).catch(error => {
+          logger.warn?.({ event: 'auth.pairing-candidate-save-failed', accountId: id, error: String(error?.message || error) })
+        })
+      })
+      socket.ev.on('connection.update', update => {
+        if (session.pairingCandidate !== candidate || candidate.closed) return
+        if (update?.qr) {
+          candidate.qr = String(update.qr)
+          candidate.resolveReady?.()
+          candidate.resolveReady = null
+          candidate.rejectReady = null
+          emit()
+        }
+        if (update?.isNewLogin) {
+          candidate.registered = true
+          void saveCandidate(candidate).catch(error => {
+            logger.warn?.({ event: 'auth.pairing-candidate-save-failed', accountId: id, error: String(error?.message || error) })
+          })
+        }
+        if (update?.connection === 'open') {
+          candidate.registered = true
+          if (auth.state?.creds) auth.state.creds.registered = true
+          candidate.qr = ''
+          candidate.resolveReady?.()
+          candidate.resolveReady = null
+          candidate.rejectReady = null
+          void saveCandidate(candidate).then(() =>
+            serializeSessionOperation(id, () => promoteCandidateInternal(id, candidate))
+          ).catch(error => {
+            logger.error?.({ event: 'whatsapp.replacement-promote-failed', accountId: id, error: String(error?.message || error) })
+          })
+          return
+        }
+        if (update?.connection === 'close') {
+          const error = update.lastDisconnect?.error || new Error('WhatsApp closed before the replacement account linked.')
+          candidate.qr = ''
+          candidate.rejectReady?.(error)
+          candidate.resolveReady = null
+          candidate.rejectReady = null
+          candidate.registered = candidate.registered || auth.state?.creds?.registered === true
+          void saveCandidate(candidate).then(() => {
+            if (candidate.registered || isPairingRateLimit(error)) {
+              if (candidate.registered) {
+                return serializeSessionOperation(id, () => promoteCandidateInternal(id, candidate))
+              }
+              return serializeSessionOperation(id, () => discardCandidateInternal(session, candidate, error))
+            }
+            return serializeSessionOperation(id, () => discardCandidateInternal(session, candidate, error))
+          }).catch(saveError => {
+            logger.error?.({ event: 'whatsapp.replacement-close-save-failed', accountId: id, error: String(saveError?.message || saveError) })
+          })
+        }
+        emit()
+      })
+      logger.info?.({ event: 'whatsapp.replacement-pairing-started', accountId: id })
+      emit()
+      return candidate
+    } catch (error) {
+      session.pairingCandidate = candidate.socket ? candidate : null
+      await discardCandidateInternal(session, candidate, error)
+      throw error
+    }
   }
 
   async function waitUntilReady(id, timeoutMs = 20000) {
@@ -385,57 +704,64 @@ export function createAccountRuntime({
 
   async function requestPairingCodeInternal(id, phoneNumber) {
     const session = get(id)
-    if (session.pairRequestActive) throw Object.assign(new Error('A pairing request is already in progress.'), { status: 409 })
-    if (session.state === 'needs-pairing' || session.state === 'reconnect-exhausted') {
-      throw Object.assign(new Error('This saved session needs an explicit repair first. Existing authentication will be backed up before re-pairing.'), { status: 409 })
-    }
-    if (session.registered) throw Object.assign(new Error('This WhatsApp account is already paired.'), { status: 409 })
-    if (session.pairingBlockedUntil > Date.now()) throw pairingRateLimitError()
-    if (session.state === 'rate-limited') {
-      session.state = 'not-paired'
-      session.pairingBlockedUntil = 0
-    }
+    if (session.pairRequestActive) throw Object.assign(new Error('A pairing-code request is already in progress.'), { status: 409 })
     session.pairRequestActive = true
+    session.pairingError = ''
+    session.pairingSucceeded = false
     emit()
-    let currentSocket = null
     try {
-      currentSocket = session.socket || await startInternal(id)
-      if (!currentSocket) throw new Error('WhatsApp socket is unavailable.')
-      await waitUntilReady(id)
-      if (pairingReadyDelayMs > 0) await new Promise(resolve => setTimeout(resolve, pairingReadyDelayMs))
-      if (session.socket !== currentSocket) throw new Error('WhatsApp session changed during pairing. Retry the request.')
-      const code = await currentSocket.requestPairingCode(phoneNumber)
-      session.pairingCodeIssued = true
-      session.state = 'pairing'
+      const candidate = await createPairingCandidateInternal(id)
+      await waitUntilCandidateReady(candidate)
+      if (session.pairingCandidate !== candidate || candidate.closed) {
+        throw new Error('The replacement WhatsApp pairing attempt closed before a code was requested.')
+      }
+      if (pairingReadyDelayMs > 0) await wait(pairingReadyDelayMs)
+      const code = await candidate.socket.requestPairingCode(phoneNumber)
+      candidate.pairingCodeIssued = true
+      candidate.qr = ''
       emit()
-      return String(code).replace(/\s/g, '')
+      return String(code).replace(/\\s/g, '')
     } catch (error) {
-      const rateLimited = isPairingRateLimit(error)
-      if (currentSocket && session.socket === currentSocket) {
-        clearUnfinishedPairingCredentials(session)
-        session.socket = null
-        session.qr = ''
-        session.pairingCodeIssued = false
-        session.registered = false
-        session.state = rateLimited ? 'rate-limited' : 'not-paired'
-        session.pairingBlockedUntil = rateLimited ? Date.now() + Math.max(60_000, pairingCooldownMs) : 0
-        session.resolveReady = null
-        session.rejectReady = null
-        try { currentSocket.end?.(error) } catch {}
+      const candidate = session.pairingCandidate
+      if (candidate) {
+        await discardCandidateInternal(session, candidate, error)
+      } else {
+        session.pairingError = candidateFailureMessage(error)
         emit()
       }
-      const failure = rateLimited ? pairingRateLimitError() : error
       logger.error?.({
         event: 'whatsapp.pairing-code-request-failed',
         accountId: id,
-        statusCode: error?.output?.statusCode ?? error?.status ?? null,
-        rateLimited,
-        error: String(error?.message || error),
+        disconnect: disconnectDetails(error),
+        rateLimited: isPairingRateLimit(error),
       })
-      throw failure
+      throw isPairingRateLimit(error) ? pairingRateLimitError() : error
     } finally {
       session.pairRequestActive = false
       emit()
+    }
+  }
+
+  async function waitUntilCandidateReady(candidate, timeoutMs = 20000) {
+    let timer
+    try {
+      await Promise.race([
+        candidate.readyPromise,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('WhatsApp pairing socket did not become ready. Check the server network connection and retry.')), timeoutMs)
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  async function startPairingInternal(id) {
+    const session = get(id)
+    const candidate = await createPairingCandidateInternal(id)
+    return {
+      ...sessionSnapshot(session),
+      qr: candidate.qr,
     }
   }
 
@@ -457,6 +783,14 @@ export function createAccountRuntime({
     const session = get(id)
     session.manuallyStopped = true
     session.qr = ''
+    if (session.pairingCandidate) {
+      const candidate = session.pairingCandidate
+      session.pairingCandidate = null
+      candidate.closed = true
+      candidate.rejectReady?.(new Error('WhatsApp pairing was cancelled because the account was stopped.'))
+      try { candidate.socket?.end?.(undefined) } catch {}
+      await rm(candidate.authDir, { recursive: true, force: true }).catch(() => {})
+    }
     if (session.reconnectTimer) clearTimeout(session.reconnectTimer)
     session.reconnectTimer = null
     const currentSocket = session.socket
@@ -545,6 +879,7 @@ export function createAccountRuntime({
     return current
   }
   function start(id, options) { return serializeSessionOperation(id, () => startInternal(id, options)) }
+  function startPairing(id) { return serializeSessionOperation(id, () => startPairingInternal(id)) }
   function requestPairingCode(id, phoneNumber) { return serializeSessionOperation(id, () => requestPairingCodeInternal(id, phoneNumber)) }
   function stop(id) { return serializeSessionOperation(id, () => stopInternal(id)) }
   function restart(id) { return serializeSessionOperation(id, () => restartInternal(id)) }
@@ -561,6 +896,7 @@ export function createAccountRuntime({
     pairingQr,
     start,
     waitUntilReady,
+    startPairing,
     requestPairingCode,
     reconnect,
     stop,

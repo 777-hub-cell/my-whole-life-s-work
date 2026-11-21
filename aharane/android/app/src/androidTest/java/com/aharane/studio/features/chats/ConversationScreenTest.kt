@@ -1,7 +1,5 @@
 package com.aharane.studio.features.chats
 
-import androidx.compose.ui.test.assertDoesNotExist
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertTextEquals
@@ -11,6 +9,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import com.aharane.studio.core.design.AharaneTheme
@@ -64,7 +63,7 @@ class ConversationScreenTest {
             }
         }
         compose.onNodeWithText("Incoming message for AI").performTouchInput { longClick() }
-        compose.onNodeWithText("AI Reply").assertDoesNotExist()
+        compose.runOnIdle { assertTrue(compose.onAllNodesWithText("AI Reply").fetchSemanticsNodes().isEmpty()) }
     }
 
     @Test
@@ -100,7 +99,7 @@ class ConversationScreenTest {
             }
         }
         compose.onNodeWithText("Incoming message for AI").performTouchInput { longClick() }
-        compose.onNodeWithText("AI Reply").assertExists().performClick()
+        compose.onNodeWithText("AI Reply").performClick()
         compose.onNodeWithText("Use draft").assertIsEnabled()
         compose.runOnIdle {
             assertEquals("We can meet at five.", receivedQuote)

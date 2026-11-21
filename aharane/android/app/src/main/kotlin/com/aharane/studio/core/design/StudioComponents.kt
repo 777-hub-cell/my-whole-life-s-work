@@ -346,7 +346,8 @@ fun StudioTextInput(
     singleLine: Boolean = true,
     minLines: Int = 1,
     minHeight: androidx.compose.ui.unit.Dp = 48.dp,
-    textSize: androidx.compose.ui.unit.TextUnit = 14.sp
+    textSize: androidx.compose.ui.unit.TextUnit = 14.sp,
+    tag: String? = null
 ) {
     val shape = RoundedCornerShape(12.dp * LocalStudioCornerScale.current)
     Surface(
@@ -374,7 +375,7 @@ fun StudioTextInput(
                     fontFamily = MaterialTheme.typography.bodyLarge.fontFamily
                 ),
                 cursorBrush = SolidColor(StudioPalette.Accent),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().then(tag?.let { androidx.compose.ui.platform.testTag(it) } ?: Modifier)
             )
         }
     }

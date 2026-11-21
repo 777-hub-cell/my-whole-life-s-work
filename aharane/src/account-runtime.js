@@ -149,7 +149,6 @@ export function createAccountRuntime({
     rejectReady: null,
     pairRequestActive: false,
     pairingCodeIssued: false,
-    pairingBlockedUntil: 0,
     qr: '',
     pairingCandidate: null,
     pairingSucceeded: false,
@@ -199,7 +198,7 @@ export function createAccountRuntime({
     const session = get(id)
     if (shuttingDown || session.manuallyStopped || session.reconnectTimer ||
         session.state === 'needs-pairing' || session.state === 'reconnect-exhausted' ||
-        session.state === 'not-paired' || session.state === 'rate-limited' ||
+        session.state === 'not-paired' ||
         session.state === 'stopped') return
     if (session.reconnectAttempts >= reconnectLimit) {
       session.state = 'reconnect-exhausted'
@@ -284,7 +283,6 @@ export function createAccountRuntime({
         if (update?.connection === 'open') {
           session.registered = true
           session.pairingCodeIssued = false
-          session.pairingBlockedUntil = 0
           session.state = 'connected'
           session.reconnectAttempts = 0
           session.lastConnectedAt = Date.now()
@@ -331,7 +329,6 @@ export function createAccountRuntime({
             clearUnfinishedPairingCredentials(session)
             session.registered = false
             session.state = session.registered ? 'disconnected' : 'not-paired'
-            session.pairingBlockedUntil = 0
             logger.warn?.({ event: 'whatsapp.pairing-rate-limited', accountId: id, disconnect: disconnectDetails(disconnectError) })
             emit()
             return
@@ -548,6 +545,8 @@ export function createAccountRuntime({
       // Persist the candidate pointer while the old socket is still usable. If
       // this fails, the existing session has not been interrupted.
       await writeActiveAuthDirectory(session, candidate.authDir)
+      if (session.reconnectTimer) clearTimeout(session.reconnectTimer)
+      session.reconnectTimer = null
       session.authDir = candidate.authDir
       session.auth = null
       session.registered = true
@@ -647,7 +646,7 @@ export function createAccountRuntime({
           candidate,
           new Error('This WhatsApp pairing attempt expired. Start a fresh attempt to try again.')
         )).catch(error => logger.warn?.({ event: 'whatsapp.pairing-expiry-failed', accountId: id, error: String(error?.message || error) }))
-      }, 120000)
+      }, 300000)
       candidate.expiryTimer.unref?.()
       const socket = makeSocket({ sessionId: id, auth: auth.state, pairingCandidate: true })
       if (!socket?.ev?.on) throw new Error('WhatsApp pairing socket factory returned an invalid socket.')
@@ -739,26 +738,31 @@ export function createAccountRuntime({
     session.pairingError = ''
     session.pairingSucceeded = false
     emit()
+    let candidate = null
     try {
-      const candidate = await serializeSessionOperation(id, () => createPairingCandidateInternal(id))
+      candidate = await serializeSessionOperation(id, () => createPairingCandidateInternal(id))
       await waitUntilCandidateReady(candidate)
       if (session.pairingCandidate !== candidate || candidate.closed) {
         throw new Error('The replacement WhatsApp pairing attempt closed before a code was requested.')
       }
       if (pairingReadyDelayMs > 0) await wait(pairingReadyDelayMs)
+      if (session.pairingCandidate !== candidate || candidate.closed) {
+        throw new Error('This WhatsApp pairing attempt was cancelled. Start a fresh attempt to try again.')
+      }
       const code = await candidate.socket.requestPairingCode(phoneNumber)
       candidate.pairingCodeIssued = true
       candidate.qr = ''
       emit()
       return String(code).replace(/\s/g, '')
     } catch (error) {
-      const candidate = session.pairingCandidate
-      if (candidate) {
+      if (candidate && session.pairingCandidate === candidate && !candidate.closed) {
         await discardCandidateInternal(session, candidate, error)
-      } else {
+      } else if (!candidate && !session.pairingCandidate) {
         session.pairingError = candidateFailureMessage(error)
         emit()
       }
+      // A late response from a cancelled/replaced candidate must not mutate a
+      // newer attempt or delete its temporary authentication directory.
       logger.error?.({
         event: 'whatsapp.pairing-code-request-failed',
         accountId: id,

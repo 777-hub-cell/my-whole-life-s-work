@@ -740,7 +740,7 @@ export function createAccountRuntime({
     session.pairingSucceeded = false
     emit()
     try {
-      const candidate = await createPairingCandidateInternal(id)
+      const candidate = await serializeSessionOperation(id, () => createPairingCandidateInternal(id))
       await waitUntilCandidateReady(candidate)
       if (session.pairingCandidate !== candidate || candidate.closed) {
         throw new Error('The replacement WhatsApp pairing attempt closed before a code was requested.')
@@ -909,7 +909,7 @@ export function createAccountRuntime({
   function start(id, options) { return serializeSessionOperation(id, () => startInternal(id, options)) }
   function startPairing(id) { return serializeSessionOperation(id, () => startPairingInternal(id)) }
   function cancelPairing(id) { return serializeSessionOperation(id, () => cancelPairingInternal(id)) }
-  function requestPairingCode(id, phoneNumber) { return serializeSessionOperation(id, () => requestPairingCodeInternal(id, phoneNumber)) }
+  function requestPairingCode(id, phoneNumber) { return requestPairingCodeInternal(id, phoneNumber) }
   function stop(id) { return serializeSessionOperation(id, () => stopInternal(id)) }
   function restart(id) { return serializeSessionOperation(id, () => restartInternal(id)) }
   function repair(id, backupRoot) { return serializeSessionOperation(id, () => repairInternal(id, backupRoot)) }

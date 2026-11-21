@@ -1174,7 +1174,11 @@ accountRuntime = createAccountRuntime({
     browser: Browsers.macOS('Chrome'),
     markOnlineOnConnect: false,
     syncFullHistory: false,
-    shouldSyncHistoryMessage: () => false,
+    // Keep Baileys' default selective history policy. Disabling every sync
+    // prevents initial LID mappings and can destabilize fresh WhatsApp links.
+    // 0.5.6 calls messageRetryManager.flushAll() on close, but the class only
+    // exposes clear(); use Baileys' supported legacy retry fallback until fixed.
+    enableRecentMessageCache: false,
     generateHighQualityLinkPreview: false,
   }),
   loggedOutCode: DisconnectReason.loggedOut,

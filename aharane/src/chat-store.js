@@ -57,6 +57,20 @@ function quotedMessageIdFromSource(serialized) {
   if (!serialized) return ''
   try { return quotedMessageId(JSON.parse(serialized)) } catch { return '' }
 }
+function quotedMessageText(message) {
+  const { body } = unwrap(message?.message)
+  for (const value of Object.values(body || {})) {
+    const quoted = value?.contextInfo?.quotedMessage
+    if (!quoted) continue
+    const content = messageContent({ message: quoted })
+    if (content.text) return content.text.slice(0, MAX_TEXT)
+  }
+  return ''
+}
+function quotedMessageTextFromSource(serialized) {
+  if (!serialized) return ''
+  try { return quotedMessageText(JSON.parse(serialized)) } catch { return '' }
+}
 function messageContent(message) {
   const { body, viewOnce } = unwrap(message?.message)
   const pairs = [
@@ -443,6 +457,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       size: extracted.size, duration: extracted.duration || 0, ptt: extracted.ptt === true,
       mediaFile: '', mediaUrl: '', sourceMessage,
       quotedMessageId: quotedMessageId(message),
+      quotedMessageText: quotedMessageText(message),
       viewOnce: extracted.viewOnce, viewOnceViewed: false, status: '',
       reactions: [], starred: false,
     }
@@ -524,6 +539,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         viewOnce: row.viewOnce === true, viewOnceViewed: row.viewOnceViewed === true,
         mediaUnavailable: row.mediaUnavailable || '', mediaAvailable: Boolean(row.sourceMessage && MEDIA_TYPES.has(row.type) && !row.mediaUnavailable),
         quotedMessageId: row.quotedMessageId || quotedMessageIdFromSource(row.sourceMessage),
+        quotedMessageText: row.quotedMessageText || quotedMessageTextFromSource(row.sourceMessage),
         reactions: Array.isArray(row.reactions) ? row.reactions : [], starred: row.starred === true, ptt: row.ptt === true, status: row.status || '',
         deletedByRemote: row.deletedByRemote === true, deletedAt: Number(row.deletedAt) || 0,
       }))
@@ -548,6 +564,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         fileName: row.fileName,
         deletedByRemote: row.deletedByRemote === true,
         deletedAt: Number(row.deletedAt) || 0,
+        quotedMessageText: row.quotedMessageText || quotedMessageTextFromSource(row.sourceMessage),
       }))
   }
 
@@ -568,7 +585,9 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       pushName: row.pushName, timestamp: row.timestamp, type: row.type, text: row.text,
       mimeType: row.mimeType, fileName: row.fileName, size: row.size, viewOnce: row.viewOnce === true,
       key: { remoteJid: row.jid, id: row.id, fromMe: row.fromMe === true, ...(row.participant ? { participant: row.participant } : {}) },
-      starred: row.starred === true, sourceMessage }
+      starred: row.starred === true,
+      quotedMessageText: row.quotedMessageText || quotedMessageTextFromSource(row.sourceMessage),
+      sourceMessage }
   }
 
   function reviveMessage(value) {

@@ -892,7 +892,7 @@ fun ConversationScreen(
                         StudioActionButton(
                             "Regenerate",
                             modifier = Modifier.weight(1f),
-                            enabled = !aiReplyLoading && !quoteMissing,
+                            enabled = !aiReplyLoading,
                             onClick = {
                                 aiReplyScope.launch {
                                     aiReplyLoading = true

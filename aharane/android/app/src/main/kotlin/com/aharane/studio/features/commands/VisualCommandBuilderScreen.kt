@@ -76,7 +76,7 @@ fun VisualCommandBuilderScreen(
     var pendingSocket by remember { mutableStateOf<ActiveSocket?>(null) }
     var category by remember { mutableStateOf("All") }
     var search by remember { mutableStateOf("") }
-    var workspaceFraction by remember { mutableFloatStateOf(0.58f) }
+    var workspaceFraction by remember { mutableFloatStateOf(0.52f) }
     var zoom by remember { mutableFloatStateOf(1f) }
     var workspaceViewportSize by remember { mutableStateOf(IntSize.Zero) }
     var workspaceCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
@@ -133,7 +133,7 @@ fun VisualCommandBuilderScreen(
         if (nodes.isNotEmpty() && workspaceViewportSize.width > 0 && workspaceViewportSize.height > 0) {
             val left = nodes.minOf { it.x }
             val top = nodes.minOf { it.y }
-            val right = nodes.maxOf { it.x + 206f }
+            val right = nodes.maxOf { it.x + 224f }
             val bottom = nodes.maxOf { node ->
                 node.y + (measuredNodeSizes[node.id]?.height?.let { with(density) { it.toDp().value } } ?: 132f)
             }
@@ -141,9 +141,9 @@ fun VisualCommandBuilderScreen(
             val graphHeightPx = with(density) { (bottom - top + 96f).coerceAtLeast(180f).dp.toPx() }
             val availableWidth = (workspaceViewportSize.width - with(density) { 32.dp.toPx() }).coerceAtLeast(1f)
             val availableHeight = (workspaceViewportSize.height - with(density) { 32.dp.toPx() }).coerceAtLeast(1f)
-            zoom = minOf(availableWidth / graphWidthPx, availableHeight / graphHeightPx).coerceIn(0.35f, 1.8f)
+            zoom = minOf(availableWidth / graphWidthPx, availableHeight / graphHeightPx).coerceIn(0.65f, 1.8f)
         } else {
-            zoom = 0.78f
+            zoom = 0.86f
         }
         scope.launch { workspaceScroll.scrollTo(0); workspaceVerticalScroll.scrollTo(0) }
     }
@@ -437,14 +437,14 @@ fun VisualCommandBuilderScreen(
             Text(
                 "‹  More",
                 color = StudioPalette.Accent,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.clickable(onClick = onBack).padding(vertical = 6.dp)
             )
             Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f)) {
-                Text("Visual command builder", color = StudioPalette.Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text(if (dirty) "Unsaved changes" else if (workflow.enabled) "Active command" else "Workflow draft", color = StudioPalette.Muted, fontSize = 10.sp)
+                Text("Visual command builder", color = StudioPalette.Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(if (dirty) "Unsaved changes" else if (workflow.enabled) "Active command" else "Workflow draft", color = StudioPalette.Muted, fontSize = 11.sp)
             }
             StudioActionButton("Load", modifier = Modifier.testTag("workflow-load"), compact = true, enabled = connected && savedWorkflows.isNotEmpty(), onClick = { showLoad = true })
             Spacer(Modifier.width(5.dp))
@@ -515,11 +515,11 @@ fun VisualCommandBuilderScreen(
             )
         }
 
-        Column(Modifier.fillMaxWidth().weight(workspaceFraction)) {
+        Column(Modifier.fillMaxWidth().weight(workspaceFraction).testTag("workflow-workspace-panel")) {
             Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("WORKSPACE", color = StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text("WORKSPACE", color = StudioPalette.Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.weight(1f))
-                Text(workflow.nodes.size.toString() + " nodes · " + workflow.edges.size + " wires", color = StudioPalette.Muted, fontSize = 9.sp, modifier = Modifier.testTag("workflow-node-count"))
+                Text(workflow.nodes.size.toString() + " nodes · " + workflow.edges.size + " wires", color = StudioPalette.Muted, fontSize = 10.5.sp, modifier = Modifier.testTag("workflow-node-count"))
             }
             Box(Modifier.fillMaxSize().onSizeChanged { workspaceViewportSize = it }.clip(RoundedCornerShape(9.dp)).background(Color(0xFFF2F5F2))) {
                 Box(
@@ -548,7 +548,7 @@ fun VisualCommandBuilderScreen(
                     // rebases the whole graph and makes the other nodes appear to jump.
                     val canvasOriginX = 48f
                     val canvasOriginY = 48f
-                    val maxNodeRight = workflow.nodes.maxOfOrNull { it.x + 206f } ?: 206f
+                    val maxNodeRight = workflow.nodes.maxOfOrNull { it.x + 224f } ?: 206f
                     val maxNodeBottom = workflow.nodes.maxOfOrNull { node ->
                         node.y + (measuredNodeSizes[node.id]?.height?.let { with(density) { it.toDp().value } } ?: 132f)
                     } ?: 180f
@@ -681,7 +681,7 @@ fun VisualCommandBuilderScreen(
             Modifier.fillMaxWidth().height(10.dp).pointerInput(Unit) {
                 detectDragGestures { change, drag ->
                     change.consume()
-                    workspaceFraction = (workspaceFraction + drag.y / 700f).coerceIn(0.34f, 0.76f)
+                    workspaceFraction = (workspaceFraction + drag.y / 700f).coerceIn(0.40f, 0.70f)
                 }
             },
             contentAlignment = Alignment.Center
@@ -691,27 +691,31 @@ fun VisualCommandBuilderScreen(
 
         Column(Modifier.fillMaxWidth().weight(1f - workspaceFraction)) {
             Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("NODE LIBRARY", color = StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text("NODE LIBRARY", color = StudioPalette.Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.weight(1f))
-                Text(visibleNodes.size.toString() + " nodes", color = StudioPalette.Muted, fontSize = 9.sp)
+                Text(visibleNodes.size.toString() + " nodes", color = StudioPalette.Muted, fontSize = 10.5.sp)
             }
             BasicTextField(
                 value = search,
                 onValueChange = { search = it },
                 singleLine = true,
-                textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 11.sp),
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(7.dp))
-                    .background(StudioPalette.Surface).border(1.dp, StudioPalette.Line, RoundedCornerShape(7.dp))
-                    .padding(horizontal = 9.dp, vertical = 7.dp),
+                textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 12.5.sp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 42.dp).clip(RoundedCornerShape(9.dp))
+                    .background(StudioPalette.Surface).border(1.dp, StudioPalette.Line, RoundedCornerShape(9.dp))
+                    .padding(horizontal = 11.dp, vertical = 9.dp),
                 decorationBox = { inner ->
                     Box {
-                        if (search.isBlank()) Text("Search WhatsApp nodes", color = StudioPalette.Muted, fontSize = 11.sp)
+                        if (search.isBlank()) Text("Search WhatsApp nodes", color = StudioPalette.Muted, fontSize = 12.sp)
                         inner()
                     }
                 }
             )
             Spacer(Modifier.height(5.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(5.dp), contentPadding = PaddingValues(bottom = 5.dp)) {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth().testTag("workflow-categories"),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                contentPadding = PaddingValues(start = 2.dp, end = 10.dp, bottom = 6.dp)
+            ) {
                 item { CategoryChip("All", category == "All") { category = "All" } }
                 items(library) { group ->
                     CategoryChip(group.name, category == group.name) { category = group.name }
@@ -741,7 +745,7 @@ fun VisualCommandBuilderScreen(
             Text(
                 notice,
                 color = if (notice.contains("error", true) || notice.contains("failed", true) || notice.contains("rejected", true)) StudioPalette.Bad else StudioPalette.Muted,
-                fontSize = 9.5.sp,
+                fontSize = 11.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth().padding(top = 3.dp)
@@ -846,23 +850,23 @@ private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) 
         Modifier.clip(RoundedCornerShape(7.dp))
             .background(if (selected) StudioPalette.Accent else StudioPalette.Surface)
             .border(1.dp, if (selected) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(7.dp))
-            .clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 5.dp)
+            .clickable(onClick = onClick).heightIn(min = 38.dp).padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
-        Text(label, color = if (selected) Color.White else StudioPalette.Ink, fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, color = if (selected) Color.White else StudioPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
 @Composable
 private fun LibraryNodeRow(node: VisualNodeDefinition, enabled: Boolean, onAdd: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(7.dp))
-            .background(StudioPalette.Surface).border(1.dp, StudioPalette.Line, RoundedCornerShape(7.dp))
-            .padding(horizontal = 8.dp, vertical = 5.dp),
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(9.dp))
+            .background(StudioPalette.Surface).border(1.dp, StudioPalette.Line, RoundedCornerShape(9.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(node.name, color = StudioPalette.Ink, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
-            Text(node.description, color = StudioPalette.Muted, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(node.name, color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(node.description, color = StudioPalette.Muted, fontSize = 10.5.sp, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.width(6.dp))
         StudioActionButton("Add", modifier = Modifier.testTag("add-node-" + node.type), compact = true, enabled = enabled, onClick = onAdd)
@@ -890,7 +894,7 @@ private fun NodeCard(
         else -> Color(0xFFD9E2DC)
     }
     Column(
-        Modifier.offset((node.x + canvasOriginX).dp, (node.y + canvasOriginY).dp).width(206.dp)
+        Modifier.offset((node.x + canvasOriginX).dp, (node.y + canvasOriginY).dp).width(224.dp)
             .onSizeChanged(onMeasured).testTag("node-card-" + node.type)
             .clip(RoundedCornerShape(8.dp)).background(Color.White)
             .border(if (selected || error != null) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(8.dp))
@@ -908,11 +912,11 @@ private fun NodeCard(
         ) {
             Box(Modifier.size(7.dp).clip(CircleShape).background(if (error != null) StudioPalette.Bad else StudioPalette.Accent))
             Spacer(Modifier.width(6.dp))
-            Text(definition.name, color = StudioPalette.Ink, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(definition.name, color = StudioPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.weight(1f))
             if (error != null) Text("!", color = StudioPalette.Bad, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
-        Text(nodeSummary(node), color = StudioPalette.Muted, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        Text(nodeSummary(node), color = StudioPalette.Muted, fontSize = 10.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp))
         if (definition.inputs.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 5.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -997,7 +1001,7 @@ private fun SocketAction(
         horizontalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         if (!output) SocketDot(color, onPosition)
-        Text(socket.label, color = color, fontSize = 8.sp, maxLines = 1)
+        Text(socket.label, color = color, fontSize = 9.5.sp, maxLines = 1)
         if (output) SocketDot(color, onPosition)
     }
 }
@@ -1165,7 +1169,7 @@ private fun WorkspaceToolButton(
     content: @Composable () -> Unit
 ) {
     Box(
-        Modifier.size(32.dp).clip(RoundedCornerShape(7.dp))
+        Modifier.size(38.dp).clip(RoundedCornerShape(8.dp))
             .background(if (enabled) Color(0xFFF5F7F5) else Color(0xFFECEFEC))
             .border(1.dp, Color(0xFFE0E5E1), RoundedCornerShape(7.dp))
             .clickable(enabled = enabled, onClick = onClick),

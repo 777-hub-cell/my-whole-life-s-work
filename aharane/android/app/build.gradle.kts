@@ -48,6 +48,7 @@ dependencies {
     implementation(libs.androidx.sqlite)
     implementation(libs.sqlcipher)
     implementation(libs.work.ktx)
+    implementation("com.google.zxing:core:3.5.3")
     ksp(libs.room.compiler)
     testImplementation(libs.junit)
     testImplementation(libs.room.testing)

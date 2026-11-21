@@ -54,6 +54,18 @@ for (const marker of ['private-commands', 'commands', 'plugins', 'lib']) {
   if (!runtime.includes("'" + marker + "'")) throw new Error('Source editor does not expose shared/private project folder: ' + marker)
 }
 
+const accountRuntimeSource = await readFile(new URL('../src/account-runtime.js', import.meta.url), 'utf8')
+for (const marker of [
+  'pairingCandidate',
+  'replacementPending',
+  'writeActiveAuthDirectory(session, candidate.authDir)',
+  'rollbackReplacementInternal',
+  'cancelPairing',
+]) {
+  if (!accountRuntimeSource.includes(marker)) throw new Error('Safe WhatsApp replacement pairing is missing: ' + marker)
+}
+if (accountRuntimeSource.includes('pairingCooldownMs')) throw new Error('Aharane must not impose its own WhatsApp pairing cooldown')
+
 const installer = await readFile(new URL('../install-azure.sh', import.meta.url), 'utf8')
 for (const path of ['/opt/aharane', '/var/lib/aharane', '/etc/aharane.env', 'aharane.service']) {
   if (!installer.includes(path)) throw new Error(`Installer is missing its private resource path: ${path}`)

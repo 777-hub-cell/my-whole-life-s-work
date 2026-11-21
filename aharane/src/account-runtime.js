@@ -435,16 +435,33 @@ export function createAccountRuntime({
 
   function disconnectDetails(error) {
     if (!error) return { name: null, message: 'Connection closed without an error object.' }
+    // Baileys wraps the original undici/ws error in HttpError.data. Preserve
+    // its transport fields; output.statusCode can be Baileys' generic 500
+    // fallback and is not necessarily an HTTP response from WhatsApp.
+    const transport = error?.data && typeof error.data === 'object' ? error.data : null
+    const transportCause = transport?.cause
     return {
       name: String(error?.name || 'Error'),
       message: String(error?.message || error).slice(0, 400),
       statusCode: error?.output?.statusCode ?? error?.statusCode ?? error?.status ?? null,
-      code: error?.code ?? error?.cause?.code ?? null,
-      errno: error?.errno ?? error?.cause?.errno ?? null,
-      syscall: error?.syscall ?? error?.cause?.syscall ?? null,
-      address: error?.address ?? error?.cause?.address ?? null,
-      port: error?.port ?? error?.cause?.port ?? null,
-      cause: error?.cause?.message ? String(error.cause.message).slice(0, 240) : null,
+      statusCodeSource: /^WebSocket Error \(/i.test(String(error?.message || '')) ? 'baileys-websocket-fallback' : 'disconnect',
+      code: error?.code ?? error?.cause?.code ?? transport?.code ?? transportCause?.code ?? null,
+      errno: error?.errno ?? error?.cause?.errno ?? transport?.errno ?? transportCause?.errno ?? null,
+      syscall: error?.syscall ?? error?.cause?.syscall ?? transport?.syscall ?? transportCause?.syscall ?? null,
+      address: error?.address ?? error?.cause?.address ?? transport?.address ?? transportCause?.address ?? null,
+      port: error?.port ?? error?.cause?.port ?? transport?.port ?? transportCause?.port ?? null,
+      cause: error?.cause?.message
+        ? String(error.cause.message).slice(0, 240)
+        : transportCause?.message ? String(transportCause.message).slice(0, 240) : null,
+      transportError: transport ? {
+        name: String(transport.name || 'Error').slice(0, 100),
+        message: String(transport.message || '').slice(0, 400),
+        code: transport.code ?? null,
+        errno: transport.errno ?? null,
+        syscall: transport.syscall ?? null,
+        address: transport.address ?? null,
+        port: transport.port ?? null,
+      } : null,
     }
   }
 
@@ -479,7 +496,14 @@ export function createAccountRuntime({
       details.code && 'code ' + details.code,
       details.errno && 'errno ' + details.errno,
       details.syscall && 'during ' + details.syscall,
-      details.statusCode !== null && details.statusCode !== undefined && 'WhatsApp status ' + details.statusCode,
+      details.statusCode !== null && details.statusCode !== undefined &&
+        (details.statusCodeSource === 'baileys-websocket-fallback'
+          ? 'Baileys WebSocket disconnect code ' + details.statusCode
+          : 'WhatsApp status ' + details.statusCode),
+      details.transportError?.message && 'transport ' + details.transportError.message,
+      details.code && 'code ' + details.code,
+      details.errno && 'errno ' + details.errno,
+      details.syscall && 'during ' + details.syscall,
       details.address && 'endpoint ' + details.address + (details.port ? ':' + details.port : ''),
       details.cause && 'cause ' + details.cause,
     ].filter(Boolean).join('; ')

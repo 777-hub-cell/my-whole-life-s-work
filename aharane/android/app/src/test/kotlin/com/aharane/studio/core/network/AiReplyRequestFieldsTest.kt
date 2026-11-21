@@ -16,15 +16,14 @@ class AiReplyRequestFieldsTest {
             tone = "Friendly",
             instructions = "Keep it short."
         )
-        assertEquals(
-            setOf("message", "quotedMessage", "tone", "instructions"),
-            request.keys().asSequence().toSet()
-        )
-        assertEquals("Are you on your way?", request.getJSONObject("message").getString("text"))
-        assertEquals("Alex", request.getJSONObject("message").getString("senderName"))
-        assertEquals("We are meeting at 5.", request.getJSONObject("quotedMessage").getString("text"))
-        assertEquals("Friendly", request.getString("tone"))
-        assertEquals("Keep it short.", request.getString("instructions"))
+        assertEquals(setOf("message", "quotedMessage", "tone", "instructions"), request.keys)
+        val message = request["message"] as Map<*, *>
+        val quote = request["quotedMessage"] as Map<*, *>
+        assertEquals("Are you on your way?", message["text"])
+        assertEquals("Alex", message["senderName"])
+        assertEquals("We are meeting at 5.", quote["text"])
+        assertEquals("Friendly", request["tone"])
+        assertEquals("Keep it short.", request["instructions"])
         assertFalse(request.toString().contains("chatHistory"))
         assertFalse(request.toString().contains("conversationId"))
     }
@@ -39,8 +38,8 @@ class AiReplyRequestFieldsTest {
             tone = "Casual",
             instructions = ""
         )
-        assertTrue(request.has("message"))
-        assertFalse(request.has("quotedMessage"))
-        assertEquals(3, request.length())
+        assertTrue(request.containsKey("message"))
+        assertFalse(request.containsKey("quotedMessage"))
+        assertEquals(3, request.size)
     }
 }

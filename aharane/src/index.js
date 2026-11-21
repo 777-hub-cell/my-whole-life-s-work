@@ -1170,15 +1170,30 @@ privateCommandRegistry = await loadCommandRegistry(new URL('../private-commands/
 accountRuntime = createAccountRuntime({
   authDirs: { public: AUTH_DIR, private: PRIVATE_AUTH_DIR },
   loadAuthState: useMultiFileAuthState,
-  makeSocket: ({ auth }) => makeWASocket({
-    auth,
-    logger,
-    browser: Browsers.macOS('Chrome'),
-    markOnlineOnConnect: false,
-    syncFullHistory: false,
-    shouldSyncHistoryMessage: () => false,
-    generateHighQualityLinkPreview: false,
-  }),
+  makeSocket: ({ auth }) => {
+    // The pinned Baileys fork prefers Node's built-in Undici WebSocket on
+    // Node 22+, which currently hides useful handshake failure details.
+    // Force its supported ws fallback for this Node server instead.
+    const nativeWebSocket = globalThis.WebSocket
+    try {
+      globalThis.WebSocket = undefined
+      return makeWASocket({
+        auth,
+        logger,
+        browser: Browsers.macOS('Chrome'),
+        markOnlineOnConnect: false,
+        syncFullHistory: false,
+        // Keep Baileys' default selective history policy. Disabling all sync
+        // prevents initial LID mappings and can destabilize fresh WhatsApp links.
+        // Baileys 0.5.6 calls messageRetryManager.flushAll() on close, but that
+        // method is absent in this release; disable the affected retry cache.
+        enableRecentMessageCache: false,
+        generateHighQualityLinkPreview: false,
+      })
+    } finally {
+      globalThis.WebSocket = nativeWebSocket
+    }
+  },
   loggedOutCode: DisconnectReason.loggedOut,
   onMessages: ({ sessionId, socket: currentSocket, event }) =>
     handleMessages(sessionId, currentSocket, event),

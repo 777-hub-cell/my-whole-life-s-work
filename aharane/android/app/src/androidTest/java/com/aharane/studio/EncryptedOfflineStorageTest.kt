@@ -63,6 +63,7 @@ class EncryptedOfflineStorageTest {
                     timestampMillis = 1760000000000,
                     status = "DELIVERED",
                     replyToMessageId = null,
+                    quotedMessageText = null,
                     mediaMimeType = null,
                     mediaFileName = null,
                     isViewOnce = false,

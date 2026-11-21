@@ -51,4 +51,37 @@ class WhatsAppPairingScreenTest {
         compose.onNodeWithTag("pairing-request-pin").performClick()
         assertEquals(1, pinRequests)
     }
+    @Test
+    fun connectedAccountCanChooseReplacementPairingMethod() {
+        val method = mutableStateOf("pin")
+        var replacementRequests = 0
+        compose.setContent {
+            AharaneTheme(themeMode = "dark") {
+                WhatsAppPairingScreen(
+                    accountLabel = "Public",
+                    method = method.value,
+                    pairingCode = "",
+                    qrValue = "",
+                    loading = false,
+                    connected = true,
+                    errorMessage = "",
+                    previewMode = false,
+                    onBack = {},
+                    onSelectMethod = { method.value = it },
+                    onRequestPairingCode = { replacementRequests += 1 },
+                    onRequestQrCode = { replacementRequests += 1 },
+                    onCopyCode = {}
+                )
+            }
+        }
+
+        compose.onNodeWithText(
+            "Your current WhatsApp session stays available until the replacement link is confirmed."
+        ).assertIsDisplayed()
+        compose.onNodeWithTag("pair-method-pin").assertIsDisplayed()
+        compose.onNodeWithTag("pair-method-qr").performClick()
+        compose.onNodeWithTag("pairing-request-qr").assertIsDisplayed().performClick()
+        assertEquals(1, replacementRequests)
+    }
+
 }

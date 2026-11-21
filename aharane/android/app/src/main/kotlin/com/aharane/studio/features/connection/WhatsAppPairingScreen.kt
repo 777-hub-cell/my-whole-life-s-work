@@ -136,11 +136,19 @@ fun WhatsAppPairingScreen(
                         lineHeight = 19.sp
                     )
                 }
-            } else if (connected) {
-                PairingInfoPanel {
-                    Text("Your WhatsApp account is linked and connected. You can close this screen.", color = StudioPalette.Accent, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold)
+            } else {
+                if (connected) {
+                    PairingInfoPanel {
+                        Text(
+                            "Your current WhatsApp session stays available until the replacement link is confirmed.",
+                            color = StudioPalette.Accent,
+                            fontSize = 13.sp,
+                            lineHeight = 19.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
-            } else if (method == "qr") {
+                if (method == "qr") {
                 PairingInfoPanel {
                     Text("On your phone, open WhatsApp → Linked devices → Link a device. Scan the QR code below.", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
                     Box(
@@ -213,6 +221,7 @@ fun WhatsAppPairingScreen(
                     }
                 }
             }
+            }
 
             if (loading) {
                 Row(
@@ -227,7 +236,7 @@ fun WhatsAppPairingScreen(
             if (errorMessage.isNotBlank()) {
                 Text(
                     errorMessage,
-                    color = if (connected) StudioPalette.Accent else StudioPalette.Bad,
+                    color = if (errorMessage.contains("is connected", ignoreCase = true)) StudioPalette.Accent else StudioPalette.Bad,
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
                     modifier = Modifier.fillMaxWidth()
@@ -251,13 +260,19 @@ private fun PairingMethodButton(
 ) {
     Box(
         modifier.clip(RoundedCornerShape(9.dp))
-            .background(if (selected) StudioPalette.Ink else Color.Transparent)
+            .background(if (selected) Color(0xFF174638) else Color(0xFF17211E))
+            .border(1.dp, if (selected) Color(0xFF3ABF94) else Color(0xFF34413B), RoundedCornerShape(9.dp))
             .clickable(onClick = onClick)
-            .heightIn(min = 44.dp)
-            .padding(horizontal = 8.dp, vertical = 9.dp),
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 10.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(label, color = if (selected) Color.White else StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            label,
+            color = if (selected) Color(0xFF9AEACB) else Color(0xFFE3EBE6),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 

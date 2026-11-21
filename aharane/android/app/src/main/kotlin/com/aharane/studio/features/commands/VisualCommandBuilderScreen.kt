@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -76,7 +77,7 @@ fun VisualCommandBuilderScreen(
     var pendingSocket by remember { mutableStateOf<ActiveSocket?>(null) }
     var category by remember { mutableStateOf("All") }
     var search by remember { mutableStateOf("") }
-    var workspaceFraction by remember { mutableFloatStateOf(0.52f) }
+    var workspaceFraction by remember { mutableFloatStateOf(0.58f) }
     var zoom by remember { mutableFloatStateOf(1f) }
     var workspaceViewportSize by remember { mutableStateOf(IntSize.Zero) }
     var workspaceCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
@@ -682,7 +683,7 @@ fun VisualCommandBuilderScreen(
             Modifier.fillMaxWidth().height(10.dp).pointerInput(Unit) {
                 detectDragGestures { change, drag ->
                     change.consume()
-                    workspaceFraction = (workspaceFraction + drag.y / 700f).coerceIn(0.40f, 0.70f)
+                    workspaceFraction = (workspaceFraction + drag.y / 700f).coerceIn(0.34f, 0.76f)
                 }
             },
             contentAlignment = Alignment.Center
@@ -714,11 +715,11 @@ fun VisualCommandBuilderScreen(
             Spacer(Modifier.height(5.dp))
             LazyRow(
                 modifier = Modifier.fillMaxWidth().testTag("workflow-categories"),
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-                contentPadding = PaddingValues(start = 2.dp, end = 10.dp, bottom = 6.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(start = 2.dp, end = 10.dp, bottom = 8.dp)
             ) {
-                item { CategoryChip("All", category == "All") { category = "All" } }
-                items(library) { group ->
+                item(key = "category-all") { CategoryChip("All", category == "All") { category = "All" } }
+                itemsIndexed(library, key = { index, group -> "${index}:${group.name}" }) { _, group ->
                     CategoryChip(group.name, category == group.name) { category = group.name }
                 }
             }
@@ -731,11 +732,13 @@ fun VisualCommandBuilderScreen(
                 )
             } else {
                 LazyColumn(
-                    Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    Modifier.fillMaxSize().testTag("workflow-node-list"),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                     contentPadding = PaddingValues(bottom = 8.dp)
                 ) {
-                    items(visibleNodes, key = { it.type }) { definition ->
+                    // A node type can legitimately be repeated in distinct library categories.
+                    // Index-derived lazy keys prevent duplicate-key crashes while scrolling.
+                    itemsIndexed(visibleNodes, key = { index, node -> "${index}:${node.type}" }) { _, definition ->
                         LibraryNodeRow(definition, connected) { addNode(definition) }
                     }
                 }
@@ -848,19 +851,19 @@ fun VisualCommandBuilderScreen(
 @Composable
 private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
-        Modifier.clip(RoundedCornerShape(7.dp))
-            .background(if (selected) StudioPalette.Accent else StudioPalette.Surface)
-            .border(1.dp, if (selected) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(7.dp))
-            .clickable(onClick = onClick).heightIn(min = 38.dp).padding(horizontal = 12.dp, vertical = 8.dp)
+        Modifier.clip(RoundedCornerShape(9.dp))
+            .background(if (selected) Color(0xFF174638) else StudioPalette.Surface)
+            .border(1.dp, if (selected) Color(0xFF3ABF94) else StudioPalette.Line, RoundedCornerShape(9.dp))
+            .clickable(onClick = onClick).heightIn(min = 48.dp).padding(horizontal = 15.dp, vertical = 10.dp)
     ) {
-        Text(label, color = if (selected) Color.White else StudioPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(label, color = if (selected) Color(0xFF9AEACB) else StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
 @Composable
 private fun LibraryNodeRow(node: VisualNodeDefinition, enabled: Boolean, onAdd: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(9.dp))
+        Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(RoundedCornerShape(9.dp))
             .background(StudioPalette.Surface).border(1.dp, StudioPalette.Line, RoundedCornerShape(9.dp))
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -870,7 +873,13 @@ private fun LibraryNodeRow(node: VisualNodeDefinition, enabled: Boolean, onAdd: 
             Text(node.description, color = StudioPalette.Muted, fontSize = 10.5.sp, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.width(6.dp))
-        StudioActionButton("Add", modifier = Modifier.testTag("add-node-" + node.type), compact = true, enabled = enabled, onClick = onAdd)
+        StudioActionButton(
+            "Add",
+            modifier = Modifier.heightIn(min = 48.dp).testTag("add-node-" + node.type),
+            compact = false,
+            enabled = enabled,
+            onClick = onAdd
+        )
     }
 }
 

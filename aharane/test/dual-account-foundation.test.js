@@ -48,7 +48,8 @@ test('private and public account management is wired into the supplied Studio pr
     'data-pair-account',
     'data-account',
     'data-action="reconnect"',
-    'id="prod-pair-repair"',
+    'id="prod-cancel-pairing"',
+    'id="prod-pair-back"',
   ]) assert.ok(bridge.includes(marker), 'Missing production account control: ' + marker)
   for (const marker of [
     "apiP('owners'",

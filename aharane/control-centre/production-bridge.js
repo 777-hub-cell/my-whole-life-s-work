@@ -639,20 +639,16 @@ function packageMenuP(id,button){
 function accountViewP(){
  const rows=['private','public'].map(id=>{
   const a=P.runtime?.accounts?.[id]||{},state=a.connected?'Connected':a.state||'Offline';
-  const pairButton=a.connected
-   ?'<button class="btn sm" data-pair-account="'+id+'">Details</button>'
-   :['needs-pairing','reconnect-exhausted'].includes(a.state)
-    ?'<button class="btn sm d" data-pair-account="'+id+'">Repair</button>'
-    :a.registered
-     ?'<button class="btn sm p" data-account="'+id+'" data-action="reconnect">Reconnect</button>'
-     :'<button class="btn sm p" data-pair-account="'+id+'">Link account</button>';
+  const pairLabel=a.registered?(a.connected?'Replace link':'Pair again'):['needs-pairing','reconnect-exhausted'].includes(a.state)?'Re-pair':'Link account';
+  const pairButton='<button class="btn sm p" data-pair-account="'+id+'">'+pairLabel+'</button>';
   const actions=a.connected
    ?'<button class="btn sm" data-account="'+id+'" data-action="restart">Restart session</button><button class="btn sm d" data-account="'+id+'" data-action="stop">Stop session</button>'
-   :['needs-pairing','reconnect-exhausted'].includes(a.state)?'':'';
+   :a.registered?'<button class="btn sm" data-account="'+id+'" data-action="reconnect">Reconnect</button>':'';
   return '<div class="row"><span class="av">'+(id==='private'?'P':'A')+'<i class="st av-dot '+(a.connected?'':'off')+'"></i></span><span class="grow"><div class="t">'+(id==='private'?'Private account':'Public account')+'</div><div class="d">'+escP(state)+' · '+(a.registered?'Paired':'Not paired')+'</div></span>'+pairButton+'</div>'+(actions?'<div class="row" style="padding-left:64px;flex-wrap:wrap">'+actions+'</div>':'');
  }).join('');
  return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Accounts</h1><p class="sub">Two independent WhatsApp sessions. Pairing numbers are saved in Configuration.</p><div class="card list">'+rows+'</div><h2>Owner identities</h2><p class="sub">Private Owner controls the Private self-chat. Public Owner controls owner-only commands on the Public bot. The Public bot number is configured separately.</p><div class="card list" style="padding:14px"><label class="d" for="owner-private">Private Owner number</label><input class="field" id="owner-private" value="'+escP(P.owners.privateOwnerNumber||'')+'" inputmode="numeric"><label class="d" for="owner-public" style="display:block;margin-top:12px">Public Owner number</label><input class="field" id="owner-public" value="'+escP(P.owners.publicOwnerNumber||'')+'" inputmode="numeric"><div class="env"><label class="d" for="owner-public-bot">Public bot WhatsApp number</label><input class="field" id="owner-public-bot" value="'+escP(P.owners.publicBotNumber||'')+'" disabled><p class="d" style="white-space:normal;margin-top:6px">Change this under Home → Configuration → Public account.</p></div><label class="d" for="owner-allow" style="display:block;margin-top:12px">Allowed public senders</label><input class="field" id="owner-allow" value="'+escP((P.owners.allowedPublicSenders||[]).join(', '))+'"><div class="btns"><button class="btn p" id="save-owners">Save owner settings</button></div></div>';
 }
+
 function pairStatusLabelP(a){
  if(a.connected)return 'Connected';
  if(a.state==='needs-pairing')return 'Needs re-pairing';
@@ -677,38 +673,80 @@ function pairViewP(){
  const number=id==='private'?P.owners.privateOwnerNumber:P.owners.publicBotNumber;
  const label=id==='private'?'Private Owner number':'Public bot WhatsApp number';
  let panel='';
- if(a.connected){
-  panel='<div class="empty" style="padding:10px 0 18px"><strong>Already connected</strong><p class="d" style="white-space:normal">This WhatsApp account is linked. You do not need another pairing code.</p></div>';
- }else if(['needs-pairing','reconnect-exhausted'].includes(a.state)){
-  panel='<div class="note">'+(a.state==='needs-pairing'?'WhatsApp rejected this saved session.':'Aharane could not restore this session after three automatic reconnect attempts.')+' Before linking again, Aharane will back up its existing authentication data.</div><button class="btn p" id="prod-pair-repair" style="width:100%">Back up session and prepare re-pairing</button>';
+ if(a.pairingSucceeded){
+  panel+='<div class="empty" style="margin-bottom:12px"><strong>Replacement link connected</strong><p class="d" style="white-space:normal">The new WhatsApp session is active. The previous authentication was retained.</p></div>';
+ }else if(a.pairingError){
+  panel+='<div class="note" style="margin-bottom:12px">'+escP(a.pairingError)+'</div>';
  }else if(a.registered){
-  panel='<div class="note">This account is already paired, but currently offline. It does not need a new pairing code.</div><button class="btn p" id="prod-pair-reconnect" style="width:100%">Reconnect existing account</button>';
- }else if(!number){
-  panel='<div class="empty" style="padding:8px 0 16px">Add the '+label+' in Configuration first. The pairing screen will use that saved number automatically.</div><button class="btn p" id="pair-open-config" style="width:100%">Open Configuration</button>';
- }else if(S.pm==='qr'){
-  panel='<div class="d" style="text-align:center;margin-bottom:12px">Account number · +'+escP(number)+'</div>'+(S.qrRequested?'<div class="empty" id="prod-qr-panel">Requesting QR code…</div>':'<div class="empty" style="padding:14px 0">No QR code requested. Aharane will only request one when you tap the button.</div>')+'<p class="d" style="white-space:normal">Open WhatsApp on the phone you want to link → Linked devices → Link a device.</p><button class="btn p" id="prod-qr-request" style="width:100%">'+(S.qrRequested?'Request fresh QR code':'Get QR code')+'</button>';
+  panel+='<div class="empty" style="margin-bottom:12px"><strong>'+(a.connected?'Current session connected':'Previously linked session')+'</strong><p class="d" style="white-space:normal">The current WhatsApp session stays available until the replacement link has connected successfully.</p></div>';
  }else{
-  panel='<div class="d" style="text-align:center;margin-bottom:12px">'+label+' · +'+escP(number)+'</div>'+(S.pin?'<div class="pin" style="text-align:center;margin:18px 0"><b>'+escP(S.pin)+'</b></div><p class="d" style="text-align:center;white-space:normal">Enter this code in WhatsApp → Linked devices → Link with phone number.</p><div class="btns" style="justify-content:center"><button class="btn" id="prod-copy-code">Copy code</button><button class="btn" id="prod-pair-code">Request new code</button></div>':'<p class="d" style="text-align:center;white-space:normal">A pairing code will only be requested when you tap below.</p><button class="btn p" id="prod-pair-code" style="width:100%">Get pairing code</button>');
+  panel+='<p class="d" style="white-space:normal">Link this WhatsApp account using a pairing code or QR code.</p>';
  }
- return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Link '+(id==='public'?'Public':'Private')+' account</h1><p class="sub">'+pairStatusLabelP(a)+'</p><div class="seg" style="margin-bottom:16px"><button type="button" class="'+(S.pm==='pin'?'on':'')+'" data-pm="pin">Pairing code</button><button type="button" class="'+(S.pm==='qr'?'on':'')+'" data-pm="qr">QR code</button></div><div class="card" style="padding:16px">'+panel+'</div>';
+ if(!number){
+  panel+='<div class="empty" style="padding:8px 0 16px">Add the '+label+' in Configuration first. The pairing screen will use that saved number automatically.</div><button class="btn p" id="pair-open-config" style="width:100%">Open Configuration</button>';
+ }else if(S.pm==='qr'){
+  panel+='<div class="d" style="text-align:center;margin-bottom:12px">Account number · +'+escP(number)+'</div>'+(S.qrRequested?'<div class="empty" id="prod-qr-panel">Requesting QR code…</div>':'<div class="empty" id="prod-qr-panel" style="padding:14px 0">No QR code requested. Aharane will only request one when you tap the button.</div>')+'<p class="d" style="white-space:normal">Open WhatsApp on the phone you want to link → Linked devices → Link a device.</p><button class="btn p" id="prod-qr-request" style="width:100%" '+(a.pairingInProgress||S.qrRequested?'disabled':'')+'>'+(S.qrRequested?'Request fresh QR code':'Get QR code')+'</button>';
+ }else{
+  panel+='<div class="d" style="text-align:center;margin-bottom:12px">'+label+' · +'+escP(number)+'</div>'+(S.pin?'<div class="pin" style="text-align:center;margin:18px 0"><b>'+escP(S.pin)+'</b></div><p class="d" style="text-align:center;white-space:normal">Enter this code in WhatsApp → Linked devices → Link with phone number.</p><div class="btns" style="justify-content:center"><button class="btn" id="prod-copy-code">Copy code</button><button class="btn" id="prod-pair-code">Request new code</button></div>':'<p class="d" style="text-align:center;white-space:normal">A pairing code will only be requested when you tap below.</p><button class="btn p" id="prod-pair-code" style="width:100%" '+(a.pairingInProgress?'disabled':'')+'>Get pairing code</button>');
+ }
+ if(a.pairingInProgress||S.pin||S.qrRequested)panel+='<button class="btn" id="prod-cancel-pairing" style="width:100%;margin-top:10px">Cancel pairing attempt</button>';
+ return '<button class="btn sm" id="prod-pair-back">Back to Home</button><h1 style="margin-top:14px">Link '+(id==='public'?'Public':'Private')+' account</h1><p class="sub">'+pairStatusLabelP(a)+'</p><div class="seg" style="margin-bottom:16px"><button type="button" class="'+(S.pm==='pin'?'on':'')+'" data-pm="pin">Pairing code</button><button type="button" class="'+(S.pm==='qr'?'on':'')+'" data-pm="qr">QR code</button></div><div class="card" style="padding:16px">'+panel+'</div>';
 }
+
 async function getPairCodeP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private';
  const button=Q('#prod-pair-code');if(button)button.disabled=true;
- try{const r=await apiP('accounts/'+id+'/pair-code',{method:'POST',body:pack({})});S.pin=r.pairingCode;S.qrRequested=false;render()}
- catch(error){if(button)button.disabled=false;await refreshPairViewAfterFailureP();notifyP(pairErrorTextP(error))}
+ try{
+  const r=await apiP('accounts/'+id+'/pair-code',{method:'POST',body:pack({})});
+  S.pin=r.pairingCode;S.qrRequested=false;await refreshRuntimeP();render();startPairMonitorP();
+ }catch(error){
+  if(button)button.disabled=false;await refreshPairViewAfterFailureP();notifyP(pairErrorTextP(error));
+ }
 }
 let qrSeenP='';
 async function readQrP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private';
  try{
-  const r=await apiP('accounts/'+id+'/qr'),el=Q('#prod-qr-panel');if(!el)return;
-  if(r.qr&&r.qr!==qrSeenP){qrSeenP=r.qr;el.innerHTML=qrSvg(r.qr)}
-  else if(!r.qr&&!qrSeenP)el.textContent='Waiting for WhatsApp to generate the QR you requested…';
-  if(P.runtime?.accounts?.[id]?.connected){el.textContent='Account connected.';clearInterval(P.qrTimer);P.qrTimer=null}
- }catch(error){if(Q('#prod-qr-panel'))Q('#prod-qr-panel').textContent=pairErrorTextP(error);clearInterval(P.qrTimer);P.qrTimer=null;await refreshPairViewAfterFailureP()}
+  const r=await apiP('accounts/'+id+'/qr'),el=Q('#prod-qr-panel');
+  const account=P.runtime?.accounts?.[id];
+  if(account){
+   account.state=r.state||account.state;account.connected=r.state==='connected';
+   account.pairingInProgress=Boolean(r.pairingInProgress);
+   account.pairingSucceeded=Boolean(r.pairingSucceeded);
+   account.pairingError=String(r.pairingError||'');
+  }
+  if(r.pairingSucceeded){
+   if(el)el.textContent='Replacement session connected.';
+   clearInterval(P.qrTimer);P.qrTimer=null;render();return;
+  }
+  if(r.pairingError){
+   if(el)el.textContent=r.pairingError;
+   clearInterval(P.qrTimer);P.qrTimer=null;render();return;
+  }
+  if(S.pm==='qr'&&el){
+   if(r.qr&&r.qr!==qrSeenP){qrSeenP=r.qr;el.innerHTML=qrSvg(r.qr)}
+   else if(!r.qr&&!qrSeenP)el.textContent='Waiting for WhatsApp to generate the QR you requested…';
+  }
+ }catch(error){
+  if(Q('#prod-qr-panel'))Q('#prod-qr-panel').textContent=pairErrorTextP(error);
+  clearInterval(P.qrTimer);P.qrTimer=null;await refreshPairViewAfterFailureP();
+ }
 }
-function startQrP(){if(P.qrTimer)clearInterval(P.qrTimer);qrSeenP='';readQrP();P.qrTimer=setInterval(()=>{if(!document.hidden)readQrP()},1800)}
+function startPairMonitorP(){
+ if(P.qrTimer)clearInterval(P.qrTimer);
+ qrSeenP='';void readQrP();
+ P.qrTimer=setInterval(()=>{if(!document.hidden)void readQrP()},1800);
+}
+function startQrP(){startPairMonitorP()}
+async function cancelPairingP(){
+ const id=accts[S.pi]?.slot==='public'?'public':'private';
+ if(P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}
+ try{await apiP('accounts/'+id+'/cancel-pairing',{method:'POST',body:pack({})})}
+ catch(error){notifyP(error.message)}
+ S.pin=null;S.qrRequested=false;qrSeenP='';
+ await refreshRuntimeP();render();
+}
+
 async function requestQrP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private',button=Q('#prod-qr-request');
  if(button)button.disabled=true;
@@ -717,8 +755,8 @@ async function requestQrP(){
 }
 async function repairPairP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private';
- if(!confirm('Back up the existing '+id+' WhatsApp authentication before preparing a new pairing?'))return;
- try{await apiP('accounts/'+id+'/repair',{method:'POST',body:pack({})});S.pin=null;S.qrRequested=false;await refreshRuntimeP();render();notifyP('Session backed up. Nothing was paired yet. Request a pairing code or QR when you are ready.')}
+ if(!confirm('Start a separate replacement pairing attempt? Your existing WhatsApp authentication and session will stay in place until the new link connects.'))return;
+ try{await apiP('accounts/'+id+'/repair',{method:'POST',body:pack({})});S.pin=null;S.qrRequested=false;await refreshRuntimeP();render();notifyP('A separate replacement pairing session is ready. Your existing WhatsApp session remains unchanged until the new link connects.')}
  catch(error){await refreshPairViewAfterFailureP();notifyP(error.message)}
 }
 async function reconnectPairP(){
@@ -1163,6 +1201,8 @@ function bindProductionP(){
  const visibility=Q('#chat-visibility');if(visibility)visibility.onclick=()=>openChatVisibilityP();
  const pair=Q('#prod-pair-code');if(pair)pair.onclick=getPairCodeP;
  const qr=Q('#prod-qr-request');if(qr)qr.onclick=requestQrP;
+ const cancelPair=Q('#prod-cancel-pairing');if(cancelPair)cancelPair.onclick=cancelPairingP;
+ const pairBack=Q('#prod-pair-back');if(pairBack)pairBack.onclick=()=>{void cancelPairingP();S.sub=null;render()};
  const repair=Q('#prod-pair-repair');if(repair)repair.onclick=repairPairP;
  const reconnect=Q('#prod-pair-reconnect');if(reconnect)reconnect.onclick=reconnectPairP;
  const openConfig=Q('#pair-open-config');if(openConfig)openConfig.onclick=()=>{
@@ -1172,7 +1212,7 @@ function bindProductionP(){
  };
  const copy=Q('#prod-copy-code');if(copy)copy.onclick=()=>navigator.clipboard?.writeText(S.pin||'').then(()=>notifyP('Pairing code copied')).catch(()=>notifyP('Select and copy the code'));
  document.querySelectorAll('[data-pm]').forEach(b=>b.onclick=()=>{
-  if(P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}
+  void cancelPairingP();
   S.pm=b.dataset.pm;S.pin=null;S.qrRequested=false;render();
  });
  const clear=Q('#lcl');if(clear)clear.onclick=clearActivityP;

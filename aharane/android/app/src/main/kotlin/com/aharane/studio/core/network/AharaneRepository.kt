@@ -20,7 +20,9 @@ data class ServerAccountState(
     val registered: Boolean,
     val reconnectAttempts: Int,
     val lastConnectedAt: String?,
-    val pairingInProgress: Boolean
+    val pairingInProgress: Boolean,
+    val pairingSucceeded: Boolean = false,
+    val pairingError: String = ""
 )
 
 data class ServerRuntimeSnapshot(
@@ -559,6 +561,9 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
     suspend fun startPairingQr(account: ChatAccount): JSONObject =
         api.post("accounts/${account.apiValue}/qr", JSONObject())
 
+    suspend fun cancelPairing(account: ChatAccount): JSONObject =
+        api.post("accounts/${account.apiValue}/cancel-pairing", JSONObject())
+
     suspend fun pairingQr(account: ChatAccount): JSONObject =
         api.get("accounts/${account.apiValue}/qr")
 
@@ -1004,7 +1009,9 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
             registered = json.optBoolean("registered"),
             reconnectAttempts = json.optInt("reconnectAttempts"),
             lastConnectedAt = json.optString("lastConnectedAt").takeIf { it.isNotBlank() && it != "null" },
-            pairingInProgress = json.optBoolean("pairingInProgress")
+            pairingInProgress = json.optBoolean("pairingInProgress"),
+            pairingSucceeded = json.optBoolean("pairingSucceeded"),
+            pairingError = json.optString("pairingError")
         )
 
     private fun parseMessageKind(value: String): MessageKind = when (value.lowercase()) {

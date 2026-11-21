@@ -103,7 +103,6 @@ let sourceMutationTail = Promise.resolve()
 
 const seenMessageIds = new Map()
 const commandTimes = new Map()
-const pairAttempts = new Map()
 const studioClients = new Set()
 let studioEventSequence = 0
 
@@ -284,21 +283,6 @@ async function requireAdmin(req, res, next) {
   } catch {
     res.status(500).json({ ok: false, error: 'Could not verify the admin session.' })
   }
-}
-
-function allowPairAttempt(ip) {
-  const now = Date.now()
-  const windowMs = 15 * 60 * 1000
-  const current = pairAttempts.get(ip)
-  const record = !current || now - current.startedAt >= windowMs
-    ? { startedAt: now, count: 0 }
-    : current
-  record.count += 1
-  pairAttempts.set(ip, record)
-  for (const [key, value] of pairAttempts) {
-    if (now - value.startedAt >= windowMs) pairAttempts.delete(key)
-  }
-  return record.count <= 4
 }
 
 function allowCommand(sender) {
@@ -1573,22 +1557,21 @@ app.put('/api/owners', requireAdmin, async (req, res) => {
   }
 })
 
+app.post('/api/accounts/:accountId/cancel-pairing', requireAdmin, async (req, res) => {
+  try {
+    const accountId = String(req.params.accountId || '').toLowerCase()
+    if (!['private', 'public'].includes(accountId)) return res.status(404).json({ ok: false, error: 'Unknown WhatsApp account.' })
+    const account = await accountRuntime.cancelPairing(accountId)
+    res.json({ ok: true, account, accounts: accountRuntime.snapshot().accounts })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not cancel the replacement WhatsApp pairing attempt.') })
+  }
+})
 app.post('/api/accounts/:accountId/pair-code', requireAdmin, async (req, res) => {
   try {
     const accountId = String(req.params.accountId || '').toLowerCase()
     if (!['private', 'public'].includes(accountId)) return res.status(404).json({ ok: false, error: 'Unknown WhatsApp account.' })
     const session = accountRuntime.get(accountId)
-    if (session.pairingBlockedUntil > Date.now()) {
-      return res.status(429).json({ ok: false, error: 'WhatsApp has temporarily rate-limited pairing for this account. Wait at least 15 minutes before trying again.' })
-    }
-    if (['needs-pairing', 'reconnect-exhausted'].includes(session.state)) {
-      return res.status(409).json({ ok: false, error: 'This WhatsApp session needs repair first. Aharane will back up its saved authentication before creating a new link.' })
-    }
-    if (session.registered || session.state === 'connected') {
-      return res.status(409).json({ ok: false, error: 'This WhatsApp account is already paired. Reconnect it instead of requesting another pairing code.' })
-    }
-    const ip = String(req.ip || 'local') + ':' + accountId
-    if (!allowPairAttempt(ip)) return res.status(429).json({ ok: false, error: 'Aharane has limited pairing attempts for this account. Wait 15 minutes before requesting another code.' })
     const phoneNumber = accountId === 'private' ? ownerConfig.privateOwnerNumber : ownerConfig.publicBotNumber
     if (!phoneNumber) {
       return res.status(409).json({
@@ -1608,17 +1591,16 @@ app.get('/api/accounts/:accountId/qr', requireAdmin, async (req, res) => {
   try {
     const accountId = String(req.params.accountId || '').toLowerCase()
     if (!['private', 'public'].includes(accountId)) return res.status(404).json({ ok: false, error: 'Unknown WhatsApp account.' })
-    const session = accountRuntime.get(accountId)
-    if (session.pairingBlockedUntil > Date.now()) {
-      return res.status(429).json({ ok: false, error: 'WhatsApp has temporarily rate-limited pairing for this account. Wait at least 15 minutes before trying again.' })
-    }
-    if (['needs-pairing', 'reconnect-exhausted'].includes(session.state)) {
-      return res.status(409).json({ ok: false, error: 'Repair this WhatsApp session before requesting a new QR code.' })
-    }
-    if (session.registered || session.state === 'connected') {
-      return res.status(409).json({ ok: false, error: 'This WhatsApp account is already paired. Reconnect it instead of requesting a QR code.' })
-    }
-    res.json({ ok: true, accountId, qr: accountRuntime.pairingQr(accountId), state: session.state })
+    const session = accountRuntime.snapshot().accounts[accountId]
+    res.json({
+      ok: true,
+      accountId,
+      qr: accountRuntime.pairingQr(accountId),
+      state: session.state,
+      pairingInProgress: session.pairingInProgress,
+      pairingSucceeded: session.pairingSucceeded,
+      pairingError: session.pairingError,
+    })
   } catch (error) {
     res.status(503).json({ ok: false, error: String(error?.message || 'Could not read the WhatsApp pairing QR.') })
   }
@@ -1627,18 +1609,8 @@ app.post('/api/accounts/:accountId/qr', requireAdmin, async (req, res) => {
   try {
     const accountId = String(req.params.accountId || '').toLowerCase()
     if (!['private', 'public'].includes(accountId)) return res.status(404).json({ ok: false, error: 'Unknown WhatsApp account.' })
-    const session = accountRuntime.get(accountId)
-    if (session.pairingBlockedUntil > Date.now()) {
-      return res.status(429).json({ ok: false, error: 'WhatsApp has temporarily rate-limited pairing for this account. Wait at least 15 minutes before trying again.' })
-    }
-    if (['needs-pairing', 'reconnect-exhausted'].includes(session.state)) {
-      return res.status(409).json({ ok: false, error: 'Repair this WhatsApp session before requesting a new QR code.' })
-    }
-    if (session.registered || session.state === 'connected') {
-      return res.status(409).json({ ok: false, error: 'This WhatsApp account is already paired. Reconnect it instead of requesting a QR code.' })
-    }
-    await accountRuntime.start(accountId)
-    res.json({ ok: true, accountId, qr: accountRuntime.pairingQr(accountId), state: accountRuntime.get(accountId).state })
+    const result = await accountRuntime.startPairing(accountId)
+    res.json({ ok: true, accountId, qr: accountRuntime.pairingQr(accountId), state: result.state, pairingInProgress: result.pairingInProgress })
   } catch (error) {
     res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not request the WhatsApp pairing QR.') })
   }
@@ -1681,8 +1653,6 @@ app.post('/api/accounts/:accountId/repair', requireAdmin, async (req, res) => {
 // Backwards-compatible pairing endpoint defaults to the existing public session.
 app.post('/api/pair-code', requireAdmin, async (req, res) => {
   try {
-    const ip = String(req.ip || 'local') + ':public'
-    if (!allowPairAttempt(ip)) return res.status(429).json({ ok: false, error: 'Pairing rate limit reached for the public account; try again later.' })
     const phoneNumber = normalizePhone(req.body?.phoneNumber)
     if (!phoneNumber) return res.status(400).json({ ok: false, error: 'Enter a valid international phone number using 7 to 15 digits.' })
     if (!ownerConfig.privateOwnerNumber || !ownerConfig.publicOwnerNumber || !ownerConfig.publicBotNumber) {

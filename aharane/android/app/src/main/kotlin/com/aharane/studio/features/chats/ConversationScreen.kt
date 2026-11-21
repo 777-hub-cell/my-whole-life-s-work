@@ -1153,6 +1153,7 @@ private fun MessageBubble(
                     onClick = onReply,
                     onLongClick = { if (connected) onStar() }
                 )
+                .testTag("message-bubble-" + message.messageId)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             if (!outgoing && appearance.showSenderLabels && !message.senderName.isNullOrBlank()) {

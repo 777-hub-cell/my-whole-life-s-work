@@ -151,7 +151,7 @@ async function refreshActivityP(){
  lid=LOGS.length;logs=P.activity.slice(0,8).map(x=>[x.message,new Date(x.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})]);
 }
 function applyEnvP(){
- envs=P.env.map(x=>({k:x.key,v:x.value,s:0,readOnly:Boolean(x.readOnly),scope:x.scope,type:x.type||'text'}));
+ envs=P.env.map(x=>({k:x.key,v:x.value,s:x.secret?1:0,readOnly:Boolean(x.readOnly),scope:x.scope,type:x.type||'text',configured:Boolean(x.configured)}));
  const value=key=>String(P.env.find(x=>x.key===key)?.value??'');
  envs.push(
   {k:'PRIVATE_PREFIX',v:value('PRIVATE_COMMAND_PREFIX')||'.',readOnly:true},
@@ -769,7 +769,24 @@ async function saveOwnersP(){
  catch(error){notifyP(error.message)}
 }
 function envViewP(){
- return '<h1>ENV</h1><p class="sub">Managed environment values for the Private and Public accounts. Command prefixes are fixed by Aharane.</p><div class="card list">'+P.env.map((x,i)=>'<div class="env"><label for="e'+i+'">'+escP(x.key)+(x.readOnly?' · Fixed':'')+'</label><input class="field" id="e'+i+'" data-e="'+i+'" value="'+escP(x.value)+'" '+(x.readOnly?'disabled':'')+' autocomplete="off"></div>').join('')+'</div><div class="btns"><button class="btn p" id="prod-save-env">Save changes</button></div>';
+ const rows=P.env.map((x,i)=>{
+  const field=envs[i]||{v:x.value||''};
+  const value=String(field.v??'');
+  const disabled=x.readOnly?'disabled':'';
+  const input=x.type==='boolean'
+   ? '<input class="ck" style="width:22px;height:22px" id="e'+i+'" data-e="'+i+'" type="checkbox" '+(value.toLowerCase()==='true'?'checked':'')+' '+disabled+' aria-label="'+escP(x.key)+'">'
+   : '<input class="field" id="e'+i+'" data-e="'+i+'" type="'+(x.secret?'password':'text')+'" value="'+escP(value)+'" '+disabled+' autocomplete="off" autocapitalize="off" spellcheck="false">';
+  const help=x.key==='AI_API_KEY'
+   ? '<p class="d" style="margin:5px 0 0;font-size:12px">'+(x.configured?'A key is already configured. Leave this blank to keep it, or enter a replacement.':'No key is configured. Enter an API key to enable AI Reply.')+'</p>'
+   : x.key==='AI_CLEAR_API_KEY'
+    ? '<p class="d" style="margin:5px 0 0;font-size:12px">Turn on to remove the saved key and disable any server ENV key fallback, then save changes.</p>'
+    : '';
+  const heading=x.key==='AI_API_BASE_URL'
+   ? '<div style="padding:14px 14px 7px;border-top:1px solid var(--line)"><div class="t" style="font-size:11px;letter-spacing:1px;color:var(--acc);font-weight:700">SHARED AI REPLY</div><p class="d" style="margin:5px 0 0;font-size:12px">One AI provider is shared by Private and Public chats. The message action appears only when its key, model and endpoint are ready.</p></div>'
+   : '';
+  return heading+'<div class="env"><label for="e'+i+'">'+escP(x.key)+(x.readOnly?' · Fixed':'')+'</label>'+input+help+'</div>';
+ }).join('');
+ return '<h1>ENV</h1><p class="sub">Managed environment values for the Private and Public accounts. Command prefixes are fixed by Aharane.</p><div class="card list">'+rows+'</div><div class="btns"><button class="btn p" id="prod-save-env">Save changes</button></div>';
 }
 async function saveEnvP(){try{const r=await apiP('env',{method:'PUT',body:pack({env:P.env.map((x,i)=>({key:x.key,value:envs[i]?.v??x.value}))})});P.env=r.env||[];applyEnvP();render();notifyP('ENV values saved')}catch(error){notifyP(error.message)}}
 async function saveConfigP(){
@@ -1163,7 +1180,7 @@ function bindProductionP(){
  const owner=Q('#save-owners');if(owner)owner.onclick=saveOwnersP;
  const env=Q('#prod-save-env');if(env)env.onclick=saveEnvP;
  const saveConfig=Q('#csv');if(saveConfig)saveConfig.onclick=saveConfigP;
- document.querySelectorAll('[data-e]').forEach(input=>input.oninput=()=>{const row=envs[Number(input.dataset.e)];if(row&&!row.readOnly){row.v=input.value;envDirty=true}});
+ document.querySelectorAll('[data-e]').forEach(input=>input.oninput=()=>{const row=envs[Number(input.dataset.e)];if(row&&!row.readOnly){row.v=input.type==='checkbox'?(input.checked?'true':'false'):input.value;envDirty=true}});
  const fileEditor=Q('#ed');if(fileEditor){
   const editorPath=S.cur;
   fileEditor.oninput=()=>{

@@ -673,11 +673,8 @@ export function createAccountRuntime({
           candidate.rejectReady = null
           candidate.registered = candidate.registered || auth.state?.creds?.registered === true
           void saveCandidate(candidate).then(() => {
-            if (candidate.registered && error?.output?.statusCode === 515) {
-              if (candidate.registered && error?.output?.statusCode === 515) {
-                return serializeSessionOperation(id, () => promoteCandidateInternal(id, candidate))
-              }
-              return serializeSessionOperation(id, () => discardCandidateInternal(session, candidate, error))
+            if (candidate.registered && Number(error?.output?.statusCode) === 515) {
+              return serializeSessionOperation(id, () => promoteCandidateInternal(id, candidate))
             }
             return serializeSessionOperation(id, () => discardCandidateInternal(session, candidate, error))
           }).catch(saveError => {

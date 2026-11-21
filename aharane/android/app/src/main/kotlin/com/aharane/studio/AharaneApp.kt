@@ -1307,6 +1307,14 @@ fun AharaneApp(
                     repairPromptAccount = target
                     return@LaunchedEffect
                 }
+                state.state == "not-paired" &&
+                    (pairingCode.isNotBlank() || pairingQrRequested || pairingQrValue.isNotBlank()) -> {
+                    pairingCode = ""
+                    pairingQrValue = ""
+                    pairingQrRequested = false
+                    pairingError = "WhatsApp closed this pairing attempt before the account was linked. Request a fresh code or QR to try again."
+                    return@LaunchedEffect
+                }
             }
         }
     }

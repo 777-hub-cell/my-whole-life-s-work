@@ -1581,11 +1581,11 @@ app.post('/api/accounts/:accountId/pair-code', requireAdmin, async (req, res) =>
     if (session.pairingBlockedUntil > Date.now()) {
       return res.status(429).json({ ok: false, error: 'WhatsApp has temporarily rate-limited pairing for this account. Wait at least 15 minutes before trying again.' })
     }
-    if (session.registered || session.state === 'connected') {
-      return res.status(409).json({ ok: false, error: 'This WhatsApp account is already paired. Reconnect it instead of requesting another pairing code.' })
-    }
     if (['needs-pairing', 'reconnect-exhausted'].includes(session.state)) {
       return res.status(409).json({ ok: false, error: 'This WhatsApp session needs repair first. Aharane will back up its saved authentication before creating a new link.' })
+    }
+    if (session.registered || session.state === 'connected') {
+      return res.status(409).json({ ok: false, error: 'This WhatsApp account is already paired. Reconnect it instead of requesting another pairing code.' })
     }
     const ip = String(req.ip || 'local') + ':' + accountId
     if (!allowPairAttempt(ip)) return res.status(429).json({ ok: false, error: 'Aharane has limited pairing attempts for this account. Wait 15 minutes before requesting another code.' })
@@ -1612,11 +1612,11 @@ app.get('/api/accounts/:accountId/qr', requireAdmin, async (req, res) => {
     if (session.pairingBlockedUntil > Date.now()) {
       return res.status(429).json({ ok: false, error: 'WhatsApp has temporarily rate-limited pairing for this account. Wait at least 15 minutes before trying again.' })
     }
-    if (session.registered || session.state === 'connected') {
-      return res.status(409).json({ ok: false, error: 'This WhatsApp account is already paired. Reconnect it instead of requesting a QR code.' })
-    }
     if (['needs-pairing', 'reconnect-exhausted'].includes(session.state)) {
       return res.status(409).json({ ok: false, error: 'Repair this WhatsApp session before requesting a new QR code.' })
+    }
+    if (session.registered || session.state === 'connected') {
+      return res.status(409).json({ ok: false, error: 'This WhatsApp account is already paired. Reconnect it instead of requesting a QR code.' })
     }
     res.json({ ok: true, accountId, qr: accountRuntime.pairingQr(accountId), state: session.state })
   } catch (error) {
@@ -1631,11 +1631,11 @@ app.post('/api/accounts/:accountId/qr', requireAdmin, async (req, res) => {
     if (session.pairingBlockedUntil > Date.now()) {
       return res.status(429).json({ ok: false, error: 'WhatsApp has temporarily rate-limited pairing for this account. Wait at least 15 minutes before trying again.' })
     }
-    if (session.registered || session.state === 'connected') {
-      return res.status(409).json({ ok: false, error: 'This WhatsApp account is already paired. Reconnect it instead of requesting a QR code.' })
-    }
     if (['needs-pairing', 'reconnect-exhausted'].includes(session.state)) {
       return res.status(409).json({ ok: false, error: 'Repair this WhatsApp session before requesting a new QR code.' })
+    }
+    if (session.registered || session.state === 'connected') {
+      return res.status(409).json({ ok: false, error: 'This WhatsApp account is already paired. Reconnect it instead of requesting a QR code.' })
     }
     await accountRuntime.start(accountId)
     res.json({ ok: true, accountId, qr: accountRuntime.pairingQr(accountId), state: accountRuntime.get(accountId).state })

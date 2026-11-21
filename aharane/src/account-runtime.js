@@ -386,10 +386,10 @@ export function createAccountRuntime({
   async function requestPairingCodeInternal(id, phoneNumber) {
     const session = get(id)
     if (session.pairRequestActive) throw Object.assign(new Error('A pairing request is already in progress.'), { status: 409 })
-    if (session.registered) throw Object.assign(new Error('This WhatsApp account is already paired.'), { status: 409 })
     if (session.state === 'needs-pairing' || session.state === 'reconnect-exhausted') {
       throw Object.assign(new Error('This saved session needs an explicit repair first. Existing authentication will be backed up before re-pairing.'), { status: 409 })
     }
+    if (session.registered) throw Object.assign(new Error('This WhatsApp account is already paired.'), { status: 409 })
     if (session.pairingBlockedUntil > Date.now()) throw pairingRateLimitError()
     if (session.state === 'rate-limited') {
       session.state = 'not-paired'

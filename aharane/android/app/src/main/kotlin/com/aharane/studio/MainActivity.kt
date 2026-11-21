@@ -25,12 +25,23 @@ class MainActivity : ComponentActivity() {
     private val appLockPreferences by lazy { getSharedPreferences("aharane-app-lock", MODE_PRIVATE) }
     private lateinit var credentialPromptLauncher: ActivityResultLauncher<Intent>
     private var appLockPromptInFlight = false
+    private var pendingAppLockEnable = false
+    private var appLockEnableResult: ((Boolean) -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         credentialPromptLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             appLockPromptInFlight = false
-            if (result.resultCode == RESULT_OK) {
+            if (pendingAppLockEnable) {
+                pendingAppLockEnable = false
+                val verified = result.resultCode == RESULT_OK
+                appLockPreferences.edit()
+                    .putBoolean("enabled", verified)
+                    .putBoolean("locked", false)
+                    .apply()
+                appLockEnableResult?.invoke(verified)
+                appLockEnableResult = null
+            } else if (result.resultCode == RESULT_OK) {
                 appLockPreferences.edit().putBoolean("locked", false).apply()
             } else {
                 finish()
@@ -163,16 +174,29 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    fun setAppLockEnabled(enabled: Boolean): Boolean {
-        if (enabled) {
-            val keyguard = getSystemService(KeyguardManager::class.java)
-            if (keyguard?.isDeviceSecure != true) return false
+    fun setAppLockEnabled(enabled: Boolean, onResult: (Boolean) -> Unit): Boolean {
+        if (!enabled) {
+            pendingAppLockEnable = false
+            appLockEnableResult = null
+            appLockPreferences.edit()
+                .putBoolean("enabled", false)
+                .putBoolean("locked", false)
+                .apply()
+            onResult(false)
+            return true
         }
-        appLockPreferences.edit()
-            .putBoolean("enabled", enabled)
-            .putBoolean("locked", enabled)
-            .apply()
-        if (enabled) promptForDeviceCredential()
+
+        val keyguard = getSystemService(KeyguardManager::class.java)
+        if (keyguard?.isDeviceSecure != true) return false
+        val intent = keyguard.createConfirmDeviceCredentialIntent(
+            "Enable Aharane app lock",
+            "Confirm your device screen lock to protect Aharane."
+        ) ?: return false
+
+        pendingAppLockEnable = true
+        appLockEnableResult = onResult
+        appLockPromptInFlight = true
+        credentialPromptLauncher.launch(intent)
         return true
     }
 

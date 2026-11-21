@@ -352,6 +352,11 @@ export function createAccountRuntime({
             markPeerRateLimited(session, disconnectError)
             return
           }
+          if (session.rateLimitedUntil > Date.now()) {
+            session.state = 'rate-limited'
+            emit()
+            return
+          }
           if (code === loggedOutCode || code === 401 || code === 403) {
             session.registered = false
             session.state = 'needs-pairing'

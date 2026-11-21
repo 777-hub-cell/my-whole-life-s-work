@@ -462,6 +462,32 @@ export function createAccountRuntime({
     emit()
   }
 
+  function handlePromotedSocketClose(session, socket, update) {
+    if (session.socket !== socket) return
+    const disconnectError = update?.lastDisconnect?.error
+    const code = disconnectError?.output?.statusCode
+    session.socket = null
+    session.qr = ''
+    session.pairingCodeIssued = false
+    if (code === loggedOutCode || code === 401 || code === 403) {
+      session.registered = false
+      session.state = 'needs-pairing'
+      session.pairingError = 'WhatsApp no longer accepts the saved linked-device session. You can link a replacement; the old credentials will be kept until the new link succeeds.'
+      logger.error?.({ event: 'whatsapp.auth-rejected', accountId: session.id, code })
+      emit()
+      return
+    }
+    session.state = 'disconnected'
+    logger.warn?.({
+      event: 'whatsapp.connection-closed',
+      accountId: session.id,
+      code: Number.isFinite(code) ? code : null,
+      reason: String(disconnectError?.message || 'Connection closed').slice(0, 240),
+    })
+    emit()
+    scheduleReconnect(session.id)
+  }
+
   async function commitPendingPairing(session, pending) {
     if (pending.promoted || session.pendingPairing !== pending) return
     if (pending.commitPromise) return pending.commitPromise
@@ -496,6 +522,7 @@ export function createAccountRuntime({
       if (oldSocket && oldSocket !== pending.socket) {
         try { oldSocket.end?.(undefined) } catch {}
       }
+      if (pending.closedDuringCommit) handlePromotedSocketClose(session, pending.socket, pending.closedDuringCommit)
       if (oldAuthDir && oldAuthDir !== pending.authDir) {
         try {
           const old = await stat(oldAuthDir)
@@ -563,6 +590,18 @@ export function createAccountRuntime({
         Promise.resolve(onConnection({ sessionId: session.id, socket, update })).catch(error => {
           logger.warn?.({ event: 'whatsapp.connection-hook-failed', accountId: session.id, error: String(error?.message || error) })
         })
+        if (pending.promoted) {
+          if (update?.connection === 'open' && session.socket === socket) {
+            session.registered = true
+            session.state = 'connected'
+            session.reconnectAttempts = 0
+            session.lastConnectedAt = Date.now()
+            emit()
+          } else if (update?.connection === 'close') {
+            handlePromotedSocketClose(session, socket, update)
+          }
+          return
+        }
         if (update?.qr) {
           pending.qr = String(update.qr)
           pending.resolveReady?.()
@@ -580,6 +619,10 @@ export function createAccountRuntime({
             logger.error?.({ event: 'whatsapp.pairing-commit-failed', accountId: session.id, error: String(error?.message || error) })
             await discardPendingPairing(session, pending, new Error('WhatsApp linked the replacement, but Aharane could not save the new session: ' + String(error?.message || error)))
           })
+          return
+        }
+        if (update?.connection === 'close' && session.pendingPairing === pending && pending.commitPromise) {
+          pending.closedDuringCommit = update
           return
         }
         if (update?.connection === 'close' && session.pendingPairing === pending && !pending.commitPromise) {

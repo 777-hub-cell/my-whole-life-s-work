@@ -231,7 +231,7 @@ private class FakeVisualCommandDataSource(
                 "Reply text in another category",
                 JSONArray().put(socket("in", "In")),
                 JSONArray().put(socket("next", "Next"))
-            )
+            ).put("description", "Repeated type in the second category")
             result.put(JSONObject().put("category", "Repeated nodes").put("nodes", JSONArray().put(repeated)))
         }
         return result

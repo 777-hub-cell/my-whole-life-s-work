@@ -90,6 +90,7 @@ import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -794,7 +795,7 @@ fun ConversationScreen(
                     Text("SELECTED MESSAGE", color = StudioPalette.Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Text(selected.text, color = StudioPalette.Ink, fontSize = 13.sp, lineHeight = 18.sp)
                     if (!selected.replyToMessageId.isNullOrBlank()) {
-                        androidx.compose.material3.HorizontalDivider(color = StudioPalette.Line)
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(StudioPalette.Line))
                         Text("QUOTED MESSAGE", color = StudioPalette.Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         if (quotedText.isNotBlank()) {
                             Text(quotedText, color = StudioPalette.Ink, fontSize = 13.sp, lineHeight = 18.sp)
@@ -1163,7 +1164,7 @@ private fun MessageBubble(
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
             }
-            val quotedPreview = reply?.text?.ifBlank { messageAttachmentLabel(reply.kind) }
+            val quotedPreview = reply?.let { it.text.ifBlank { messageAttachmentLabel(it.kind) } }
                 ?.takeIf { it.isNotBlank() } ?: message.quotedMessageText?.takeIf { it.isNotBlank() }
             if (!message.replyToMessageId.isNullOrBlank() && !quotedPreview.isNullOrBlank()) {
                 Column(

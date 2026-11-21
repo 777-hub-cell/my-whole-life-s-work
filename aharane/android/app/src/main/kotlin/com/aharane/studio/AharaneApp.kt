@@ -1250,6 +1250,9 @@ fun AharaneApp(
         val latest = repository.runtimeSnapshot()
         runtime = latest
         val state = if (target == ChatAccount.PRIVATE) latest.privateAccount else latest.publicAccount
+        if (state.state.equals("rate-limited", ignoreCase = true)) {
+            throw IllegalStateException("WhatsApp temporarily rate-limited this account. Wait at least 15 minutes before requesting another pairing code.")
+        }
         if (state.registered) {
             accountControlTarget = target
             return
@@ -2835,6 +2838,7 @@ private fun formatBytes(bytes: Long): String = when {
 
 private fun accountStateLabel(state: ServerAccountState): String = when {
     state.connected -> "Connected"
+    state.state == "rate-limited" -> "Rate limited · wait before retrying"
     state.registered && state.state == "reconnecting" -> "Reconnecting"
     state.registered -> "Paired · ${state.state.replace('-', ' ')}"
     state.state == "not-paired" -> "Not paired"
@@ -2843,6 +2847,7 @@ private fun accountStateLabel(state: ServerAccountState): String = when {
 
 private fun accountActionLabel(state: ServerAccountState): String = when {
     state.connected -> "Manage"
+    state.state == "rate-limited" -> "Try later"
     state.registered -> "Reconnect"
     else -> "Link account"
 }

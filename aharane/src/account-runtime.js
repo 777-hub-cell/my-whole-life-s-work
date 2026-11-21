@@ -614,8 +614,10 @@ export function createAccountRuntime({
       const previousCandidate = session.pairingCandidate
       session.pairingCandidate = null
       previousCandidate.closed = true
+      clearTimeout(previousCandidate.expiryTimer)
       previousCandidate.rejectReady?.(new Error('A newer pairing request replaced this pending attempt.'))
       try { previousCandidate.socket?.end?.(undefined) } catch {}
+      await previousCandidate.saveChain.catch(() => {})
       await rm(previousCandidate.authDir, { recursive: true, force: true }).catch(() => {})
     }
     await verifyAuthDirectories()
@@ -814,6 +816,7 @@ export function createAccountRuntime({
       clearTimeout(candidate.expiryTimer)
       candidate.rejectReady?.(new Error('This WhatsApp replacement attempt was cancelled.'))
       try { candidate.socket?.end?.(undefined) } catch {}
+      await candidate.saveChain.catch(() => {})
       await rm(candidate.authDir, { recursive: true, force: true }).catch(() => {})
       session.pairingError = ''
       session.pairingSucceeded = false
@@ -844,7 +847,7 @@ export function createAccountRuntime({
   async function reconnect(id) {
     const session = get(id)
     if (session.state === 'needs-pairing' || session.state === 'reconnect-exhausted') {
-      throw Object.assign(new Error('This WhatsApp session needs repair. Use Re-pair after backing up its saved authentication before pairing again.'), { status: 409 })
+      throw Object.assign(new Error('This WhatsApp session needs re-pairing. Use safe Re-pair to stage a replacement without changing the saved authentication until the new link connects.'), { status: 409 })
     }
     if (!session.registered && !session.socket) {
       throw Object.assign(new Error('This WhatsApp account has not been paired yet. Use the explicit Pair action to request a code or QR.'), { status: 409 })
@@ -876,6 +879,7 @@ export function createAccountRuntime({
       clearTimeout(candidate.expiryTimer)
       candidate.rejectReady?.(new Error('WhatsApp pairing was cancelled because the account was stopped.'))
       try { candidate.socket?.end?.(undefined) } catch {}
+      await candidate.saveChain.catch(() => {})
       await rm(candidate.authDir, { recursive: true, force: true }).catch(() => {})
     }
     if (session.reconnectTimer) clearTimeout(session.reconnectTimer)

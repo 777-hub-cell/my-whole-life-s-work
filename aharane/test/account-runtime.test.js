@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createAccountRuntime } from '../src/account-runtime.js'
 
-async function fixture(t) {
+async function fixture(t, { pairingError = null } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'aharane-accounts-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const authLoads = []
@@ -24,15 +24,18 @@ async function fixture(t) {
         pairingRequests: [],
         requestPairingCode: async function (phone) {
           this.pairingRequests.push(phone)
+          if (pairingError) throw pairingError
           return sessionId + '-' + phone.slice(-4)
         },
-        end() {},
+        ended: false,
+        end() { this.ended = true },
       }
       sockets.push(socket)
       return socket
     },
     reconnectBaseMs: 5,
     reconnectMaxMs: 5,
+    pairingReadyDelayMs: 0,
     logger: { info() {}, warn() {}, error() {} },
   })
   return { root, runtime, authLoads, sockets }
@@ -185,6 +188,28 @@ test('phone-number pairing waits for WhatsApp pair-device readiness, not only co
   sockets[0].ev.emit('connection.update', { qr: 'pair-device-ready' })
   assert.equal(await pending, 'private-5678')
   assert.deepEqual(sockets[0].pairingRequests, ['2348012345678'])
+  await runtime.shutdown()
+})
+
+test('WhatsApp rate limiting closes the failed pairing socket and blocks immediate retries', async t => {
+  const error = Object.assign(new Error('rate-overlimit'), { output: { statusCode: 429 } })
+  const { runtime, sockets } = await fixture(t, { pairingError: error })
+  await runtime.start('private')
+  const pending = runtime.requestPairingCode('private', '2348012345678')
+  await new Promise(resolveWait => setTimeout(resolveWait, 0))
+  sockets[0].ev.emit('connection.update', { qr: 'pair-device-ready' })
+
+  await assert.rejects(pending, /temporarily rate-limited/i)
+  assert.equal(runtime.get('private').state, 'rate-limited')
+  assert.equal(runtime.get('private').socket, null)
+  assert.equal(runtime.get('private').registered, false)
+  assert.equal(sockets[0].ended, true)
+
+  await assert.rejects(
+    runtime.requestPairingCode('private', '2348012345678'),
+    /temporarily rate-limited/i
+  )
+  assert.equal(sockets.length, 1)
   await runtime.shutdown()
 })
 

@@ -281,7 +281,7 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
             tone = tone,
             instructions = instructions
         )
-        val response = api.post("ai-reply", request)
+        val response = api.post("ai-reply", JSONObject(request))
         return response.optString("reply").trim().takeIf { it.isNotBlank() }
             ?: error("The AI provider returned an empty reply draft.")
     }

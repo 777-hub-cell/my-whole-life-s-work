@@ -8,7 +8,7 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
-import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -129,7 +129,10 @@ class VisualCommandBuilderScreenTest {
         }
         compose.waitUntil(5_000) { source.readCount > 0 }
         compose.onNodeWithTag("workflow-node-list").assertIsDisplayed()
-        compose.onNodeWithText("Reply text in another category").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("workflow-node-list").performTouchInput {
+            repeat(8) { swipeUp() }
+        }
+        compose.onNodeWithText("Reply text in another category").assertIsDisplayed()
         compose.onNodeWithTag("workflow-categories").assertIsDisplayed()
     }
 

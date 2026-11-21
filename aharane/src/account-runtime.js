@@ -34,6 +34,8 @@ export function createAccountRuntime({
   reconnectBaseMs = 2000,
   reconnectMaxMs = 60000,
   reconnectLimit = 12,
+  pairingReadyDelayMs = 1500,
+  pairingCooldownMs = 15 * 60 * 1000,
 }) {
   if (typeof loadAuthState !== 'function' || typeof makeSocket !== 'function') {
     throw new TypeError('Account runtime requires auth-state and socket factories.')
@@ -100,6 +102,8 @@ export function createAccountRuntime({
     resolveReady: null,
     rejectReady: null,
     pairRequestActive: false,
+    pairingCodeIssued: false,
+    pairingBlockedUntil: 0,
     qr: '',
     manuallyStopped: false,
   }]))
@@ -113,6 +117,7 @@ export function createAccountRuntime({
     return {
       id: session.id,
       state: session.state,
+      pairingRetryAt: session.pairingBlockedUntil || null,
       connected: session.state === 'connected',
       registered: session.registered,
       reconnectAttempts: session.reconnectAttempts,
@@ -218,6 +223,8 @@ export function createAccountRuntime({
         }
         if (update?.connection === 'open') {
           session.registered = true
+          session.pairingCodeIssued = false
+          session.pairingBlockedUntil = 0
           session.state = 'connected'
           session.reconnectAttempts = 0
           session.lastConnectedAt = Date.now()
@@ -233,8 +240,19 @@ export function createAccountRuntime({
           )
           session.resolveReady = null
           session.rejectReady = null
-          const code = update.lastDisconnect?.error?.output?.statusCode
+          const disconnectError = update.lastDisconnect?.error
+          const code = disconnectError?.output?.statusCode
+          const pairingRateLimited = (session.pairingCodeIssued || session.pairRequestActive || session.state === 'pairing') && isPairingRateLimit(disconnectError)
           session.socket = null
+          session.pairingCodeIssued = false
+          if (pairingRateLimited) {
+            session.registered = false
+            session.state = 'rate-limited'
+            session.pairingBlockedUntil = Date.now() + Math.max(60_000, pairingCooldownMs)
+            logger.warn?.({ event: 'whatsapp.pairing-rate-limited', accountId: id, retryAt: session.pairingBlockedUntil })
+            emit()
+            return
+          }
           if (code === loggedOutCode || code === 401 || code === 403) {
             session.registered = false
             session.state = 'needs-pairing'
@@ -294,6 +312,16 @@ export function createAccountRuntime({
     }
   }
 
+  function isPairingRateLimit(error) {
+    const statusCode = error?.output?.statusCode ?? error?.statusCode ?? error?.status
+    const message = String(error?.message || error || '')
+    return statusCode === 429 || /rate[-_\s]?overlimit|peer.{0,24}rate|rate.{0,24}limit/i.test(message)
+  }
+
+  function pairingRateLimitError() {
+    return Object.assign(new Error('WhatsApp has temporarily rate-limited pairing for this account. Wait at least 15 minutes before trying again; repeated requests can extend the limit.'), { status: 429 })
+  }
+
   async function waitUntilReady(id, timeoutMs = 20000) {
     const session = get(id)
     let timer
@@ -316,25 +344,48 @@ export function createAccountRuntime({
     if (session.state === 'needs-pairing') {
       throw Object.assign(new Error('This saved session needs an explicit repair first. Existing authentication will be backed up before re-pairing.'), { status: 409 })
     }
+    if (session.pairingBlockedUntil > Date.now()) throw pairingRateLimitError()
+    if (session.state === 'rate-limited') {
+      session.state = 'not-paired'
+      session.pairingBlockedUntil = 0
+    }
     session.pairRequestActive = true
     emit()
+    let currentSocket = null
     try {
-      const currentSocket = session.socket || await startInternal(id)
+      currentSocket = session.socket || await startInternal(id)
       if (!currentSocket) throw new Error('WhatsApp socket is unavailable.')
       await waitUntilReady(id)
+      if (pairingReadyDelayMs > 0) await new Promise(resolve => setTimeout(resolve, pairingReadyDelayMs))
       if (session.socket !== currentSocket) throw new Error('WhatsApp session changed during pairing. Retry the request.')
       const code = await currentSocket.requestPairingCode(phoneNumber)
+      session.pairingCodeIssued = true
       session.state = 'pairing'
       emit()
       return String(code).replace(/\s/g, '')
     } catch (error) {
+      const rateLimited = isPairingRateLimit(error)
+      if (currentSocket && session.socket === currentSocket) {
+        session.socket = null
+        session.qr = ''
+        session.pairingCodeIssued = false
+        session.registered = false
+        session.state = rateLimited ? 'rate-limited' : 'not-paired'
+        session.pairingBlockedUntil = rateLimited ? Date.now() + Math.max(60_000, pairingCooldownMs) : 0
+        session.resolveReady = null
+        session.rejectReady = null
+        try { currentSocket.end?.(error) } catch {}
+        emit()
+      }
+      const failure = rateLimited ? pairingRateLimitError() : error
       logger.error?.({
         event: 'whatsapp.pairing-code-request-failed',
         accountId: id,
         statusCode: error?.output?.statusCode ?? error?.status ?? null,
+        rateLimited,
         error: String(error?.message || error),
       })
-      throw error
+      throw failure
     } finally {
       session.pairRequestActive = false
       emit()

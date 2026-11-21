@@ -431,11 +431,6 @@ fun AharaneApp(
     var pairingLoading by remember { mutableStateOf(false) }
     var pairingError by remember { mutableStateOf("") }
     var pairingAttemptStarted by remember { mutableStateOf(false) }
-    var repairPromptAccount by remember { mutableStateOf<ChatAccount?>(null) }
-    var dismissedRepairAccounts by remember { mutableStateOf(emptySet<ChatAccount>()) }
-    val latestPairingCode by rememberUpdatedState(pairingCode)
-    val latestPairingQrRequested by rememberUpdatedState(pairingQrRequested)
-    val latestPairingQrValue by rememberUpdatedState(pairingQrValue)
     var accountControlTarget by remember { mutableStateOf<ChatAccount?>(null) }
     var fileDialogMode by remember { mutableStateOf("") }
     var fileDialogName by remember { mutableStateOf("") }
@@ -1344,7 +1339,6 @@ fun AharaneApp(
 
     suspend fun beginAccountLink(target: ChatAccount) {
         runtime = repository.runtimeSnapshot()
-        repairPromptAccount = null
         openPairingScreen(target)
     }
 
@@ -2727,51 +2721,6 @@ fun AharaneApp(
         }
     }
 
-    if (repairPromptAccount != null) {
-        val target = repairPromptAccount!!
-        val targetState = if (target == ChatAccount.PRIVATE) runtime?.privateAccount else runtime?.publicAccount
-        val rejected = targetState?.state == "needs-pairing"
-        Dialog(onDismissRequest = {
-            dismissedRepairAccounts = dismissedRepairAccounts + target
-            repairPromptAccount = null
-        }) {
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                    .background(StudioPalette.Surface).padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text("WhatsApp session needs repair", color = StudioPalette.Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    if (rejected) {
-                        "WhatsApp no longer accepts the saved " + target.label + " session. Aharane will create a separate replacement link; the saved authentication will not be overwritten until the new session connects."
-                    } else {
-                        "Aharane could not restore the " + target.label + " WhatsApp session after three automatic reconnect attempts. You can create a separate replacement link without deleting the saved authentication."
-                    },
-                    color = StudioPalette.Muted,
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp
-                )
-                StudioActionButton("Start safe re-pairing", modifier = Modifier.fillMaxWidth(), primary = true, enabled = connected && !busy, onClick = {
-                    connectionScope.launch {
-                        busy = true
-                        try {
-                            repository.repair(target)
-                            runtime = repository.runtimeSnapshot()
-                            repairPromptAccount = null
-                            dismissedRepairAccounts = dismissedRepairAccounts + target
-                            openPairingScreen(target)
-                        } catch (error: Exception) {
-                            Toast.makeText(context, error.message ?: "Session repair failed.", Toast.LENGTH_LONG).show()
-                        } finally { busy = false }
-                    }
-                })
-                StudioActionButton("Later", modifier = Modifier.fillMaxWidth(), enabled = !busy, onClick = {
-                    dismissedRepairAccounts = dismissedRepairAccounts + target
-                    repairPromptAccount = null
-                })
-            }
-        }
-    }
 
     if (pairingAccount != null) {
         val target = pairingAccount!!

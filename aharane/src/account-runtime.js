@@ -289,6 +289,7 @@ export function createAccountRuntime({
           session.reconnectAttempts = 0
           session.lastConnectedAt = Date.now()
           if (session.replacementPending) {
+            clearTimeout(session.replacementPending.timeoutTimer)
             session.replacementPending = null
             session.pairingSucceeded = true
             session.pairingError = ''
@@ -476,6 +477,7 @@ export function createAccountRuntime({
     if (session.pairingCandidate !== candidate) return
     session.pairingCandidate = null
     candidate.closed = true
+    clearTimeout(candidate.expiryTimer)
     session.qr = ''
     session.pairingError = candidateFailureMessage(error)
     try { candidate.socket?.end?.(error) } catch {}
@@ -491,6 +493,7 @@ export function createAccountRuntime({
   async function rollbackReplacementInternal(id, replacement, error) {
     const session = get(id)
     if (session.replacementPending !== replacement) return
+    clearTimeout(replacement.timeoutTimer)
     const failedSocket = session.socket
     session.socket = null
     if (failedSocket) {
@@ -555,12 +558,22 @@ export function createAccountRuntime({
       session.qr = ''
       session.pairingCandidate = null
       candidate.closed = true
-      session.replacementPending = {
+      const replacement = {
         previousAuthDir,
         previousRegistered,
         previousState,
         previousSocketActive,
+        timeoutTimer: null,
       }
+      session.replacementPending = replacement
+      replacement.timeoutTimer = setTimeout(() => {
+        void serializeSessionOperation(id, () => rollbackReplacementInternal(
+          id,
+          replacement,
+          new Error('The newly linked WhatsApp session did not reconnect in time.')
+        )).catch(error => logger.error?.({ event: 'whatsapp.replacement-rollback-failed', accountId: id, error: String(error?.message || error) }))
+      }, 30000)
+      replacement.timeoutTimer.unref?.()
       try { candidate.socket?.end?.(undefined) } catch {}
       session.state = 'connecting'
       session.reconnectAttempts = 0
@@ -617,6 +630,7 @@ export function createAccountRuntime({
       saveChain: Promise.resolve(),
       closed: false,
       promoting: false,
+      expiryTimer: null,
     }
     candidate.readyPromise = new Promise((resolveReady, rejectReady) => {
       candidate.resolveReady = resolveReady
@@ -625,6 +639,14 @@ export function createAccountRuntime({
     void candidate.readyPromise.catch(() => {})
     try {
       session.pairingCandidate = candidate
+      candidate.expiryTimer = setTimeout(() => {
+        void serializeSessionOperation(id, () => discardCandidateInternal(
+          session,
+          candidate,
+          new Error('This WhatsApp pairing attempt expired. Start a fresh attempt to try again.')
+        )).catch(error => logger.warn?.({ event: 'whatsapp.pairing-expiry-failed', accountId: id, error: String(error?.message || error) }))
+      }, 120000)
+      candidate.expiryTimer.unref?.()
       const socket = makeSocket({ sessionId: id, auth: auth.state, pairingCandidate: true })
       if (!socket?.ev?.on) throw new Error('WhatsApp pairing socket factory returned an invalid socket.')
       candidate.socket = socket
@@ -793,6 +815,7 @@ export function createAccountRuntime({
       const candidate = session.pairingCandidate
       session.pairingCandidate = null
       candidate.closed = true
+      clearTimeout(candidate.expiryTimer)
       candidate.rejectReady?.(new Error('WhatsApp pairing was cancelled because the account was stopped.'))
       try { candidate.socket?.end?.(undefined) } catch {}
       await rm(candidate.authDir, { recursive: true, force: true }).catch(() => {})

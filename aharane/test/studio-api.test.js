@@ -36,7 +36,7 @@ test('both accounts pair from their saved configuration number without a duplica
  const end=s.indexOf("app.get('/api/accounts/:accountId/qr'",start)
  const route=s.slice(start,end)
  assert.ok(route.includes("accountId === 'private' ? ownerConfig.privateOwnerNumber : ownerConfig.publicBotNumber"))
- assert.ok(route.includes("session.registered || session.state === 'connected'"))
+ assert.ok(!route.includes("session.registered || session.state === 'connected'"), 'A previously linked account remains eligible for safe replacement pairing.')
  assert.ok(route.includes('accountRuntime.requestPairingCode(accountId, phoneNumber)'))
  assert.ok(!route.includes('req.body?.phoneNumber'))
  assert.ok(!route.includes('ownerConfig.publicOwnerNumber'))
@@ -50,8 +50,11 @@ test('QR reads are passive and a QR socket starts only after an explicit POST re
  const getRoute=routes.slice(0,routes.indexOf("app.post('/api/accounts/:accountId/qr'"))
  const postRoute=routes.slice(routes.indexOf("app.post('/api/accounts/:accountId/qr'"))
  assert.ok(!getRoute.includes('accountRuntime.start('), 'GET must never start a pairing socket.')
- assert.ok(postRoute.includes('await accountRuntime.start(accountId)'), 'Only explicit POST starts a QR session.')
- assert.ok(getRoute.includes("session.registered || session.state === 'connected'"))
+ assert.ok(!getRoute.includes('accountRuntime.startPairing('), 'GET must remain a passive read.')
+ assert.ok(postRoute.includes('await accountRuntime.startPairing(accountId)'), 'Only explicit POST starts an isolated QR candidate.')
+ assert.ok(getRoute.includes('accountRuntime.pairingQr(accountId)'))
+ assert.ok(getRoute.includes('pairingSucceeded'))
+ assert.ok(getRoute.includes('pairingError'))
 })
 
 test('the backend exposes protected full-history chat search and browser file downloads', async () => {

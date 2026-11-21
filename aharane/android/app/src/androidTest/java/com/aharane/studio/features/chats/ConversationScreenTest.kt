@@ -14,9 +14,11 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import com.aharane.studio.core.design.AharaneTheme
 import com.aharane.studio.core.model.ChatAccount
+import com.aharane.studio.core.model.ChatMessage
 import com.aharane.studio.core.model.ChatSummary
 import com.aharane.studio.core.model.ConversationKey
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 

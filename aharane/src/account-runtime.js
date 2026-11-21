@@ -171,7 +171,7 @@ export function createAccountRuntime({
       registered: session.registered,
       reconnectAttempts: session.reconnectAttempts,
       lastConnectedAt: session.lastConnectedAt || null,
-      pairingInProgress: session.pairRequestActive || Boolean(session.pairingCandidate),
+      pairingInProgress: session.pairRequestActive || Boolean(session.pairingCandidate) || Boolean(session.replacementPending),
       pairingSucceeded: session.pairingSucceeded,
       pairingError: session.pairingError,
     }
@@ -475,6 +475,7 @@ export function createAccountRuntime({
     session.pairingCandidate = null
     candidate.closed = true
     clearTimeout(candidate.expiryTimer)
+    await candidate.saveChain.catch(() => {})
     session.qr = ''
     session.pairingError = candidateFailureMessage(error)
     try { candidate.socket?.end?.(error) } catch {}
@@ -849,6 +850,16 @@ export function createAccountRuntime({
     const session = get(id)
     session.manuallyStopped = true
     session.qr = ''
+    if (session.replacementPending) {
+      const replacement = session.replacementPending
+      clearTimeout(replacement.timeoutTimer)
+      await writeActiveAuthDirectory(session, replacement.previousAuthDir)
+      session.authDir = replacement.previousAuthDir
+      session.registered = replacement.previousRegistered
+      session.replacementPending = null
+      session.pairingSucceeded = false
+      session.pairingError = ''
+    }
     if (session.pairingCandidate) {
       const candidate = session.pairingCandidate
       session.pairingCandidate = null

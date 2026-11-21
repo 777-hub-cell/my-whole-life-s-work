@@ -2743,15 +2743,15 @@ fun AharaneApp(
                 Text("WhatsApp session needs repair", color = StudioPalette.Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 Text(
                     if (rejected) {
-                        "WhatsApp no longer accepts the saved " + target.label + " session. Aharane will make a protected backup before you link it again."
+                        "WhatsApp no longer accepts the saved " + target.label + " session. Aharane will create a separate replacement link; the saved authentication will not be overwritten until the new session connects."
                     } else {
-                        "Aharane could not restore the " + target.label + " WhatsApp session after three automatic reconnect attempts. Repair will back up the saved authentication before you link again."
+                        "Aharane could not restore the " + target.label + " WhatsApp session after three automatic reconnect attempts. You can create a separate replacement link without deleting the saved authentication."
                     },
                     color = StudioPalette.Muted,
                     fontSize = 13.sp,
                     lineHeight = 19.sp
                 )
-                StudioActionButton("Back up and repair", modifier = Modifier.fillMaxWidth(), primary = true, enabled = connected && !busy, onClick = {
+                StudioActionButton("Start safe re-pairing", modifier = Modifier.fillMaxWidth(), primary = true, enabled = connected && !busy, onClick = {
                     connectionScope.launch {
                         busy = true
                         try {

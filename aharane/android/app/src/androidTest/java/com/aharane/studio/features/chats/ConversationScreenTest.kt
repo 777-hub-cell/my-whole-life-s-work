@@ -1,6 +1,5 @@
 package com.aharane.studio.features.chats
 
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -43,7 +42,7 @@ class ConversationScreenTest {
         }
         compose.onNodeWithTag("message-bubble-selected-message").performTouchInput { longClick() }
         compose.onNodeWithText("Message actions").assertIsDisplayed()
-        compose.onNodeWithText("AI Reply").assertDoesNotExist()
+        compose.onAllNodesWithText("AI Reply").assertCountEquals(0)
     }
 
     @Test

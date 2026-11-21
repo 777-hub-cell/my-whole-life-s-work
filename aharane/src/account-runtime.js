@@ -124,7 +124,7 @@ export function createAccountRuntime({
       throw new Error('A replacement WhatsApp session must use its own protected candidate directory.')
     }
     const temporary = pointerPath + '.' + randomUUID() + '.tmp'
-    await writeFile(temporary, target + '\\n', { mode: 0o600 })
+    await writeFile(temporary, target + '\n', { mode: 0o600 })
     try {
       await rename(temporary, pointerPath)
     } catch (error) {
@@ -595,6 +595,11 @@ export function createAccountRuntime({
       await rm(previousCandidate.authDir, { recursive: true, force: true }).catch(() => {})
     }
     await verifyAuthDirectories()
+    session.authDir = await readActiveAuthDirectory(session)
+    if (!session.auth) {
+      session.auth = await loadAuthState(session.authDir)
+      session.registered = session.auth.state?.creds?.registered === true
+    }
     const directory = join(candidateRoot(id), randomUUID())
     await mkdir(directory, { recursive: true, mode: 0o700 })
     await chmod(directory, 0o700)
@@ -668,8 +673,8 @@ export function createAccountRuntime({
           candidate.rejectReady = null
           candidate.registered = candidate.registered || auth.state?.creds?.registered === true
           void saveCandidate(candidate).then(() => {
-            if (candidate.registered || isPairingRateLimit(error)) {
-              if (candidate.registered) {
+            if (candidate.registered && error?.output?.statusCode === 515) {
+              if (candidate.registered && error?.output?.statusCode === 515) {
                 return serializeSessionOperation(id, () => promoteCandidateInternal(id, candidate))
               }
               return serializeSessionOperation(id, () => discardCandidateInternal(session, candidate, error))

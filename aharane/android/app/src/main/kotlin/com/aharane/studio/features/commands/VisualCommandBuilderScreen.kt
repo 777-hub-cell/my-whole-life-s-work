@@ -552,7 +552,8 @@ fun VisualCommandBuilderScreen(
                     val maxNodeBottom = workflow.nodes.maxOfOrNull { node ->
                         node.y + (measuredNodeSizes[node.id]?.height?.let { with(density) { it.toDp().value } } ?: 132f)
                     } ?: 180f
-                    val canvasWidth = maxOf(900.dp, (canvasOriginX + maxNodeRight + 48f).dp)
+                    val viewportWidth = with(density) { workspaceViewportSize.width.toDp() }
+                    val canvasWidth = maxOf(viewportWidth, (canvasOriginX + maxNodeRight + 48f).dp)
                     val canvasHeight = maxOf(430.dp, (canvasOriginY + maxNodeBottom + 48f).dp)
                     // Outer box owns scaled scroll dimensions; inner box preserves
                     // unscaled coordinates for socket measurements.

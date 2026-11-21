@@ -100,6 +100,21 @@ class VisualCommandBuilderScreenTest {
     }
 
     @Test
+    fun nodeCategoriesAreVisibleAndHorizontallyScrollable() {
+        val source = FakeVisualCommandDataSource(includeExtraCategories = true)
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                VisualCommandBuilderScreen(repository = source, connected = true, onBack = {})
+            }
+        }
+        compose.waitUntil(5_000) { source.readCount > 0 }
+        compose.onNodeWithTag("workflow-categories").assertIsDisplayed()
+        compose.onNodeWithText("Starter nodes").assertIsDisplayed()
+        compose.onNodeWithTag("workflow-categories").performTouchInput { swipeLeft() }
+        compose.onNodeWithText("Extra category 8").assertIsDisplayed()
+    }
+
+    @Test
     fun disconnectedBuilderKeepsServerWritesDisabled() {
         val source = FakeVisualCommandDataSource()
         compose.setContent {
@@ -115,7 +130,9 @@ class VisualCommandBuilderScreenTest {
     }
 }
 
-private class FakeVisualCommandDataSource : VisualCommandDataSource {
+private class FakeVisualCommandDataSource(
+    private val includeExtraCategories: Boolean = false
+) : VisualCommandDataSource {
     private val workflows = linkedMapOf<String, JSONObject>()
     var readCount = 0
         private set
@@ -177,7 +194,14 @@ private class FakeVisualCommandDataSource : VisualCommandDataSource {
         val trigger = definition("trigger.command", "Command trigger", JSONArray(), JSONArray().put(socket("next", "Next")))
         val reply = definition("message.replyText", "Reply text", JSONArray().put(socket("in", "In")), JSONArray().put(socket("next", "Next")))
         val sendText = definition("message.sendText", "Send text", JSONArray().put(socket("in", "In")), JSONArray().put(socket("next", "Next")))
-        return JSONArray().put(JSONObject().put("category", "Starter nodes")
+        val result = JSONArray().put(JSONObject().put("category", "Starter nodes")
             .put("nodes", JSONArray().put(trigger).put(reply).put(sendText)))
+        if (includeExtraCategories) {
+            repeat(8) { index ->
+                val extraNode = definition("test.extra$index", "Extra node $index", JSONArray(), JSONArray())
+                result.put(JSONObject().put("category", "Extra category $index").put("nodes", JSONArray().put(extraNode)))
+            }
+        }
+        return result
     }
 }

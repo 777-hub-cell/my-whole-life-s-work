@@ -1276,7 +1276,39 @@ fun AharaneApp(
             val state = if (account == ChatAccount.PRIVATE) runtime?.privateAccount?.state else runtime?.publicAccount?.state
             state in setOf("needs-pairing", "reconnect-exhausted") && account !in dismissedRepairAccounts
         }
-        if (repairTarget != null && repairPromptAccount == null) repairPromptAccount = repairTarget
+        if (repairTarget != null && repairPromptAccount == null && pairingAccount == null) {
+            repairPromptAccount = repairTarget
+        }
+    }
+
+    LaunchedEffect(pairingAccount, connected, previewMode) {
+        val target = pairingAccount ?: return@LaunchedEffect
+        if (!connected || previewMode) return@LaunchedEffect
+        repeat(60) {
+            delay(2200)
+            if (pairingAccount != target) return@LaunchedEffect
+            val latest = runCatching { repository.runtimeSnapshot() }.getOrNull() ?: return@repeat
+            runtime = latest
+            val state = if (target == ChatAccount.PRIVATE) latest.privateAccount else latest.publicAccount
+            when {
+                state.connected -> {
+                    pairingQrRequested = false
+                    pairingError = "WhatsApp connected successfully. You can close this screen."
+                    return@LaunchedEffect
+                }
+                state.state == "rate-limited" -> {
+                    pairingQrRequested = false
+                    pairingError = "WhatsApp has temporarily rate-limited pairing. Wait at least 15 minutes before requesting another code or QR."
+                    return@LaunchedEffect
+                }
+                state.state in setOf("needs-pairing", "reconnect-exhausted") -> {
+                    pairingQrRequested = false
+                    pairingAccount = null
+                    repairPromptAccount = target
+                    return@LaunchedEffect
+                }
+            }
+        }
     }
 
     LaunchedEffect(pairingAccount, pairingMethod, pairingQrRequested, connected) {

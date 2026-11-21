@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.core.content.FileProvider
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -209,12 +210,11 @@ fun AharaneApp(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
-                Box(
-                    Modifier.size(48.dp).clip(RoundedCornerShape(15.dp)).background(StudioPalette.Accent),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("A", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                }
+                Image(
+                    painter = painterResource(com.aharane.studio.R.drawable.ic_aharane_logo),
+                    contentDescription = "Aharane logo",
+                    modifier = Modifier.size(76.dp)
+                )
                 Text("Aharane", color = StudioPalette.Ink, fontSize = 21.sp, fontWeight = FontWeight.Bold)
                 Text("Restoring your workspace…", color = StudioPalette.Muted, fontSize = 12.5.sp)
             }

@@ -8,7 +8,7 @@ const MAX_MESSAGE_CHARS = 8000
 const MAX_INSTRUCTION_CHARS = 2000
 
 function splitValues(value) {
-  return String(value || '').split(/[\\s,;]+/).map(item => item.trim()).filter(Boolean)
+  return String(value || '').split(/[\s,;]+/).map(item => item.trim()).filter(Boolean)
 }
 
 function unique(values) {
@@ -136,7 +136,7 @@ export function createAiReplyService({
     const bodyBase = {
       messages: [
         { role: 'system', content: system },
-        { role: 'user', content: 'Use only this supplied data to draft a WhatsApp reply:\\n' + userContent },
+        { role: 'user', content: 'Use only this supplied data to draft a WhatsApp reply:\n' + userContent },
       ],
       temperature: 0.65,
       max_completion_tokens: 650,

@@ -246,6 +246,7 @@ export function createAccountRuntime({
           session.socket = null
           session.pairingCodeIssued = false
           if (pairingRateLimited) {
+            clearUnfinishedPairingCredentials(session)
             session.registered = false
             session.state = 'rate-limited'
             session.pairingBlockedUntil = Date.now() + Math.max(60_000, pairingCooldownMs)
@@ -322,6 +323,19 @@ export function createAccountRuntime({
     return Object.assign(new Error('WhatsApp has temporarily rate-limited pairing for this account. Wait at least 15 minutes before trying again; repeated requests can extend the limit.'), { status: 429 })
   }
 
+  function clearUnfinishedPairingCredentials(session) {
+    const auth = session.auth
+    const creds = auth?.state?.creds
+    if (!creds) return
+    creds.registered = false
+    delete creds.me
+    delete creds.pairingCode
+    delete creds.pairingEphemeralKeyPair
+    void Promise.resolve(auth.saveCreds?.()).catch(() => {
+      logger.warn?.({ event: 'auth.pairing-reset-save-failed', accountId: session.id })
+    })
+  }
+
   async function waitUntilReady(id, timeoutMs = 20000) {
     const session = get(id)
     let timer
@@ -366,6 +380,7 @@ export function createAccountRuntime({
     } catch (error) {
       const rateLimited = isPairingRateLimit(error)
       if (currentSocket && session.socket === currentSocket) {
+        clearUnfinishedPairingCredentials(session)
         session.socket = null
         session.qr = ''
         session.pairingCodeIssued = false

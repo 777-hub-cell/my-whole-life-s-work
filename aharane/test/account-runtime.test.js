@@ -10,21 +10,34 @@ async function fixture(t, { pairingError = null } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'aharane-accounts-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const authLoads = []
+  const authContexts = []
   const sockets = []
   const runtime = createAccountRuntime({
     authDirs: { public: join(root, 'public-auth'), private: join(root, 'private-auth') },
     loadAuthState: async authDir => {
       authLoads.push(authDir)
-      return { state: { creds: { registered: false } }, saveCreds: async () => {} }
+      const auth = {
+        state: { creds: { registered: false } },
+        saveCount: 0,
+        async saveCreds() { this.saveCount += 1 },
+      }
+      authContexts.push(auth)
+      return auth
     },
-    makeSocket: ({ sessionId }) => {
+    makeSocket: ({ sessionId, auth }) => {
       const socket = {
         sessionId,
         ev: new EventEmitter(),
         pairingRequests: [],
         requestPairingCode: async function (phone) {
           this.pairingRequests.push(phone)
-          if (pairingError) throw pairingError
+          if (pairingError) {
+            auth.creds.registered = true
+            auth.creds.me = { id: sessionId + '@s.whatsapp.net' }
+            auth.creds.pairingCode = 'STALE-CODE'
+            auth.creds.pairingEphemeralKeyPair = { private: 'stale' }
+            throw pairingError
+          }
           return sessionId + '-' + phone.slice(-4)
         },
         ended: false,
@@ -38,7 +51,7 @@ async function fixture(t, { pairingError = null } = {}) {
     pairingReadyDelayMs: 0,
     logger: { info() {}, warn() {}, error() {} },
   })
-  return { root, runtime, authLoads, sockets }
+  return { root, runtime, authLoads, authContexts, sockets }
 }
 
 test('private and public sessions use isolated auth directories and state', async t => {
@@ -193,7 +206,7 @@ test('phone-number pairing waits for WhatsApp pair-device readiness, not only co
 
 test('WhatsApp rate limiting closes the failed pairing socket and blocks immediate retries', async t => {
   const error = Object.assign(new Error('rate-overlimit'), { output: { statusCode: 429 } })
-  const { runtime, sockets } = await fixture(t, { pairingError: error })
+  const { runtime, sockets, authContexts } = await fixture(t, { pairingError: error })
   await runtime.start('private')
   const pending = runtime.requestPairingCode('private', '2348012345678')
   await new Promise(resolveWait => setTimeout(resolveWait, 0))
@@ -204,6 +217,11 @@ test('WhatsApp rate limiting closes the failed pairing socket and blocks immedia
   assert.equal(runtime.get('private').socket, null)
   assert.equal(runtime.get('private').registered, false)
   assert.equal(sockets[0].ended, true)
+  assert.equal(authContexts[0].state.creds.registered, false)
+  assert.equal(authContexts[0].state.creds.me, undefined)
+  assert.equal(authContexts[0].state.creds.pairingCode, undefined)
+  assert.equal(authContexts[0].state.creds.pairingEphemeralKeyPair, undefined)
+  assert.equal(authContexts[0].saveCount, 1)
 
   await assert.rejects(
     runtime.requestPairingCode('private', '2348012345678'),

@@ -50,6 +50,14 @@ The service binds to loopback at `127.0.0.1:8790`. Do not expose this port direc
 
 For existing installations, `AHARANE_OWNER_NUMBER` and `AHARANE_ALLOWED_SENDERS` are read as migration aliases for the new public settings. New deployments should use `AHARANE_PRIVATE_OWNER_NUMBER`, `AHARANE_PUBLIC_OWNER_NUMBER` and `AHARANE_ALLOWED_PUBLIC_SENDERS`, or configure the identities in Local Studio.
 
+## Shared AI Reply
+
+AI Reply is an optional, shared text-drafting feature for incoming messages in both Private and Public Chats. Configure `AI_API_KEY`, `AI_MODEL` and optionally `AI_API_BASE_URL` in Local Studio → ENV, or provide the equivalent server environment variables. The default base URL is the OpenAI-compatible `https://api.openai.com/v1`; custom endpoints must support the Chat Completions API. The API key is stored server-side in Aharane's protected Studio settings file and is never returned in ENV or general settings responses.
+
+The long-press **AI Reply** action is shown only when the server reports a usable provider key, model and endpoint. If the provider is not configured, the action is omitted. The feature creates editable text drafts only; the user must review the draft and press Send manually. It never generates voice notes or sends automatically.
+
+For each generation request, Aharane sends only the selected incoming message, the single directly quoted message when that exact quoted message is already loaded locally, plus the user's optional tone and instructions. It does not search or fetch chat history, read other conversations, or send chat identifiers/history to the AI provider. If the quoted message is not already loaded, it is omitted rather than retrieved. Message content is not written to the Aharane activity log.
+
 ## Development
 
 Requires Node.js 24.

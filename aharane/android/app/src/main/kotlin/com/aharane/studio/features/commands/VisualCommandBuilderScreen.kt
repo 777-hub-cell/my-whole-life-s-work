@@ -530,7 +530,7 @@ fun VisualCommandBuilderScreen(
             }
             Box(Modifier.fillMaxSize().onSizeChanged { workspaceViewportSize = it }.clip(RoundedCornerShape(9.dp)).background(Color(0xFFF2F5F2))) {
                 Box(
-                    Modifier.horizontalScroll(workspaceScroll).verticalScroll(workspaceVerticalScroll).pointerInput(Unit) {
+                    Modifier.horizontalScroll(workspaceScroll).verticalScroll(workspaceVerticalScroll).testTag("workflow-workspace").pointerInput(Unit) {
                         awaitEachGesture {
                             awaitFirstDown(requireUnconsumed = false)
                             var lastDistance = 0f

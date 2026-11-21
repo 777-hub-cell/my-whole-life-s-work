@@ -1,6 +1,7 @@
 package com.aharane.studio.core.design
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,6 +40,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.res.painterResource
+import com.aharane.studio.R
 import com.aharane.studio.core.navigation.MainDestination
 
 val LocalStudioCornerScale = staticCompositionLocalOf { 1f }
@@ -53,21 +56,11 @@ fun StudioHeader() {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-            Box(
-                modifier = Modifier.size(26.dp).clip(RoundedCornerShape(8.dp))
-                    .background(StudioPalette.Accent),
-                contentAlignment = Alignment.Center
-            ) {
-                Canvas(Modifier.size(15.dp)) {
-                    val sw = 2.1.dp.toPx()
-                    drawLine(Color.White, Offset(size.width * .12f, size.height * .88f),
-                        Offset(size.width * .50f, size.height * .12f), sw, cap = StrokeCap.Round)
-                    drawLine(Color.White, Offset(size.width * .50f, size.height * .12f),
-                        Offset(size.width * .88f, size.height * .88f), sw, cap = StrokeCap.Round)
-                    drawLine(Color.White, Offset(size.width * .34f, size.height * .58f),
-                        Offset(size.width * .66f, size.height * .58f), sw, cap = StrokeCap.Round)
-                }
-            }
+            Image(
+                painter = painterResource(R.drawable.ic_aharane_brand),
+                contentDescription = null,
+                modifier = Modifier.size(26.dp)
+            )
             Text(
                 "Aharane",
                 color = StudioPalette.Ink,

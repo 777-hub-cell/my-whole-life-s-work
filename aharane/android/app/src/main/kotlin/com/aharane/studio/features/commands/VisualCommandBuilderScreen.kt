@@ -1137,7 +1137,8 @@ private fun NodeConfigurationDialog(
                     minLines = if (key in setOf("text", "options", "buttons", "participants", "description")) 3 else 1,
                     minHeight = if (key in setOf("text", "options", "buttons", "participants", "description")) 104.dp else 48.dp,
                     textSize = 14.sp,
-                    modifier = Modifier.padding(bottom = 13.dp).testTag("node-config-field-" + key)
+                    modifier = Modifier.padding(bottom = 13.dp),
+                    tag = "node-config-field-" + key
                 )
             }
             if (node.type == "trigger.command" || node.type == "trigger.message") {
@@ -1205,7 +1206,7 @@ private fun NodeConfigurationDialog(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 StudioActionButton("Cancel", modifier = Modifier.weight(1f), onClick = onDismiss)
-                StudioActionButton("Apply changes", modifier = Modifier.weight(1f), primary = true, onClick = { onApply(config) })
+                StudioActionButton("Apply", modifier = Modifier.weight(1f), primary = true, onClick = { onApply(config) })
             }
         }
     }

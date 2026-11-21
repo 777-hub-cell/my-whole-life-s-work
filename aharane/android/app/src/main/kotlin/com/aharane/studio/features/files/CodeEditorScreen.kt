@@ -331,7 +331,7 @@ fun CodeEditorScreen(
                         onContentChange(activeDocument.path, next.text)
                     },
                     visualTransformation = syntaxHighlightFor(activeDocument.path),
-                    cursorBrush = SolidColor(Color(0xFFAEAFAD)),
+                    cursorBrush = SolidColor(StudioPalette.Accent),
                     readOnly = !editable,
                     textStyle = TextStyle(
                         color = EditorText,

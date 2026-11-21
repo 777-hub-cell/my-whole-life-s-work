@@ -42,6 +42,7 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.aharane.studio.core.design.StudioPalette
 import com.aharane.studio.core.network.EditorDiagnostic
 import com.aharane.studio.core.network.ServerActivityEntry
 import androidx.compose.ui.unit.sp

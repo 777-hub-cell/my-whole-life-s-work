@@ -25,15 +25,20 @@ class MainActivity : ComponentActivity() {
     private val appLockPreferences by lazy { getSharedPreferences("aharane-app-lock", MODE_PRIVATE) }
     private lateinit var credentialPromptLauncher: ActivityResultLauncher<Intent>
     private var appLockPromptInFlight = false
+    private val appLockEnabledState = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        appLockEnabledState.value = appLockPreferences.getBoolean("enabled", false)
         credentialPromptLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             appLockPromptInFlight = false
             if (result.resultCode == RESULT_OK) {
                 appLockPreferences.edit().putBoolean("locked", false).apply()
+                appLockEnabledState.value = appLockPreferences.getBoolean("enabled", false)
             } else {
-                finish()
+                appLockPreferences.edit().putBoolean("enabled", false).putBoolean("locked", false).apply()
+                appLockEnabledState.value = false
+                Toast.makeText(this, "Device unlock wasn't enabled. You can turn it on again in Settings.", Toast.LENGTH_LONG).show()
             }
         }
         enableEdgeToEdge()
@@ -103,6 +108,7 @@ class MainActivity : ComponentActivity() {
                 AharaneApp(
                     connectionManager = connectionManager,
                     previewMode = previewMode,
+                    appLockEnabled = appLockEnabledState.value,
                     notificationAccount = notificationTarget.value?.first,
                     notificationJid = notificationTarget.value?.second,
                     notificationRequestId = notificationTarget.value?.third ?: 0L,
@@ -172,6 +178,7 @@ class MainActivity : ComponentActivity() {
             .putBoolean("enabled", enabled)
             .putBoolean("locked", enabled)
             .apply()
+        appLockEnabledState.value = enabled
         if (enabled) promptForDeviceCredential()
         return true
     }
@@ -196,6 +203,7 @@ class MainActivity : ComponentActivity() {
         val keyguard = getSystemService(KeyguardManager::class.java)
         if (keyguard?.isDeviceSecure != true) {
             appLockPreferences.edit().putBoolean("enabled", false).putBoolean("locked", false).apply()
+            appLockEnabledState.value = false
             Toast.makeText(this, "Aharane app lock was disabled because this device no longer has a secure screen lock.", Toast.LENGTH_LONG).show()
             return
         }
@@ -204,8 +212,9 @@ class MainActivity : ComponentActivity() {
             "Confirm your device screen lock to continue."
         )
         if (intent == null) {
-            Toast.makeText(this, "Android could not open the device credential screen.", Toast.LENGTH_LONG).show()
-            finish()
+            appLockPreferences.edit().putBoolean("enabled", false).putBoolean("locked", false).apply()
+            appLockEnabledState.value = false
+            Toast.makeText(this, "Android could not open the device credential screen. Device unlock remains off.", Toast.LENGTH_LONG).show()
             return
         }
         appLockPromptInFlight = true

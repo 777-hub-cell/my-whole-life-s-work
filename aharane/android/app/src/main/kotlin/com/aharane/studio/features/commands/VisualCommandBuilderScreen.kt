@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
@@ -394,7 +395,7 @@ fun VisualCommandBuilderScreen(
 
     fun moveNode(id: String, delta: Offset) {
         workflow = workflow.copy(nodes = workflow.nodes.map { node ->
-            if (node.id == id) node.copy(x = (node.x + delta.x).coerceIn(-400f, 10000f), y = (node.y + delta.y).coerceIn(0f, 2000f))
+            if (node.id == id) node.copy(x = (node.x + delta.x).coerceIn(0f, 10000f), y = (node.y + delta.y).coerceIn(0f, 10000f))
             else node
         })
         dirty = true
@@ -543,10 +544,10 @@ fun VisualCommandBuilderScreen(
                         }
                     }
                 ) {
-                    val minNodeX = workflow.nodes.minOfOrNull { it.x } ?: 0f
-                    val minNodeY = workflow.nodes.minOfOrNull { it.y } ?: 0f
-                    val canvasOriginX = 48f - minNodeX
-                    val canvasOriginY = 48f - minNodeY
+                    // The coordinate origin must not change as a node moves; doing so
+                    // rebases the whole graph and makes the other nodes appear to jump.
+                    val canvasOriginX = 48f
+                    val canvasOriginY = 48f
                     val maxNodeRight = workflow.nodes.maxOfOrNull { it.x + 206f } ?: 206f
                     val maxNodeBottom = workflow.nodes.maxOfOrNull { node ->
                         node.y + (measuredNodeSizes[node.id]?.height?.let { with(density) { it.toDp().value } } ?: 132f)
@@ -563,7 +564,17 @@ fun VisualCommandBuilderScreen(
                             transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
                         }.onGloballyPositioned { workspaceCoordinates = it }
                     ) {
-                        Canvas(Modifier.fillMaxSize()) {
+                        Canvas(
+                            Modifier.fillMaxSize().testTag("workflow-canvas-background").pointerInput(zoom) {
+                                detectDragGestures { change, drag ->
+                                    change.consume()
+                                    scope.launch {
+                                        workspaceScroll.scrollBy(-drag.x)
+                                        workspaceVerticalScroll.scrollBy(-drag.y)
+                                    }
+                                }
+                            }
+                        ) {
                             val density = this.density
                             val gridStep = 28.dp.toPx()
                             var x = 0f
@@ -614,10 +625,14 @@ fun VisualCommandBuilderScreen(
                                 onMeasured = { size -> if (measuredNodeSizes[node.id] != size) measuredNodeSizes[node.id] = size },
                                 onSocketPosition = { socket, output, coordinates ->
                                     val canvas = workspaceCoordinates
-                                    if (canvas != null) {
-                                        val center = canvas.localPositionOf(coordinates, Offset(coordinates.size.width / 2f, coordinates.size.height / 2f))
-                                        val key = socketPositionKey(node.id, socket.id, output)
-                                        if (measuredSocketPositions[key] != center) measuredSocketPositions[key] = center
+                                    if (canvas?.isAttached == true && coordinates.isAttached) {
+                                        val center = runCatching {
+                                            canvas.localPositionOf(coordinates, Offset(coordinates.size.width / 2f, coordinates.size.height / 2f))
+                                        }.getOrNull()
+                                        if (center != null && center.x.isFinite() && center.y.isFinite()) {
+                                            val key = socketPositionKey(node.id, socket.id, output)
+                                            if (measuredSocketPositions[key] != center) measuredSocketPositions[key] = center
+                                        }
                                     }
                                 },
                                 canvasOriginX = canvasOriginX,
@@ -628,7 +643,7 @@ fun VisualCommandBuilderScreen(
                 }
                 }
                 Text(
-                    "Swipe sideways to pan · pinch to zoom · drag nodes",
+                    "Drag empty space to pan · pinch to zoom · drag nodes",
                     color = StudioPalette.Muted,
                     fontSize = 9.sp,
                     modifier = Modifier.align(Alignment.BottomStart).padding(6.dp)

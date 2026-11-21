@@ -1,5 +1,6 @@
 package com.aharane.studio.features.connection
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -23,6 +25,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aharane.studio.R
 import com.aharane.studio.core.design.*
 
 @Composable
@@ -47,12 +50,11 @@ fun ConnectionScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Box(
-            Modifier.size(54.dp).clip(RoundedCornerShape(17.dp)).background(StudioPalette.Accent),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("A", color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Bold)
-        }
+        Image(
+            painter = painterResource(R.drawable.ic_aharane_brand),
+            contentDescription = "Aharane logo",
+            modifier = Modifier.size(76.dp)
+        )
         Spacer(Modifier.height(15.dp))
         Text(
             "Aharane",

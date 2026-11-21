@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Aharane" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#0E7A5C</item>
+        <item name="android:statusBarColor">#F5F5F2</item>
+        <item name="android:navigationBarColor">#F5F5F2</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowSplashScreenBackground">#F5F5F2</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_aharane_brand</item>
+    </style>
+</resources>

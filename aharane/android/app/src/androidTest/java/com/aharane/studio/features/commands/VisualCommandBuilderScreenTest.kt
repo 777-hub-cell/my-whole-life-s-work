@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -14,6 +15,7 @@ import com.aharane.studio.core.network.VisualCommandDataSource
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -69,6 +71,32 @@ class VisualCommandBuilderScreenTest {
             ?.optJSONObject(0)?.optJSONObject("config")?.optString("command"))
         assertEquals("Hello from the builder", source.savedWorkflow()?.optJSONArray("nodes")
             ?.optJSONObject(2)?.optJSONObject("config")?.optString("text"))
+    }
+
+    @Test
+    fun draggingOneNodeDoesNotRebaseTheOtherNode() {
+        val source = FakeVisualCommandDataSource()
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                VisualCommandBuilderScreen(repository = source, connected = true, onBack = {})
+            }
+        }
+        compose.waitUntil(5_000) { source.readCount > 0 }
+        compose.waitForIdle()
+        val first = compose.onNodeWithTag("node-card-trigger.command").fetchSemanticsNode().boundsInRoot
+        val second = compose.onNodeWithTag("node-card-message.replyText").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("node-card-trigger.command").performTouchInput {
+            val start = center
+            down(start)
+            moveTo(start.copy(y = start.y + 140f), delayMillis = 400)
+            up()
+        }
+        compose.waitForIdle()
+        val firstAfter = compose.onNodeWithTag("node-card-trigger.command").fetchSemanticsNode().boundsInRoot
+        val secondAfter = compose.onNodeWithTag("node-card-message.replyText").fetchSemanticsNode().boundsInRoot
+        assertTrue("Dragged node should move down", firstAfter.top > first.top + 40f)
+        assertEquals("The other node must keep its position", second.top, secondAfter.top, 2f)
+        compose.onNodeWithTag("workflow-canvas-background").assertIsDisplayed()
     }
 
     @Test

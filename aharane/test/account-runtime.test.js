@@ -438,6 +438,43 @@ test('an explicit stop cancels an in-flight replacement without restoring a runn
   await runtime.shutdown()
 })
 
+test('a replacement session handles Baileys 515 restartRequired without rolling back', async t => {
+  const { runtime, sockets } = await fixture(t, { registered: true })
+  await runtime.start('private')
+  const oldSocket = runtime.get('private').socket
+  oldSocket.ev.emit('connection.update', { connection: 'open' })
+  const oldAuthDir = runtime.get('private').authDir
+
+  await runtime.startPairing('private')
+  const candidate = runtime.get('private').pairingCandidate
+  candidate.auth.state.creds.registered = true
+  candidate.socket.ev.emit('creds.update')
+  candidate.socket.ev.emit('connection.update', {
+    connection: 'close',
+    lastDisconnect: { error: Object.assign(new Error('restartRequired'), { output: { statusCode: 515 } }) },
+  })
+  await waitFor(() => sockets.length === 3 && runtime.get('private').replacementPending !== null)
+
+  const firstReplacementSocket = runtime.get('private').socket
+  firstReplacementSocket.ev.emit('connection.update', {
+    connection: 'close',
+    lastDisconnect: { error: Object.assign(new Error('restartRequired'), { output: { statusCode: 515 } }) },
+  })
+  await waitFor(() => sockets.length === 4 && runtime.get('private').socket !== firstReplacementSocket)
+
+  const secondReplacementSocket = runtime.get('private').socket
+  assert.equal(runtime.get('private').authDir, candidate.authDir)
+  assert.notEqual(runtime.get('private').authDir, oldAuthDir)
+  assert.ok(runtime.get('private').replacementPending)
+  secondReplacementSocket.ev.emit('connection.update', { connection: 'open' })
+
+  assert.equal(runtime.get('private').state, 'connected')
+  assert.equal(runtime.get('private').pairingSucceeded, true)
+  assert.equal(runtime.get('private').replacementPending, null)
+  assert.equal(runtime.get('private').authDir, candidate.authDir)
+  await runtime.shutdown()
+})
+
 test('a new WhatsApp link that fails to reconnect rolls back to the previous authentication', async t => {
   const { runtime, sockets } = await fixture(t, { registered: true })
   await runtime.start('private')

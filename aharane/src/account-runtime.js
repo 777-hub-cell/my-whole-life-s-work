@@ -614,8 +614,13 @@ export function createAccountRuntime({
       session.auth = await loadAuthState(session.authDir)
       session.registered = session.auth.state?.creds?.registered === true
     }
-    const directory = join(candidateRoot(id), randomUUID())
-    await mkdir(directory, { recursive: true, mode: 0o700 })
+    const root = candidateRoot(id)
+    await mkdir(root, { recursive: true, mode: 0o700 })
+    const rootInfo = await lstat(root)
+    if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw new Error('The WhatsApp replacement authentication root must be a real directory.')
+    await chmod(root, 0o700)
+    const directory = join(root, randomUUID())
+    await mkdir(directory, { mode: 0o700 })
     await chmod(directory, 0o700)
     const auth = await loadAuthState(directory)
     const candidate = {
@@ -710,7 +715,7 @@ export function createAccountRuntime({
       emit()
       return candidate
     } catch (error) {
-      session.pairingCandidate = candidate.socket ? candidate : null
+      session.pairingCandidate = candidate
       await discardCandidateInternal(session, candidate, error)
       throw error
     }

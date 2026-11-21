@@ -1,6 +1,7 @@
 package com.aharane.studio.features.chats
 
 import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
@@ -10,6 +11,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import com.aharane.studio.core.design.AharaneTheme
@@ -77,8 +79,8 @@ class ConversationScreenTest {
         }
         compose.onNodeWithTag("message-bubble-selected-message").performTouchInput { longClick() }
         compose.onNodeWithText("AI Reply").performClick()
-        compose.onNodeWithText("This is the selected incoming message.").assertIsDisplayed()
-        compose.onNodeWithText("This is the older message being quoted.").assertIsDisplayed()
+        compose.onAllNodesWithText("This is the selected incoming message.").assertCountEquals(2)
+        compose.onAllNodesWithText("This is the older message being quoted.").assertCountEquals(2)
         compose.onNodeWithText("Professional").performClick()
         compose.onNodeWithTag("ai-reply-instruction").performTextInput("Keep it warm and brief.")
         compose.onNodeWithText("Generate reply").performClick()

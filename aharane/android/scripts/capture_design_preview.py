@@ -10,7 +10,7 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-REMOTE_XML = "/sdcard/aharane-ui-preview.xml"
+REMOTE_XML = "/sdcard/window.xml"
 OUT = Path("screenshots")
 
 
@@ -31,9 +31,56 @@ def capture(name: str, settle: float = 1.5):
 
 
 def nodes():
-    run("adb", "shell", "uiautomator", "dump", REMOTE_XML)
-    xml_text = run("adb", "shell", "cat", REMOTE_XML, capture_output=True).stdout
-    return list(ET.fromstring(xml_text).iter("node"))
+    """Read the current Android accessibility tree reliably on API 36.
+
+    uiautomator can return before its external-storage dump is readable on a
+    freshly booted emulator. Retry the dump/read pair and retain stderr so a
+    capture failure explains which Android command failed.
+    """
+    last_error = ""
+    for attempt in range(4):
+        dump = subprocess.run(
+            ["adb", "shell", "uiautomator", "dump", "--compressed", REMOTE_XML],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if dump.returncode != 0:
+            # Compatibility fallback for emulator images without --compressed.
+            dump = subprocess.run(
+                ["adb", "shell", "uiautomator", "dump", REMOTE_XML],
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        if dump.returncode == 0:
+            result = subprocess.run(
+                ["adb", "exec-out", "cat", REMOTE_XML],
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                try:
+                    return list(ET.fromstring(result.stdout).iter("node"))
+                except ET.ParseError as error:
+                    last_error = f"Accessibility XML was malformed: {error}"
+            else:
+                last_error = (
+                    f"Could not read {REMOTE_XML}: "
+                    f"{result.stderr.strip() or 'the dump file was empty'}; "
+                    f"uiautomator: {dump.stdout.strip()} {dump.stderr.strip()}"
+                )
+        else:
+            last_error = (
+                f"uiautomator dump failed ({dump.returncode}): "
+                f"{dump.stdout.strip()} {dump.stderr.strip()}"
+            )
+        time.sleep(0.4 * (attempt + 1))
+    raise RuntimeError(f"Android accessibility-tree capture failed after retries: {last_error}")
 
 
 def tap_label(

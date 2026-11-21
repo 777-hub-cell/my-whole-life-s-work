@@ -1247,6 +1247,10 @@ fun AharaneApp(
         val latest = repository.runtimeSnapshot()
         runtime = latest
         val state = if (target == ChatAccount.PRIVATE) latest.privateAccount else latest.publicAccount
+        accountRateLimitMessage(state)?.let { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            return
+        }
         if (state.registered) {
             accountControlTarget = target
             return
@@ -2055,6 +2059,7 @@ fun AharaneApp(
                                         beginAccountLink(target)
                                     } catch (error: Exception) {
                                         pairingAccount = null
+                                        runCatching { runtime = repository.runtimeSnapshot() }
                                         Toast.makeText(context, error.message ?: "Account action failed.", Toast.LENGTH_LONG).show()
                                     }
                                 }
@@ -2069,6 +2074,18 @@ fun AharaneApp(
                         onFilterSelected = { filterName = it.name },
                         conversations = currentChats,
                         accountConnected = if (previewMode) true else runtime?.let { if (selectedAccount == ChatAccount.PRIVATE) it.privateAccount.connected else it.publicAccount.connected } == true,
+                        onConnectAccount = {
+                            if (!previewMode && connected) {
+                                connectionScope.launch {
+                                    try {
+                                        beginAccountLink(selectedAccount)
+                                    } catch (error: Exception) {
+                                        runCatching { runtime = repository.runtimeSnapshot() }
+                                        Toast.makeText(context, error.message ?: "Could not connect this WhatsApp account.", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        },
                         onConversationSelected = { activeConversation = it },
                         onChatAction = { chat, action ->
                             if (previewMode) return@ChatsScreen
@@ -2564,10 +2581,18 @@ fun AharaneApp(
                 Text("${target.label} WhatsApp", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 Text(
                     targetState?.let(::accountStateLabel) ?: "Status not loaded",
-                    color = StudioPalette.Muted,
+                    color = if (targetState?.rateLimitedUntil?.let { it > System.currentTimeMillis() } == true) StudioPalette.Bad else StudioPalette.Muted,
                     fontSize = 12.5.sp
                 )
-                StudioActionButton("Reconnect", modifier = Modifier.fillMaxWidth(), enabled = !busy && connected, onClick = {
+                val rateLimitMessage = targetState?.let(::accountRateLimitMessage)
+                if (rateLimitMessage != null) {
+                    Text(rateLimitMessage, color = StudioPalette.Bad, fontSize = 12.sp, lineHeight = 17.sp)
+                }
+                StudioActionButton(
+                    if (rateLimitMessage == null) "Reconnect" else "Rate limited",
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !busy && connected && rateLimitMessage == null,
+                    onClick = {
                     if (previewMode || !connected) {
                         Toast.makeText(context, "Connect to the live Aharane server to manage WhatsApp accounts.", Toast.LENGTH_SHORT).show()
                         return@StudioActionButton
@@ -2583,7 +2608,7 @@ fun AharaneApp(
                         } finally { busy = false }
                     }
                 })
-                StudioActionButton("Repair session", modifier = Modifier.fillMaxWidth(), enabled = !busy && connected, onClick = {
+                StudioActionButton("Repair session", modifier = Modifier.fillMaxWidth(), enabled = !busy && connected && targetState?.state == "needs-pairing" && rateLimitMessage == null, onClick = {
                     if (previewMode || !connected) {
                         Toast.makeText(context, "Connect to the live Aharane server to manage WhatsApp accounts.", Toast.LENGTH_SHORT).show()
                         return@StudioActionButton
@@ -2599,7 +2624,7 @@ fun AharaneApp(
                         } finally { busy = false }
                     }
                 })
-                StudioActionButton("Restart connection", modifier = Modifier.fillMaxWidth(), enabled = !busy && connected, onClick = {
+                StudioActionButton("Restart connection", modifier = Modifier.fillMaxWidth(), enabled = !busy && connected && rateLimitMessage == null, onClick = {
                     if (previewMode || !connected) {
                         Toast.makeText(context, "Connect to the live Aharane server to manage WhatsApp accounts.", Toast.LENGTH_SHORT).show()
                         return@StudioActionButton
@@ -2832,7 +2857,16 @@ private fun formatBytes(bytes: Long): String = when {
     else -> "$bytes B"
 }
 
+private fun accountRateLimitMessage(state: ServerAccountState): String? {
+    val until = state.rateLimitedUntil ?: return null
+    val remaining = until - System.currentTimeMillis()
+    if (remaining <= 0L) return null
+    val minutes = ((remaining + 59_999L) / 60_000L).coerceAtLeast(1L)
+    return "WhatsApp temporarily rate-limited this account. Please wait about $minutes minute(s) before retrying."
+}
+
 private fun accountStateLabel(state: ServerAccountState): String = when {
+    accountRateLimitMessage(state) != null -> "WhatsApp rate limited"
     state.connected -> "Connected"
     state.registered && state.state == "reconnecting" -> "Reconnecting"
     state.registered -> "Paired · ${state.state.replace('-', ' ')}"
@@ -2841,6 +2875,7 @@ private fun accountStateLabel(state: ServerAccountState): String = when {
 }
 
 private fun accountActionLabel(state: ServerAccountState): String = when {
+    accountRateLimitMessage(state) != null -> "Wait"
     state.connected -> "Manage"
     state.registered -> "Reconnect"
     else -> "Link account"

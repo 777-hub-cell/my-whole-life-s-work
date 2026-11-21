@@ -44,7 +44,9 @@ for (const marker of [
   "new URL('../private-commands/'",
   "isPrivateSelfCommand",
   "isPublicOwnerSender",
-  "accountRuntime.start(accountId)",
+  "accountRuntime.startPairing(accountId)",
+  "accountRuntime.requestPairingCode(accountId, phoneNumber)",
+  "accountRuntime.cancelPairing(accountId)",
   "app.post('/api/accounts/:accountId/pair-code'",
   "app.put('/api/owners'",
 ]) {

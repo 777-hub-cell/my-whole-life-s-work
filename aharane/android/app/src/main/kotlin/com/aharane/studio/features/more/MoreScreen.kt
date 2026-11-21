@@ -315,7 +315,8 @@ fun MoreScreen(
     } else if (page == "chat-settings") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
                 Spacer(Modifier.height(12.dp))
@@ -323,7 +324,7 @@ fun MoreScreen(
                 Spacer(Modifier.height(14.dp))
             }
             item {
-                StudioCard(padding = PaddingValues(14.dp)) {
+                StudioCard(padding = PaddingValues(18.dp)) {
                     Text("WhatsApp account", color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(8.dp))
                     StudioSegmented(
@@ -333,7 +334,7 @@ fun MoreScreen(
                             onChatAccountSelected(if (label == "Public") ChatAccount.PUBLIC else ChatAccount.PRIVATE)
                         }
                     )
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(10.dp))
                     Text(
                         "Inbox visibility is configured separately for each account.",
                         color = StudioPalette.Muted,
@@ -344,7 +345,7 @@ fun MoreScreen(
             }
             item {
                 StudioSectionHeading("Inbox visibility")
-                StudioCard(padding = PaddingValues(14.dp)) {
+                StudioCard(padding = PaddingValues(18.dp)) {
                     PreferenceSwitch(
                         title = "Show individual chats",
                         description = "Include one-to-one conversations in this account’s inbox.",
@@ -372,7 +373,7 @@ fun MoreScreen(
             }
             item {
                 StudioSectionHeading("Chat appearance")
-                StudioCard(padding = PaddingValues(14.dp)) {
+                StudioCard(padding = PaddingValues(18.dp)) {
                     Text("Theme", color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
                     StudioSegmented(
                         options = listOf("System", "Light", "Dark"),
@@ -385,7 +386,7 @@ fun MoreScreen(
                             onChatAppearanceChange(it.lowercase(), showChatAvatars, showChatPreviews, showChatTimestamps)
                         }
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(12.dp))
                     StudioDivider()
                     PreferenceSwitch(
                         title = "Show avatars",
@@ -426,7 +427,7 @@ fun MoreScreen(
             }
             item {
                 StudioSectionHeading("Offline chat storage")
-                StudioCard(padding = PaddingValues(14.dp)) {
+                StudioCard(padding = PaddingValues(18.dp)) {
                     val accountKey = selectedChatAccount.apiValue
                     var cacheLimitMb by rememberSaveable(accountKey) {
                         mutableIntStateOf(((mediaCache?.maximumCacheBytes(accountKey) ?: 536870912L) / (1024L * 1024L)).toInt())
@@ -466,7 +467,7 @@ fun MoreScreen(
             }
             item {
                 StudioSectionHeading("Advanced appearance")
-                StudioCard(padding = PaddingValues(14.dp)) {
+                StudioCard(padding = PaddingValues(18.dp)) {
                     Text("Chat Appearance Studio", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     Text(
                         "Wallpapers, bubbles, typography, layout, media styling and reusable theme profiles.",
@@ -483,7 +484,7 @@ fun MoreScreen(
             }
             item {
                 StudioSectionHeading("Message text size")
-                StudioCard(padding = PaddingValues(14.dp)) {
+                StudioCard(padding = PaddingValues(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Message text", color = StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.weight(1f))

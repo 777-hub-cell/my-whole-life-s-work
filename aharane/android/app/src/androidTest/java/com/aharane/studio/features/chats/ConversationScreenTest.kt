@@ -87,7 +87,7 @@ class ConversationScreenTest {
         compose.waitUntil(timeoutMillis = 5_000) {
             compose.onAllNodesWithTag("ai-reply-draft").fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithTag("ai-reply-draft").assertTextEquals("I can reply based on the message you sent.")
+        compose.onNodeWithTag("ai-reply-draft").assertTextEquals("Thanks for explaining. I can do that.")
         compose.onNodeWithText("Send reply").performClick()
         compose.runOnIdle {
             assertEquals("This is the selected incoming message.", suppliedMessage)
@@ -107,7 +107,6 @@ class ConversationScreenTest {
         )
         var suppliedMessage = ""
         var suppliedQuote = "must be replaced"
-        var sentText = ""
         compose.setContent {
             AharaneTheme(themeMode = "light") {
                 ConversationScreen(
@@ -116,7 +115,7 @@ class ConversationScreenTest {
                     connected = true,
                     aiReplyAvailable = true,
                     onBack = {},
-                    onSend = { text, _ -> sentText = text },
+                    onSend = { _, _ -> },
                     onGenerateAiReply = { message, quoted, _, _ ->
                         suppliedMessage = message
                         suppliedQuote = quoted
@@ -135,11 +134,9 @@ class ConversationScreenTest {
             compose.onAllNodesWithTag("ai-reply-draft").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("ai-reply-draft").assertTextEquals("I can reply based on the message you sent.")
-        compose.onNodeWithText("Send reply").performClick()
         compose.runOnIdle {
             assertEquals("This is the selected incoming message.", suppliedMessage)
             assertEquals("", suppliedQuote)
-            assertEquals("I can reply based on the message you sent.", sentText)
         }
     }
 

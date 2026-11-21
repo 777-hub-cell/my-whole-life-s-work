@@ -370,7 +370,7 @@ class EncryptedOfflineStorageTest {
                     account = "private", jid = jid, messageId = "offline-search-2",
                     direction = "INCOMING", kind = "DOCUMENT", text = "",
                     timestampMillis = secondTimestamp, status = "DELIVERED",
-                    replyToMessageId = null, mediaMimeType = "application/pdf", mediaFileName = "report.pdf",
+                    replyToMessageId = null, quotedMessageText = null, mediaMimeType = "application/pdf", mediaFileName = "report.pdf",
                     isViewOnce = false, senderName = "Bob", mediaUrl = null,
                     mediaSizeBytes = 1000L, mediaDurationSeconds = null, viewOnceViewed = false,
                     mediaUnavailable = null, isStarred = false, isVoiceNote = false,

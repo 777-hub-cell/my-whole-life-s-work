@@ -137,7 +137,7 @@ fun VisualCommandBuilderScreen(
         if (nodes.isNotEmpty() && workspaceViewportSize.width > 0 && workspaceViewportSize.height > 0) {
             val left = nodes.minOf { it.x }
             val top = nodes.minOf { it.y }
-            val right = nodes.maxOf { it.x + 224f }
+            val right = nodes.maxOf { it.x + 236f }
             val bottom = nodes.maxOf { node ->
                 node.y + (measuredNodeSizes[node.id]?.height?.let { with(density) { it.toDp().value } } ?: 132f)
             }
@@ -539,6 +539,7 @@ fun VisualCommandBuilderScreen(
                 Spacer(Modifier.weight(1f))
                 Text(workflow.nodes.size.toString() + " nodes · " + workflow.edges.size + " wires", color = StudioPalette.Muted, fontSize = 10.5.sp, modifier = Modifier.testTag("workflow-node-count"))
             }
+            val workspaceGridColor = StudioPalette.Line.copy(alpha = 0.72f)
             Box(Modifier.fillMaxSize().onSizeChanged { workspaceViewportSize = it }.clip(RoundedCornerShape(9.dp)).background(StudioPalette.Background)) {
                 Box(
                     Modifier.fillMaxSize().horizontalScroll(workspaceScroll).verticalScroll(workspaceVerticalScroll).pointerInput(Unit) {
@@ -598,12 +599,12 @@ fun VisualCommandBuilderScreen(
                             val gridStep = 28.dp.toPx()
                             var x = 0f
                             while (x < size.width) {
-                                drawLine(StudioPalette.Line.copy(alpha = 0.72f), Offset(x, 0f), Offset(x, size.height), 0.6.dp.toPx())
+                                drawLine(workspaceGridColor, Offset(x, 0f), Offset(x, size.height), 0.6.dp.toPx())
                                 x += gridStep
                             }
                             var y = 0f
                             while (y < size.height) {
-                                drawLine(StudioPalette.Line.copy(alpha = 0.72f), Offset(0f, y), Offset(size.width, y), 0.6.dp.toPx())
+                                drawLine(workspaceGridColor, Offset(0f, y), Offset(size.width, y), 0.6.dp.toPx())
                                 y += gridStep
                             }
                             workflow.edges.forEach { edge ->

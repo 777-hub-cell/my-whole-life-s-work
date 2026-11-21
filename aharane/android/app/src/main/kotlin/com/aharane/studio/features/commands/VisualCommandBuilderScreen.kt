@@ -1155,7 +1155,7 @@ private fun NodeConfigurationDialog(
                                     config = config + ("chatScope" to value)
                                 }.padding(horizontal = 8.dp, vertical = 5.dp)
                         ) {
-                            Text(label, color = if (active) Color.White else StudioPalette.Ink, fontSize = 9.5.sp)
+                            Text(label, color = if (active) MaterialTheme.colorScheme.onPrimary else StudioPalette.Ink, fontSize = 11.sp)
                         }
                     }
                 }

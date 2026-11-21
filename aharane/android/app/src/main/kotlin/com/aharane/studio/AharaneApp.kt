@@ -1452,7 +1452,7 @@ fun AharaneApp(
         )
     }
     val environmentValues = if (previewMode) previewEnvironmentValues else environmentRows.map {
-        EnvironmentValue(it.key, it.value, it.readOnly, it.type, it.secret)
+        EnvironmentValue(it.key, it.value, it.readOnly, it.type, it.secret, it.configured)
     }
 
     Column(
@@ -1632,6 +1632,12 @@ fun AharaneApp(
                     messages = if (previewMode) previewMessages.filter { it.key == activeConversation!!.key } else activeMessages,
                     connected = if (previewMode) true else currentAccountState?.connected == true,
                     mediaRequestsAvailable = connected,
+                    aiReplyAvailable = !previewMode && environmentRows.any {
+                        it.key == "AI_REPLY_STATUS" && it.value.equals("Ready", ignoreCase = true)
+                    },
+                    onGenerateAiReply = { selected, quoted, tone, instructions ->
+                        repository.generateAiReply(selected, quoted, tone, instructions)
+                    },
                     appearance = chatAppearanceStore.resolve(activeConversation!!.key.account, activeConversation!!.key.jid),
                     hasOlderMessages = !previewMode && hasOlderMessages,
                     loadingOlderMessages = loadingOlderMessages,

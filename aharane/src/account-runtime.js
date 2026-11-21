@@ -589,6 +589,7 @@ export function createAccountRuntime({
   async function shutdown() {
     shuttingDown = true
     await Promise.all(SESSION_IDS.map(id => serializeSessionOperation(id, () => stopInternal(id))))
+    await rateLimitWrite
   }
 
   return {

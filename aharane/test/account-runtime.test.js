@@ -131,7 +131,7 @@ test('authentication directory overlap is rejected', () => {
 })
 
 test('a disconnect on one account reconnects only that account', async t => {
-  const { runtime, sockets } = await fixture(t)
+  const { runtime, sockets } = await fixture(t, { registered: true })
   await Promise.all([runtime.start('private'), runtime.start('public')])
   const oldPrivateSocket = runtime.get('private').socket
   const publicSocket = runtime.get('public').socket
@@ -142,7 +142,7 @@ test('a disconnect on one account reconnects only that account', async t => {
   await new Promise(resolveWait => setTimeout(resolveWait, 25))
   assert.notEqual(runtime.get('private').socket, oldPrivateSocket)
   assert.equal(runtime.get('public').socket, publicSocket)
-  assert.equal(runtime.get('public').state, 'pairing')
+  assert.equal(runtime.get('public').state, 'connecting')
   await runtime.shutdown()
 })
 

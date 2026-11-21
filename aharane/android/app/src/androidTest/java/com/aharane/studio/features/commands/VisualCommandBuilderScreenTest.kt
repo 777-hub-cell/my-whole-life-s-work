@@ -6,6 +6,8 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -14,6 +16,7 @@ import com.aharane.studio.core.network.VisualCommandDataSource
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -69,6 +72,45 @@ class VisualCommandBuilderScreenTest {
             ?.optJSONObject(0)?.optJSONObject("config")?.optString("command"))
         assertEquals("Hello from the builder", source.savedWorkflow()?.optJSONArray("nodes")
             ?.optJSONObject(2)?.optJSONObject("config")?.optString("text"))
+    }
+
+    @Test
+    fun draggingOneNodeLeavesTheOtherInPlaceAndBlankGridCanPan() {
+        val source = FakeVisualCommandDataSource()
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                VisualCommandBuilderScreen(repository = source, connected = true, onBack = {})
+            }
+        }
+        compose.waitUntil(5_000) { source.readCount > 0 }
+
+        val trigger = compose.onNodeWithTag("node-card-trigger.command")
+        val reply = compose.onNodeWithTag("node-card-message.replyText")
+        val triggerBefore = trigger.fetchSemanticsNode().boundsInRoot
+        val replyBefore = reply.fetchSemanticsNode().boundsInRoot
+
+        trigger.performTouchInput {
+            down(center)
+            moveTo(center + Offset(0f, 120f), durationMillis = 350)
+            up()
+        }
+        compose.waitForIdle()
+
+        val triggerAfter = trigger.fetchSemanticsNode().boundsInRoot
+        val replyAfter = reply.fetchSemanticsNode().boundsInRoot
+        assertTrue("Dragged node should move down", triggerAfter.top > triggerBefore.top + 45f)
+        assertEquals("Other node must keep its vertical position", replyBefore.top, replyAfter.top, 2f)
+
+        compose.onNodeWithTag("workflow-workspace").performTouchInput {
+            val x = 14f
+            down(Offset(x, size.height * 0.88f))
+            moveTo(Offset(x, size.height * 0.18f), durationMillis = 400)
+            up()
+        }
+        compose.waitForIdle()
+
+        val replyAfterPan = reply.fetchSemanticsNode().boundsInRoot
+        assertTrue("Blank-grid swipe should pan the workspace", kotlin.math.abs(replyAfterPan.top - replyAfter.top) > 8f)
     }
 
     @Test

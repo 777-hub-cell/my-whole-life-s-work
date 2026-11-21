@@ -963,7 +963,7 @@ fun MoreScreen(
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Box(Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)).background(StudioPalette.Accent),
                                 contentAlignment = Alignment.Center) {
-                                Text("A", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                Text("A", color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                             }
                             Column {
                                 Text("Aharane Local Studio", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
@@ -1071,7 +1071,7 @@ private fun PreferenceSwitch(
             onCheckedChange = null,
             enabled = enabled,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
+                checkedThumbColor = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
                 checkedTrackColor = StudioPalette.Accent,
                 uncheckedThumbColor = StudioPalette.Muted,
                 uncheckedTrackColor = StudioPalette.Line

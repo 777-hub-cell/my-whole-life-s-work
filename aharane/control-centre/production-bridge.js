@@ -755,7 +755,7 @@ async function requestQrP(){
 }
 async function repairPairP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private';
- if(!confirm('Back up the existing '+id+' WhatsApp authentication before preparing a new pairing?'))return;
+ if(!confirm('Start a separate replacement pairing attempt? Your existing WhatsApp authentication and session will stay in place until the new link connects.'))return;
  try{await apiP('accounts/'+id+'/repair',{method:'POST',body:pack({})});S.pin=null;S.qrRequested=false;await refreshRuntimeP();render();notifyP('A separate replacement pairing session is ready. Your existing WhatsApp session remains unchanged until the new link connects.')}
  catch(error){await refreshPairViewAfterFailureP();notifyP(error.message)}
 }
@@ -1201,6 +1201,8 @@ function bindProductionP(){
  const visibility=Q('#chat-visibility');if(visibility)visibility.onclick=()=>openChatVisibilityP();
  const pair=Q('#prod-pair-code');if(pair)pair.onclick=getPairCodeP;
  const qr=Q('#prod-qr-request');if(qr)qr.onclick=requestQrP;
+ const cancelPair=Q('#prod-cancel-pairing');if(cancelPair)cancelPair.onclick=cancelPairingP;
+ const pairBack=Q('#prod-pair-back');if(pairBack)pairBack.onclick=()=>{void cancelPairingP();S.sub=null;render()};
  const repair=Q('#prod-pair-repair');if(repair)repair.onclick=repairPairP;
  const reconnect=Q('#prod-pair-reconnect');if(reconnect)reconnect.onclick=reconnectPairP;
  const openConfig=Q('#pair-open-config');if(openConfig)openConfig.onclick=()=>{
@@ -1210,7 +1212,7 @@ function bindProductionP(){
  };
  const copy=Q('#prod-copy-code');if(copy)copy.onclick=()=>navigator.clipboard?.writeText(S.pin||'').then(()=>notifyP('Pairing code copied')).catch(()=>notifyP('Select and copy the code'));
  document.querySelectorAll('[data-pm]').forEach(b=>b.onclick=()=>{
-  if(P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}
+  void cancelPairingP();
   S.pm=b.dataset.pm;S.pin=null;S.qrRequested=false;render();
  });
  const clear=Q('#lcl');if(clear)clear.onclick=clearActivityP;

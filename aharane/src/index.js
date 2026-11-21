@@ -1924,13 +1924,14 @@ app.delete('/api/chat-appearance/wallpaper', requireAdmin, async (_req, res) => 
 })
 app.put('/api/settings', requireAdmin, async (req, res) => {
   try {
-    studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings(req.body?.settings || {}))
+    const incoming = req.body?.settings || {}
+    studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings({ ...incoming, aiReply: studioSettings.aiReply }))
     for (const accountId of ['private', 'public']) {
       const socket = accountRuntime.get(accountId).socket
       if (socket?.sendPresenceUpdate) await socket.sendPresenceUpdate(studioSettings[accountId].alwaysOnline ? 'available' : 'unavailable').catch(() => {})
     }
     publishStudioEvent('settings.updated', { private: true, public: true })
-    res.json({ ok: true, settings: studioSettings })
+    res.json({ ok: true, settings: { ...studioSettings, aiReply: { ...studioSettings.aiReply, apiKey: '' } } })
   } catch (error) {
     res.status(400).json({ ok: false, error: String(error?.message || 'Could not save settings.') })
   }

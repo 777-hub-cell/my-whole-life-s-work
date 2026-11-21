@@ -56,6 +56,7 @@ data class ChatMessage(
     val timestampMillis: Long,
     val status: MessageStatus = MessageStatus.UNKNOWN,
     val replyToMessageId: String? = null,
+    val quotedMessageText: String? = null,
     val mediaMimeType: String? = null,
     val mediaFileName: String? = null,
     val isViewOnce: Boolean = false,

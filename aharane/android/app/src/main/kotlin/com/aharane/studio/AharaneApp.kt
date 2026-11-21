@@ -1297,8 +1297,7 @@ fun AharaneApp(
     LaunchedEffect(pairingAccount, pairingMethod, pairingQrRequested, connected) {
         val target = pairingAccount ?: return@LaunchedEffect
         if (!connected || previewMode || pairingMethod != "qr" || !pairingQrRequested) return@LaunchedEffect
-        repeat(90) {
-            if (pairingAccount != target || pairingMethod != "qr" || !pairingQrRequested) return@LaunchedEffect
+        while (pairingAccount == target && pairingMethod == "qr" && pairingQrRequested) {
             try {
                 val response = repository.pairingQr(target)
                 val qr = response.optString("qr")
@@ -1330,7 +1329,7 @@ fun AharaneApp(
             }
             delay(1800)
         }
-        if (pairingQrRequested && pairingQrValue.isBlank()) {
+        if (pairingAccount == target && pairingMethod == "qr" && pairingQrRequested && pairingQrValue.isBlank()) {
             pairingError = "WhatsApp did not provide a QR code in time. Request a fresh code when the connection is ready."
             pairingQrRequested = false
             pairingAttemptStarted = false

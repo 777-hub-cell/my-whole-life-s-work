@@ -442,7 +442,7 @@ export function createAccountRuntime({
   async function reconnect(id) {
     const session = get(id)
     if (session.state === 'needs-pairing' || session.state === 'reconnect-exhausted') {
-      throw Object.assign(new Error('This WhatsApp session needs repair. Back up its saved authentication before pairing again.'), { status: 409 })
+      throw Object.assign(new Error('This WhatsApp session needs repair. Use Re-pair after backing up its saved authentication before pairing again.'), { status: 409 })
     }
     if (!session.registered && !session.socket) {
       throw Object.assign(new Error('This WhatsApp account has not been paired yet. Use the explicit Pair action to request a code or QR.'), { status: 409 })

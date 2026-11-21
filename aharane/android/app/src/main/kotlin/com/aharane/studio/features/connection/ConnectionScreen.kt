@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -189,6 +190,7 @@ private fun ConnectionField(
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(label, color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
         BasicTextField(
+                    cursorBrush = SolidColor(StudioPalette.Accent),
             value = value,
             onValueChange = onValueChange,
             singleLine = true,

@@ -2,6 +2,10 @@ package com.aharane.studio
 
 import android.os.Bundle
 import android.app.KeyguardManager
+import android.hardware.biometrics.BiometricManager.Authenticators
+import android.hardware.biometrics.BiometricPrompt
+import android.os.Build
+import android.os.CancellationSignal
 import android.content.Intent
 import android.widget.Toast
 import android.content.ComponentName
@@ -25,6 +29,7 @@ class MainActivity : ComponentActivity() {
     private val appLockPreferences by lazy { getSharedPreferences("aharane-app-lock", MODE_PRIVATE) }
     private lateinit var credentialPromptLauncher: ActivityResultLauncher<Intent>
     private var appLockPromptInFlight = false
+    private var appLockActivationInProgress = false
     private val appLockEnabledState = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,12 +38,11 @@ class MainActivity : ComponentActivity() {
         credentialPromptLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             appLockPromptInFlight = false
             if (result.resultCode == RESULT_OK) {
+                appLockActivationInProgress = false
                 appLockPreferences.edit().putBoolean("locked", false).apply()
                 appLockEnabledState.value = appLockPreferences.getBoolean("enabled", false)
             } else {
-                appLockPreferences.edit().putBoolean("enabled", false).putBoolean("locked", false).apply()
-                appLockEnabledState.value = false
-                Toast.makeText(this, "Device unlock wasn't enabled. You can turn it on again in Settings.", Toast.LENGTH_LONG).show()
+                handleAppLockPromptCancelled()
             }
         }
         enableEdgeToEdge()
@@ -174,6 +178,7 @@ class MainActivity : ComponentActivity() {
             val keyguard = getSystemService(KeyguardManager::class.java)
             if (keyguard?.isDeviceSecure != true) return false
         }
+        appLockActivationInProgress = enabled
         appLockPreferences.edit()
             .putBoolean("enabled", enabled)
             .putBoolean("locked", enabled)
@@ -195,6 +200,21 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
+    private fun handleAppLockPromptCancelled() {
+        appLockPromptInFlight = false
+        if (appLockActivationInProgress) {
+            appLockActivationInProgress = false
+            appLockPreferences.edit().putBoolean("enabled", false).putBoolean("locked", false).apply()
+            appLockEnabledState.value = false
+            Toast.makeText(this, "Device unlock was not enabled. Try again and confirm with your screen lock.", Toast.LENGTH_LONG).show()
+        } else if (appLockPreferences.getBoolean("enabled", false) &&
+            appLockPreferences.getBoolean("locked", false) && !isFinishing
+        ) {
+            // Do not leave the app visible after a cancelled re-authentication.
+            finishAndRemoveTask()
+        }
+    }
+
     private fun promptForDeviceCredential() {
         if (!appLockPreferences.getBoolean("enabled", false) ||
             !appLockPreferences.getBoolean("locked", false) ||
@@ -202,19 +222,65 @@ class MainActivity : ComponentActivity() {
         ) return
         val keyguard = getSystemService(KeyguardManager::class.java)
         if (keyguard?.isDeviceSecure != true) {
+            appLockActivationInProgress = false
             appLockPreferences.edit().putBoolean("enabled", false).putBoolean("locked", false).apply()
             appLockEnabledState.value = false
             Toast.makeText(this, "Aharane app lock was disabled because this device no longer has a secure screen lock.", Toast.LENGTH_LONG).show()
             return
         }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            appLockPromptInFlight = true
+            try {
+                val prompt = BiometricPrompt.Builder(this)
+                    .setTitle("Unlock Aharane")
+                    .setSubtitle("Confirm with your fingerprint or this device's PIN, pattern or password.")
+                    .setAllowedAuthenticators(
+                        Authenticators.BIOMETRIC_STRONG or Authenticators.DEVICE_CREDENTIAL
+                    )
+                    .build()
+                prompt.authenticate(
+                    CancellationSignal(),
+                    mainExecutor,
+                    object : BiometricPrompt.AuthenticationCallback() {
+                        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                            appLockPromptInFlight = false
+                            appLockActivationInProgress = false
+                            appLockPreferences.edit().putBoolean("locked", false).apply()
+                            appLockEnabledState.value = appLockPreferences.getBoolean("enabled", false)
+                        }
+
+                        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                            handleAppLockPromptCancelled()
+                        }
+                    }
+                )
+            } catch (error: Exception) {
+                appLockPromptInFlight = false
+                if (appLockActivationInProgress) {
+                    appLockActivationInProgress = false
+                    appLockPreferences.edit().putBoolean("enabled", false).putBoolean("locked", false).apply()
+                    appLockEnabledState.value = false
+                    Toast.makeText(this, "Android could not open device authentication: ${error.message ?: "unavailable"}", Toast.LENGTH_LONG).show()
+                } else {
+                    finishAndRemoveTask()
+                }
+            }
+            return
+        }
+
+        // Older Android fallback; Android 11+ uses the modern system BiometricPrompt above.
         val intent = keyguard.createConfirmDeviceCredentialIntent(
             "Unlock Aharane",
             "Confirm your device screen lock to continue."
         )
         if (intent == null) {
-            appLockPreferences.edit().putBoolean("enabled", false).putBoolean("locked", false).apply()
-            appLockEnabledState.value = false
-            Toast.makeText(this, "Android could not open the device credential screen. Device unlock remains off.", Toast.LENGTH_LONG).show()
+            if (appLockActivationInProgress) {
+                appLockActivationInProgress = false
+                appLockPreferences.edit().putBoolean("enabled", false).putBoolean("locked", false).apply()
+                appLockEnabledState.value = false
+                Toast.makeText(this, "Android could not open the device credential screen. Device unlock remains off.", Toast.LENGTH_LONG).show()
+            } else finishAndRemoveTask()
             return
         }
         appLockPromptInFlight = true

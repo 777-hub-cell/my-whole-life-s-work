@@ -117,7 +117,7 @@ data class ChatAppearance(
             photoFit = json.optString("photoFit", "crop"),
             wallpaperBlur = json.optDouble("wallpaperBlur", 0.0).toFloat().coerceIn(0f, 24f),
             wallpaperDim = json.optDouble("wallpaperDim", 0.06).toFloat().coerceIn(0f, 0.8f),
-            wallpaperBrightness = json.optDouble("wallpaperBrightness", 1.0).toFloat().coerceIn(0.35f, 1.5f),
+            wallpaperBrightness = json.optDouble("wallpaperBrightness", 1.0).toFloat().coerceIn(0f, 1.5f),
             incomingBubble = json.optString("incomingBubble", "#FFFFFF"),
             outgoingBubble = json.optString("outgoingBubble", "#DCEFE5"),
             bubbleRadius = json.optInt("bubbleRadius", 16).coerceIn(8, 28),
@@ -497,7 +497,7 @@ fun ChatAppearanceStudioScreen(
                 "solid" -> brighten(parseColor(appearance.wallpaperColor))
                 "gradient" -> brighten(parseColor(appearance.gradientStart))
                 "photo" -> Color(0xFFE5EAE6)
-                else -> if (appearance.theme == "dark") Color(0xFF18211F) else Color(0xFFE9EFEB)
+                else -> brighten(if (appearance.theme == "dark") Color(0xFF18211F) else Color(0xFFE9EFEB))
             }
             Box(
                 Modifier.fillMaxWidth().height(158.dp).clip(RoundedCornerShape(16.dp))
@@ -587,7 +587,7 @@ fun ChatAppearanceStudioScreen(
             }
             ValueSlider("Blur", appearance.wallpaperBlur, 0f..24f, "dp") { change("wallpaperBlur", it.toInt().toString()) }
             ValueSlider("Dimming", appearance.wallpaperDim, 0f..0.8f, "%", 100f) { change("wallpaperDim", it.toString()) }
-            ValueSlider("Brightness", appearance.wallpaperBrightness, 0.35f..1.5f, "×") { change("wallpaperBrightness", it.toString()) }
+            ValueSlider("Wallpaper brightness", appearance.wallpaperBrightness, 0f..1.5f, "×") { change("wallpaperBrightness", it.toString()) }
         }
         item {
             SettingSection("Message bubbles")

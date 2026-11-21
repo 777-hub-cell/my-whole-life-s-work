@@ -11,6 +11,7 @@ import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import com.aharane.studio.core.design.AharaneTheme
@@ -130,7 +131,10 @@ class ConversationScreenTest {
             "The original quoted text is unavailable. Aharane will use only the selected message and will not load chat history."
         ).assertIsDisplayed()
         compose.onNodeWithText("Generate reply").performClick()
-        compose.onNodeWithTag("ai-reply-draft").assertIsDisplayed()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("ai-reply-draft").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("ai-reply-draft").assertTextEquals("I can reply based on the message you sent.")
         compose.onNodeWithText("Send reply").performClick()
         compose.runOnIdle {
             assertEquals("This is the selected incoming message.", suppliedMessage)

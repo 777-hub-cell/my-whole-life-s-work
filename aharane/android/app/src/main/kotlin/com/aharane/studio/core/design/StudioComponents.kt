@@ -578,6 +578,7 @@ fun StudioFloatingMenu(
 object StudioPalette {
     val Background: Color @Composable get() = MaterialTheme.colorScheme.background
     val Surface: Color @Composable get() = MaterialTheme.colorScheme.surface
+    val SurfaceVariant: Color @Composable get() = MaterialTheme.colorScheme.surfaceVariant
     val Ink: Color @Composable get() = MaterialTheme.colorScheme.onSurface
     val Muted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
     val Line: Color @Composable get() = MaterialTheme.colorScheme.outline

@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#080b0d">
+<meta name="description" content="Aharane realistic spider-web animation lab.">
+<title>Aharane — Web Motion Lab</title>
+<style>
+:root{
+  color-scheme:dark;
+  font-family:"Instrument Sans",Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --paper:#eceeea;--muted:#9aa3a2;--line:#2a3438;--panel:#101619;--panel2:#0b1013;
+}
+*{box-sizing:border-box}
+html{background:#080b0d}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% -16%,#1a252a 0%,#0b1013 42%,#07090b 100%);color:var(--paper)}
+button{font:inherit}
+.shell{width:min(100% - 26px,980px);margin:0 auto;padding:22px 0 58px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 1px 20px;border-bottom:1px solid #283238}
+.wordmark{display:flex;align-items:center;gap:11px;min-width:0}
+.mark{width:28px;height:28px;flex:0 0 28px}
+.mark svg{width:100%;height:100%;display:block}
+.brand{font-size:12px;font-weight:600;letter-spacing:.35em}
+.topnote{font-size:9px;color:#879296;letter-spacing:.18em;text-transform:uppercase;margin-top:5px}
+.labchip{border:1px solid #39454b;border-radius:30px;padding:7px 10px;color:#c5cecf;font-size:9px;letter-spacing:.1em;white-space:nowrap}
+.intro{padding:26px 0 17px}
+h1{font-family:Georgia,"Times New Roman",serif;font-size:clamp(29px,5vw,43px);font-weight:400;letter-spacing:-.04em;line-height:1.04;margin:0 0 10px}
+.intro p{max-width:650px;font-size:13px;line-height:1.7;color:#a2acad;margin:0}
+.preview{border:1px solid #2c373d;border-radius:17px;overflow:hidden;background:#080c0f;box-shadow:0 18px 50px #0005}
+.stage{position:relative;background:#080c0f;min-height:300px}
+#web-canvas{display:block;width:100%;height:min(76vw,500px);max-height:500px;min-height:285px}
+.stage-caption{position:absolute;left:17px;right:17px;bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;pointer-events:none;text-shadow:0 2px 10px #000}
+.stage-caption span{font-size:9px;color:#cad2d2;letter-spacing:.2em;text-transform:uppercase}
+.stage-caption .live{display:flex;align-items:center;gap:7px}
+.stage-caption i{width:6px;height:6px;border-radius:50%;background:#c4ddd4;box-shadow:0 0 12px #a3d4c5;display:inline-block}
+.details{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:15px 17px 16px;background:linear-gradient(135deg,#11181c,#0d1316);border-top:1px solid #2a3439}
+.details-copy{min-width:0}
+.eyebrow{font-size:9px;color:#829094;letter-spacing:.17em;text-transform:uppercase}
+#active-name{font-family:Georgia,"Times New Roman",serif;font-size:23px;font-weight:400;letter-spacing:-.025em;margin:6px 0 4px}
+#active-desc{font-size:12px;line-height:1.55;color:#a7b0b0;margin:0;max-width:530px}
+.actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;flex-shrink:0}
+.action{appearance:none;border:1px solid #46545a;background:#182126;color:#e9eeee;border-radius:30px;padding:10px 13px;font-size:10px;cursor:pointer;transition:background .18s,border-color .18s}
+.action:hover{background:#243138;border-color:#718087}
+.action.primary{background:#dfe6e2;border-color:#dfe6e2;color:#11191b}
+.action.primary:hover{background:#fff}
+.action:focus-visible,.style-card:focus-visible{outline:2px solid #e5eeeb;outline-offset:3px}
+.grid-head{display:flex;justify-content:space-between;align-items:end;gap:12px;margin:29px 0 13px}
+.grid-head strong{font-size:14px;font-weight:500;letter-spacing:.02em}
+.grid-head span{font-size:10px;line-height:1.4;color:#778487;text-align:right}
+.styles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.style-card{appearance:none;display:flex;align-items:center;gap:12px;min-width:0;padding:9px;text-align:left;color:#eef1ef;border:1px solid #29343a;border-radius:12px;background:linear-gradient(135deg,#11181c,#0c1114);cursor:pointer;transition:border-color .18s,background .18s}
+.style-card:hover{border-color:#697a80;background:#151e22}
+.style-card.active{border-color:#b9c6c4;background:#1a2529}
+.thumb{width:91px;height:73px;flex:0 0 91px;display:block;border-radius:8px;overflow:hidden;background:#080c0e}
+.thumb canvas{display:block;width:100%;height:100%}
+.card-copy{min-width:0;display:flex;flex-direction:column;gap:4px}
+.card-no{font-size:9px;color:#809094;letter-spacing:.16em}
+.card-copy strong{font-size:12px;font-weight:500;line-height:1.28}
+.card-copy small{font-size:10px;color:#9aa5a6;line-height:1.35}
+.footnote{margin-top:23px;padding-top:14px;border-top:1px solid #263137;color:#788487;font-size:10px;line-height:1.65}
+@media(max-width:700px){
+ .shell{width:calc(100% - 20px);padding-top:15px}
+ .stage{min-height:250px}
+ #web-canvas{height:82vw;min-height:250px;max-height:390px}
+ .details{align-items:flex-start;flex-direction:column;gap:14px;padding:14px}
+ .actions{justify-content:flex-start}
+ .styles{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .thumb{width:75px;flex-basis:75px;height:70px}
+}
+@media(max-width:440px){
+ .styles{grid-template-columns:1fr}
+ .style-card{min-height:86px}
+ .thumb{width:88px;flex-basis:88px;height:72px}
+ .labchip{font-size:8px;padding:6px 8px}
+}
+@media(prefers-reduced-motion:reduce){
+ .action,.style-card{transition:none}
+}
+</style>
+</head>
+<body>
+<main class="shell">
+<header class="topbar">
+  <div class="wordmark">
+    <span class="mark" aria-hidden="true">
+      <svg viewBox="0 0 64 64" fill="none" stroke="#dce4e2" stroke-width="1.5" stroke-linecap="round">
+        <path d="M32 4V60M4 32H60M12.2 12.2L51.8 51.8M51.8 12.2L12.2 51.8"/>
+        <path d="M32 4C26 14 26 22 32 32C38 42 38 50 32 60M4 32C14 26 22 26 32 32C42 38 50 38 60 32"/>
+        <circle cx="32" cy="32" r="3"/>
+      </svg>
+    </span>
+    <div><div class="brand">AHARANE</div><div class="topnote">Realistic web motion lab</div></div>
+  </div>
+  <div class="labchip">10 LIVE STUDIES · TEST BRANCH</div>
+</header>
+
+<section class="intro">
+  <h1>Silk, light, and life.</h1>
+  <p>This is a fresh visual direction: natural orb-web structure, irregular support threads, a true woven spiral, fine silk highlights and tiny droplets. The web is drawn and animated directly on the canvas — it is not a static picture or a video that needs autoplay permission.</p>
+</section>
+
+<section class="preview" aria-live="polite">
+  <div class="stage">
+    <canvas id="web-canvas" aria-label="Live animated natural spider web"></canvas>
+    <div class="stage-caption"><span>AHARANE · SILK STUDY</span><span class="live"><i></i><span id="motion-state">LIVE MOTION</span></span></div>
+  </div>
+  <div class="details">
+    <div class="details-copy">
+      <div class="eyebrow">Selected study <span id="selected-no">01 / 10</span></div>
+      <div id="active-name">Morning Dew</div>
+      <p id="active-desc">A fresh orb web with fine droplets catching cold morning light.</p>
+    </div>
+    <div class="actions">
+      <button class="action primary" id="replay" type="button">Replay weave</button>
+      <button class="action" id="pause" type="button" aria-pressed="false">Pause</button>
+    </div>
+  </div>
+</section>
+
+<div class="grid-head"><strong>Explore the ten studies</strong><span>Tap a study to enlarge it<br>and restart its motion</span></div>
+<section class="styles" id="styles" aria-label="Ten realistic web animations"></section>
+
+<p class="footnote">LAB ONLY · No Aharane app screen or production icon has been changed. This prototype is intentionally self-contained so its animation can be tested on a real browser before any app integration.</p>
+</main>
+
+<script>
+(function(){
+"use strict";
+
+const TAU = Math.PI * 2;
+const themes = [
+ {id:"01",name:"Morning Dew",kind:"Natural · cool daylight",desc:"A delicate orb web with small water beads catching early morning light.",top:"#18262d",bottom:"#05090d",haze:"#9dc1cf",thread:"#dbeaf0",glow:"#d5f3ff",dew:"#eafaff",spokes:29,turns:16,wind:.42,drops:26,spider:false,scale:1,stretchX:1,stretchY:.94,rotation:-.03,light:1},
+ {id:"02",name:"Moonlit Silk",kind:"Atmosphere · silver blue",desc:"A fine silver web floating in deep moonlit blue, with a cool rim glow.",top:"#111d38",bottom:"#03060e",haze:"#7d9ad1",thread:"#c9d9f3",glow:"#8fb1ff",dew:"#e1ecff",spokes:27,turns:15,wind:.22,drops:14,spider:false,scale:1,stretchX:1,stretchY:1.02,rotation:.04,light:.9},
+ {id:"03",name:"Golden Hour",kind:"Light · warm backlit",desc:"Warm sunlight shines through natural silk, revealing the web's fine structure.",top:"#382619",bottom:"#0b0806",haze:"#dca264",thread:"#f2dec2",glow:"#ffc77f",dew:"#fff0cf",spokes:28,turns:17,wind:.32,drops:20,spider:false,scale:1,stretchX:1.02,stretchY:.96,rotation:.02,light:1.1},
+ {id:"04",name:"Forest Mist",kind:"Environment · soft green",desc:"A web in a quiet woodland haze, with muted green light and soft movement.",top:"#1b2b23",bottom:"#060b08",haze:"#8eaf96",thread:"#d6e6d7",glow:"#aed8b6",dew:"#efffee",spokes:30,turns:15,wind:.82,drops:24,spider:false,scale:1,stretchX:.98,stretchY:1.02,rotation:-.04,light:.92},
+ {id:"05",name:"Backlit Silk",kind:"Photography · luminous edge",desc:"Dark surroundings and bright backlight make the individual strands glow.",top:"#24282d",bottom:"#06080a",haze:"#d3dfe6",thread:"#f1f6f8",glow:"#ffffff",dew:"#ffffff",spokes:31,turns:18,wind:.18,drops:11,spider:false,scale:1,stretchX:1,stretchY:1,rotation:0,light:1.2},
+ {id:"06",name:"Frosted Web",kind:"Texture · cold detail",desc:"An icy web with bright dew points and tiny crystalline glints along the silk.",top:"#1e303b",bottom:"#060c12",haze:"#a4c5d7",thread:"#e0eef5",glow:"#bceaff",dew:"#fbfeff",spokes:26,turns:16,wind:.13,drops:33,spider:false,scale:1,stretchX:1,stretchY:1,rotation:.02,light:1},
+ {id:"07",name:"Macro Close-up",kind:"Camera · intimate detail",desc:"A closer crop with larger water beads, curving strands and more pronounced depth.",top:"#262a2d",bottom:"#080a0c",haze:"#adb8bf",thread:"#e9eff2",glow:"#f3fbff",dew:"#ffffff",spokes:25,turns:14,wind:.24,drops:19,spider:false,scale:1.21,stretchX:1.04,stretchY:.94,rotation:.1,light:1.08},
+ {id:"08",name:"The Weaver",kind:"Life · travelling spider",desc:"A small spider carefully walks along one of the web's support threads.",top:"#1b2025",bottom:"#05080a",haze:"#9aabb6",thread:"#d9e4e9",glow:"#dff2ff",dew:"#f2fbff",spokes:29,turns:16,wind:.1,drops:9,spider:true,scale:1,stretchX:1,stretchY:1,rotation:-.02,light:.96},
+ {id:"09",name:"Wind-Touched",kind:"Motion · gentle tension",desc:"A soft breeze travels through the silk, giving the whole structure a subtle sway.",top:"#20292d",bottom:"#070a0c",haze:"#a2b3b7",thread:"#e2ebeb",glow:"#e6f5f4",dew:"#f8ffff",spokes:28,turns:15,wind:1.25,drops:13,spider:false,scale:1,stretchX:1.02,stretchY:.95,rotation:.03,light:1},
+ {id:"10",name:"Silver Emblem",kind:"Identity · refined monochrome",desc:"A restrained black-and-silver web with a clean silhouette for the final app mark.",top:"#222629",bottom:"#080a0c",haze:"#c1c8c9",thread:"#f2f3f1",glow:"#ffffff",dew:"#ffffff",spokes:32,turns:19,wind:.16,drops:8,spider:false,scale:.94,stretchX:1,stretchY:1,rotation:0,light:1.05}
+];
+
+const canvas = document.getElementById("web-canvas");
+const ctx = canvas.getContext("2d",{alpha:false,desynchronized:true});
+const grid = document.getElementById("styles");
+const activeName = document.getElementById("active-name");
+const activeDesc = document.getElementById("active-desc");
+const selectedNo = document.getElementById("selected-no");
+const pauseButton = document.getElementById("pause");
+const motionState = document.getElementById("motion-state");
+let selected = 0;
+let paused = false;
+let startAt = performance.now();
+let pausedAt = 0;
+let lastFrameAt = 0;
+let rafId = 0;
+let cssWidth = 0;
+let cssHeight = 0;
+let dpr = 1;
+let resizeObserver = null;
+
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function smooth(v){v=clamp(v,0,1);return v*v*(3-2*v);}
+function hash(n){const x=Math.sin(n*127.1+311.7)*43758.5453123;return x-Math.floor(x);}
+function rgba(hex,alpha){
+ const h=hex.replace("#","");
+ const n=parseInt(h.length===3?h.split("").map(function(x){return x+x;}).join(""):h,16);
+ return "rgba("+((n>>16)&255)+","+((n>>8)&255)+","+(n&255)+","+alpha+")";
+}
+function pointAt(cx,cy,r,a,t,cfg,seed){
+ const irregular=1+0.009*Math.sin(a*3.2+seed*.3)+0.006*Math.cos(a*7.1-seed*.6)+0.003*Math.sin(a*13+seed);
+ const wind=cfg.wind*(Math.sin(t*.56+a*2.3+r*.023+seed)*.52+Math.sin(t*.82-a*3.1+r*.014+seed*.4)*.28);
+ const rr=r*irregular+wind;
+ const side=cfg.wind*.34*Math.sin(t*.47+a*3.4+r*.021+seed);
+ const x=rr*Math.cos(a)-side*Math.sin(a);
+ const y=rr*Math.sin(a)+side*Math.cos(a);
+ return [cx+x*cfg.stretchX,cy+y*cfg.stretchY];
+}
+function makeAngles(cfg){
+ const result=[];
+ for(let i=0;i<cfg.spokes;i++){
+  result.push(-Math.PI/2+i*TAU/cfg.spokes+(hash(i+13)-.5)*.027+cfg.rotation);
+ }
+ return result;
+}
+function tracePoints(c,pts,color,width,glow){
+ if(!pts||pts.length<2)return;
+ c.save();
+ c.beginPath();c.moveTo(pts[0][0],pts[0][1]);
+ for(let i=1;i<pts.length;i++)c.lineTo(pts[i][0],pts[i][1]);
+ c.strokeStyle=color;c.lineWidth=width;c.lineCap="round";c.lineJoin="round";
+ if(glow){c.shadowColor=color;c.shadowBlur=glow;}
+ c.stroke();c.restore();
+}
+function drawThread(c,pts,cfg,scale){
+ tracePoints(c,pts,rgba("#000000",.52),1.9*scale,0);
+ tracePoints(c,pts,rgba(cfg.thread,.82),.72*scale,.8*scale);
+ const hi=pts.map(function(p){return [p[0]-.42*scale,p[1]-.46*scale];});
+ tracePoints(c,hi,rgba("#ffffff",.24),.31*scale,0);
+}
+function drawDrop(c,x,y,r,color){
+ c.save();
+ const g=c.createRadialGradient(x-r*.42,y-r*.5,.2,x,y,r*1.8);
+ g.addColorStop(0,"rgba(255,255,255,.97)");
+ g.addColorStop(.12,color);
+ g.addColorStop(.4,"rgba(224,239,246,.56)");
+ g.addColorStop(.78,"rgba(153,183,198,.14)");
+ g.addColorStop(1,"rgba(125,165,183,0)");
+ c.fillStyle=g;c.beginPath();c.arc(x,y,r*1.8,0,TAU);c.fill();
+ c.fillStyle="rgba(255,255,255,.94)";c.beginPath();c.arc(x-r*.35,y-r*.43,Math.max(.4,r*.19),0,TAU);c.fill();
+ c.restore();
+}
+function drawSpider(c,x,y,angle,scale){
+ c.save();c.translate(x,y);c.rotate(angle+Math.PI/2);c.scale(scale,scale);
+ c.strokeStyle="rgba(8,12,15,.96)";c.lineWidth=1.1;c.lineCap="round";
+ for(let side=-1;side<=1;side+=2){
+  for(let i=0;i<4;i++){
+   const yy=-3+i*2.1;
+   c.beginPath();c.moveTo(side*1.5,yy);
+   c.quadraticCurveTo(side*(4.1+i*.35),yy-2.8,side*(6.1+i*.48),-6+i*4.4);
+   c.stroke();
+  }
+ }
+ const abdomen=c.createRadialGradient(-1.2,-2.5,.2,0,1,4.7);
+ abdomen.addColorStop(0,"#87929a");abdomen.addColorStop(.32,"#303c43");abdomen.addColorStop(1,"#090e11");
+ c.fillStyle=abdomen;c.beginPath();c.ellipse(0,1.1,3.1,4.5,-.1,0,TAU);c.fill();
+ c.fillStyle="#10171b";c.beginPath();c.ellipse(0,-4.7,2.1,2.2,0,0,TAU);c.fill();
+ c.restore();
+}
+function makeBackground(c,w,h,cfg){
+ const bg=c.createLinearGradient(0,0,w,h);
+ bg.addColorStop(0,cfg.top);bg.addColorStop(1,cfg.bottom);
+ c.fillStyle=bg;c.fillRect(0,0,w,h);
+ const glow=c.createRadialGradient(w*.48,h*.42,0,w*.48,h*.42,Math.max(w,h)*.63);
+ glow.addColorStop(0,rgba(cfg.haze,.22*cfg.light));glow.addColorStop(.48,rgba(cfg.haze,.07));glow.addColorStop(1,"rgba(0,0,0,0)");
+ c.fillStyle=glow;c.fillRect(0,0,w,h);
+ for(let i=0;i<10;i++){
+  const bx=hash(i+41)*w,by=hash(i+77)*h,br=2+hash(i+93)*6;
+  const bokeh=c.createRadialGradient(bx,by,0,bx,by,br*5);
+  bokeh.addColorStop(0,rgba(cfg.glow,.09*cfg.light));bokeh.addColorStop(1,"rgba(0,0,0,0)");
+  c.fillStyle=bokeh;c.beginPath();c.arc(bx,by,br*5,0,TAU);c.fill();
+ }
+ const vignette=c.createRadialGradient(w*.5,h*.48,Math.min(w,h)*.12,w*.5,h*.48,Math.max(w,h)*.72);
+ vignette.addColorStop(0,"rgba(0,0,0,0)");vignette.addColorStop(1,"rgba(0,0,0,.48)");
+ c.fillStyle=vignette;c.fillRect(0,0,w,h);
+}
+function drawWeb(c,w,h,cfg,time,progress,detail){
+ makeBackground(c,w,h,cfg);
+ const cx=w*.5,cy=h*.475;
+ const R=Math.min(w,h)*.385*cfg.scale;
+ const hub=Math.max(8,R*.07);
+ const angles=makeAngles(cfg);
+ const ends=[];
+ const lineScale=clamp(Math.min(w,h)/390,.7,1.35);
+ const drawRays=Math.max(1,Math.ceil(cfg.spokes*clamp(progress*1.18,0,1)));
+ for(let i=0;i<drawRays;i++){
+  const a=angles[i];
+  const endR=R*(.965+(hash(i+19)-.5)*.045);
+  const full=clamp((progress*1.14-i/cfg.spokes*.08)*1.1,0,1);
+  const points=[];
+  const samples=30;
+  const count=Math.max(2,Math.floor(samples*full));
+  for(let k=0;k<=count;k++){
+   const u=k/samples;
+   const radius=hub+(endR-hub)*u;
+   const bend=(hash(i+201)-.5)*R*.016*Math.sin(u*Math.PI);
+   const p=pointAt(cx,cy,radius,a+bend/R,time,cfg,i);
+   points.push(p);
+  }
+  drawThread(c,points,cfg,lineScale);
+  const end=pointAt(cx,cy,endR,a,time,cfg,i);
+  ends.push(end);
+ }
+ if(progress>.12&&ends.length>3){
+  const perimeter=[];
+  for(let i=0;i<ends.length;i++){
+   const a=ends[i],b=ends[(i+1)%ends.length];
+   for(let k=0;k<5;k++){
+    const u=k/5;
+    perimeter.push([a[0]*(1-u)+b[0]*u,a[1]*(1-u)+b[1]*u]);
+   }
+  }
+  perimeter.push(perimeter[0]);
+  c.save();c.globalAlpha=clamp((progress-.12)*3,0,.8);
+  tracePoints(c,perimeter,rgba(cfg.thread,.58),.8*lineScale,.5*lineScale);
+  c.restore();
+ }
+ // The sticky capture thread follows a softly irregular Archimedean spiral,
+ // not a stack of perfect circles.
+ const spiralSteps=980;
+ const spiralLimit=Math.floor(spiralSteps*clamp((progress-.18)/.82,0,1));
+ const spiral=[];
+ for(let k=0;k<=spiralLimit;k++){
+  const u=k/spiralSteps;
+  const r=hub*.34+Math.pow(u,1.04)*(R-hub*.34);
+  const a=-Math.PI*.55+u*cfg.turns*TAU+cfg.rotation;
+  const radialWobble=1+0.012*Math.sin(u*TAU*5)+0.006*Math.sin(u*TAU*13);
+  spiral.push(pointAt(cx,cy,r*radialWobble,a,time,cfg,3.6));
+ }
+ if(spiral.length>1){
+  tracePoints(c,spiral,rgba("#000000",.48),1.7*lineScale,0);
+  tracePoints(c,spiral,rgba(cfg.thread,.91),.66*lineScale,.7*lineScale);
+  const highlight=spiral.map(function(p){return [p[0]-.38*lineScale,p[1]-.3*lineScale];});
+  tracePoints(c,highlight,rgba("#ffffff",.23),.27*lineScale,0);
+ }
+ // A second, fine spiral fibre catches a little reflected light.
+ if(progress>.7){
+  const secondary=[];
+  const secLimit=Math.floor(spiralSteps*.7);
+  for(let k=0;k<=secLimit;k++){
+   const u=k/secLimit;
+   const r=hub*.62+u*(R*.84-hub*.62);
+   const a=-Math.PI*.53+u*(cfg.turns-.8)*TAU+cfg.rotation+.045;
+   secondary.push(pointAt(cx,cy,r,a,time,cfg,9.1));
+  }
+  tracePoints(c,secondary,rgba("#ffffff",.12),.3*lineScale,0);
+ }
+ // Dew drops: individual round beads on selected crossings.
+ if(progress>.78){
+  for(let i=0;i<cfg.drops;i++){
+   const u=.12+hash(i+331)*.82;
+   const r=hub*.34+Math.pow(u,1.04)*(R-hub*.34);
+   const a=-Math.PI*.55+u*cfg.turns*TAU+cfg.rotation;
+   const p=pointAt(cx,cy,r,a,time,cfg,3.6);
+   const beadSize=(.72+hash(i+413)*1.55)*lineScale;
+   drawDrop(c,p[0],p[1],beadSize,cfg.dew);
+  }
+ }
+ // Highlight glides along the capture spiral after the first weave completes.
+ if(progress>=1&&detail){
+  const moving=(time*.00012)%1;
+  const center=Math.floor(moving*spiralSteps);
+  const shimmer=[];
+  for(let j=-13;j<=13;j++){
+   const index=clamp(center+j,0,spiral.length-1);
+   shimmer.push(spiral[index]);
+  }
+  tracePoints(c,shimmer,rgba(cfg.glow,.9),1.2*lineScale,7*lineScale);
+  const p=spiral[clamp(center,0,spiral.length-1)];
+  c.save();c.shadowColor=cfg.glow;c.shadowBlur=12*lineScale;
+  c.fillStyle=rgba(cfg.glow,.95);c.beginPath();c.arc(p[0],p[1],1.4*lineScale,0,TAU);c.fill();c.restore();
+ }
+ // Dense central knot where the radial threads converge.
+ if(progress>.35){
+  c.save();
+  const knot=c.createRadialGradient(cx,cy,0,cx,cy,hub*1.55);
+  knot.addColorStop(0,rgba(cfg.glow,.28));knot.addColorStop(.45,rgba(cfg.thread,.14));knot.addColorStop(1,"rgba(0,0,0,0)");
+  c.fillStyle=knot;c.beginPath();c.arc(cx,cy,hub*1.55,0,TAU);c.fill();
+  c.strokeStyle=rgba(cfg.thread,.72);c.lineWidth=.55*lineScale;
+  for(let i=0;i<9;i++){
+   const a=i*TAU/9;
+   c.beginPath();c.ellipse(cx+Math.cos(a)*hub*.17,cy+Math.sin(a)*hub*.17,hub*.48,hub*.31,a,0,TAU);c.stroke();
+  }
+  c.restore();
+ }
+ // Tiny travelling spider, only in the Weaver study.
+ if(cfg.spider&&progress>.82&&detail){
+  const a=angles[5];
+  const spiderT=(.22+(time*.000035)% .62);
+  const rr=hub+(R-hub)*spiderT;
+  const p=pointAt(cx,cy,rr,a,time,cfg,5);
+  const tether=pointAt(cx,cy,rr+R*.095,a,time,cfg,5);
+  tracePoints(c,[p,tether],rgba(cfg.thread,.38),.45*lineScale,0);
+  drawSpider(c,p[0],p[1],a,lineScale*.95);
+ }
+ // A few static fine fibres and floating particles give the close-up more depth.
+ if(detail){
+  for(let i=0;i<32;i++){
+   const x=hash(i+870)*w,y=hash(i+901)*h;
+   const alpha=.018+hash(i+947)*.03;
+   c.fillStyle="rgba(255,255,255,"+alpha+")";
+   c.beginPath();c.arc(x,y,.35*lineScale,0,TAU);c.fill();
+  }
+ }
+}
+function configureCanvas(target){
+ const rect=target.getBoundingClientRect();
+ const scale=Math.min(window.devicePixelRatio||1,1.7);
+ const w=Math.max(1,rect.width),h=Math.max(1,rect.height);
+ const bw=Math.max(1,Math.round(w*scale)),bh=Math.max(1,Math.round(h*scale));
+ if(target.width!==bw||target.height!==bh){target.width=bw;target.height=bh;}
+ const c=target.getContext("2d",{alpha:false,desynchronized:true});
+ c.setTransform(scale,0,0,scale,0,0);
+ return {ctx:c,w:w,h:h};
+}
+function paintThumbs(){
+ const thumbs=document.querySelectorAll("[data-thumb]");
+ thumbs.forEach(function(target){
+  const size=configureCanvas(target);
+  drawWeb(size.ctx,size.w,size.h,themes[Number(target.dataset.thumb)],3200,1,false);
+ });
+}
+function buildGrid(){
+ grid.innerHTML=themes.map(function(t,i){
+  return '<button class="style-card'+(i===0?' active':'')+'" type="button" data-style="'+i+'" aria-pressed="'+(i===0)+'">'+
+   '<span class="thumb"><canvas width="182" height="146" data-thumb="'+i+'" aria-hidden="true"></canvas></span>'+
+   '<span class="card-copy"><span class="card-no">'+String(i+1).padStart(2,"0")+'</span><strong>'+t.name+'</strong><small>'+t.kind+'</small></span></button>';
+ }).join("");
+ grid.querySelectorAll(".style-card").forEach(function(button){
+  button.addEventListener("click",function(){selectStyle(Number(button.dataset.style));});
+ });
+}
+function setPauseUI(){
+ pauseButton.textContent=paused?"Resume":"Pause";
+ pauseButton.setAttribute("aria-pressed",String(paused));
+ motionState.textContent=paused?"PAUSED":"LIVE MOTION";
+}
+function selectStyle(index){
+ selected=(index+themes.length)%themes.length;
+ activeName.textContent=themes[selected].name;
+ activeDesc.textContent=themes[selected].desc;
+ selectedNo.textContent=String(selected+1).padStart(2,"0")+" / 10";
+ grid.querySelectorAll(".style-card").forEach(function(card,i){
+  const active=i===selected;card.classList.toggle("active",active);card.setAttribute("aria-pressed",String(active));
+ });
+ startAt=performance.now();paused=false;setPauseUI();
+}
+function animate(now){
+ rafId=requestAnimationFrame(animate);
+ if(paused||document.hidden)return;
+ if(now-lastFrameAt<30)return;
+ lastFrameAt=now;
+ const size=configureCanvas(canvas);
+ const elapsed=Math.max(0,now-startAt);
+ const progress=smooth(elapsed/2750);
+ drawWeb(size.ctx,size.w,size.h,themes[selected],elapsed,progress,true);
+}
+document.getElementById("replay").addEventListener("click",function(){startAt=performance.now();paused=false;setPauseUI();});
+pauseButton.addEventListener("click",function(){
+ if(!paused){paused=true;pausedAt=performance.now();}
+ else {startAt+=performance.now()-pausedAt;paused=false;}
+ setPauseUI();
+});
+document.addEventListener("visibilitychange",function(){
+ if(!document.hidden){lastFrameAt=0;if(!paused)startAt=Math.min(startAt,performance.now()-400);}
+});
+if(typeof ResizeObserver!=="undefined"){
+ resizeObserver=new ResizeObserver(function(){lastFrameAt=0;});
+ resizeObserver.observe(canvas);
+}else{window.addEventListener("resize",function(){lastFrameAt=0;});}
+buildGrid();
+paintThumbs();
+selectStyle(0);
+rafId=requestAnimationFrame(animate);
+
+// Expose harmless QA state for browser tests; it lets the tester confirm that
+// frames continue changing, without modifying the drawing or controls.
+window.__AHARANE_WEB_LAB__={
+ get selected(){return selected;},
+ get paused(){return paused;},
+ get frameCount(){return frameCount;},
+ get animationRunning(){return rafId!==0;}
+};
+let frameCount=0;
+const originalDrawWeb=drawWeb;
+drawWeb=function(){frameCount++;return originalDrawWeb.apply(this,arguments);};
+})();
+</script>
+</body>
+</html>

@@ -8,12 +8,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -86,6 +89,7 @@ import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -123,6 +127,8 @@ fun ConversationScreen(
     onDeleteMessage: (ChatMessage) -> Unit = {},
     onRetryOutgoingMessage: (ChatMessage) -> Unit = {},
     onCopyMessage: (ChatMessage) -> Unit = {},
+    aiReplyAvailable: Boolean = false,
+    onGenerateAiReply: suspend (ChatMessage, ChatMessage?, String, String) -> String = { _, _, _, _ -> "" },
     forwardTargets: List<ChatSummary> = emptyList(),
     searchResults: List<ChatMessage>? = null,
     onSearchChanged: (String, Long, Long) -> Unit = { query, _, _ -> },
@@ -153,6 +159,14 @@ fun ConversationScreen(
     var actionMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var forwardMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var deleteMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var aiReplyMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var aiReplyQuotedMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var aiReplyTone by remember { mutableStateOf("Casual") }
+    var aiReplyInstructions by remember { mutableStateOf("") }
+    var aiReplyDraft by remember { mutableStateOf("") }
+    var aiReplyGenerating by remember { mutableStateOf(false) }
+    var aiReplyError by remember { mutableStateOf("") }
+    val aiReplyScope = rememberCoroutineScope()
     val context = LocalContext.current
     var wallpaperBitmap by remember(appearance.photoUri) { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(appearance.photoUri) {
@@ -205,6 +219,7 @@ fun ConversationScreen(
     }
     BackHandler {
         when {
+            aiReplyMessage != null -> aiReplyMessage = null
             moreOpen -> moreOpen = false
             actionMessage != null -> actionMessage = null
             forwardMessage != null -> forwardMessage = null
@@ -215,6 +230,28 @@ fun ConversationScreen(
             }
             replyTo != null -> replyTo = null
             else -> onBack()
+        }
+    }
+
+    fun requestAiReplyDraft(
+        source: ChatMessage,
+        quoted: ChatMessage?,
+        tone: String,
+        instructions: String
+    ) {
+        aiReplyGenerating = true
+        aiReplyError = ""
+        aiReplyScope.launch {
+            try {
+                val result = onGenerateAiReply(source, quoted, tone, instructions)
+                if (aiReplyMessage?.messageId == source.messageId) aiReplyDraft = result
+            } catch (error: Exception) {
+                if (aiReplyMessage?.messageId == source.messageId) {
+                    aiReplyError = error.message ?: "AI could not generate a reply. Try again."
+                }
+            } finally {
+                if (aiReplyMessage?.messageId == source.messageId) aiReplyGenerating = false
+            }
         }
     }
 
@@ -685,6 +722,21 @@ fun ConversationScreen(
                     replyTo = selected
                     actionMessage = null
                 }
+                if (aiReplyAvailable && selected.direction == MessageDirection.INCOMING) {
+                    StudioPaletteAction("AI Reply") {
+                        val quote = selected.replyToMessageId?.let { id ->
+                            messages.firstOrNull { it.messageId == id && it.key == conversation.key }
+                        }
+                        aiReplyMessage = selected
+                        aiReplyQuotedMessage = quote
+                        aiReplyTone = "Casual"
+                        aiReplyInstructions = ""
+                        aiReplyDraft = ""
+                        aiReplyError = ""
+                        actionMessage = null
+                        requestAiReplyDraft(selected, quote, "Casual", "")
+                    }
+                }
                 StudioPaletteAction(if (selected.isStarred) "Remove star" else "Star message") {
                     onStarMessage(selected)
                     actionMessage = null
@@ -722,6 +774,166 @@ fun ConversationScreen(
                     actionMessage = null
                 }
                 StudioPaletteAction("Cancel") { actionMessage = null }
+            }
+        }
+    }
+
+    if (aiReplyMessage != null) {
+        val selected = aiReplyMessage!!
+        val quoted = aiReplyQuotedMessage
+        val tones = listOf("Casual", "Friendly", "Professional", "Formal", "Empathetic", "Concise")
+        androidx.compose.ui.window.Dialog(onDismissRequest = { aiReplyMessage = null }) {
+            Column(
+                Modifier.fillMaxWidth()
+                    .heightIn(max = 660.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(StudioPalette.Surface)
+                    .verticalScroll(rememberScrollState())
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("AI Reply", color = StudioPalette.Ink, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    "A text reply draft based only on this message and its quoted message, when available.",
+                    color = StudioPalette.Muted,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp
+                )
+                if (quoted != null) {
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                            .background(StudioPalette.Background).padding(11.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            "QUOTED MESSAGE · ${quoted.senderName?.takeIf { it.isNotBlank() } ?: if (quoted.direction == MessageDirection.OUTGOING) "You" else conversation.title}",
+                            color = StudioPalette.Accent,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            quoted.text.ifBlank { messageAttachmentLabel(quoted.kind) },
+                            color = StudioPalette.Ink,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
+                        )
+                    }
+                } else if (selected.replyToMessageId != null) {
+                    Text(
+                        "The quoted message is not among the messages already loaded on this phone. It will not be fetched; the draft will use only the selected message.",
+                        color = StudioPalette.Muted,
+                        fontSize = 11.5.sp,
+                        lineHeight = 16.sp
+                    )
+                }
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                        .background(StudioPalette.Background).padding(11.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        "SELECTED MESSAGE · ${selected.senderName?.takeIf { it.isNotBlank() } ?: conversation.title}",
+                        color = StudioPalette.Accent,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        selected.text.ifBlank { messageAttachmentLabel(selected.kind) },
+                        color = StudioPalette.Ink,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+                Text("Writing tone", color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    tones.forEach { tone ->
+                        Box(
+                            Modifier.clip(CircleShape)
+                                .background(if (aiReplyTone == tone) StudioPalette.Accent else StudioPalette.Background)
+                                .clickable { aiReplyTone = tone }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                tone,
+                                color = if (aiReplyTone == tone) Color.White else StudioPalette.Ink,
+                                fontSize = 11.5.sp,
+                                fontWeight = if (aiReplyTone == tone) FontWeight.SemiBold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+                Text("Additional instructions · optional", color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                BasicTextField(
+                    value = aiReplyInstructions,
+                    onValueChange = { aiReplyInstructions = it.take(1200) },
+                    cursorBrush = SolidColor(StudioPalette.Accent),
+                    minLines = 2,
+                    maxLines = 4,
+                    textStyle = androidx.compose.ui.text.TextStyle(color = StudioPalette.Ink, fontSize = 13.sp, lineHeight = 18.sp),
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                        .background(StudioPalette.Background)
+                        .border(1.dp, StudioPalette.Line, RoundedCornerShape(10.dp))
+                        .padding(11.dp)
+                )
+                Text("Reply draft", color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                BasicTextField(
+                    value = aiReplyDraft,
+                    onValueChange = { aiReplyDraft = it.take(8000) },
+                    cursorBrush = SolidColor(StudioPalette.Accent),
+                    minLines = 4,
+                    maxLines = 9,
+                    textStyle = androidx.compose.ui.text.TextStyle(color = StudioPalette.Ink, fontSize = 14.sp, lineHeight = 20.sp),
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                        .background(StudioPalette.Background)
+                        .border(1.dp, StudioPalette.Line, RoundedCornerShape(10.dp))
+                        .padding(12.dp)
+                )
+                if (aiReplyGenerating) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp), color = StudioPalette.Accent, strokeWidth = 2.dp
+                        )
+                        Text("Generating a reply…", color = StudioPalette.Muted, fontSize = 12.sp)
+                    }
+                }
+                if (aiReplyError.isNotBlank()) {
+                    Text(aiReplyError, color = Color(0xFFB4534B), fontSize = 12.sp, lineHeight = 17.sp)
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.material3.TextButton(
+                        enabled = !aiReplyGenerating,
+                        onClick = { requestAiReplyDraft(selected, quoted, aiReplyTone, aiReplyInstructions) }
+                    ) {
+                        Text(if (aiReplyDraft.isBlank()) "Generate" else "Regenerate", color = StudioPalette.Accent)
+                    }
+                    androidx.compose.material3.TextButton(onClick = { aiReplyMessage = null }) {
+                        Text("Cancel", color = StudioPalette.Muted)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    androidx.compose.material3.Button(
+                        enabled = aiReplyDraft.isNotBlank() && !aiReplyGenerating,
+                        onClick = {
+                            draft = aiReplyDraft.trim()
+                            replyTo = selected
+                            aiReplyMessage = null
+                        }
+                    ) {
+                        Text("Use draft")
+                    }
+                }
+                Text(
+                    "Nothing is sent automatically. Review or edit the draft, then press Send in the chat yourself.",
+                    color = StudioPalette.Muted,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
             }
         }
     }

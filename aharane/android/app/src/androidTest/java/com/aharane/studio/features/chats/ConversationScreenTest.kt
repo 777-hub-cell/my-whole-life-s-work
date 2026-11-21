@@ -11,6 +11,7 @@ import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import com.aharane.studio.core.design.AharaneTheme
@@ -83,7 +84,10 @@ class ConversationScreenTest {
         compose.onNodeWithText("Professional").performClick()
         compose.onNodeWithTag("ai-reply-instruction").performTextInput("Keep it warm and brief.")
         compose.onNodeWithText("Generate reply").performClick()
-        compose.onNodeWithTag("ai-reply-draft").assertIsDisplayed()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("ai-reply-draft").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("ai-reply-draft").assertTextEquals("Thanks for explaining. I can do that.")
         compose.onNodeWithText("Send reply").performClick()
         compose.runOnIdle {
             assertEquals("This is the selected incoming message.", suppliedMessage)
@@ -92,6 +96,47 @@ class ConversationScreenTest {
             assertEquals("Keep it warm and brief.", suppliedInstruction)
             assertEquals("Thanks for explaining. I can do that.", sentText)
             assertEquals("selected-message", sentQuotedId)
+        }
+    }
+
+    @Test
+    fun aiReplyUsesOnlySelectedTextWhenTheQuotedMessageIsUnavailable() {
+        val selected = testIncomingMessage().copy(
+            replyToMessageId = "not-loaded-quoted-message",
+            quotedMessageText = ""
+        )
+        var suppliedMessage = ""
+        var suppliedQuote = "must be replaced"
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = listOf(selected),
+                    connected = true,
+                    aiReplyAvailable = true,
+                    onBack = {},
+                    onSend = { _, _ -> },
+                    onGenerateAiReply = { message, quoted, _, _ ->
+                        suppliedMessage = message
+                        suppliedQuote = quoted
+                        "I can reply based on the message you sent."
+                    }
+                )
+            }
+        }
+        compose.onNodeWithTag("message-bubble-selected-message").performTouchInput { longClick() }
+        compose.onNodeWithText("AI Reply").performClick()
+        compose.onNodeWithText(
+            "The original quoted text is unavailable. Aharane will use only the selected message and will not load chat history."
+        ).assertIsDisplayed()
+        compose.onNodeWithText("Generate reply").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("ai-reply-draft").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("ai-reply-draft").assertTextEquals("I can reply based on the message you sent.")
+        compose.runOnIdle {
+            assertEquals("This is the selected incoming message.", suppliedMessage)
+            assertEquals("", suppliedQuote)
         }
     }
 

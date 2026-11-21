@@ -285,7 +285,7 @@ async function requireAdmin(req, res, next) {
   }
 }
 
-function allowPairAttempt(ip) {
+function allowCommand(sender) {
   const now = Date.now()
   const previous = commandTimes.get(sender) || 0
   const configuredCooldown = Number(studioSettings?.[sender.split(':')[0]]?.commandCooldown ?? 1.2)

@@ -73,7 +73,7 @@ test('AI Reply uses only the selected message, its explicit quote, tone and user
 test('AI Reply validates oversized inputs and normalizes unsupported tones', async () => {
   let request
   const service = createAiReplyService({
-    env: { GROQ_API_KEY: 'test-key' },
+    env: { GROQ_API_KEY: 'test-key', GROQ_SMART_MODELS: 'openai/gpt-oss-test' },
     fetchImpl: async (_url, options) => {
       request = JSON.parse(options.body)
       return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'A natural answer.' } }] }) }

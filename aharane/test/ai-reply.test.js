@@ -12,6 +12,15 @@ test('AI Reply stays disabled when Aharane has no Groq key', async () => {
   )
 })
 
+test('AI Reply stays hidden when a Groq key exists but no model is configured', async () => {
+  const service = createAiReplyService({
+    env: { GROQ_API_KEY: 'configured-secret' },
+    fetchImpl: async () => { throw new Error('must not call') },
+  })
+  assert.deepEqual(service.availability(), { enabled: false, provider: null, model: null })
+  await assert.rejects(service.generate({ message: 'Hello' }), error => error.status === 409)
+})
+
 test('AI Reply uses only the selected message, its explicit quote, tone and user instruction', async () => {
   let request
   const secret = 'groq-test-secret-never-return-this'

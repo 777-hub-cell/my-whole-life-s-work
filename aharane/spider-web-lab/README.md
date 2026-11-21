@@ -1,10 +1,12 @@
-# Aharane Spider-Web Motion Lab
+# Aharane Splash Screen Preview
 
-Isolated visual prototype on branch `lab/aharane-realistic-web-animation-20261121`.
+A single-purpose splash screen concept, replacing the earlier animation gallery.
 
-- Static HTML/CSS/Canvas. No framework, video element, external image host, or autoplay permission is required.
-- Ten natural orb-web treatments with radial support threads, an irregular spiral capture thread, silk highlights, dew drops, light treatments, gentle tension movement, and one tiny moving spider study.
-- The main canvas runs continuously with requestAnimationFrame, is sized for high-density screens, and has pause/replay controls.
-- This folder is not wired into the production app. The actual PWA icon and Android launcher assets remain unchanged until a final design is selected.
+## Motion intent
+- The mark draws on once and settles in about **1.2 seconds**.
+- No looping, spinning, particle simulation, canvas, video, JavaScript timer or external font dependency.
+- The final mark remains still until the host app continues.
+- `prefers-reduced-motion: reduce` displays the finished mark immediately.
+- The artwork is lightweight SVG with CSS-only animation, designed to avoid frame-timing and canvas redraw glitches.
 
-Open `index.html` from a static web server or deploy the folder as a static Vercel project.
+This is still an isolated preview. It does not change the Android launcher icons, Android app theme, PWA manifest, or production app startup flow.

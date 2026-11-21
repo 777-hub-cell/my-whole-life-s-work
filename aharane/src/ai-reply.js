@@ -1,5 +1,4 @@
 const DEFAULT_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions'
-const DEFAULT_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b']
 const ALLOWED_TONES = new Set([
   'Natural', 'Friendly', 'Casual', 'Professional', 'Formal',
   'Empathetic', 'Concise', 'Apologetic', 'Confident',
@@ -60,9 +59,9 @@ export function createAiReplyService({
     ...splitValues(env.GROQ_API_KEYS),
   ])
   const configuredModels = splitValues(env.GROQ_SMART_MODELS)
-  const models = unique(configuredModels.length ? configuredModels : DEFAULT_MODELS)
+  const models = unique(configuredModels)
   const endpoint = String(env.GROQ_API_URL || DEFAULT_ENDPOINT).trim() || DEFAULT_ENDPOINT
-  const enabled = enabledByEnvironment(env) && keys.length > 0 && typeof fetchImpl === 'function'
+  const enabled = enabledByEnvironment(env) && keys.length > 0 && models.length > 0 && typeof fetchImpl === 'function'
   const timeoutMs = Math.min(60000, Math.max(1000, Number(env.AHARANE_AI_TIMEOUT_MS) || 24000))
   const maxTotalMs = Math.min(120000, Math.max(timeoutMs, Number(env.AHARANE_AI_TOTAL_TIMEOUT_MS) || 35000))
   const keyStates = keys.map(key => ({ key, disabled: false, coolingDownUntil: 0 }))

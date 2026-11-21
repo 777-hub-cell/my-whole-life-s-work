@@ -193,7 +193,7 @@ test('a linked account stops after exactly three automatic reconnect attempts', 
   assert.equal(runtime.get('private').state, 'reconnect-exhausted')
   assert.equal(runtime.get('private').reconnectAttempts, 3)
   assert.equal(sockets.length, 4, 'No fourth automatic retry should be created')
-  await assert.rejects(runtime.reconnect('private'), /needs repair/i)
+  await assert.rejects(runtime.reconnect('private'), /needs re-pairing/i)
   await runtime.shutdown()
 })
 
@@ -285,7 +285,7 @@ test('WhatsApp rate limiting is surfaced without an Aharane cooldown or damage t
   assert.equal(runtime.get('private').socket, originalSocket)
   assert.equal(runtime.get('private').authDir, originalAuthDir)
   assert.equal(runtime.get('private').registered, true)
-  assert.equal(runtime.get('private').pairingBlockedUntil, 0)
+  assert.equal('pairingBlockedUntil' in runtime.get('private'), false)
   assert.match(runtime.get('private').pairingError, /existing account session has not been changed/i)
 
   await runtime.startPairing('private')

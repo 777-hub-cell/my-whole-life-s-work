@@ -435,16 +435,48 @@ export function createAccountRuntime({
 
   function disconnectDetails(error) {
     if (!error) return { name: null, message: 'Connection closed without an error object.' }
+
+    // Baileys wraps WebSocket errors in Boom and stores the original transport
+    // error under error.data. getCodeFromWSError() defaults to 500 when it
+    // cannot classify an empty/unknown transport error. That is not proof
+    // that WhatsApp returned an HTTP 500 response.
+    const transport = error?.data ?? error?.cause ?? null
+    const transportMessage = String(transport?.message || '').slice(0, 400) || null
+    const outerMessage = String(error?.message || error).slice(0, 400)
+    const combinedMessage = [outerMessage, transportMessage].filter(Boolean).join(' | ')
+    const unexpectedResponse = combinedMessage.match(/Unexpected server response:\s*(\d{3})/i)
+    const explicitResponseStatus =
+      transport?.statusCode ??
+      transport?.status ??
+      transport?.response?.statusCode ??
+      transport?.response?.status ??
+      (unexpectedResponse ? Number(unexpectedResponse[1]) : null)
+    const statusCode = error?.output?.statusCode ?? error?.statusCode ?? error?.status ?? null
+    const isWebSocketError = /^WebSocket Error\s*\(/i.test(outerMessage)
+    const isFallbackStatus = isWebSocketError && statusCode === 500 && explicitResponseStatus == null
+
+    const responseHeaders = transport?.response?.headers ?? transport?.headers ?? {}
+    const safeHeaders = {}
+    for (const key of ['server', 'via', 'cf-ray', 'retry-after', 'content-type']) {
+      const value = responseHeaders?.[key] ?? responseHeaders?.[key.toLowerCase()]
+      if (value != null) safeHeaders[key] = String(value).slice(0, 160)
+    }
+
     return {
       name: String(error?.name || 'Error'),
-      message: String(error?.message || error).slice(0, 400),
-      statusCode: error?.output?.statusCode ?? error?.statusCode ?? error?.status ?? null,
-      code: error?.code ?? error?.cause?.code ?? null,
-      errno: error?.errno ?? error?.cause?.errno ?? null,
-      syscall: error?.syscall ?? error?.cause?.syscall ?? null,
-      address: error?.address ?? error?.cause?.address ?? null,
-      port: error?.port ?? error?.cause?.port ?? null,
+      message: outerMessage,
+      transportName: transport?.name ? String(transport.name).slice(0, 100) : null,
+      transportMessage,
+      statusCode,
+      explicitResponseStatus,
+      statusIsFallback: isFallbackStatus,
+      code: error?.code ?? error?.cause?.code ?? transport?.code ?? transport?.cause?.code ?? null,
+      errno: error?.errno ?? error?.cause?.errno ?? transport?.errno ?? transport?.cause?.errno ?? null,
+      syscall: error?.syscall ?? error?.cause?.syscall ?? transport?.syscall ?? transport?.cause?.syscall ?? null,
+      address: error?.address ?? error?.cause?.address ?? transport?.address ?? transport?.cause?.address ?? null,
+      port: error?.port ?? error?.cause?.port ?? transport?.port ?? transport?.cause?.port ?? null,
       cause: error?.cause?.message ? String(error.cause.message).slice(0, 240) : null,
+      responseHeaders: Object.keys(safeHeaders).length ? safeHeaders : null,
     }
   }
 
@@ -475,15 +507,22 @@ export function createAccountRuntime({
     if (isPairingRateLimit(error)) return pairingRateLimitError().message
     const details = disconnectDetails(error)
     const diagnostic = [
+      details.transportMessage && 'WebSocket transport: ' + details.transportMessage,
       details.message,
       details.code && 'code ' + details.code,
       details.errno && 'errno ' + details.errno,
       details.syscall && 'during ' + details.syscall,
-      details.statusCode !== null && details.statusCode !== undefined && 'WhatsApp status ' + details.statusCode,
+      details.explicitResponseStatus !== null && details.explicitResponseStatus !== undefined &&
+        'HTTP response ' + details.explicitResponseStatus,
+      details.statusIsFallback && 'Baileys fallback code 500 (no HTTP 500 response was confirmed)',
+      !details.statusIsFallback && details.explicitResponseStatus == null &&
+        details.statusCode !== null && details.statusCode !== undefined &&
+        'connection status ' + details.statusCode,
       details.address && 'endpoint ' + details.address + (details.port ? ':' + details.port : ''),
       details.cause && 'cause ' + details.cause,
+      details.responseHeaders && 'response headers ' + JSON.stringify(details.responseHeaders),
     ].filter(Boolean).join('; ')
-    return 'The replacement WhatsApp link did not complete (' + diagnostic + '). Your previous session was kept. You can try pairing again.'
+    return 'The replacement WhatsApp link did not complete (' + (diagnostic || 'The WebSocket closed without a diagnostic reason.') + '). Your previous session was kept. Try again after checking the connection details.'
   }
 
   async function saveCandidate(candidate) {

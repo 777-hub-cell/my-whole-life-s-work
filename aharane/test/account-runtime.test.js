@@ -364,6 +364,66 @@ test('a failed replacement pairing leaves the existing connected session untouch
   await runtime.shutdown()
 })
 
+test('WebSocket fallback status 500 is not misreported as a WhatsApp HTTP response', async t => {
+  const { runtime } = await fixture(t, { registered: true })
+  await runtime.start('private')
+  const oldSocket = runtime.get('private').socket
+  oldSocket.ev.emit('connection.update', { connection: 'open' })
+
+  await runtime.startPairing('private')
+  const candidate = runtime.get('private').pairingCandidate
+  const transportError = Object.assign(new Error(''), {
+    code: 'ECONNRESET',
+    errno: 'ECONNRESET',
+    syscall: 'read',
+  })
+  const error = Object.assign(new Error('WebSocket Error ()'), {
+    output: { statusCode: 500 },
+    data: transportError,
+  })
+  candidate.socket.ev.emit('connection.update', {
+    connection: 'close',
+    lastDisconnect: { error },
+  })
+  await waitFor(() => runtime.get('private').pairingCandidate === null)
+
+  const message = runtime.get('private').pairingError
+  assert.match(message, /Baileys fallback code 500/)
+  assert.match(message, /no HTTP 500 response was confirmed/)
+  assert.match(message, /ECONNRESET/)
+  assert.doesNotMatch(message, /WhatsApp status 500/)
+  assert.equal(runtime.get('private').socket, oldSocket)
+  assert.equal(oldSocket.ended, false)
+  await runtime.shutdown()
+})
+
+test('explicit WebSocket handshake response status is reported as an HTTP response', async t => {
+  const { runtime } = await fixture(t, { registered: true })
+  await runtime.start('private')
+  const oldSocket = runtime.get('private').socket
+  oldSocket.ev.emit('connection.update', { connection: 'open' })
+
+  await runtime.startPairing('private')
+  const candidate = runtime.get('private').pairingCandidate
+  const transportError = new Error('Unexpected server response: 503')
+  const error = Object.assign(new Error('WebSocket Error (Unexpected server response: 503)'), {
+    output: { statusCode: 503 },
+    data: transportError,
+  })
+  candidate.socket.ev.emit('connection.update', {
+    connection: 'close',
+    lastDisconnect: { error },
+  })
+  await waitFor(() => runtime.get('private').pairingCandidate === null)
+
+  const message = runtime.get('private').pairingError
+  assert.match(message, /HTTP response 503/)
+  assert.doesNotMatch(message, /Baileys fallback code 500/)
+  assert.equal(runtime.get('private').socket, oldSocket)
+  assert.equal(oldSocket.ended, false)
+  await runtime.shutdown()
+})
+
 test('canceling a replacement candidate leaves the existing socket and auth directory untouched', async t => {
   const { runtime } = await fixture(t, { registered: true })
   await runtime.start('private')

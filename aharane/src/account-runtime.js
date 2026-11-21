@@ -462,7 +462,16 @@ export function createAccountRuntime({
   function candidateFailureMessage(error) {
     if (isPairingRateLimit(error)) return pairingRateLimitError().message
     const details = disconnectDetails(error)
-    return 'The replacement WhatsApp link did not complete (' + details.message + '). Your previous session was kept. You can try pairing again.'
+    const diagnostic = [
+      details.message,
+      details.code && 'code ' + details.code,
+      details.errno && 'errno ' + details.errno,
+      details.syscall && 'during ' + details.syscall,
+      details.statusCode !== null && details.statusCode !== undefined && 'WhatsApp status ' + details.statusCode,
+      details.address && 'endpoint ' + details.address + (details.port ? ':' + details.port : ''),
+      details.cause && 'cause ' + details.cause,
+    ].filter(Boolean).join('; ')
+    return 'The replacement WhatsApp link did not complete (' + diagnostic + '). Your previous session was kept. You can try pairing again.'
   }
 
   async function saveCandidate(candidate) {

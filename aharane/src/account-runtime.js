@@ -328,7 +328,7 @@ export function createAccountRuntime({
           if (pairingRateLimited) {
             clearUnfinishedPairingCredentials(session)
             session.registered = false
-            session.state = session.registered ? 'disconnected' : 'not-paired'
+            session.state = 'not-paired'
             logger.warn?.({ event: 'whatsapp.pairing-rate-limited', accountId: id, disconnect: disconnectDetails(disconnectError) })
             emit()
             return
@@ -453,6 +453,19 @@ export function createAccountRuntime({
     const statusCode = error?.output?.statusCode ?? error?.statusCode ?? error?.status
     const message = String(error?.message || error || '')
     return statusCode === 429 || /rate[-_\s]?overlimit|peer.{0,24}rate|rate.{0,24}limit/i.test(message)
+  }
+
+  function clearUnfinishedPairingCredentials(session) {
+    const auth = session.auth
+    const creds = auth?.state?.creds
+    if (!creds) return
+    creds.registered = false
+    delete creds.me
+    delete creds.pairingCode
+    delete creds.pairingEphemeralKeyPair
+    void Promise.resolve(auth.saveCreds?.()).catch(() => {
+      logger.warn?.({ event: 'auth.pairing-reset-save-failed', accountId: session.id })
+    })
   }
 
   function pairingRateLimitError() {

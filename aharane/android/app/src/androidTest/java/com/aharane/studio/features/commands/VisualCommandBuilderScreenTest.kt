@@ -8,6 +8,7 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -116,6 +117,23 @@ class VisualCommandBuilderScreenTest {
     }
 
     @Test
+    fun repeatedNodeTypesAcrossCategoriesDoNotCrashTheScrollableLibrary() {
+        val source = FakeVisualCommandDataSource(
+            includeExtraCategories = true,
+            includeDuplicateNodeType = true
+        )
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                VisualCommandBuilderScreen(repository = source, connected = true, onBack = {})
+            }
+        }
+        compose.waitUntil(5_000) { source.readCount > 0 }
+        compose.onNodeWithTag("workflow-node-list").assertIsDisplayed()
+        compose.onNodeWithText("Reply text in another category").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("workflow-categories").assertIsDisplayed()
+    }
+
+    @Test
     fun disconnectedBuilderKeepsServerWritesDisabled() {
         val source = FakeVisualCommandDataSource()
         compose.setContent {
@@ -132,7 +150,8 @@ class VisualCommandBuilderScreenTest {
 }
 
 private class FakeVisualCommandDataSource(
-    private val includeExtraCategories: Boolean = false
+    private val includeExtraCategories: Boolean = false,
+    private val includeDuplicateNodeType: Boolean = false
 ) : VisualCommandDataSource {
     private val workflows = linkedMapOf<String, JSONObject>()
     var readCount = 0
@@ -202,6 +221,15 @@ private class FakeVisualCommandDataSource(
                 val extraNode = definition("test.extra$index", "Extra node $index", JSONArray(), JSONArray())
                 result.put(JSONObject().put("category", "Extra category $index").put("nodes", JSONArray().put(extraNode)))
             }
+        }
+        if (includeDuplicateNodeType) {
+            val repeated = definition(
+                "message.replyText",
+                "Reply text in another category",
+                JSONArray().put(socket("in", "In")),
+                JSONArray().put(socket("next", "Next"))
+            )
+            result.put(JSONObject().put("category", "Repeated nodes").put("nodes", JSONArray().put(repeated)))
         }
         return result
     }

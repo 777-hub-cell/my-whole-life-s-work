@@ -1105,7 +1105,7 @@ private fun StudioPreferenceSlider(
         onValueChangeFinished = onValueChangeFinished,
         valueRange = valueRange,
         steps = steps,
-        modifier = Modifier.fillMaxWidth().height(42.dp),
+        modifier = Modifier.fillMaxWidth().height(52.dp),
         colors = SliderDefaults.colors(
             thumbColor = StudioPalette.Accent,
             activeTrackColor = StudioPalette.Accent,

@@ -54,6 +54,7 @@ fun ChatsScreen(
     conversations: List<ChatSummary> = emptyList(),
     accountDisplayName: String = account.label,
     accountConnected: Boolean = false,
+    onConnectAccount: () -> Unit = {},
     onConversationSelected: (ChatSummary) -> Unit = {},
     onChatAction: (ChatSummary, String) -> Unit = { _, _ -> },
     showIndividuals: Boolean = true,
@@ -284,20 +285,49 @@ fun ChatsScreen(
         }
         item {
             if (visibleChats.isEmpty()) {
-                StudioCard(padding = PaddingValues(horizontal = 16.dp, vertical = 28.dp)) {
-                    Text(
-                        when {
-                            filter == ChatFilter.UNREAD -> "No unread chats."
-                            filter == ChatFilter.GROUPS -> "No groups match."
-                            filter == ChatFilter.ARCHIVED -> "No archived chats."
-                            else -> "No chats match."
-                        },
-                        color = StudioPalette.Muted,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                StudioCard(padding = PaddingValues(horizontal = 16.dp, vertical = 22.dp)) {
+                    if (!accountConnected) {
+                        Column(
+                            Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "${account.label} account isn't connected",
+                                color = StudioPalette.Ink,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                textAlign = TextAlign.Center
+                            )
+                            Text(
+                                "Connect this WhatsApp account to receive new chats. Earlier WhatsApp history is not imported automatically.",
+                                color = StudioPalette.Muted,
+                                fontSize = 12.5.sp,
+                                lineHeight = 18.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            StudioActionButton(
+                                "Connect ${account.label} account",
+                                modifier = Modifier.fillMaxWidth(),
+                                primary = true,
+                                onClick = onConnectAccount
+                            )
+                        }
+                    } else {
+                        Text(
+                            when {
+                                filter == ChatFilter.UNREAD -> "No unread chats."
+                                filter == ChatFilter.GROUPS -> "No groups match."
+                                filter == ChatFilter.ARCHIVED -> "No archived chats."
+                                else -> "No new chats yet."
+                            },
+                            color = StudioPalette.Muted,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
                 Spacer(Modifier.height(16.dp))
             } else {

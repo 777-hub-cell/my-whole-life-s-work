@@ -222,6 +222,7 @@ fun WhatsAppPairingScreen(
                 }
             }
             }
+            }
 
             if (loading) {
                 Row(

@@ -1591,8 +1591,16 @@ app.get('/api/accounts/:accountId/qr', requireAdmin, async (req, res) => {
   try {
     const accountId = String(req.params.accountId || '').toLowerCase()
     if (!['private', 'public'].includes(accountId)) return res.status(404).json({ ok: false, error: 'Unknown WhatsApp account.' })
-    const session = accountRuntime.get(accountId)
-    res.json({ ok: true, accountId, qr: accountRuntime.pairingQr(accountId), state: session.state, pairingInProgress: session.pairingInProgress, pairingSucceeded: session.pairingSucceeded, pairingError: session.pairingError })
+    const session = accountRuntime.snapshot().accounts[accountId]
+    res.json({
+      ok: true,
+      accountId,
+      qr: accountRuntime.pairingQr(accountId),
+      state: session.state,
+      pairingInProgress: session.pairingInProgress,
+      pairingSucceeded: session.pairingSucceeded,
+      pairingError: session.pairingError,
+    })
   } catch (error) {
     res.status(503).json({ ok: false, error: String(error?.message || 'Could not read the WhatsApp pairing QR.') })
   }

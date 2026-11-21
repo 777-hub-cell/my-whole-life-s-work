@@ -278,16 +278,11 @@ fun MoreScreen(
                             Spacer(Modifier.weight(1f))
                             Text("$editorFontSize px", color = StudioPalette.Muted, fontSize = 12.sp)
                         }
-                        Slider(
+                        StudioPreferenceSlider(
                             value = editorFontSize.toFloat(),
                             onValueChange = { onEditorFontSizeChanged(it.toInt()) },
                             valueRange = 11f..20f,
-                            steps = 8,
-                            colors = SliderDefaults.colors(
-                                thumbColor = StudioPalette.Accent,
-                                activeTrackColor = StudioPalette.Accent,
-                                inactiveTrackColor = StudioPalette.Line
-                            )
+                            steps = 8
                         )
                         StudioDivider()
                         PreferenceSwitch(
@@ -442,18 +437,22 @@ fun MoreScreen(
                     val cachedBytes = remember(appearanceRevision, accountKey) {
                         mediaCache?.cacheSizeBytes(accountKey) ?: 0L
                     }
-                    Text("Encrypted media cache", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Encrypted media cache", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.weight(1f))
+                        SliderValueChip("$cacheLimitMb MB")
+                    }
                     Text(
                         "Saved media: " + (cachedBytes / (1024L * 1024L)).toString() + " MB · Limit: " + cacheLimitMb + " MB",
                         color = StudioPalette.Muted, fontSize = 11.5.sp,
                         modifier = Modifier.padding(top = 4.dp)
                     )
-                    Slider(
+                    StudioPreferenceSlider(
                         value = cacheLimitMb.toFloat(),
                         onValueChange = { cacheLimitMb = it.toInt().coerceIn(100, 2048) },
-                        onValueChangeFinished = { mediaCache?.setMaximumCacheMegabytes(accountKey, cacheLimitMb) },
                         valueRange = 100f..2048f,
-                        steps = 18
+                        steps = 18,
+                        onValueChangeFinished = { mediaCache?.setMaximumCacheMegabytes(accountKey, cacheLimitMb) }
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         StudioActionButton("Clear " + selectedChatAccount.label + " media cache", primary = false, onClick = {
@@ -493,16 +492,11 @@ fun MoreScreen(
                         Spacer(Modifier.weight(1f))
                         Text("${chatMessageSize} sp", color = StudioPalette.Muted, fontSize = 12.sp)
                     }
-                    Slider(
+                    StudioPreferenceSlider(
                         value = chatMessageSize.toFloat(),
                         onValueChange = { onChatMessageSizeChanged(it.toInt()) },
                         valueRange = 12f..22f,
-                        steps = 9,
-                        colors = SliderDefaults.colors(
-                            thumbColor = StudioPalette.Accent,
-                            activeTrackColor = StudioPalette.Accent,
-                            inactiveTrackColor = StudioPalette.Line
-                        )
+                        steps = 9
                     )
                     Text(
                         "Changes the size of message text inside conversations.",
@@ -851,7 +845,7 @@ fun MoreScreen(
                     StudioDivider()
                     PreferenceSwitch(
                         title = "Require device unlock",
-                        description = "Use this phone’s PIN, pattern or password when you return to Aharane.",
+                        description = "Lock Aharane when you leave it. Unlock with this phone’s PIN, pattern or password.",
                         checked = appLockEnabled,
                         enabled = true,
                         onCheckedChange = onAppLockToggle
@@ -1082,6 +1076,43 @@ private fun PreferenceSwitch(
             Box(Modifier.size(18.dp).clip(CircleShape).background(Color.White))
         }
     }
+}
+
+@Composable
+private fun SliderValueChip(value: String) {
+    Box(
+        Modifier.clip(RoundedCornerShape(99.dp))
+            .background(StudioPalette.Background)
+            .border(1.dp, StudioPalette.Line, RoundedCornerShape(99.dp))
+            .padding(horizontal = 9.dp, vertical = 4.dp)
+    ) {
+        Text(value, color = StudioPalette.Accent, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun StudioPreferenceSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int = 0,
+    onValueChangeFinished: () -> Unit = {}
+) {
+    Slider(
+        value = value.coerceIn(valueRange),
+        onValueChange = onValueChange,
+        onValueChangeFinished = onValueChangeFinished,
+        valueRange = valueRange,
+        steps = steps,
+        modifier = Modifier.fillMaxWidth().height(42.dp),
+        colors = SliderDefaults.colors(
+            thumbColor = StudioPalette.Ink,
+            activeTrackColor = StudioPalette.Accent,
+            inactiveTrackColor = StudioPalette.Line,
+            activeTickColor = StudioPalette.Surface,
+            inactiveTickColor = StudioPalette.Muted.copy(alpha = 0.32f)
+        )
+    )
 }
 
 @Composable

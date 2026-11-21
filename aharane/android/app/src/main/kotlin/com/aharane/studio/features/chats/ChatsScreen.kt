@@ -287,6 +287,7 @@ fun ChatsScreen(
                 StudioCard(padding = PaddingValues(horizontal = 16.dp, vertical = 28.dp)) {
                     Text(
                         when {
+                            !accountConnected -> "This WhatsApp account is not connected yet. Link it from Home to load conversations."
                             filter == ChatFilter.UNREAD -> "No unread chats."
                             filter == ChatFilter.GROUPS -> "No groups match."
                             filter == ChatFilter.ARCHIVED -> "No archived chats."

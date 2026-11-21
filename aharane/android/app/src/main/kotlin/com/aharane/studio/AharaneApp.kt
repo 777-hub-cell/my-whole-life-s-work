@@ -1348,6 +1348,14 @@ fun AharaneApp(
         openPairingScreen(target)
     }
 
+    fun cancelPendingPairing(target: ChatAccount) {
+        if (pairingAttemptStarted && connected && !previewMode) {
+            connectionScope.launch {
+                runCatching { repository.cancelPairing(target) }
+            }
+        }
+    }
+
     suspend fun obtainCachedOrRemoteMedia(
         conversation: ChatSummary,
         message: ChatMessage,
@@ -2770,6 +2778,7 @@ fun AharaneApp(
         val currentPairState = if (target == ChatAccount.PRIVATE) runtime?.privateAccount else runtime?.publicAccount
         Dialog(
             onDismissRequest = {
+                cancelPendingPairing(target)
                 pairingAccount = null
                 pairingCode = ""
                 pairingQrValue = ""
@@ -2790,13 +2799,16 @@ fun AharaneApp(
                 errorMessage = pairingError,
                 previewMode = previewMode,
                 onBack = {
+                    cancelPendingPairing(target)
                     pairingAccount = null
                     pairingCode = ""
                     pairingQrValue = ""
                     pairingQrRequested = false
                     pairingError = ""
+                    pairingAttemptStarted = false
                 },
                 onSelectMethod = { method ->
+                    cancelPendingPairing(target)
                     pairingMethod = method
                     pairingCode = ""
                     pairingQrValue = ""

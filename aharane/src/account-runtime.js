@@ -134,6 +134,11 @@ export function createAccountRuntime({
   }
 
   function markPeerRateLimited(session, error) {
+    const staleSocket = session.socket
+    session.socket = null
+    if (staleSocket) {
+      try { staleSocket.end?.(undefined) } catch {}
+    }
     session.rateLimitedUntil = Date.now() + PEER_RATE_LIMIT_COOLDOWN_MS
     session.lastError = 'WhatsApp temporarily rate-limited this account. Wait 15 minutes before retrying.'
     session.state = 'rate-limited'
@@ -323,8 +328,11 @@ export function createAccountRuntime({
         if (update?.connection === 'open') {
           session.registered = true
           session.state = 'connected'
+          session.rateLimitedUntil = 0
+          session.lastError = ''
           session.reconnectAttempts = 0
           session.lastConnectedAt = Date.now()
+          void persistRateLimits()
           logger.info?.({ event: 'whatsapp.connected', accountId: id })
           emit()
           return
@@ -352,6 +360,7 @@ export function createAccountRuntime({
             return
           }
           session.state = 'disconnected'
+          session.lastError = String(disconnectError?.message || (Number.isFinite(code) ? 'WhatsApp WebSocket closed (' + code + ').' : 'WhatsApp WebSocket disconnected.'))
           logger.warn?.({
             event: 'whatsapp.connection-closed',
             accountId: id,
@@ -498,6 +507,8 @@ export function createAccountRuntime({
 
   async function restartInternal(id) {
     const session = get(id)
+    await ensureRateLimitsLoaded()
+    assertNotRateLimited(session)
     await stopInternal(id)
     await wait(150)
     session.manuallyStopped = false

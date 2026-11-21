@@ -38,7 +38,18 @@ test('studio settings persist isolated fixed command prefixes and redact no serv
     const rows = envView(next)
     assert.ok(rows.some(row => row.key === 'PRIVATE_COMMAND_PREFIX' && row.value === '.'))
     assert.ok(rows.some(row => row.key === 'PUBLIC_COMMAND_PREFIX' && row.value === '!'))
-    assert.ok(!rows.some(row => /PASSWORD|TOKEN|SECRET|KEY/.test(row.key)))
+    assert.ok(!rows.some(row => /PASSWORD|TOKEN|SECRET/.test(row.key)))
+    assert.equal(rows.find(row => row.key === 'AI_API_KEY')?.value, '')
+    assert.equal(rows.find(row => row.key === 'AI_API_KEY')?.secret, true)
+    assert.equal(rows.find(row => row.key === 'AI_REPLY_STATUS')?.value, 'Not configured')
+
+    const aiSettings = normalizeStudioSettings({ aiReply: {
+      apiBaseUrl: 'https://ai.example/v1', model: 'reply-model', apiKey: 'never-return-this-key',
+    } })
+    const aiRows = envView(aiSettings, { ...aiSettings.aiReply, configured: true })
+    assert.equal(aiRows.find(row => row.key === 'AI_API_KEY')?.configured, true)
+    assert.equal(aiRows.find(row => row.key === 'AI_REPLY_STATUS')?.value, 'Ready')
+    assert.ok(!JSON.stringify(aiRows).includes('never-return-this-key'))
     await assert.rejects(saveStudioSettings(file, { public: { commandCooldown: 100 } }), /between 0 and 60/)
   } finally { await rm(dir, { recursive: true, force: true }) }
 })

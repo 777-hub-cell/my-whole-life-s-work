@@ -7,6 +7,7 @@ const DEFAULT_PROFILE = Object.freeze({
   rejectCalls: false, alwaysOnline: false, commandCooldown: 3, welcomeMessage: '',
 })
 const booleanKeys = ['autoRead', 'showTyping', 'rejectCalls', 'alwaysOnline']
+const DEFAULT_AI_REPLY = Object.freeze({ apiBaseUrl: '', model: '', apiKey: '', disableEnvironmentKey: false })
 const DEFAULT_CHAT_FILTER = Object.freeze({ mode: 'all', overrides: [] })
 const CHAT_JID_PATTERNS = [
   /^\d{7,15}@s\.whatsapp\.net$/,
@@ -103,10 +104,19 @@ function normalizeProfile(value = {}, scope) {
   // Command authorization remains account-specific in the message dispatcher.
   return profile
 }
+function normalizeAiReply(value = {}) {
+  return {
+    apiBaseUrl: String(value.apiBaseUrl ?? DEFAULT_AI_REPLY.apiBaseUrl).trim().slice(0, 500) || DEFAULT_AI_REPLY.apiBaseUrl,
+    model: String(value.model ?? DEFAULT_AI_REPLY.model).trim().slice(0, 160),
+    apiKey: String(value.apiKey ?? DEFAULT_AI_REPLY.apiKey).trim().slice(0, 4096),
+    disableEnvironmentKey: value.disableEnvironmentKey === true,
+  }
+}
 export function normalizeStudioSettings(value = {}) {
   return {
     version: 2,
     chatAppearance: normalizeChatAppearance(value.chatAppearance),
+    aiReply: normalizeAiReply(value.aiReply),
     private: normalizeProfile(value.private, 'private'),
     public: normalizeProfile(value.public, 'public'),
     updatedAt: String(value.updatedAt || ''),
@@ -140,7 +150,7 @@ export async function saveStudioSettings(file, value) {
   }
   return normalized
 }
-export function envView(settings) {
+export function envView(settings, aiReplyConfig = null) {
   const rows = []
   for (const scope of ['private', 'public']) {
     const profile = settings[scope]
@@ -156,5 +166,14 @@ export function envView(settings) {
       { key: prefix + 'WELCOME_MESSAGE', value: profile.welcomeMessage, secret: false, scope },
     )
   }
+  const ai = aiReplyConfig || settings.aiReply || DEFAULT_AI_REPLY
+  const keyConfigured = Boolean(ai.apiKey)
+  rows.push(
+    { key: 'AI_API_BASE_URL', value: ai.apiBaseUrl || DEFAULT_AI_REPLY.apiBaseUrl, secret: false, scope: 'shared' },
+    { key: 'AI_MODEL', value: ai.model || '', secret: false, scope: 'shared' },
+    { key: 'AI_API_KEY', value: '', secret: true, configured: keyConfigured, scope: 'shared' },
+    { key: 'AI_CLEAR_API_KEY', value: 'false', secret: false, type: 'boolean', scope: 'shared' },
+    { key: 'AI_REPLY_STATUS', value: ai.configured ? 'Ready' : 'Not configured', secret: false, readOnly: true, scope: 'shared' },
+  )
   return rows
 }

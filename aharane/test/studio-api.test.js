@@ -286,3 +286,16 @@ test('permanent installer bearer token is revoked after the owner creates a Stud
  assert.ok(source.includes('const ok = (!auth?.passwordHash && tokenMatches(bearer)) || adminSessionMatches(bearer, auth)'))
  assert.ok(source.includes('sessionKey: randomBytes(32)'))
 })
+
+
+test('AI Reply uses the configured ENV provider and a protected draft-only endpoint', async () => {
+  const runtime = await read('../src/index.js')
+  const module = await read('../src/ai-reply.js')
+  const route = runtime.slice(runtime.indexOf("app.post('/api/ai-reply'"), runtime.indexOf("app.get('/api/settings'"))
+  assert.ok(route.includes('requireAdmin'))
+  assert.ok(route.includes('resolveAiReplyConfig(studioSettings.aiReply)'))
+  assert.ok(route.includes('createAiReplyDraft'))
+  assert.ok(module.includes('Do not assume or request access to chat history'))
+  assert.ok(module.includes('Do not send the reply'))
+  assert.ok(!route.includes('chatStore'))
+})

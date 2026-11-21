@@ -27,6 +27,7 @@ import { createChatStore } from './chat-store.js'
 import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, normalizeChatVisibility, normalizeChatAppearance, isChatVisible, envView } from './studio-settings.js'
 import { createActivityStore } from './activity-store.js'
 import { createVisualCommandStore, normalizeWorkflow, validateWorkflow, executeVisualWorkflow, VISUAL_NODE_LIBRARY } from './visual-command-builder.js'
+import { resolveAiReplyConfig, createAiReplyDraft } from './ai-reply.js'
 
 const APP_NAME = 'Aharane'
 const PROCESS_STARTED_AT = Date.now()
@@ -1806,7 +1807,8 @@ function authorizedChat(accountId, jid) {
   return true
 }
 app.get('/api/env', requireAdmin, (_req, res) => {
-  res.json({ ok: true, env: envView(studioSettings), owners: {
+  const aiReplyConfig = resolveAiReplyConfig(studioSettings.aiReply)
+  res.json({ ok: true, env: envView(studioSettings, aiReplyConfig), owners: {
     privateOwnerNumber: ownerConfig.privateOwnerNumber,
     publicOwnerNumber: ownerConfig.publicOwnerNumber,
     allowedPublicSenders: ownerConfig.allowedPublicSenders,
@@ -1816,8 +1818,15 @@ app.put('/api/env', requireAdmin, async (req, res) => {
   try {
     const rows = Array.isArray(req.body?.env) ? req.body.env : []
     const next = structuredClone(studioSettings)
+    let replacementAiApiKey = ''
+    let clearAiApiKey = false
     for (const row of rows) {
       const key = String(row?.key || '')
+      const aiValue = String(row?.value ?? '')
+      if (key === 'AI_API_BASE_URL') { next.aiReply.apiBaseUrl = aiValue.trim(); continue }
+      if (key === 'AI_MODEL') { next.aiReply.model = aiValue.trim(); continue }
+      if (key === 'AI_API_KEY') { replacementAiApiKey = aiValue.trim(); continue }
+      if (key === 'AI_CLEAR_API_KEY') { clearAiApiKey = aiValue.toLowerCase() === 'true'; continue }
       const match = key.match(/^(PRIVATE|PUBLIC)_(BOT_NAME|AUTO_READ|SHOW_TYPING|REJECT_CALLS|ALWAYS_ONLINE|COMMAND_COOLDOWN|WELCOME_MESSAGE)$/)
       if (!match) continue
       const scope = match[1].toLowerCase()
@@ -1831,18 +1840,40 @@ app.put('/api/env', requireAdmin, async (req, res) => {
       if (setting === 'commandCooldown') value = Number(value)
       next[scope][setting] = value
     }
+    if (replacementAiApiKey) {
+      next.aiReply.apiKey = replacementAiApiKey
+      next.aiReply.disableEnvironmentKey = false
+    } else if (clearAiApiKey) {
+      next.aiReply.apiKey = ''
+      next.aiReply.disableEnvironmentKey = true
+    }
     studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings(next))
     for (const accountId of ['private', 'public']) {
       const socket = accountRuntime.get(accountId).socket
       if (socket?.sendPresenceUpdate) await socket.sendPresenceUpdate(studioSettings[accountId].alwaysOnline ? 'available' : 'unavailable').catch(() => {})
     }
-    publishStudioEvent('settings.updated', { private: true, public: true })
-    res.json({ ok: true, env: envView(studioSettings), settings: studioSettings })
+    publishStudioEvent('settings.updated', { private: true, public: true, aiReplyConfigured: resolveAiReplyConfig(studioSettings.aiReply).configured })
+    res.json({ ok: true, env: envView(studioSettings, resolveAiReplyConfig(studioSettings.aiReply)), settings: { ...studioSettings, aiReply: { ...studioSettings.aiReply, apiKey: '' } } })
   } catch (error) {
     res.status(400).json({ ok: false, error: String(error?.message || 'Could not save the managed environment settings.') })
   }
 })
-app.get('/api/settings', requireAdmin, (_req, res) => res.json({ ok: true, settings: studioSettings }))
+app.post('/api/ai-reply', requireAdmin, async (req, res) => {
+  try {
+    const reply = await createAiReplyDraft({
+      config: resolveAiReplyConfig(studioSettings.aiReply),
+      request: req.body,
+    })
+    res.json({ ok: true, reply })
+  } catch (error) {
+    const status = Number(error?.statusCode)
+    res.status(status >= 400 && status <= 599 ? status : 502).json({
+      ok: false,
+      error: String(error?.message || 'AI Reply could not generate a draft.'),
+    })
+  }
+})
+app.get('/api/settings', requireAdmin, (_req, res) => res.json({ ok: true, settings: { ...studioSettings, aiReply: { ...studioSettings.aiReply, apiKey: '' } } }))
 app.get('/api/chat-appearance', requireAdmin, (_req, res) => res.json({ ok: true, appearance: studioSettings.chatAppearance }))
 app.put('/api/chat-appearance', requireAdmin, async (req, res) => {
   try {
@@ -1893,13 +1924,14 @@ app.delete('/api/chat-appearance/wallpaper', requireAdmin, async (_req, res) => 
 })
 app.put('/api/settings', requireAdmin, async (req, res) => {
   try {
-    studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings(req.body?.settings || {}))
+    const incoming = req.body?.settings || {}
+    studioSettings = await saveStudioSettings(SETTINGS_FILE, normalizeStudioSettings({ ...incoming, aiReply: studioSettings.aiReply }))
     for (const accountId of ['private', 'public']) {
       const socket = accountRuntime.get(accountId).socket
       if (socket?.sendPresenceUpdate) await socket.sendPresenceUpdate(studioSettings[accountId].alwaysOnline ? 'available' : 'unavailable').catch(() => {})
     }
     publishStudioEvent('settings.updated', { private: true, public: true })
-    res.json({ ok: true, settings: studioSettings })
+    res.json({ ok: true, settings: { ...studioSettings, aiReply: { ...studioSettings.aiReply, apiKey: '' } } })
   } catch (error) {
     res.status(400).json({ ok: false, error: String(error?.message || 'Could not save settings.') })
   }

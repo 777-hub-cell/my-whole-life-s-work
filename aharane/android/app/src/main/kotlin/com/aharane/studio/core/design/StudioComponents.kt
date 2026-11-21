@@ -509,12 +509,15 @@ fun StudioSegmented(options: List<String>, selected: String, onSelect: (String) 
             val shape = RoundedCornerShape(9.dp * LocalStudioCornerScale.current)
             Box(
                 Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).clip(shape)
-                    .then(if (active) Modifier.shadow(1.dp, shape).background(StudioPalette.Surface)
-                        .border(1.dp, StudioPalette.Line, shape) else Modifier.background(Color.Transparent))
+                    .then(
+                        if (active) Modifier.background(StudioPalette.Soft)
+                            .border(1.dp, StudioPalette.Accent, shape)
+                        else Modifier.background(Color.Transparent)
+                    )
                     .clickable { onSelect(option) }.padding(horizontal = 6.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(option, color = if (active) StudioPalette.Ink else StudioPalette.Muted,
+                Text(option, color = if (active) StudioPalette.Accent else StudioPalette.Muted,
                     fontSize = 13.sp, lineHeight = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
         }

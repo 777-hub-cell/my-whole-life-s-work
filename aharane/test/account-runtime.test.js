@@ -11,8 +11,10 @@ async function fixture(t) {
   t.after(() => rm(root, { recursive: true, force: true }))
   const authLoads = []
   const sockets = []
+  const rateLimitFile = join(root, 'whatsapp-peer-rate-limits.json')
   const runtime = createAccountRuntime({
     authDirs: { public: join(root, 'public-auth'), private: join(root, 'private-auth') },
+    rateLimitFile,
     loadAuthState: async authDir => {
       authLoads.push(authDir)
       return { state: { creds: { registered: false } }, saveCreds: async () => {} }
@@ -35,7 +37,7 @@ async function fixture(t) {
     reconnectMaxMs: 5,
     logger: { info() {}, warn() {}, error() {} },
   })
-  return { root, runtime, authLoads, sockets }
+  return { root, runtime, authLoads, sockets, rateLimitFile }
 }
 
 test('private and public sessions use isolated auth directories and state', async t => {
@@ -231,4 +233,64 @@ test('stop waits for an in-flight startup and closes the socket it creates', asy
   assert.equal(runtime.get('private').socket, null)
   assert.equal(ended, true)
   await runtime.shutdown()
+})
+
+
+test('WhatsApp peer rate limits stop reconnect loops and are persisted for the selected account', async t => {
+  const { runtime, sockets, rateLimitFile } = await fixture(t)
+  await runtime.start('private')
+  const socket = runtime.get('private').socket
+  socket.ev.emit('connection.update', {
+    connection: 'close',
+    lastDisconnect: {
+      error: Object.assign(new Error('WebSocket error: peer rate limit'), { output: { statusCode: 429 } }),
+    },
+  })
+  const session = runtime.get('private')
+  assert.equal(session.state, 'rate-limited')
+  assert.equal(session.socket, null)
+  assert.equal(session.reconnectTimer, null)
+  assert.ok(session.rateLimitedUntil > Date.now())
+  assert.match(session.lastError, /rate-limited/i)
+  await new Promise(resolveWait => setTimeout(resolveWait, 15))
+  const saved = JSON.parse(await readFile(rateLimitFile, 'utf8'))
+  assert.equal(saved.private.until, session.rateLimitedUntil)
+  assert.equal(saved.public, undefined)
+  await new Promise(resolveWait => setTimeout(resolveWait, 20))
+  assert.equal(sockets.length, 1)
+  await runtime.shutdown()
+})
+
+test('peer rate limit cooldown survives a new runtime and blocks pairing until expiry', async t => {
+  const { runtime, root, rateLimitFile, sockets } = await fixture(t)
+  await runtime.start('public')
+  runtime.get('public').socket.ev.emit('connection.update', {
+    connection: 'close',
+    lastDisconnect: {
+      error: Object.assign(new Error('Too many requests: peer rate limit'), { output: { statusCode: 429 } }),
+    },
+  })
+  const retryAt = runtime.get('public').rateLimitedUntil
+  await new Promise(resolveWait => setTimeout(resolveWait, 15))
+  await runtime.shutdown()
+
+  const nextSockets = []
+  const nextRuntime = createAccountRuntime({
+    authDirs: { public: join(root, 'public-auth'), private: join(root, 'private-auth') },
+    rateLimitFile,
+    loadAuthState: async () => ({ state: { creds: { registered: false } }, saveCreds: async () => {} }),
+    makeSocket: ({ sessionId }) => {
+      const socket = { sessionId, ev: new EventEmitter(), end() {} }
+      nextSockets.push(socket)
+      return socket
+    },
+    logger: { info() {}, warn() {}, error() {} },
+  })
+  await assert.rejects(nextRuntime.start('public'), error => error?.status === 429 && /rate-limited/i.test(error.message))
+  await assert.rejects(nextRuntime.requestPairingCode('public', '2348012345678'), error => error?.status === 429 && /wait/i.test(error.message))
+  assert.equal(nextRuntime.get('public').state, 'rate-limited')
+  assert.equal(nextRuntime.get('public').rateLimitedUntil, retryAt)
+  assert.equal(nextSockets.length, 0)
+  await nextRuntime.shutdown()
+  assert.equal(sockets.length, 1)
 })

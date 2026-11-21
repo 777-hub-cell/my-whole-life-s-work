@@ -151,6 +151,13 @@ function publishStudioEvent(type, data = {}) {
   }
 }
 
+function setPairRetryAfter(res, error) {
+  const seconds = Number(error?.retryAfterSeconds)
+  if (error?.status === 429 && Number.isFinite(seconds) && seconds > 0) {
+    res.set('Retry-After', String(Math.ceil(seconds)))
+  }
+}
+
 function waitWithTimeout(promise, timeoutMs, message) {
   let timer
   return Promise.race([
@@ -1657,6 +1664,7 @@ app.post('/api/accounts/:accountId/qr', requireAdmin, async (req, res) => {
     await accountRuntime.start(accountId)
     res.json({ ok: true, accountId, qr: accountRuntime.pairingQr(accountId), state: accountRuntime.get(accountId).state })
   } catch (error) {
+    setPairRetryAfter(res, error)
     res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not request the WhatsApp pairing QR.') })
   }
 })
@@ -1665,6 +1673,7 @@ app.post('/api/accounts/:accountId/reconnect', requireAdmin, async (req, res) =>
     const result = await accountRuntime.reconnect(req.params.accountId)
     res.json({ ok: true, account: result, accounts: accountRuntime.snapshot().accounts })
   } catch (error) {
+    setPairRetryAfter(res, error)
     res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not reconnect this WhatsApp account.') })
   }
 })
@@ -1673,6 +1682,7 @@ app.post('/api/accounts/:accountId/restart', requireAdmin, async (req, res) => {
     const result = await accountRuntime.restart(req.params.accountId)
     res.json({ ok: true, account: result, accounts: accountRuntime.snapshot().accounts })
   } catch (error) {
+    setPairRetryAfter(res, error)
     res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not restart this WhatsApp account.') })
   }
 })
@@ -1725,6 +1735,7 @@ app.post('/api/pair-code', requireAdmin, async (req, res) => {
     const pairingCode = await accountRuntime.requestPairingCode('public', ownerConfig.publicBotNumber)
     res.json({ ok: true, accountId: 'public', pairingCode })
   } catch (error) {
+    setPairRetryAfter(res, error)
     res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Pairing code could not be generated.') })
   }
 })

@@ -2495,9 +2495,9 @@ fun AharaneApp(
                         onAppLockToggle = { enabled ->
                             val activity = generateSequence(context as android.content.Context?) { (it as? ContextWrapper)?.baseContext }
                                 .filterIsInstance<MainActivity>().firstOrNull()
-                            if (activity?.setAppLockEnabled(enabled) == true) {
-                                appLockEnabled = enabled
-                            } else if (enabled) {
+                            if (activity?.setAppLockEnabled(enabled) { verified ->
+                                    appLockEnabled = verified
+                                } != true && enabled) {
                                 Toast.makeText(context, "Set a PIN, pattern or password in Android settings before enabling app lock.", Toast.LENGTH_LONG).show()
                             }
                         },

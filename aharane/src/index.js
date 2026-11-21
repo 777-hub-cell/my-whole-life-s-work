@@ -103,7 +103,6 @@ let sourceMutationTail = Promise.resolve()
 
 const seenMessageIds = new Map()
 const commandTimes = new Map()
-const pairAttempts = new Map()
 const studioClients = new Set()
 let studioEventSequence = 0
 
@@ -287,21 +286,6 @@ async function requireAdmin(req, res, next) {
 }
 
 function allowPairAttempt(ip) {
-  const now = Date.now()
-  const windowMs = 15 * 60 * 1000
-  const current = pairAttempts.get(ip)
-  const record = !current || now - current.startedAt >= windowMs
-    ? { startedAt: now, count: 0 }
-    : current
-  record.count += 1
-  pairAttempts.set(ip, record)
-  for (const [key, value] of pairAttempts) {
-    if (now - value.startedAt >= windowMs) pairAttempts.delete(key)
-  }
-  return record.count <= 4
-}
-
-function allowCommand(sender) {
   const now = Date.now()
   const previous = commandTimes.get(sender) || 0
   const configuredCooldown = Number(studioSettings?.[sender.split(':')[0]]?.commandCooldown ?? 1.2)

@@ -7,6 +7,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -110,7 +111,7 @@ class VisualCommandBuilderScreenTest {
         compose.waitUntil(5_000) { source.readCount > 0 }
         compose.onNodeWithTag("workflow-categories").assertIsDisplayed()
         compose.onNodeWithText("Starter nodes").assertIsDisplayed()
-        compose.onNodeWithTag("workflow-categories").performTouchInput { swipeLeft() }
+        repeat(4) { compose.onNodeWithTag("workflow-categories").performTouchInput { swipeLeft() } }
         compose.onNodeWithText("Extra category 8").assertIsDisplayed()
     }
 
@@ -197,7 +198,7 @@ private class FakeVisualCommandDataSource(
         val result = JSONArray().put(JSONObject().put("category", "Starter nodes")
             .put("nodes", JSONArray().put(trigger).put(reply).put(sendText)))
         if (includeExtraCategories) {
-            repeat(8) { index ->
+            repeat(9) { index ->
                 val extraNode = definition("test.extra$index", "Extra node $index", JSONArray(), JSONArray())
                 result.put(JSONObject().put("category", "Extra category $index").put("nodes", JSONArray().put(extraNode)))
             }

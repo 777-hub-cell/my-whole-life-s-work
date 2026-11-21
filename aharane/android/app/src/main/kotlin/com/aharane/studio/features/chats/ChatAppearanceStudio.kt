@@ -14,7 +14,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -43,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aharane.studio.core.design.AharaneInstrumentSans
 import com.aharane.studio.core.design.StudioPalette
+import com.aharane.studio.core.design.StudioTag
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatSummary
 import kotlinx.coroutines.Dispatchers
@@ -635,51 +638,72 @@ fun ChatAppearanceStudioScreen(
         }
         item {
             SettingSection("Theme profiles")
-            Text("Apply a starter preset or save your current appearance as a reusable profile.", color = StudioPalette.Muted, fontSize = 12.sp)
-            Box {
-                OutlinedButton(onClick = { profileMenuOpen = true }) {
-                    Text(profiles.firstOrNull { it.id == selectedProfile }?.name ?: "Choose profile")
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                    .background(StudioPalette.Surface)
+                    .border(1.dp, StudioPalette.Line, RoundedCornerShape(16.dp))
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Reusable conversation styles", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Apply a preset, or save the appearance you have just built.", color = StudioPalette.Muted, fontSize = 12.sp, lineHeight = 17.sp)
                 }
-                DropdownMenu(expanded = profileMenuOpen, onDismissRequest = { profileMenuOpen = false }) {
-                    profiles.forEach { profile ->
-                        DropdownMenuItem(text = { Text(profile.name) }, onClick = {
-                            selectedProfile = profile.id
-                            profileMenuOpen = false
-                        })
+                Box {
+                    OutlinedButton(onClick = { profileMenuOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(profiles.firstOrNull { it.id == selectedProfile }?.name ?: "Choose a profile")
+                    }
+                    DropdownMenu(expanded = profileMenuOpen, onDismissRequest = { profileMenuOpen = false }) {
+                        profiles.forEach { profile ->
+                            DropdownMenuItem(text = { Text(profile.name) }, onClick = {
+                                selectedProfile = profile.id
+                                profileMenuOpen = false
+                            })
+                        }
                     }
                 }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    enabled = scope != "conversation" || layerJid != null,
-                    onClick = {
-                        store.applyProfile(layerAccount, layerJid, selectedProfile)
-                        onChanged()
-                    }
-                ) { Text("Apply") }
-                OutlinedButton(onClick = { dialog = "create"; profileName = "" }) { Text("Save current") }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = {
-                    runCatching { store.duplicateProfile(selectedProfile); onChanged() }
-                        .onFailure { android.widget.Toast.makeText(context, it.message, android.widget.Toast.LENGTH_SHORT).show() }
-                }) { Text("Duplicate") }
-                OutlinedButton(onClick = { dialog = "rename"; profileName = profiles.firstOrNull { it.id == selectedProfile }?.name.orEmpty() }) { Text("Rename") }
-                OutlinedButton(onClick = {
-                    runCatching { store.deleteProfile(selectedProfile); selectedProfile = "preset-classic"; onChanged() }
-                        .onFailure { android.widget.Toast.makeText(context, it.message, android.widget.Toast.LENGTH_SHORT).show() }
-                }) { Text("Delete") }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { exportPicker.launch("aharane-chat-appearance.json") }) { Text("Export profiles") }
-                TextButton(onClick = { importPicker.launch(arrayOf("application/json", "text/json")) }) { Text("Import profiles") }
-                TextButton(
-                    enabled = scope != "conversation" || layerJid != null,
-                    onClick = { store.reset(layerAccount, layerJid); onChanged() }
-                ) { Text("Reset this layer") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        enabled = scope != "conversation" || layerJid != null,
+                        onClick = {
+                            store.applyProfile(layerAccount, layerJid, selectedProfile)
+                            onChanged()
+                        }
+                    ) { Text("Use profile") }
+                    OutlinedButton(
+                        modifier = Modifier.weight(1f),
+                        onClick = { dialog = "create"; profileName = "" }
+                    ) { Text("Save current") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(modifier = Modifier.weight(1f), onClick = {
+                        runCatching { store.duplicateProfile(selectedProfile); onChanged() }
+                            .onFailure { android.widget.Toast.makeText(context, it.message, android.widget.Toast.LENGTH_SHORT).show() }
+                    }) { Text("Duplicate") }
+                    OutlinedButton(modifier = Modifier.weight(1f), onClick = {
+                        dialog = "rename"
+                        profileName = profiles.firstOrNull { it.id == selectedProfile }?.name.orEmpty()
+                    }) { Text("Rename") }
+                    OutlinedButton(modifier = Modifier.weight(1f), onClick = {
+                        runCatching { store.deleteProfile(selectedProfile); selectedProfile = "preset-classic"; onChanged() }
+                            .onFailure { android.widget.Toast.makeText(context, it.message, android.widget.Toast.LENGTH_SHORT).show() }
+                    }) { Text("Delete") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                    TextButton(modifier = Modifier.weight(1f), onClick = { exportPicker.launch("aharane-chat-appearance.json") }) { Text("Export") }
+                    TextButton(modifier = Modifier.weight(1f), onClick = { importPicker.launch(arrayOf("application/json", "text/json")) }) { Text("Import") }
+                    TextButton(
+                        modifier = Modifier.weight(1f),
+                        enabled = scope != "conversation" || layerJid != null,
+                        onClick = { store.reset(layerAccount, layerJid); onChanged() }
+                    ) { Text("Reset layer") }
+                }
             }
         }
         item { Spacer(Modifier.height(22.dp)) }
+        }
+
     }
 
     if (dialog.isNotBlank()) {

@@ -307,8 +307,18 @@ export function createAccountRuntime({
           const disconnectError = update.lastDisconnect?.error
           const code = disconnectError?.output?.statusCode
           const replacement = session.replacementPending
+          session.socket = null
+          session.pairingCodeIssued = false
+          if (code === 515 && session.registered) {
+            // 515 is Baileys' normal post-link restart signal. Honour it even
+            // while a replacement is pending; do not roll back a valid link.
+            session.state = 'reconnecting'
+            session.reconnectAttempts = 0
+            emit()
+            scheduleReconnect(id, { immediate: true })
+            return
+          }
           if (replacement) {
-            session.socket = null
             session.qr = ''
             logger.error?.({
               event: 'whatsapp.replacement-session-restart-failed',
@@ -323,8 +333,6 @@ export function createAccountRuntime({
           const wasUnregisteredPairing = !session.registered &&
             (session.pairRequestActive || session.state === 'pairing')
           const pairingRateLimited = (session.pairingCodeIssued || session.pairRequestActive || session.state === 'pairing') && isPairingRateLimit(disconnectError)
-          session.socket = null
-          session.pairingCodeIssued = false
           if (pairingRateLimited) {
             clearUnfinishedPairingCredentials(session)
             session.registered = false
@@ -347,15 +355,6 @@ export function createAccountRuntime({
               disconnect: disconnectDetails(disconnectError),
             })
             emit()
-            return
-          }
-          if (code === 515 && session.registered) {
-            // Baileys emits restartRequired (515) after a successful device link.
-            // Re-open the socket with the freshly persisted credentials immediately.
-            session.state = 'reconnecting'
-            session.reconnectAttempts = 0
-            emit()
-            scheduleReconnect(id, { immediate: true })
             return
           }
           if (code === loggedOutCode || code === 401 || code === 403) {

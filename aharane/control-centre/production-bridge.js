@@ -641,14 +641,14 @@ function accountViewP(){
   const a=P.runtime?.accounts?.[id]||{},state=a.connected?'Connected':a.state||'Offline';
   const pairButton=a.connected
    ?'<button class="btn sm" data-pair-account="'+id+'">Details</button>'
-   :a.state==='needs-pairing'
+   :['needs-pairing','reconnect-exhausted'].includes(a.state)
     ?'<button class="btn sm d" data-pair-account="'+id+'">Repair</button>'
     :a.registered
      ?'<button class="btn sm p" data-account="'+id+'" data-action="reconnect">Reconnect</button>'
      :'<button class="btn sm p" data-pair-account="'+id+'">Link account</button>';
   const actions=a.connected
    ?'<button class="btn sm" data-account="'+id+'" data-action="restart">Restart session</button><button class="btn sm d" data-account="'+id+'" data-action="stop">Stop session</button>'
-   :a.state==='needs-pairing'?'':'';
+   :['needs-pairing','reconnect-exhausted'].includes(a.state)?'':'';
   return '<div class="row"><span class="av">'+(id==='private'?'P':'A')+'<i class="st av-dot '+(a.connected?'':'off')+'"></i></span><span class="grow"><div class="t">'+(id==='private'?'Private account':'Public account')+'</div><div class="d">'+escP(state)+' · '+(a.registered?'Paired':'Not paired')+'</div></span>'+pairButton+'</div>'+(actions?'<div class="row" style="padding-left:64px;flex-wrap:wrap">'+actions+'</div>':'');
  }).join('');
  return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Accounts</h1><p class="sub">Two independent WhatsApp sessions. Pairing numbers are saved in Configuration.</p><div class="card list">'+rows+'</div><h2>Owner identities</h2><p class="sub">Private Owner controls the Private self-chat. Public Owner controls owner-only commands on the Public bot. The Public bot number is configured separately.</p><div class="card list" style="padding:14px"><label class="d" for="owner-private">Private Owner number</label><input class="field" id="owner-private" value="'+escP(P.owners.privateOwnerNumber||'')+'" inputmode="numeric"><label class="d" for="owner-public" style="display:block;margin-top:12px">Public Owner number</label><input class="field" id="owner-public" value="'+escP(P.owners.publicOwnerNumber||'')+'" inputmode="numeric"><div class="env"><label class="d" for="owner-public-bot">Public bot WhatsApp number</label><input class="field" id="owner-public-bot" value="'+escP(P.owners.publicBotNumber||'')+'" disabled><p class="d" style="white-space:normal;margin-top:6px">Change this under Home → Configuration → Public account.</p></div><label class="d" for="owner-allow" style="display:block;margin-top:12px">Allowed public senders</label><input class="field" id="owner-allow" value="'+escP((P.owners.allowedPublicSenders||[]).join(', '))+'"><div class="btns"><button class="btn p" id="save-owners">Save owner settings</button></div></div>';
@@ -656,6 +656,7 @@ function accountViewP(){
 function pairStatusLabelP(a){
  if(a.connected)return 'Connected';
  if(a.state==='needs-pairing')return 'Needs re-pairing';
+ if(a.state==='reconnect-exhausted')return 'Three reconnect attempts failed · repair required';
  if(a.registered)return 'Paired · offline';
  const labels={'not-paired':'Not paired',pairing:'Waiting for WhatsApp',connecting:'Connecting to WhatsApp',disconnected:'Connection closed',stopped:'Stopped',degraded:'Connection needs attention'};
  return labels[a.state]||a.state||'Not paired';
@@ -678,8 +679,8 @@ function pairViewP(){
  let panel='';
  if(a.connected){
   panel='<div class="empty" style="padding:10px 0 18px"><strong>Already connected</strong><p class="d" style="white-space:normal">This WhatsApp account is linked. You do not need another pairing code.</p></div>';
- }else if(a.state==='needs-pairing'){
-  panel='<div class="note">WhatsApp rejected this saved session. Before linking again, Aharane will back up its existing authentication data.</div><button class="btn p" id="prod-pair-repair" style="width:100%">Back up session and prepare re-pairing</button>';
+ }else if(['needs-pairing','reconnect-exhausted'].includes(a.state)){
+  panel='<div class="note">'+(a.state==='needs-pairing'?'WhatsApp rejected this saved session.':'Aharane could not restore this session after three automatic reconnect attempts.')+' Before linking again, Aharane will back up its existing authentication data.</div><button class="btn p" id="prod-pair-repair" style="width:100%">Back up session and prepare re-pairing</button>';
  }else if(a.registered){
   panel='<div class="note">This account is already paired, but currently offline. It does not need a new pairing code.</div><button class="btn p" id="prod-pair-reconnect" style="width:100%">Reconnect existing account</button>';
  }else if(!number){

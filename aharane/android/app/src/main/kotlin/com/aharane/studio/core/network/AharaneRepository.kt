@@ -556,8 +556,11 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
     suspend fun pairCode(account: ChatAccount): String =
         api.post("accounts/${account.apiValue}/pair-code", JSONObject()).optString("pairingCode")
 
-    suspend fun pairingQr(account: ChatAccount): JSONObject =
+    suspend fun startPairingQr(account: ChatAccount): JSONObject =
         api.post("accounts/${account.apiValue}/qr", JSONObject())
+
+    suspend fun pairingQr(account: ChatAccount): JSONObject =
+        api.get("accounts/${account.apiValue}/qr")
 
     suspend fun reconnect(account: ChatAccount): JSONObject =
         api.post("accounts/${account.apiValue}/reconnect", JSONObject())

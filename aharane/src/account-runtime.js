@@ -33,7 +33,7 @@ export function createAccountRuntime({
   loggedOutCode = 401,
   reconnectBaseMs = 2000,
   reconnectMaxMs = 60000,
-  reconnectLimit = 12,
+  reconnectLimit = 3,
   pairingReadyDelayMs = 1500,
   pairingCooldownMs = 15 * 60 * 1000,
 }) {
@@ -146,14 +146,21 @@ export function createAccountRuntime({
   function scheduleReconnect(id) {
     const session = get(id)
     if (shuttingDown || session.manuallyStopped || session.reconnectTimer ||
-        session.state === 'needs-pairing' || session.state === 'stopped') return
-    session.reconnectAttempts += 1
-    if (session.reconnectAttempts > reconnectLimit) {
-      session.state = 'degraded'
-      logger.error?.({ event: 'whatsapp.reconnect-limit-reached', accountId: id })
+        session.state === 'needs-pairing' || session.state === 'reconnect-exhausted' ||
+        session.state === 'not-paired' || session.state === 'rate-limited' ||
+        session.state === 'stopped') return
+    if (session.reconnectAttempts >= reconnectLimit) {
+      session.state = 'reconnect-exhausted'
+      logger.error?.({
+        event: 'whatsapp.reconnect-limit-reached',
+        accountId: id,
+        attempts: session.reconnectAttempts,
+        reconnectLimit,
+      })
       emit()
       return
     }
+    session.reconnectAttempts += 1
     const delayMs = Math.min(
       reconnectMaxMs,
       reconnectBaseMs * (2 ** Math.min(5, session.reconnectAttempts - 1)),
@@ -242,6 +249,8 @@ export function createAccountRuntime({
           session.rejectReady = null
           const disconnectError = update.lastDisconnect?.error
           const code = disconnectError?.output?.statusCode
+          const wasUnregisteredPairing = !session.registered &&
+            (session.pairRequestActive || session.state === 'pairing')
           const pairingRateLimited = (session.pairingCodeIssued || session.pairRequestActive || session.state === 'pairing') && isPairingRateLimit(disconnectError)
           session.socket = null
           session.pairingCodeIssued = false
@@ -251,6 +260,21 @@ export function createAccountRuntime({
             session.state = 'rate-limited'
             session.pairingBlockedUntil = Date.now() + Math.max(60_000, pairingCooldownMs)
             logger.warn?.({ event: 'whatsapp.pairing-rate-limited', accountId: id, retryAt: session.pairingBlockedUntil })
+            emit()
+            return
+          }
+          if (wasUnregisteredPairing) {
+            // A failed first-time link is not a broken saved session. Do not
+            // reconnect or re-use a pairing socket that WhatsApp has closed.
+            clearUnfinishedPairingCredentials(session)
+            session.registered = false
+            session.state = 'not-paired'
+            logger.error?.({
+              event: 'whatsapp.pairing-connection-closed',
+              accountId: id,
+              code: Number.isFinite(code) ? code : null,
+              reason: String(disconnectError?.message || 'Pairing connection closed').slice(0, 240),
+            })
             emit()
             return
           }
@@ -266,6 +290,7 @@ export function createAccountRuntime({
             event: 'whatsapp.connection-closed',
             accountId: id,
             code: Number.isFinite(code) ? code : null,
+            reason: String(disconnectError?.message || 'Connection closed').slice(0, 240),
           })
           emit()
           scheduleReconnect(id)
@@ -304,9 +329,16 @@ export function createAccountRuntime({
       return await session.startPromise
     } catch (error) {
       session.socket = null
-      session.state = 'degraded'
-      emit()
-      scheduleReconnect(id)
+      session.qr = ''
+      if (!session.registered) {
+        // Initial pairing failures must wait for an explicit user request.
+        session.state = 'not-paired'
+        emit()
+      } else {
+        session.state = 'disconnected'
+        emit()
+        scheduleReconnect(id)
+      }
       throw error
     } finally {
       session.startPromise = null
@@ -354,10 +386,10 @@ export function createAccountRuntime({
   async function requestPairingCodeInternal(id, phoneNumber) {
     const session = get(id)
     if (session.pairRequestActive) throw Object.assign(new Error('A pairing request is already in progress.'), { status: 409 })
-    if (session.registered) throw Object.assign(new Error('This WhatsApp account is already paired.'), { status: 409 })
-    if (session.state === 'needs-pairing') {
+    if (session.state === 'needs-pairing' || session.state === 'reconnect-exhausted') {
       throw Object.assign(new Error('This saved session needs an explicit repair first. Existing authentication will be backed up before re-pairing.'), { status: 409 })
     }
+    if (session.registered) throw Object.assign(new Error('This WhatsApp account is already paired.'), { status: 409 })
     if (session.pairingBlockedUntil > Date.now()) throw pairingRateLimitError()
     if (session.state === 'rate-limited') {
       session.state = 'not-paired'
@@ -409,8 +441,8 @@ export function createAccountRuntime({
 
   async function reconnect(id) {
     const session = get(id)
-    if (session.state === 'needs-pairing') {
-      throw Object.assign(new Error('This session was rejected by WhatsApp. Use Re-pair so its saved authentication is backed up first.'), { status: 409 })
+    if (session.state === 'needs-pairing' || session.state === 'reconnect-exhausted') {
+      throw Object.assign(new Error('This WhatsApp session needs repair. Use Re-pair after backing up its saved authentication before pairing again.'), { status: 409 })
     }
     if (!session.registered && !session.socket) {
       throw Object.assign(new Error('This WhatsApp account has not been paired yet. Use the explicit Pair action to request a code or QR.'), { status: 409 })
@@ -454,8 +486,8 @@ export function createAccountRuntime({
 
   async function repairInternal(id, backupRoot) {
     const session = get(id)
-    if (session.state !== 'needs-pairing') {
-      throw Object.assign(new Error('Re-pair is only available after WhatsApp rejects the saved session. Use reconnect for ordinary connection problems.'), { status: 409 })
+    if (!['needs-pairing', 'reconnect-exhausted'].includes(session.state)) {
+      throw Object.assign(new Error('Re-pair is only available after WhatsApp rejects the saved session or automatic reconnect attempts are exhausted.'), { status: 409 })
     }
     if (session.pairRequestActive || session.startPromise) {
       throw Object.assign(new Error('This account is busy. Retry after its current operation finishes.'), { status: 409 })

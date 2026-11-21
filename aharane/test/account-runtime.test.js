@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createAccountRuntime } from '../src/account-runtime.js'
 
-async function fixture(t, { pairingError = null } = {}) {
+async function fixture(t, { pairingError = null, registered = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'aharane-accounts-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const authLoads = []
@@ -17,7 +17,7 @@ async function fixture(t, { pairingError = null } = {}) {
     loadAuthState: async authDir => {
       authLoads.push(authDir)
       const auth = {
-        state: { creds: { registered: false } },
+        state: { creds: { registered } },
         saveCount: 0,
         async saveCreds() { this.saveCount += 1 },
       }
@@ -94,7 +94,7 @@ test('manual stop preserves registration state and never schedules reconnect', a
 })
 
 test('a logged-out account is isolated and requires explicit repair', async t => {
-  const { runtime, sockets } = await fixture(t)
+  const { runtime, sockets } = await fixture(t, { registered: true })
   await runtime.start('private')
   sockets[0].ev.emit('connection.update', { connection: 'close', lastDisconnect: { error: { output: { statusCode: 401 } } } })
   assert.equal(runtime.get('private').state, 'needs-pairing')
@@ -131,7 +131,7 @@ test('authentication directory overlap is rejected', () => {
 })
 
 test('a disconnect on one account reconnects only that account', async t => {
-  const { runtime, sockets } = await fixture(t)
+  const { runtime, sockets } = await fixture(t, { registered: true })
   await Promise.all([runtime.start('private'), runtime.start('public')])
   const oldPrivateSocket = runtime.get('private').socket
   const publicSocket = runtime.get('public').socket
@@ -142,7 +142,57 @@ test('a disconnect on one account reconnects only that account', async t => {
   await new Promise(resolveWait => setTimeout(resolveWait, 25))
   assert.notEqual(runtime.get('private').socket, oldPrivateSocket)
   assert.equal(runtime.get('public').socket, publicSocket)
-  assert.equal(runtime.get('public').state, 'pairing')
+  assert.equal(runtime.get('public').state, 'connecting')
+  await runtime.shutdown()
+})
+
+test('an unregistered pairing socket that closes is not automatically reconnected', async t => {
+  const { runtime, sockets } = await fixture(t)
+  await runtime.start('private')
+  sockets[0].ev.emit('connection.update', {
+    connection: 'close',
+    lastDisconnect: { error: Object.assign(new Error('WebSocket error (0)'), { output: { statusCode: 0 } }) },
+  })
+  assert.equal(runtime.get('private').state, 'not-paired')
+  assert.equal(runtime.get('private').reconnectAttempts, 0)
+  await new Promise(resolveWait => setTimeout(resolveWait, 20))
+  assert.equal(sockets.length, 1)
+  await runtime.shutdown()
+})
+
+test('a linked account stops after exactly three automatic reconnect attempts', async t => {
+  const { runtime, sockets } = await fixture(t, { registered: true })
+  await runtime.start('private')
+  const closeSocket = socket => socket.ev.emit('connection.update', {
+    connection: 'close',
+    lastDisconnect: { error: Object.assign(new Error('WebSocket error (0)'), { output: { statusCode: 0 } }) },
+  })
+  closeSocket(sockets[0])
+  for (let expected = 2; expected <= 4; expected += 1) {
+    const startedAt = Date.now()
+    while (sockets.length < expected && Date.now() - startedAt < 500) {
+      await new Promise(resolveWait => setTimeout(resolveWait, 2))
+    }
+    assert.equal(sockets.length, expected, 'Expected one new socket for reconnect attempt ' + (expected - 1))
+    closeSocket(sockets[expected - 1])
+  }
+  await new Promise(resolveWait => setTimeout(resolveWait, 20))
+  assert.equal(runtime.get('private').state, 'reconnect-exhausted')
+  assert.equal(runtime.get('private').reconnectAttempts, 3)
+  assert.equal(sockets.length, 4, 'No fourth automatic retry should be created')
+  await assert.rejects(runtime.reconnect('private'), /needs repair/i)
+  await runtime.shutdown()
+})
+
+test('repair also backs up a session after its automatic reconnect attempts are exhausted', async t => {
+  const { runtime, root } = await fixture(t, { registered: true })
+  await runtime.start('private')
+  await import('node:fs/promises').then(fs => fs.writeFile(join(root, 'private-auth', 'creds.json'), 'test-auth'))
+  runtime.get('private').state = 'reconnect-exhausted'
+  const result = await runtime.repair('private', join(root, 'auth-backups'))
+  assert.equal(result.backupCreated, true)
+  assert.equal(runtime.get('private').state, 'not-paired')
+  assert.equal(runtime.get('private').registered, false)
   await runtime.shutdown()
 })
 

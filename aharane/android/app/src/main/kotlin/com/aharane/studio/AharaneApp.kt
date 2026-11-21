@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.viewinterop.AndroidView
 import com.aharane.studio.core.design.*
 import com.aharane.studio.core.media.AudioWaveformDecoder
@@ -78,6 +79,7 @@ import com.aharane.studio.features.chats.ConversationScreen
 import com.aharane.studio.features.commands.VisualCommandBuilderScreen
 import com.aharane.studio.features.configuration.ConfigurationScreen
 import com.aharane.studio.features.connection.ConnectionScreen
+import com.aharane.studio.features.connection.WhatsAppPairingScreen
 import com.aharane.studio.features.environment.EnvironmentScreen
 import com.aharane.studio.features.environment.EnvironmentValue
 import com.aharane.studio.features.files.CodeEditorScreen
@@ -423,6 +425,16 @@ fun AharaneApp(
 
     var pairingAccount by remember { mutableStateOf<ChatAccount?>(null) }
     var pairingCode by remember { mutableStateOf("") }
+    var pairingMethod by rememberSaveable { mutableStateOf("pin") }
+    var pairingQrValue by remember { mutableStateOf("") }
+    var pairingQrRequested by remember { mutableStateOf(false) }
+    var pairingLoading by remember { mutableStateOf(false) }
+    var pairingError by remember { mutableStateOf("") }
+    var repairPromptAccount by remember { mutableStateOf<ChatAccount?>(null) }
+    var dismissedRepairAccounts by remember { mutableStateOf(emptySet<ChatAccount>()) }
+    val latestPairingCode by rememberUpdatedState(pairingCode)
+    val latestPairingQrRequested by rememberUpdatedState(pairingQrRequested)
+    val latestPairingQrValue by rememberUpdatedState(pairingQrValue)
     var accountControlTarget by remember { mutableStateOf<ChatAccount?>(null) }
     var fileDialogMode by remember { mutableStateOf("") }
     var fileDialogName by remember { mutableStateOf("") }
@@ -1246,6 +1258,102 @@ fun AharaneApp(
     val selectedFilter = ChatFilter.valueOf(filterName)
     val connected = authenticated && !previewMode && serverReachable
 
+    fun openPairingScreen(target: ChatAccount) {
+        pairingAccount = target
+        pairingCode = ""
+        pairingMethod = "pin"
+        pairingQrValue = ""
+        pairingQrRequested = false
+        pairingLoading = false
+        pairingError = ""
+    }
+
+    LaunchedEffect(
+        connected,
+        runtime?.privateAccount?.state,
+        runtime?.publicAccount?.state,
+        dismissedRepairAccounts
+    ) {
+        if (!connected) return@LaunchedEffect
+        val repairTarget = listOf(ChatAccount.PRIVATE, ChatAccount.PUBLIC).firstOrNull { account ->
+            val state = if (account == ChatAccount.PRIVATE) runtime?.privateAccount?.state else runtime?.publicAccount?.state
+            state in setOf("needs-pairing", "reconnect-exhausted") && account !in dismissedRepairAccounts
+        }
+        if (repairTarget != null && repairPromptAccount == null && pairingAccount == null) {
+            repairPromptAccount = repairTarget
+        }
+    }
+
+    LaunchedEffect(pairingAccount, connected, previewMode) {
+        val target = pairingAccount ?: return@LaunchedEffect
+        if (!connected || previewMode) return@LaunchedEffect
+        repeat(60) {
+            delay(2200)
+            if (pairingAccount != target) return@LaunchedEffect
+            val latest = runCatching { repository.runtimeSnapshot() }.getOrNull() ?: return@repeat
+            runtime = latest
+            val state = if (target == ChatAccount.PRIVATE) latest.privateAccount else latest.publicAccount
+            when {
+                state.connected -> {
+                    pairingQrRequested = false
+                    pairingError = "WhatsApp connected successfully. You can close this screen."
+                    return@LaunchedEffect
+                }
+                state.state == "rate-limited" -> {
+                    pairingQrRequested = false
+                    pairingError = "WhatsApp has temporarily rate-limited pairing. Wait at least 15 minutes before requesting another code or QR."
+                    return@LaunchedEffect
+                }
+                state.state in setOf("needs-pairing", "reconnect-exhausted") -> {
+                    pairingQrRequested = false
+                    pairingAccount = null
+                    repairPromptAccount = target
+                    return@LaunchedEffect
+                }
+                state.state == "not-paired" &&
+                    (latestPairingCode.isNotBlank() || latestPairingQrRequested || latestPairingQrValue.isNotBlank()) -> {
+                    pairingCode = ""
+                    pairingQrValue = ""
+                    pairingQrRequested = false
+                    pairingError = "WhatsApp closed this pairing attempt before the account was linked. Request a fresh code or QR to try again."
+                    return@LaunchedEffect
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(pairingAccount, pairingMethod, pairingQrRequested, connected) {
+        val target = pairingAccount ?: return@LaunchedEffect
+        if (!connected || previewMode || pairingMethod != "qr" || !pairingQrRequested) return@LaunchedEffect
+        repeat(60) {
+            if (pairingAccount != target || pairingMethod != "qr" || !pairingQrRequested) return@LaunchedEffect
+            try {
+                val response = repository.pairingQr(target)
+                val qr = response.optString("qr")
+                if (qr.isNotBlank()) pairingQrValue = qr
+            } catch (error: Exception) {
+                val latest = runCatching { repository.runtimeSnapshot() }.getOrNull()
+                if (latest != null) {
+                    runtime = latest
+                    val accountState = if (target == ChatAccount.PRIVATE) latest.privateAccount else latest.publicAccount
+                    if (accountState.connected) {
+                        pairingError = "WhatsApp connected successfully. You can close this screen."
+                        pairingQrRequested = false
+                        return@LaunchedEffect
+                    }
+                }
+                pairingError = error.message ?: "The QR code could not be loaded. Try requesting a fresh one."
+                pairingQrRequested = false
+                return@LaunchedEffect
+            }
+            delay(1800)
+        }
+        if (pairingQrRequested && pairingQrValue.isBlank()) {
+            pairingError = "WhatsApp did not provide a QR code in time. Request a fresh code when the connection is ready."
+            pairingQrRequested = false
+        }
+    }
+
     suspend fun beginAccountLink(target: ChatAccount) {
         val latest = repository.runtimeSnapshot()
         runtime = latest
@@ -1253,18 +1361,15 @@ fun AharaneApp(
         if (state.state.equals("rate-limited", ignoreCase = true)) {
             throw IllegalStateException("WhatsApp temporarily rate-limited this account. Wait at least 15 minutes before requesting another pairing code.")
         }
+        if (state.state in setOf("needs-pairing", "reconnect-exhausted")) {
+            repairPromptAccount = target
+            return
+        }
         if (state.registered) {
             accountControlTarget = target
             return
         }
-        if (state.state.equals("needs-pairing", ignoreCase = true)) {
-            // WhatsApp rejected the saved credentials. The server first stores
-            // a protected backup, then prepares an empty auth directory.
-            repository.repair(target)
-            runtime = repository.runtimeSnapshot()
-        }
-        pairingAccount = target
-        pairingCode = repository.pairCode(target)
+        openPairingScreen(target)
     }
 
     suspend fun obtainCachedOrRemoteMedia(
@@ -2053,8 +2158,7 @@ fun AharaneApp(
                         hourlyMessageCounts = messageMetrics?.hourlyMessages ?: emptyList(),
                         onAccountAction = { target ->
                             if (previewMode) {
-                                pairingAccount = target
-                                pairingCode = ""
+                                openPairingScreen(target)
                             } else {
                                 connectionScope.launch {
                                     try {
@@ -2349,8 +2453,7 @@ fun AharaneApp(
                         onAccountAction = { accountId ->
                             val target = ChatAccount.fromApiValue(accountId)
                             if (target != null && previewMode) {
-                                pairingAccount = target
-                                pairingCode = ""
+                                openPairingScreen(target)
                             } else if (target != null && connected) {
                                 connectionScope.launch {
                                     try {
@@ -2640,41 +2743,121 @@ fun AharaneApp(
         }
     }
 
-    if (pairingAccount != null && (previewMode || pairingCode.isNotBlank())) {
-        Dialog(onDismissRequest = { pairingAccount = null; pairingCode = "" }) {
+    if (repairPromptAccount != null) {
+        val target = repairPromptAccount!!
+        val targetState = if (target == ChatAccount.PRIVATE) runtime?.privateAccount else runtime?.publicAccount
+        val rejected = targetState?.state == "needs-pairing"
+        Dialog(onDismissRequest = {
+            dismissedRepairAccounts = dismissedRepairAccounts + target
+            repairPromptAccount = null
+        }) {
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                    .background(StudioPalette.Surface).padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .background(StudioPalette.Surface).padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Link ${pairingAccount!!.label} account", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                if (previewMode) {
-                    Text(
-                        "This is a design preview. Connect to your Aharane server to generate a real WhatsApp pairing code. No account has been paired.",
-                        color = StudioPalette.Muted,
-                        fontSize = 13.sp,
-                        lineHeight = 19.sp
-                    )
-                    StudioActionButton("Close", compact = true, primary = true, onClick = {
-                        pairingAccount = null
-                        pairingCode = ""
-                    })
-                } else {
-                    Text("Pair this account in WhatsApp → Linked devices → Link a device, then enter this code:", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
-                    Text(pairingCode, color = StudioPalette.Accent, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        StudioActionButton("Copy code", compact = true, onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("Aharane pairing code", pairingCode))
-                            Toast.makeText(context, "Pairing code copied.", Toast.LENGTH_SHORT).show()
-                        })
-                        StudioActionButton("Close", compact = true, primary = true, onClick = {
-                            pairingAccount = null
-                            pairingCode = ""
-                        })
+                Text("WhatsApp session needs repair", color = StudioPalette.Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    if (rejected) {
+                        "WhatsApp no longer accepts the saved " + target.label + " session. Aharane will make a protected backup before you link it again."
+                    } else {
+                        "Aharane could not restore the " + target.label + " WhatsApp session after three automatic reconnect attempts. Repair will back up the saved authentication before you link again."
+                    },
+                    color = StudioPalette.Muted,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+                StudioActionButton("Back up and repair", modifier = Modifier.fillMaxWidth(), primary = true, enabled = connected && !busy, onClick = {
+                    connectionScope.launch {
+                        busy = true
+                        try {
+                            repository.repair(target)
+                            runtime = repository.runtimeSnapshot()
+                            repairPromptAccount = null
+                            dismissedRepairAccounts = dismissedRepairAccounts + target
+                            openPairingScreen(target)
+                        } catch (error: Exception) {
+                            Toast.makeText(context, error.message ?: "Session repair failed.", Toast.LENGTH_LONG).show()
+                        } finally { busy = false }
                     }
-                }
+                })
+                StudioActionButton("Later", modifier = Modifier.fillMaxWidth(), enabled = !busy, onClick = {
+                    dismissedRepairAccounts = dismissedRepairAccounts + target
+                    repairPromptAccount = null
+                })
             }
+        }
+    }
+
+    if (pairingAccount != null) {
+        val target = pairingAccount!!
+        val currentPairState = if (target == ChatAccount.PRIVATE) runtime?.privateAccount else runtime?.publicAccount
+        Dialog(
+            onDismissRequest = {
+                pairingAccount = null
+                pairingCode = ""
+                pairingQrValue = ""
+                pairingQrRequested = false
+                pairingError = ""
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            WhatsAppPairingScreen(
+                modifier = Modifier.fillMaxSize(),
+                accountLabel = target.label,
+                method = pairingMethod,
+                pairingCode = pairingCode,
+                qrValue = pairingQrValue,
+                loading = pairingLoading,
+                connected = currentPairState?.connected == true,
+                errorMessage = pairingError,
+                previewMode = previewMode,
+                onBack = {
+                    pairingAccount = null
+                    pairingCode = ""
+                    pairingQrValue = ""
+                    pairingQrRequested = false
+                    pairingError = ""
+                },
+                onSelectMethod = { method ->
+                    pairingMethod = method
+                    pairingCode = ""
+                    pairingQrValue = ""
+                    pairingQrRequested = false
+                    pairingError = ""
+                },
+                onRequestPairingCode = {
+                    if (!previewMode) connectionScope.launch {
+                        pairingLoading = true
+                        pairingError = ""
+                        try {
+                            val code = repository.pairCode(target)
+                            if (code.isBlank()) throw IllegalStateException("WhatsApp returned an empty pairing code. Try again when the connection is ready.")
+                            pairingCode = code
+                        } catch (error: Exception) {
+                            pairingError = error.message ?: "A pairing code could not be generated."
+                        } finally { pairingLoading = false }
+                    }
+                },
+                onRequestQrCode = {
+                    if (!previewMode) connectionScope.launch {
+                        pairingLoading = true
+                        pairingError = ""
+                        pairingQrValue = ""
+                        try {
+                            repository.startPairingQr(target)
+                            pairingQrRequested = true
+                        } catch (error: Exception) {
+                            pairingError = error.message ?: "A QR code could not be requested."
+                        } finally { pairingLoading = false }
+                    }
+                },
+                onCopyCode = {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Aharane pairing code", pairingCode))
+                    Toast.makeText(context, "Pairing code copied.", Toast.LENGTH_SHORT).show()
+                }
+            )
         }
     }
 
@@ -2839,6 +3022,7 @@ private fun formatBytes(bytes: Long): String = when {
 private fun accountStateLabel(state: ServerAccountState): String = when {
     state.connected -> "Connected"
     state.state == "rate-limited" -> "Rate limited · wait before retrying"
+    state.state == "reconnect-exhausted" -> "Repair required · 3 reconnect attempts failed"
     state.registered && state.state == "reconnecting" -> "Reconnecting"
     state.registered -> "Paired · ${state.state.replace('-', ' ')}"
     state.state == "not-paired" -> "Not paired"
@@ -2848,6 +3032,7 @@ private fun accountStateLabel(state: ServerAccountState): String = when {
 private fun accountActionLabel(state: ServerAccountState): String = when {
     state.connected -> "Manage"
     state.state == "rate-limited" -> "Try later"
+    state.state == "reconnect-exhausted" || state.state == "needs-pairing" -> "Repair"
     state.registered -> "Reconnect"
     else -> "Link account"
 }

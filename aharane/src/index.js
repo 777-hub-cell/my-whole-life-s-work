@@ -3373,15 +3373,21 @@ server.on('error', error => {
   process.exitCode = 1
 })
 
-// Start both sessions independently. A problem with one account must not
-// prevent the other account from connecting or accepting commands.
-await Promise.all(['private', 'public'].map(async accountId => {
+// Start each account independently, but stagger paired WhatsApp handshakes.
+// Simultaneous reconnect bursts can trigger peer throttling for both devices.
+for (const accountId of ['private', 'public']) {
   try {
-    await accountRuntime.start(accountId, { deferUnregistered: true })
+    const socket = await accountRuntime.start(accountId, { deferUnregistered: true })
+    if (socket && accountRuntime.get(accountId).registered) {
+      await accountRuntime.waitUntilReady(accountId, 12_000)
+    }
   } catch (error) {
     logger.error({ event: 'whatsapp.initial-start-failed', accountId, error: String(error?.message || error) })
   }
-}))
+  if (accountId === 'private') {
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 2_500))
+  }
+}
 
 async function shutdown(signal) {
   if (shuttingDown) return

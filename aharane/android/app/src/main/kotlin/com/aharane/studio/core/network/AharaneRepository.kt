@@ -20,7 +20,9 @@ data class ServerAccountState(
     val registered: Boolean,
     val reconnectAttempts: Int,
     val lastConnectedAt: String?,
-    val pairingInProgress: Boolean
+    val pairingInProgress: Boolean,
+    val rateLimitedUntil: Long? = null,
+    val lastError: String? = null
 )
 
 data class ServerRuntimeSnapshot(
@@ -1001,7 +1003,9 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
             registered = json.optBoolean("registered"),
             reconnectAttempts = json.optInt("reconnectAttempts"),
             lastConnectedAt = json.optString("lastConnectedAt").takeIf { it.isNotBlank() && it != "null" },
-            pairingInProgress = json.optBoolean("pairingInProgress")
+            pairingInProgress = json.optBoolean("pairingInProgress"),
+            rateLimitedUntil = json.optLong("rateLimitedUntil").takeIf { json.has("rateLimitedUntil") && it > 0L },
+            lastError = json.optString("lastError").takeIf { it.isNotBlank() && it != "null" }
         )
 
     private fun parseMessageKind(value: String): MessageKind = when (value.lowercase()) {

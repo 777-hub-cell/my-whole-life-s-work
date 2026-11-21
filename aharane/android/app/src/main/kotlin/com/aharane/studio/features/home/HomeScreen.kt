@@ -38,6 +38,7 @@ fun HomeScreen(
     onOpenCommandBuilder: () -> Unit = {},
     onOpenActivity: () -> Unit = onOpenMore,
     serviceConnected: Boolean = false,
+    serviceDegraded: Boolean = false,
     serviceSubtitle: String = "Not connected to Aharane service",
     privateAccountStatus: String = "Status not loaded",
     publicAccountStatus: String = "Status not loaded",
@@ -81,15 +82,29 @@ fun HomeScreen(
                     }
                     Row(
                         Modifier.clip(RoundedCornerShape(99.dp))
-                            .background(if (serviceConnected) Color(0xFFE1F3EB) else Color(0xFFF8E8E6))
+                            .background(
+                                when {
+                                    !serviceConnected -> StudioPalette.Bad.copy(alpha = 0.12f)
+                                    serviceDegraded -> Color(0xFFB87928).copy(alpha = 0.16f)
+                                    else -> StudioPalette.Accent.copy(alpha = 0.12f)
+                                }
+                            )
                             .padding(horizontal = 11.dp, vertical = 7.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(7.dp)
                     ) {
-                        HomeConnectionIndicator(connected = serviceConnected, size = 20.dp)
+                        HomeConnectionIndicator(connected = serviceConnected, degraded = serviceDegraded, size = 20.dp)
                         Text(
-                            if (serviceConnected) "Online" else "Offline",
-                            color = if (serviceConnected) StudioPalette.Accent else StudioPalette.Bad,
+                            when {
+                                !serviceConnected -> "Offline"
+                                serviceDegraded -> "Partial"
+                                else -> "Online"
+                            },
+                            color = when {
+                                !serviceConnected -> StudioPalette.Bad
+                                serviceDegraded -> Color(0xFFB87928)
+                                else -> StudioPalette.Accent
+                            },
                             fontSize = 12.5.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -247,10 +262,11 @@ fun HomeScreen(
 @Composable
 private fun HomeConnectionIndicator(
     connected: Boolean,
+    degraded: Boolean = false,
     size: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier
 ) {
-    val tint = if (connected) Color(0xFF16865F) else Color(0xFFD84A45)
+    val tint = when { !connected -> StudioPalette.Bad; degraded -> Color(0xFFB87928); else -> StudioPalette.Accent }
     val transition = rememberInfiniteTransition(label = "home-connection-pulse")
     val progress = transition.animateFloat(
         initialValue = 0f,

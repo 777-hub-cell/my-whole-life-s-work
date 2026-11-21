@@ -26,6 +26,7 @@ import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_
 import { createChatStore } from './chat-store.js'
 import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, normalizeChatVisibility, normalizeChatAppearance, isChatVisible, envView } from './studio-settings.js'
 import { createActivityStore } from './activity-store.js'
+import { createAiReplyService } from './ai-reply.js'
 import { createVisualCommandStore, normalizeWorkflow, validateWorkflow, executeVisualWorkflow, VISUAL_NODE_LIBRARY } from './visual-command-builder.js'
 
 const APP_NAME = 'Aharane'
@@ -64,6 +65,7 @@ const SOURCE_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.json', '.md', '.html
 const execFileAsync = promisify(execFile)
 const scryptAsync = promisify(scrypt)
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' })
+const aiReplyService = createAiReplyService({ env: process.env })
 
 if (HOST !== '127.0.0.1') {
   throw new Error('AHARANE_HOST must remain bound to 127.0.0.1')
@@ -1806,7 +1808,7 @@ function authorizedChat(accountId, jid) {
   return true
 }
 app.get('/api/env', requireAdmin, (_req, res) => {
-  res.json({ ok: true, env: envView(studioSettings), owners: {
+  res.json({ ok: true, env: [...envView(studioSettings), ...aiReplyService.environmentRows()], owners: {
     privateOwnerNumber: ownerConfig.privateOwnerNumber,
     publicOwnerNumber: ownerConfig.publicOwnerNumber,
     allowedPublicSenders: ownerConfig.allowedPublicSenders,
@@ -1837,9 +1839,37 @@ app.put('/api/env', requireAdmin, async (req, res) => {
       if (socket?.sendPresenceUpdate) await socket.sendPresenceUpdate(studioSettings[accountId].alwaysOnline ? 'available' : 'unavailable').catch(() => {})
     }
     publishStudioEvent('settings.updated', { private: true, public: true })
-    res.json({ ok: true, env: envView(studioSettings), settings: studioSettings })
+    res.json({ ok: true, env: [...envView(studioSettings), ...aiReplyService.environmentRows()], settings: studioSettings })
   } catch (error) {
     res.status(400).json({ ok: false, error: String(error?.message || 'Could not save the managed environment settings.') })
+  }
+})
+app.get('/api/ai/availability', requireAdmin, (_req, res) => {
+  // Capability metadata only. Never return the configured API key.
+  res.json({ ok: true, ...aiReplyService.availability() })
+})
+app.post('/api/ai/reply', requireAdmin, async (req, res) => {
+  try {
+    if (!aiReplyService.availability().enabled) {
+      return res.status(409).json({ ok: false, error: 'AI Reply is unavailable because no Groq AI key is configured in Aharane’s ENV.' })
+    }
+    const reply = await aiReplyService.generate({
+      message: req.body?.message,
+      quotedMessage: req.body?.quotedMessage,
+      tone: req.body?.tone,
+      instruction: req.body?.instruction,
+    })
+    res.json({
+      ok: true,
+      reply,
+      provider: aiReplyService.availability().provider,
+      model: aiReplyService.availability().model,
+    })
+  } catch (error) {
+    res.status(error?.status || 503).json({
+      ok: false,
+      error: String(error?.message || 'The AI reply could not be generated. Try again shortly.').slice(0, 260),
+    })
   }
 })
 app.get('/api/settings', requireAdmin, (_req, res) => res.json({ ok: true, settings: studioSettings }))

@@ -277,7 +277,7 @@ fun StudioActionButton(
     }
     val fg = when {
         !enabled -> StudioPalette.Muted
-        primary -> Color.White
+        primary -> MaterialTheme.colorScheme.onPrimary
         destructive -> StudioPalette.Bad
         else -> StudioPalette.Ink
     }

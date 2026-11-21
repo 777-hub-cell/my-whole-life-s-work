@@ -1,8 +1,9 @@
-import { chmod, lstat, mkdir, realpath, rename, stat } from 'node:fs/promises'
+import { chmod, lstat, mkdir, realpath, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 const SESSION_IDS = Object.freeze(['private', 'public'])
+const PEER_RATE_LIMIT_COOLDOWN_MS = 15 * 60 * 1000
 
 function accountId(value) {
   const id = String(value || '').trim().toLowerCase()
@@ -21,6 +22,7 @@ function wait(ms) {
  */
 export function createAccountRuntime({
   authDirs,
+  rateLimitFile = '',
   loadAuthState,
   makeSocket,
   onMessages = async () => {},
@@ -52,6 +54,101 @@ export function createAccountRuntime({
       directories.private.startsWith(directories.public + sep) ||
       directories.public.startsWith(directories.private + sep)) {
     throw new Error('Private and public WhatsApp accounts must use separate authentication directories.')
+  }
+
+  const rateLimitPath = String(rateLimitFile || '').trim()
+  let rateLimitsReady = null
+  let rateLimitWrite = Promise.resolve()
+
+  async function ensureRateLimitsLoaded() {
+    if (!rateLimitPath) return
+    if (!rateLimitsReady) {
+      rateLimitsReady = (async () => {
+        const raw = await readFile(rateLimitPath, 'utf8').catch(() => '')
+        let saved = {}
+        try { saved = raw ? JSON.parse(raw) : {} } catch {
+          logger.warn?.({ event: 'whatsapp.rate-limit-state-invalid' })
+        }
+        for (const id of SESSION_IDS) {
+          const until = Number(saved?.[id]?.until || 0)
+          if (Number.isFinite(until) && until > Date.now()) {
+            const session = sessions.get(id)
+            session.rateLimitedUntil = until
+            session.lastError = 'WhatsApp temporarily rate-limited this account. Wait before retrying.'
+            session.state = 'rate-limited'
+          }
+        }
+      })().catch(error => {
+        rateLimitsReady = null
+        logger.warn?.({ event: 'whatsapp.rate-limit-state-read-failed', error: String(error?.message || error) })
+      })
+    }
+    await rateLimitsReady
+  }
+
+  function persistRateLimits() {
+    if (!rateLimitPath) return
+    const payload = Object.fromEntries(SESSION_IDS
+      .map(id => [id, sessions.get(id).rateLimitedUntil])
+      .filter(([, until]) => until > Date.now())
+      .map(([id, until]) => [id, { until }]))
+    rateLimitWrite = rateLimitWrite.then(async () => {
+      const temporary = rateLimitPath + '.' + process.pid + '.' + randomUUID() + '.tmp'
+      await writeFile(temporary, JSON.stringify(payload), { mode: 0o600 })
+      await rename(temporary, rateLimitPath)
+    }).catch(error => {
+      logger.warn?.({ event: 'whatsapp.rate-limit-state-write-failed', error: String(error?.message || error) })
+    })
+    return rateLimitWrite
+  }
+
+  function isPeerRateLimitError(error) {
+    const status = Number(error?.output?.statusCode ?? error?.statusCode ?? error?.status)
+    const message = [
+      error?.message,
+      error?.data,
+      error?.output?.payload?.message,
+      error?.output?.payload?.error,
+    ].filter(Boolean).join(' ')
+    return status === 429 || /peer.{0,20}rate.?limit|rate.?limit|too many requests|throttl/i.test(message)
+  }
+
+  function rateLimitError(session) {
+    const remainingMs = Math.max(0, session.rateLimitedUntil - Date.now())
+    const retryAfterSeconds = Math.max(1, Math.ceil(remainingMs / 1000))
+    return Object.assign(
+      new Error('WhatsApp has temporarily rate-limited this account. Wait ' +
+        Math.ceil(remainingMs / 60_000) + ' minute(s) before trying again.'),
+      { status: 429, retryAfterSeconds }
+    )
+  }
+
+  function assertNotRateLimited(session) {
+    if (session.rateLimitedUntil > Date.now()) throw rateLimitError(session)
+    if (session.rateLimitedUntil) {
+      session.rateLimitedUntil = 0
+      session.lastError = ''
+      if (session.state === 'rate-limited') session.state = session.registered ? 'disconnected' : 'not-paired'
+      void persistRateLimits()
+    }
+  }
+
+  function markPeerRateLimited(session, error) {
+    session.rateLimitedUntil = Date.now() + PEER_RATE_LIMIT_COOLDOWN_MS
+    session.lastError = 'WhatsApp temporarily rate-limited this account. Wait 15 minutes before retrying.'
+    session.state = 'rate-limited'
+    session.reconnectAttempts = 0
+    if (session.reconnectTimer) clearTimeout(session.reconnectTimer)
+    session.reconnectTimer = null
+    logger.error?.({
+      event: 'whatsapp.peer-rate-limited',
+      accountId: session.id,
+      retryAfterAt: new Date(session.rateLimitedUntil).toISOString(),
+      statusCode: error?.output?.statusCode ?? error?.statusCode ?? error?.status ?? null,
+      error: String(error?.message || error),
+    })
+    void persistRateLimits()
+    emit()
   }
 
   let authDirectoriesReady = null
@@ -100,6 +197,8 @@ export function createAccountRuntime({
     resolveReady: null,
     rejectReady: null,
     pairRequestActive: false,
+    rateLimitedUntil: 0,
+    lastError: '',
     qr: '',
     manuallyStopped: false,
   }]))
@@ -118,6 +217,8 @@ export function createAccountRuntime({
       reconnectAttempts: session.reconnectAttempts,
       lastConnectedAt: session.lastConnectedAt || null,
       pairingInProgress: session.pairRequestActive,
+      rateLimitedUntil: session.rateLimitedUntil || null,
+      lastError: session.lastError || '',
     }
   }
 
@@ -141,7 +242,8 @@ export function createAccountRuntime({
   function scheduleReconnect(id) {
     const session = get(id)
     if (shuttingDown || session.manuallyStopped || session.reconnectTimer ||
-        session.state === 'needs-pairing' || session.state === 'stopped') return
+        session.state === 'needs-pairing' || session.state === 'stopped' ||
+        session.state === 'rate-limited' || session.rateLimitedUntil > Date.now()) return
     session.reconnectAttempts += 1
     if (session.reconnectAttempts > reconnectLimit) {
       session.state = 'degraded'
@@ -166,6 +268,8 @@ export function createAccountRuntime({
   async function startInternal(id, { deferUnregistered = false } = {}) {
     const session = get(id)
     if (shuttingDown) return null
+    await ensureRateLimitsLoaded()
+    assertNotRateLimited(session)
     if (session.socket) return session.socket
     if (session.startPromise) return session.startPromise
     if (session.reconnectTimer) {
@@ -233,8 +337,13 @@ export function createAccountRuntime({
           )
           session.resolveReady = null
           session.rejectReady = null
-          const code = update.lastDisconnect?.error?.output?.statusCode
+          const disconnectError = update.lastDisconnect?.error
+          const code = disconnectError?.output?.statusCode
           session.socket = null
+          if (isPeerRateLimitError(disconnectError)) {
+            markPeerRateLimited(session, disconnectError)
+            return
+          }
           if (code === loggedOutCode || code === 401 || code === 403) {
             session.registered = false
             session.state = 'needs-pairing'
@@ -285,9 +394,14 @@ export function createAccountRuntime({
       return await session.startPromise
     } catch (error) {
       session.socket = null
-      session.state = 'degraded'
-      emit()
-      scheduleReconnect(id)
+      if (isPeerRateLimitError(error)) {
+        markPeerRateLimited(session, error)
+      } else {
+        session.state = 'degraded'
+        session.lastError = String(error?.message || 'WhatsApp connection failed.')
+        emit()
+        scheduleReconnect(id)
+      }
       throw error
     } finally {
       session.startPromise = null
@@ -311,6 +425,8 @@ export function createAccountRuntime({
 
   async function requestPairingCodeInternal(id, phoneNumber) {
     const session = get(id)
+    await ensureRateLimitsLoaded()
+    assertNotRateLimited(session)
     if (session.pairRequestActive) throw Object.assign(new Error('A pairing request is already in progress.'), { status: 409 })
     if (session.registered) throw Object.assign(new Error('This WhatsApp account is already paired.'), { status: 409 })
     if (session.state === 'needs-pairing') {
@@ -328,6 +444,7 @@ export function createAccountRuntime({
       emit()
       return String(code).replace(/\s/g, '')
     } catch (error) {
+      if (isPeerRateLimitError(error)) markPeerRateLimited(session, error)
       logger.error?.({
         event: 'whatsapp.pairing-code-request-failed',
         accountId: id,
@@ -343,6 +460,8 @@ export function createAccountRuntime({
 
   async function reconnect(id) {
     const session = get(id)
+    await ensureRateLimitsLoaded()
+    assertNotRateLimited(session)
     if (session.state === 'needs-pairing') {
       throw Object.assign(new Error('This session was rejected by WhatsApp. Use Re-pair so its saved authentication is backed up first.'), { status: 409 })
     }

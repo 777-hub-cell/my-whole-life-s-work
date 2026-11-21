@@ -152,7 +152,7 @@ fun EnvironmentScreen(
                             }
                             if (item.key == "AI_API_KEY") {
                                 Text(
-                                    if (item.configured) "A key is already saved. Leave this blank to keep it, or enter a replacement."
+                                    if (item.configured) "A key is already configured by saved settings or server ENV. Leave this blank to keep it, or enter a replacement."
                                     else "No key is configured. Enter an API key to enable AI Reply.",
                                     color = StudioPalette.Muted,
                                     fontSize = 11.5.sp,

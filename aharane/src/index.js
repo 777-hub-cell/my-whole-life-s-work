@@ -1573,6 +1573,16 @@ app.put('/api/owners', requireAdmin, async (req, res) => {
   }
 })
 
+app.post('/api/accounts/:accountId/cancel-pairing', requireAdmin, async (req, res) => {
+  try {
+    const accountId = String(req.params.accountId || '').toLowerCase()
+    if (!['private', 'public'].includes(accountId)) return res.status(404).json({ ok: false, error: 'Unknown WhatsApp account.' })
+    const account = await accountRuntime.cancelPairing(accountId)
+    res.json({ ok: true, account, accounts: accountRuntime.snapshot().accounts })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not cancel the replacement WhatsApp pairing attempt.') })
+  }
+})
 app.post('/api/accounts/:accountId/pair-code', requireAdmin, async (req, res) => {
   try {
     const accountId = String(req.params.accountId || '').toLowerCase()

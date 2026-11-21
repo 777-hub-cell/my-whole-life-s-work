@@ -94,7 +94,7 @@ test('manual stop preserves registration state and never schedules reconnect', a
 })
 
 test('a logged-out account is isolated and requires explicit repair', async t => {
-  const { runtime, sockets } = await fixture(t)
+  const { runtime, sockets } = await fixture(t, { registered: true })
   await runtime.start('private')
   sockets[0].ev.emit('connection.update', { connection: 'close', lastDisconnect: { error: { output: { statusCode: 401 } } } })
   assert.equal(runtime.get('private').state, 'needs-pairing')

@@ -96,6 +96,47 @@ class ConversationScreenTest {
     }
 
     @Test
+    fun aiReplyUsesOnlySelectedTextWhenTheQuotedMessageIsUnavailable() {
+        val selected = testIncomingMessage().copy(
+            replyToMessageId = "not-loaded-quoted-message",
+            quotedMessageText = ""
+        )
+        var suppliedMessage = ""
+        var suppliedQuote = "must be replaced"
+        var sentText = ""
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = listOf(selected),
+                    connected = true,
+                    aiReplyAvailable = true,
+                    onBack = {},
+                    onSend = { text, _ -> sentText = text },
+                    onGenerateAiReply = { message, quoted, _, _ ->
+                        suppliedMessage = message
+                        suppliedQuote = quoted
+                        "I can reply based on the message you sent."
+                    }
+                )
+            }
+        }
+        compose.onNodeWithTag("message-bubble-selected-message").performTouchInput { longClick() }
+        compose.onNodeWithText("AI Reply").performClick()
+        compose.onNodeWithText(
+            "The original quoted text is unavailable. Aharane will use only the selected message and will not load chat history."
+        ).assertIsDisplayed()
+        compose.onNodeWithText("Generate reply").performClick()
+        compose.onNodeWithTag("ai-reply-draft").assertIsDisplayed()
+        compose.onNodeWithText("Send reply").performClick()
+        compose.runOnIdle {
+            assertEquals("This is the selected incoming message.", suppliedMessage)
+            assertEquals("", suppliedQuote)
+            assertEquals("I can reply based on the message you sent.", sentText)
+        }
+    }
+
+    @Test
     fun connectedComposerDeliversTextToSendCallbackAndClearsDraft() {
         val sent = mutableListOf<String>()
         compose.setContent {

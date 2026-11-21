@@ -24,6 +24,8 @@ export function createAccountRuntime({
   loadAuthState,
   makeSocket,
   onMessages = async () => {},
+  onMessageUpdates = async () => {},
+  onMessageDeletes = async () => {},
   onCalls = async () => {},
   onConnection = async () => {},
   publish = () => {},
@@ -260,6 +262,18 @@ export function createAccountRuntime({
         if (session.socket !== currentSocket || session.manuallyStopped || shuttingDown) return
         Promise.resolve(onMessages({ sessionId: id, socket: currentSocket, event })).catch(() => {
           logger.warn?.({ event: 'message.handler-failed', accountId: id })
+        })
+      })
+      currentSocket.ev.on('messages.update', updates => {
+        if (session.socket !== currentSocket || session.manuallyStopped || shuttingDown) return
+        Promise.resolve(onMessageUpdates({ sessionId: id, socket: currentSocket, updates })).catch(() => {
+          logger.warn?.({ event: 'message-update.handler-failed', accountId: id })
+        })
+      })
+      currentSocket.ev.on('messages.delete', update => {
+        if (session.socket !== currentSocket || session.manuallyStopped || shuttingDown) return
+        Promise.resolve(onMessageDeletes({ sessionId: id, socket: currentSocket, update })).catch(() => {
+          logger.warn?.({ event: 'message-delete.handler-failed', accountId: id })
         })
       })
 

@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createChatStore } from '../src/chat-store.js'
@@ -305,4 +306,447 @@ test('replayed message IDs are deduplicated by a bounded in-memory key index', a
     const rows = await store.getMessages('public', message.key.remoteJid)
     assert.equal(rows.length, 1)
   } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
+test('contact cards retain vCards, locations retain coordinates and polls retain their options', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-structured-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348012345678@s.whatsapp.net'
+    const messages = [
+      {
+        key: { id: 'contact-card-1', remoteJid: jid, fromMe: false },
+        message: {
+          contactMessage: {
+            displayName: 'Ada Lovelace',
+            vcard: [
+              'BEGIN:VCARD',
+              'VERSION:3.0',
+              'FN:Ada Lovelace',
+              'TEL;TYPE=CELL:+2348012345678',
+              'EMAIL:ada@example.test',
+              'END:VCARD',
+            ].join('\n'),
+          },
+        },
+      },
+      {
+        key: { id: 'location-1', remoteJid: jid, fromMe: false },
+        message: {
+          locationMessage: {
+            name: 'Ibadan City Hall',
+            address: 'Oyo State, Nigeria',
+            degreesLatitude: 7.3775,
+            degreesLongitude: 3.947,
+          },
+        },
+      },
+      {
+        key: { id: 'location-no-coordinates', remoteJid: jid, fromMe: false },
+        message: {
+          locationMessage: {
+            name: 'Undisclosed place',
+            address: 'Nigeria',
+            degreesLatitude: null,
+            degreesLongitude: '',
+          },
+        },
+      },
+      {
+        key: { id: 'contact-array-1', remoteJid: jid, fromMe: false },
+        message: {
+          contactsArrayMessage: {
+            displayName: 'Shared contacts',
+            contacts: [{
+              displayName: 'Grace Hopper',
+              vcard: ['BEGIN:VCARD', 'VERSION:3.0', 'FN:Grace Hopper', 'TEL:+15550102030', 'END:VCARD'].join('\n'),
+            }],
+          },
+        },
+      },
+      {
+        key: { id: 'voice-note-1', remoteJid: jid, fromMe: false },
+        message: {
+          audioMessage: {
+            mimetype: 'audio/ogg; codecs=opus',
+            ptt: true,
+            seconds: 4,
+            fileLength: 2048,
+          },
+        },
+      },
+      {
+        key: { id: 'poll-1', remoteJid: jid, fromMe: false },
+        message: {
+          pollCreationMessage: {
+            name: 'Where should we meet?',
+            options: [{ optionName: 'Ibadan' }, { optionName: 'Lagos' }],
+          },
+        },
+      },
+    ]
+
+    for (const message of messages) {
+      await store.recordMessage({ sessionId: 'private', message })
+    }
+
+    const rows = await store.getMessages('private', jid)
+    const contact = rows.find(row => row.id === 'contact-card-1')
+    const contactArray = rows.find(row => row.id === 'contact-array-1')
+    const location = rows.find(row => row.id === 'location-1')
+    const locationWithoutCoordinates = rows.find(row => row.id === 'location-no-coordinates')
+    const voiceNote = rows.find(row => row.id === 'voice-note-1')
+    const poll = rows.find(row => row.id === 'poll-1')
+
+    assert.equal(contact.type, 'contact')
+    assert.match(contact.text, /Ada Lovelace/)
+    assert.match(contact.text, /TEL;TYPE=CELL:\+2348012345678/)
+    assert.match(contact.text, /EMAIL:ada@example.test/)
+
+    assert.equal(contactArray.type, 'contact')
+    assert.match(contactArray.text, /Grace Hopper/)
+    assert.match(contactArray.text, /TEL:\+15550102030/)
+
+    assert.equal(location.type, 'location')
+    assert.match(location.text, /Ibadan City Hall/)
+    assert.match(location.text, /Oyo State, Nigeria/)
+    assert.match(location.text, /Coordinates: 7\.3775, 3\.947/)
+
+    assert.equal(locationWithoutCoordinates.type, 'location')
+    assert.doesNotMatch(locationWithoutCoordinates.text, /Coordinates:/)
+
+    assert.equal(voiceNote.type, 'audio')
+    assert.equal(voiceNote.ptt, true)
+    assert.equal(voiceNote.duration, 4)
+    assert.equal(voiceNote.mimeType, 'audio/ogg; codecs=opus')
+
+    assert.equal(poll.type, 'poll')
+    assert.match(poll.text, /Where should we meet\?/)
+    assert.match(poll.text, /Ibadan/)
+    assert.match(poll.text, /Lagos/)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+
+
+test('idempotent text send intents survive restart and never resend an uncertain request', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-send-idempotency-'))
+  try {
+    const clientMessageId = 'native-client-message-0001'
+    const jid = '2348777777777@s.whatsapp.net'
+    const first = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await first.init()
+    assert.deepEqual(
+      await first.beginIdempotentSend('private', { clientMessageId, jid, text: 'hello', quotedMessageId: '' }),
+      { state: 'sending', messageId: '' }
+    )
+
+    const persisted = JSON.parse(await readFile(join(dir, 'chats', 'private.send-keys.json'), 'utf8'))
+    const expectedPayloadHash = createHash('sha256')
+      .update(JSON.stringify({ jid, text: 'hello', quotedMessageId: '' }))
+      .digest('hex')
+    assert.equal(persisted[clientMessageId].payloadHash, expectedPayloadHash)
+    assert.equal(persisted[clientMessageId].jid, jid)
+
+    const afterProcessRestart = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await afterProcessRestart.init()
+    let replayedIntent
+    try {
+      replayedIntent = await afterProcessRestart.beginIdempotentSend(
+        'private', { clientMessageId, jid, text: 'hello', quotedMessageId: '' }
+      )
+    } catch (error) {
+      throw new Error('Same-content retry after restart failed: ' + error.message, { cause: error })
+    }
+    assert.deepEqual(replayedIntent, { state: 'uncertain', messageId: '' })
+    assert.equal(
+      (await afterProcessRestart.getIdempotentSend('private', clientMessageId)).state,
+      'sending'
+    )
+    await afterProcessRestart.completeIdempotentSend('private', clientMessageId, 'whatsapp-message-1')
+    const completedEntry = JSON.parse(await readFile(join(dir, 'chats', 'private.send-keys.json'), 'utf8'))[clientMessageId]
+    assert.equal(completedEntry.payloadHash, expectedPayloadHash)
+    assert.equal(completedEntry.jid, jid)
+    let completedReplay
+    try {
+      completedReplay = await afterProcessRestart.beginIdempotentSend(
+        'private', { clientMessageId, jid, text: 'hello', quotedMessageId: '' }
+      )
+    } catch (error) {
+      throw new Error('Same-content retry after completion failed: ' + error.message, { cause: error })
+    }
+    assert.deepEqual(completedReplay, { state: 'sent', messageId: 'whatsapp-message-1' })
+    let reusedIdError = null
+    try {
+      await afterProcessRestart.beginIdempotentSend(
+        'private',
+        { clientMessageId, jid, text: 'different text', quotedMessageId: '' }
+      )
+    } catch (error) {
+      reusedIdError = error
+    }
+    assert.equal(reusedIdError?.status, 409)
+    assert.deepEqual(
+      await afterProcessRestart.beginIdempotentSend(
+        'private',
+        { clientMessageId: 'native-client-message-0002', jid, text: 'next valid message', quotedMessageId: '' }
+      ),
+      { state: 'sending', messageId: '' }
+    )
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('edited messages reconcile duplicate IDs and preserve reactions, stars and delivery state', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-edits-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348666666666@s.whatsapp.net'
+    const key = { id: 'edit-1', remoteJid: jid, fromMe: false }
+    await store.recordMessage({
+      sessionId: 'private',
+      message: { key, messageTimestamp: 1763000000, message: { conversation: 'original text' } },
+    })
+    await store.setStarred('private', jid, 'edit-1', true)
+    await store.applyReaction('private', jid, 'edit-1', '❤️', 'Alice')
+    await store.updateMessageStatus('private', jid, 'edit-1', 'delivered')
+
+    await store.recordMessage({
+      sessionId: 'private',
+      message: {
+        key,
+        messageTimestamp: 1763000000,
+        message: { editedMessage: { message: { conversation: 'corrected text' } } },
+      },
+    })
+    let rows = await store.getMessages('private', jid, { limit: 20 })
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].text, 'corrected text')
+    assert.equal(rows[0].starred, true)
+    assert.deepEqual(rows[0].reactions, [{ actor: 'Alice', emoji: '❤️' }])
+    assert.equal(rows[0].status, 'delivered')
+
+    await store.updateMessageStatus('private', jid, 'edit-1', 'read')
+    rows = await store.getMessages('private', jid, { limit: 20 })
+    assert.equal(rows[0].status, 'read')
+
+    assert.equal(await store.deleteMessage('private', jid, 'edit-1'), true)
+    assert.deepEqual(await store.getMessages('private', jid, { limit: 20 }), [])
+    assert.deepEqual(await store.listDeletedMessageIds('private', jid), ['edit-1'])
+    assert.equal(await store.deleteMessage('private', jid, 'edit-1'), false)
+    assert.deepEqual(await store.listDeletedMessageIds('private', jid), ['edit-1'])
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('messages deleted by the other participant stay in the Hub store with a deletion marker', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-remote-delete-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348777777777@s.whatsapp.net'
+    await store.recordMessage({
+      sessionId: 'private',
+      message: {
+        key: { id: 'kept-after-delete', remoteJid: jid, fromMe: false },
+        messageTimestamp: 1764000000,
+        pushName: 'Other participant',
+        message: { conversation: 'Please keep this message in Hub.' },
+      },
+    })
+    assert.equal(
+      await store.markMessageDeletedRemotely('private', jid, 'kept-after-delete'),
+      true
+    )
+    const messages = await store.getMessages('private', jid, { limit: 20 })
+    assert.equal(messages.length, 1)
+    assert.equal(messages[0].text, 'Please keep this message in Hub.')
+    assert.equal(messages[0].deletedByRemote, true)
+    assert.ok(messages[0].deletedAt > 0)
+    assert.deepEqual(await store.listDeletedMessageIds('private', jid), [])
+
+    // Only the other participant's message is retained this way. Owner-side
+    // deletion continues to use the existing explicit delete/tombstone path.
+    await store.recordMessage({
+      sessionId: 'private',
+      message: {
+        key: { id: 'own-message', remoteJid: jid, fromMe: true },
+        messageTimestamp: 1764000001,
+        message: { conversation: 'An outgoing message.' },
+      },
+    })
+    assert.equal(await store.markMessageDeletedRemotely('private', jid, 'own-message'), false)
+    assert.equal((await store.getMessages('private', jid, { limit: 20 })).length, 2)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('a revoke initiated by the other participant retains the original outgoing Hub message', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-remote-revoke-outgoing-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348123456789@s.whatsapp.net'
+    await store.recordMessage({
+      sessionId: 'private',
+      message: {
+        key: { id: 'outgoing-revoked-remotely', remoteJid: jid, fromMe: true },
+        messageTimestamp: 1763901000,
+        message: { conversation: 'The other participant revoked my message.' },
+      },
+    })
+    assert.equal(await store.markMessageDeletedByOther('private', jid, 'outgoing-revoked-remotely'), true)
+    const [retained] = await store.getMessages('private', jid, { limit: 10 })
+    assert.equal(retained.text, 'The other participant revoked my message.')
+    assert.equal(retained.fromMe, true)
+    assert.equal(retained.deletedByRemote, true)
+    assert.deepEqual(await store.listRemoteDeletedMessages('private', jid), [
+      { id: 'outgoing-revoked-remotely', deletedAt: retained.deletedAt },
+    ])
+    assert.deepEqual(await store.listDeletedMessageIds('private', jid), [])
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('explicit incoming delete event can safely mark a legacy row without direction metadata', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-legacy-remote-delete-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348765432109@s.whatsapp.net'
+    await store.recordMessage({
+      sessionId: 'private',
+      message: {
+        key: { id: 'legacy-row', remoteJid: jid },
+        messageTimestamp: 1763900000,
+        message: { conversation: 'Legacy retained message' },
+      },
+    })
+    assert.equal(await store.markMessageDeletedRemotely('private', jid, 'legacy-row'), false)
+    assert.equal(await store.markMessageDeletedRemotely('private', jid, 'legacy-row', false), true)
+    const [row] = await store.getMessages('private', jid, { limit: 10 })
+    assert.equal(row.text, 'Legacy retained message')
+    assert.equal(row.deletedByRemote, true)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('whole-conversation remote delete retains incoming history and does not erase owner or unknown-direction messages', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-remote-clear-retention-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348799999999@s.whatsapp.net'
+    for (const [id, fromMe, text] of [
+      ['incoming-1', false, 'Keep incoming one'],
+      ['incoming-2', false, 'Keep incoming two'],
+      ['outgoing-1', true, 'Keep my own message'],
+      ['unknown-1', undefined, 'Keep unknown direction'],
+    ]) {
+      await store.recordMessage({
+        sessionId: 'private',
+        message: {
+          key: { id, remoteJid: jid, ...(fromMe === undefined ? {} : { fromMe }) },
+          messageTimestamp: 1764200000,
+          message: { conversation: text },
+        },
+      })
+    }
+
+    assert.equal(await store.markMessageDeletedRemotely('private', jid, 'unknown-1'), false)
+    assert.equal(await store.markConversationIncomingMessagesDeletedRemotely('private', jid), 2)
+    const messages = await store.getMessages('private', jid, { limit: 20 })
+    assert.equal(messages.length, 4)
+    const byId = Object.fromEntries(messages.map(message => [message.id, message]))
+    assert.equal(byId['incoming-1'].text, 'Keep incoming one')
+    assert.equal(byId['incoming-1'].deletedByRemote, true)
+    assert.equal(byId['incoming-2'].deletedByRemote, true)
+    assert.equal(byId['outgoing-1'].deletedByRemote, false)
+    assert.equal(byId['unknown-1'].deletedByRemote, false)
+    assert.deepEqual(await store.listDeletedMessageIds('private', jid), [])
+    assert.deepEqual(
+      (await store.listRemoteDeletedMessages('private', jid)).map(row => row.id).sort(),
+      ['incoming-1', 'incoming-2']
+    )
+    assert.equal(await store.markConversationIncomingMessagesDeletedRemotely('private', jid), 0)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('remote deletion retention preserves an already downloaded incoming attachment', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-remote-delete-media-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348788888888@s.whatsapp.net'
+    await store.recordMessage({
+      sessionId: 'private',
+      message: {
+        key: { id: 'retained-photo', remoteJid: jid, fromMe: false },
+        messageTimestamp: 1764100000,
+        pushName: 'Other participant',
+        message: { imageMessage: { mimetype: 'image/png', fileLength: 5, caption: 'Keep this photo' } },
+      },
+    })
+    const downloaded = await store.downloadMessageMedia(
+      'private', jid, 'retained-photo', async () => Buffer.from('photo')
+    )
+    assert.ok(downloaded?.mediaUrl)
+    assert.ok(await store.getMedia('private', 'retained-photo'))
+
+    assert.equal(await store.markMessageDeletedRemotely('private', jid, 'retained-photo'), true)
+    const [message] = await store.getMessages('private', jid, { limit: 20 })
+    assert.equal(message.text, 'Keep this photo')
+    assert.equal(message.deletedByRemote, true)
+    assert.equal(message.mediaUrl, downloaded.mediaUrl)
+    assert.ok(await store.getMedia('private', 'retained-photo'))
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('incremental chat sync uses a composite timestamp/message cursor and preserves unread markers', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-sync-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '2348012345678@s.whatsapp.net'
+    for (const [id, second, text] of [
+      ['sync-1', 1760001000, 'first cached'],
+      ['sync-2', 1760001001, 'second message'],
+      ['sync-3', 1760001001, 'third message'],
+      ['sync-4', 1760001001, 'fourth message'],
+      ['sync-5', 1760001002, 'fifth message'],
+    ]) {
+      await store.recordMessage({
+        sessionId: 'private',
+        message: {
+          key: { id, remoteJid: jid, fromMe: false },
+          messageTimestamp: second,
+          message: { conversation: text },
+        },
+      })
+    }
+    const initial = await store.getMessages('private', jid, { limit: 2 })
+    assert.deepEqual(initial.map(message => message.id), ['sync-4', 'sync-5'])
+    const delta = await store.getMessages('private', jid, { after: 1760001001000, afterId: 'sync-2', limit: 2 })
+    assert.deepEqual(delta.map(message => message.id), ['sync-3', 'sync-4'])
+    const nextDelta = await store.getMessages('private', jid, { after: 1760001001000, afterId: 'sync-4', limit: 2 })
+    assert.deepEqual(nextDelta.map(message => message.id), ['sync-5'])
+    const older = await store.getMessages('private', jid, { before: 1760001001000, beforeId: 'sync-4', limit: 2 })
+    assert.deepEqual(older.map(message => message.id), ['sync-2', 'sync-3'])
+    assert.equal((await store.listChats('private'))[0].unreadCount, 5)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })

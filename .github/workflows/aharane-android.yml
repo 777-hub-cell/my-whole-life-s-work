@@ -1,0 +1,158 @@
+name: Aharane Android
+
+on:
+  pull_request:
+    branches: [mscc-azure, feat/aharane-kotlin-native-foundation-20261119]
+    paths: ['aharane/android/**', 'aharane/src/**', 'aharane/test/**', 'aharane/package.json', '.github/workflows/aharane-android.yml']
+  push:
+    branches: [mscc-azure]
+    paths: ['aharane/android/**', 'aharane/src/**', 'aharane/test/**', 'aharane/package.json', '.github/workflows/aharane-android.yml']
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: aharane-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server-workflow-tests:
+    name: Aharane server logic and workflow tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: aharane/package.json
+      - name: Install server dependencies
+        working-directory: aharane
+        run: npm install --no-audit --no-fund
+      - name: Validate server source and run all tests
+        working-directory: aharane
+        run: npm run check
+
+  build:
+    name: Native Android tests and debug APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+      - name: Install stable Android 16 SDK platform and tools
+        run: sdkmanager --install "platforms;android-36" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Unit tests
+        working-directory: aharane/android
+        run: ./gradlew --no-daemon testDebugUnitTest
+      - name: Enable KVM for Android instrumentation tests
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Encrypted database, media and offline search instrumentation tests
+        uses: reactivecircus/android-emulator-runner@v2.38.0
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          script: cd aharane/android && ./gradlew --no-daemon connectedDebugAndroidTest
+      - name: Assemble debug APK
+        working-directory: aharane/android
+        run: ./gradlew --no-daemon assembleDebug
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: aharane-native-android-debug
+          path: aharane/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  preview-screenshots:
+    name: Run native app and capture real emulator screenshots
+    needs: build
+    if: needs.build.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Download APK from this build
+        uses: actions/download-artifact@v4
+        with:
+          name: aharane-native-android-debug
+          path: artifacts
+
+      - name: Run app in Android emulator and capture screens
+        uses: reactivecircus/android-emulator-runner@v2.38.0
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          script: |
+            set -eu
+            mkdir -p screenshots
+            python3 aharane/android/scripts/capture_design_preview.py
+
+      - name: Upload real app screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aharane-native-android-screenshots
+          path: screenshots/*.png
+          if-no-files-found: warn
+          retention-days: 14
+
+  web-reference-screenshots:
+    name: Capture actual web Studio reference at mobile size
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Prepare actual web source
+        run: |
+          mkdir -p web/aharane/studio
+          cp -R aharane/control-centre/. web/aharane/studio/
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Capture web reference screens
+        run: node aharane/android/scripts/capture_web_reference.mjs
+      - name: Upload web reference screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: aharane-web-reference-screenshots
+          path: web-reference-screenshots/*.png
+          if-no-files-found: error
+          retention-days: 14

@@ -29,8 +29,10 @@ for (const path of files) {
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 if (packageJson.name !== 'aharane-whatsapp-bot') throw new Error('Unexpected Aharane package identity')
 if (packageJson.scripts?.start !== 'node src/index.js') throw new Error('Aharane must start its own entry point')
-if (packageJson.dependencies?.['@whiskeysockets/baileys'] !== '7.0.0-rc14') throw new Error('Aharane must pin the patched upstream Baileys release')
-if (packageJson.dependencies?.['@itsliaaa/baileys']) throw new Error('Aharane must not depend on the unverified Baileys fork')
+if (packageJson.dependencies?.['@itsliaaa/baileys'] !== '0.5.6') throw new Error('Aharane must pin the required @itsliaaa/baileys 0.5.6 release')
+if (packageJson.dependencies?.['@whiskeysockets/baileys']) throw new Error('Aharane must not substitute upstream WhiskeySockets Baileys')
+const baileysRuntime = await readFile(new URL('../src/index.js', import.meta.url), 'utf8')
+if (!baileysRuntime.includes("from '@itsliaaa/baileys'")) throw new Error('Aharane must import the required Baileys fork')
 if (packageJson.dependencies?.yauzl !== '3.4.0') throw new Error('Aharane ZIP validation must use the reviewed yauzl 3.4.0 release')
 if (packageJson.dependencies?.ws !== '8.23.0') throw new Error('Aharane studio WebSocket support must use ws 8.23.0')
 
@@ -58,6 +60,25 @@ for (const path of ['/opt/aharane', '/var/lib/aharane', '/etc/aharane.env', 'aha
 }
 for (const forbiddenPath of ['/opt/mscc', '/var/lib/mscc', '/etc/mscc.env', 'mscc.service']) {
   if (installer.includes(forbiddenPath)) throw new Error(`Aharane installer must not touch ${forbiddenPath}`)
+}
+
+const visualBuilder = await readFile(new URL('../src/visual-command-builder.js', import.meta.url), 'utf8')
+for (const marker of [
+  'trigger.command',
+  'message.sendText',
+  'message.replyText',
+  'message.react',
+  'message.sendPoll',
+  'condition.equals',
+  'condition.contains',
+  'condition.isOwner',
+  'counter.increment',
+  'flow.repeat',
+  'flow.delay',
+  'executeVisualWorkflow',
+  'validateWorkflow',
+]) {
+  if (!visualBuilder.includes(marker)) throw new Error('Visual command builder is missing a verified node/runtime capability: ' + marker)
 }
 
 console.log('Aharane isolation checks passed.')

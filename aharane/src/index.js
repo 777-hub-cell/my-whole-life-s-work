@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import express from 'express'
 import { WebSocket, WebSocketServer } from 'ws'
 import pino from 'pino'
-import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys'
+import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState, WAMessageStubType, downloadMediaMessage } from '@itsliaaa/baileys'
 import {
   isAllowedInbound,
   isPrivateVisibleChatJid,
@@ -23,10 +23,10 @@ import { loadCommandRegistry, dispatchCommand, parseCommand } from './command-re
 import { isPrivateSelfChat, isPrivateSelfCommand, isPublicOwnerSender } from './authorization.js'
 import { loadOwnerConfig, normalizeOwnerConfig, saveOwnerConfig } from './owner-config.js'
 import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_ARCHIVE_BYTES, normalizeUpdatePath } from './update-manager.js'
-import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import { createChatStore } from './chat-store.js'
 import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, normalizeChatVisibility, normalizeChatAppearance, isChatVisible, envView } from './studio-settings.js'
 import { createActivityStore } from './activity-store.js'
+import { createVisualCommandStore, normalizeWorkflow, validateWorkflow, executeVisualWorkflow, VISUAL_NODE_LIBRARY } from './visual-command-builder.js'
 
 const APP_NAME = 'Aharane'
 const PROCESS_STARTED_AT = Date.now()
@@ -89,7 +89,8 @@ let ownerConfig = await loadOwnerConfig(OWNER_CONFIG_FILE, {
 })
 const chatStore = createChatStore({ dataDir: DATA_DIR, logger })
 const activityStore = createActivityStore({ dataDir: DATA_DIR })
-await Promise.all([chatStore.init(), activityStore.init()])
+const visualCommandStore = createVisualCommandStore(join(DATA_DIR, 'visual-commands.json'))
+await Promise.all([chatStore.init(), activityStore.init(), visualCommandStore.init()])
 const SETTINGS_FILE = join(DATA_DIR, 'studio-settings.json')
 const CHAT_WALLPAPER_FILE = join(DATA_DIR, 'chat-wallpaper')
 let studioSettings = await loadStudioSettings(SETTINGS_FILE)
@@ -968,79 +969,189 @@ async function handleMessages(sessionId, currentSocket, event) {
   if (!isSafeMessageUpsert(event)) return
   for (const message of event.messages) {
     if (!message?.message || !message.key?.id) continue
-    if (markMessageSeen(sessionId + ':' + message.key.id)) continue
 
     const remoteJid = String(message.key?.remoteJid || '')
-    const text = textFromMessage(message)
+    const senderJid = String(message.key?.participant || remoteJid)
+    const shouldPersist =
+      (sessionId === 'private' && isPrivateVisibleChatJid(remoteJid)) ||
+      (sessionId === 'public' && message.key.fromMe !== true && isPrivateVisibleChatJid(remoteJid))
+    if (shouldPersist) await chatStore.recordMessage({ sessionId, message, socket: currentSocket })
+    if (markMessageSeen(sessionId + ':' + message.key.id)) continue
+
+    const messageText = textFromMessage(message)
     let registry
     let isPublicOwner = false
     let privateControl = false
+    let allowedForAutomation = false
 
     if (sessionId === 'private') {
-      // Record new live messages from supported direct, group and LID chats.
-      // Inbox visibility is a separate user setting; command execution is
-      // still restricted to the exact verified Private Owner self-chat.
       if (!isPrivateVisibleChatJid(remoteJid)) continue
       const privateSelfChat = isPrivateSelfChat({
         sessionId, remoteJid, ownJid: currentSocket.user?.id || '',
         privateOwnerNumber: ownerConfig.privateOwnerNumber,
       })
       await chatStore.recordMessage({ sessionId, message, socket: currentSocket })
-      if (message.key.fromMe !== true && studioSettings.private.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
       if (message.key.fromMe !== true || !privateSelfChat) continue
+      const visualCommandNames = new Set(visualCommandStore.list('private')
+        .filter(workflow => workflow.enabled)
+        .flatMap(workflow => {
+          const trigger = workflow.nodes.find(node => node.type === 'trigger.command')
+          return trigger ? [trigger.config.command, ...(trigger.config.aliases || [])].map(value => String(value).toLowerCase()) : []
+        }))
       privateControl = isPrivateSelfCommand({
         sessionId,
         message,
         remoteJid,
         ownJid: currentSocket.user?.id || '',
         privateOwnerNumber: ownerConfig.privateOwnerNumber,
-        text,
+        text: messageText,
         privateRegistry: privateCommandRegistry,
+        visualCommandNames,
         prefix: PRIVATE_COMMAND_PREFIX,
       })
       if (!privateControl) continue
+      allowedForAutomation = true
       registry = privateCommandRegistry
     } else if (sessionId === 'public') {
-      // Capture supported new direct/group/LID conversations for the inbox.
-      // The sender allowlist remains a separate gate for bot command handling.
       if (message.key.fromMe === true || !isPrivateVisibleChatJid(remoteJid)) continue
+      const allowedSenders = publicAllowedSenders()
+      // Existing public commands remain direct-chat-only. Visual workflows may
+      // opt into groups, but the triggering participant must still be in the
+      // configured public sender allow-list.
       const allowedToUseCommands = isAllowedInbound({
         remoteJid,
         fromMe: false,
-        allowedSenders: publicAllowedSenders(),
+        allowedSenders,
+      })
+      const allowedVisualSender = isAllowedInbound({
+        remoteJid,
+        participantJid: senderJid,
+        allowGroups: true,
+        fromMe: false,
+        allowedSenders,
       })
       const firstConversationMessage = allowedToUseCommands && !await chatStore.hasConversation(sessionId, remoteJid)
-      await chatStore.recordMessage({ sessionId, message, socket: currentSocket })
       if (studioSettings.public.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
-      if (!allowedToUseCommands) continue
-      if (firstConversationMessage && studioSettings.public.welcomeMessage) {
+      if (!allowedVisualSender) continue
+      if (allowedToUseCommands && firstConversationMessage && studioSettings.public.welcomeMessage) {
         const welcome = await currentSocket.sendMessage(remoteJid, { text: studioSettings.public.welcomeMessage })
         await chatStore.recordMessage({ sessionId, message: welcome, socket: currentSocket })
       }
-      registry = publicCommandRegistry
+      allowedForAutomation = true
+      if (allowedToUseCommands) registry = publicCommandRegistry
       isPublicOwner = isPublicOwnerSender({
         sessionId,
         remoteJid,
+        senderJid,
         publicOwnerNumber: ownerConfig.publicOwnerNumber,
       })
     } else {
       continue
     }
 
-    if (!text) continue
+    const visualWorkflowSocket = {
+      sendMessage: async (...args) => {
+        const sent = await currentSocket.sendMessage(...args)
+        if (sent?.key?.id) await chatStore.recordMessage({ sessionId, message: sent, socket: currentSocket })
+        return sent
+      },
+    }
+    for (const method of [
+      'groupMetadata',
+      'groupUpdateSubject',
+      'groupUpdateDescription',
+      'groupParticipantsUpdate',
+      'groupSettingUpdate',
+      'updateBlockStatus',
+      'updateProfileName',
+      'updateProfileStatus',
+      'newsletterCreate',
+      'newsletterFollow',
+      'newsletterUnfollow',
+    ]) {
+      if (typeof currentSocket[method] === 'function') {
+        visualWorkflowSocket[method] = (...args) => currentSocket[method](...args)
+      }
+    }
+
+    const workflowContext = {
+      sessionId,
+      privateControl,
+      isPublicOwner,
+      allowedPublicSender: sessionId === 'public' && allowedForAutomation,
+      socket: visualWorkflowSocket,
+      message,
+      messageText,
+      sender: senderJid,
+      senderJid,
+      isGroupChat: remoteJid.endsWith('@g.us'),
+      remoteJid,
+      commandName: '',
+      rawArgs: '',
+      args: [],
+    }
+
+    // Message Received workflows run only after the same account-specific
+    // authorization gates used by the existing command dispatcher.
+    if (allowedForAutomation && sessionId === 'public' &&
+        allowCommand('visual-message:' + senderNumberFromJid(senderJid))) {
+      for (const workflow of visualCommandStore.findMessageTriggers(sessionId)) {
+        try {
+          const result = await executeVisualWorkflow(workflow, { store: visualCommandStore, context: workflowContext })
+          if (!result.ok) {
+            logger.warn({ event: 'visual-workflow.failed', workflowId: workflow.id, account: sessionId, error: result.error })
+            publishStudioEvent('visual-workflow.failed', { workflowId: workflow.id, account: sessionId, error: result.error })
+          } else {
+            publishStudioEvent('visual-workflow.completed', { workflowId: workflow.id, account: sessionId })
+          }
+        } catch (error) {
+          logger.warn({ event: 'visual-workflow.failed', workflowId: workflow.id, account: sessionId, error: String(error?.message || error) })
+        }
+      }
+    }
+
+    if (!messageText) continue
     const prefix = sessionId === 'private' ? PRIVATE_COMMAND_PREFIX : PUBLIC_COMMAND_PREFIX
-    const parsedCommand = parseCommand(text, prefix)
-    if (!parsedCommand || !registry?.commands?.has(parsedCommand.name)) continue
+    const parsedCommand = parseCommand(messageText, prefix)
+    if (!parsedCommand) continue
     if (!allowCommand(sessionId + ':' + (sessionId === 'private'
       ? ownerConfig.privateOwnerNumber
-      : senderNumberFromJid(remoteJid)))) continue
+      : senderNumberFromJid(senderJid)))) continue
 
     const command = parsedCommand.name.slice(0, 40)
+    const visualWorkflows = visualCommandStore.findCommand(sessionId, parsedCommand.name)
+    if (visualWorkflows.length) {
+      for (const workflow of visualWorkflows) {
+        try {
+          const result = await executeVisualWorkflow(workflow, {
+            store: visualCommandStore,
+            context: {
+              ...workflowContext,
+              commandName: parsedCommand.name,
+              rawArgs: parsedCommand.rawArgs,
+              args: parsedCommand.args,
+            },
+          })
+          if (!result.ok) {
+            logger.warn({ event: 'visual-workflow.failed', workflowId: workflow.id, account: sessionId, command, error: result.error })
+            publishStudioEvent('visual-workflow.failed', { workflowId: workflow.id, account: sessionId, command, error: result.error })
+          } else {
+            publishStudioEvent('visual-workflow.completed', { workflowId: workflow.id, account: sessionId, command })
+          }
+        } catch (error) {
+          logger.warn({ event: 'visual-workflow.failed', workflowId: workflow.id, account: sessionId, command, error: String(error?.message || error) })
+        }
+      }
+      publishStudioEvent('whatsapp.command.received', { sessionId, scope: sessionId, command, visual: true })
+      continue
+    }
+    if (!registry?.commands?.has(parsedCommand.name)) continue
+
     try {
       const handled = await dispatchCommand({
         registry,
-        rawText: text,
-        prefix: sessionId === 'private' ? PRIVATE_COMMAND_PREFIX : PUBLIC_COMMAND_PREFIX,
+        rawText: messageText,
+        prefix,
         context: {
           sessionId,
           privateControl,
@@ -1085,6 +1196,91 @@ accountRuntime = createAccountRuntime({
   loggedOutCode: DisconnectReason.loggedOut,
   onMessages: ({ sessionId, socket: currentSocket, event }) =>
     handleMessages(sessionId, currentSocket, event),
+  onMessageUpdates: async ({ sessionId, socket, updates }) => {
+    if (!Array.isArray(updates)) return
+    for (const item of updates) {
+      const jid = String(item?.key?.remoteJid || '')
+      const messageId = String(item?.key?.id || '')
+      if (!jid || !messageId) continue
+      const update = item?.update || {}
+
+      // Baileys v7 emits a delete-for-everyone protocol message as a
+      // messages.update entry with message=null and messageStubType=REVOKE.
+      if (update.message === null && update.messageStubType === WAMessageStubType.REVOKE) {
+        if (item.key?.fromMe === false) {
+          // Another participant revoked it. Preserve the original content,
+          // including our own message if the other participant revoked it.
+          await chatStore.markMessageDeletedByOther(sessionId, jid, messageId)
+        } else if (item.key?.fromMe === true) {
+          // Our linked account revoked its own message; retain the existing
+          // explicit owner-side deletion semantics.
+          await chatStore.deleteMessage(sessionId, jid, messageId)
+        }
+        continue
+      }
+
+      // Protocol MESSAGE_EDIT updates are also emitted here, not as upserts.
+      // Rebuild the original message key from its stored record so its sender,
+      // group participant and timestamp remain attached to the edited payload.
+      if (update.message?.editedMessage) {
+        const existing = await chatStore.getMessage(sessionId, jid, messageId)
+        if (existing) {
+          await chatStore.recordMessage({
+            sessionId,
+            socket,
+            message: {
+              key: {
+                remoteJid: jid,
+                id: messageId,
+                fromMe: existing.fromMe === true,
+                ...(existing.participant ? { participant: existing.participant } : {}),
+              },
+              message: update.message,
+              messageTimestamp: update.messageTimestamp || existing.timestamp,
+              pushName: existing.pushName || '',
+            },
+          })
+        }
+      }
+
+      const raw = update.status
+      let status = ''
+      if (typeof raw === 'number' && Number.isFinite(raw)) {
+        status = raw <= 0 ? 'failed' : raw === 1 ? 'pending' : raw === 2 ? 'sent' : raw === 3 ? 'delivered' : raw >= 4 ? 'read' : ''
+      } else {
+        const value = String(raw || '').toLowerCase()
+        status = ['pending', 'sent', 'delivered', 'read', 'failed'].includes(value) ? value : ''
+      }
+      if (status) await chatStore.updateMessageStatus(sessionId, jid, messageId, status)
+    }
+  },
+  onMessageDeletes: async ({ sessionId, update }) => {
+    if (update?.jid && update?.all === true) {
+      // A remote clear/delete-all event must not erase the Hub's incoming history.
+      // Mark only messages known to be from the other participant; preserve the
+      // owner's own messages and any rows whose direction is unknown.
+      await chatStore.markConversationIncomingMessagesDeletedRemotely(sessionId, update.jid)
+      return
+    }
+    const keys = Array.isArray(update?.keys) ? update.keys : (update?.key ? [update.key] : [])
+    for (const key of keys) {
+      const jid = String(key?.remoteJid || '')
+      const messageId = String(key?.id || '')
+      if (!jid || !messageId) continue
+      const existing = await chatStore.getMessage(sessionId, jid, messageId)
+      if (!existing || existing.deletedByRemote === true) continue
+      if (key?.fromMe === false || (existing.directionKnown !== false && existing.fromMe === false)) {
+        // A message deleted by the other participant stays in Aharane Hub.
+        // Preserve its body and media reference, with a visible deleted marker.
+        await chatStore.markMessageDeletedRemotely(sessionId, jid, messageId, key?.fromMe)
+      } else if (key?.fromMe === true || (existing.directionKnown !== false && existing.fromMe === true)) {
+        // Keep the existing behaviour for the account owner's own deleted messages.
+        await chatStore.deleteMessage(sessionId, jid, messageId)
+      }
+      // Unknown direction is intentionally kept; never discard a message when
+      // the socket event does not identify who sent it.
+    }
+  },
   publish: () => publishStudioEvent('whatsapp.status', studioRuntimeSnapshot()),
   onCalls: async ({ sessionId, socket, calls }) => {
     if (!studioSettings[sessionId].rejectCalls || !Array.isArray(calls)) return
@@ -1185,6 +1381,133 @@ app.post('/api/auth/logout', (req, res) => {
   if (!sameOriginRequest(req)) return res.status(403).json({ ok: false, error: 'Cross-origin requests are not allowed.' })
   clearAdminSessionCookie(res)
   res.json({ ok: true })
+})
+
+function visualWorkflowCommandConflict(workflow) {
+  const trigger = workflow.nodes.find(node => node.type === 'trigger.command')
+  if (!trigger) return null
+  const registry = workflow.account === 'private' ? privateCommandRegistry : publicCommandRegistry
+  const names = [trigger.config.command, ...(Array.isArray(trigger.config.aliases) ? trigger.config.aliases : [])]
+    .map(value => String(value || '').trim().toLowerCase()).filter(Boolean)
+  return names.find(name => registry?.commands?.has(name)) || null
+}
+
+function visualWorkflowPayload(workflow) {
+  return { ...workflow, validation: validateWorkflow(workflow) }
+}
+
+app.get('/api/visual-commands', requireAdmin, (req, res) => {
+  const account = String(req.query.account || '')
+  if (account && !['private', 'public'].includes(account)) {
+    return res.status(400).json({ ok: false, error: 'Account must be private or public.' })
+  }
+  const workflows = visualCommandStore.list(account || undefined).map(visualWorkflowPayload)
+  res.json({ ok: true, workflows, library: VISUAL_NODE_LIBRARY, storageWarning: visualCommandStore.storageWarning() })
+})
+
+app.post('/api/visual-commands', requireAdmin, async (req, res) => {
+  try {
+    const workflow = normalizeWorkflow(req.body?.workflow || req.body || {})
+    const conflict = visualWorkflowCommandConflict(workflow)
+    if (conflict) return res.status(409).json({ ok: false, error: 'The command name or alias "' + conflict + '" is already registered in this account.' })
+    const saved = await visualCommandStore.save(workflow)
+    res.status(201).json({ ok: true, workflow: saved.workflow, validation: saved.validation })
+  } catch (error) {
+    res.status(error.validation ? 422 : 400).json({ ok: false, error: error.message, validation: error.validation })
+  }
+})
+
+app.put('/api/visual-commands/:id', requireAdmin, async (req, res) => {
+  try {
+    const current = visualCommandStore.get(req.params.id)
+    if (!current) return res.status(404).json({ ok: false, error: 'Workflow not found.' })
+    const workflow = normalizeWorkflow({ ...(req.body?.workflow || req.body || {}), id: current.id, createdAt: current.createdAt })
+    const conflict = visualWorkflowCommandConflict(workflow)
+    if (conflict) return res.status(409).json({ ok: false, error: 'The command name or alias "' + conflict + '" is already registered in this account.' })
+    const saved = await visualCommandStore.save(workflow)
+    res.json({ ok: true, workflow: saved.workflow, validation: saved.validation })
+  } catch (error) {
+    res.status(error.validation ? 422 : 400).json({ ok: false, error: error.message, validation: error.validation })
+  }
+})
+
+app.delete('/api/visual-commands/:id', requireAdmin, async (req, res) => {
+  if (req.body?.confirm !== true) return res.status(400).json({ ok: false, error: 'Confirm workflow deletion.' })
+  const removed = await visualCommandStore.remove(req.params.id)
+  if (!removed) return res.status(404).json({ ok: false, error: 'Workflow not found.' })
+  res.json({ ok: true })
+})
+
+app.post('/api/visual-commands/:id/test', requireAdmin, async (req, res) => {
+  const workflow = visualCommandStore.get(req.params.id)
+  if (!workflow) return res.status(404).json({ ok: false, error: 'Workflow not found.' })
+  const trigger = workflow.nodes.find(node => node.type === 'trigger.command' || node.type === 'trigger.message')
+  const prefix = workflow.account === 'private' ? PRIVATE_COMMAND_PREFIX : PUBLIC_COMMAND_PREFIX
+  const configuredName = String(trigger?.config?.command || 'hello')
+  const messageText = String(req.body?.messageText || (trigger?.type === 'trigger.command'
+    ? prefix + configuredName + ' sample'
+    : 'Aharane sample message')).slice(0, 4000)
+  const groupTest = workflow.account === 'public' &&
+    ['groups', 'both'].includes(String(trigger?.config?.chatScope || 'direct'))
+  const jid = workflow.account === 'private'
+    ? '2348012345678@s.whatsapp.net'
+    : groupTest ? '120363012345678901-1234567890@g.us' : '2348098765432@s.whatsapp.net'
+  const senderJid = workflow.account === 'private' ? jid : '2348012345678@s.whatsapp.net'
+  const message = {
+    key: {
+      id: 'aharane-safe-test-message',
+      remoteJid: jid,
+      fromMe: workflow.account === 'private',
+      ...(groupTest ? { participant: senderJid } : {}),
+    },
+    message: {
+      extendedTextMessage: {
+        text: messageText,
+        contextInfo: {
+          stanzaId: 'aharane-safe-test-quoted-message',
+          quotedMessage: { conversation: 'Aharane safe test quoted message' },
+        },
+      },
+    },
+  }
+  try {
+    const result = await executeVisualWorkflow(workflow, {
+      store: visualCommandStore,
+      dryRun: true,
+      context: {
+        sessionId: workflow.account,
+        privateControl: workflow.account === 'private',
+        isPublicOwner: workflow.account === 'public',
+        allowedPublicSender: workflow.account === 'public',
+        message,
+        messageText,
+        sender: senderJid,
+        senderJid,
+        isGroupChat: groupTest,
+        remoteJid: jid,
+        commandName: configuredName,
+        rawArgs: messageText.trim().split(/\s+/).slice(1).join(' '),
+        args: messageText.trim().split(/\s+/).slice(1),
+        socket: {
+          sendMessage: async () => { throw new Error('Live sends are disabled during tests.') },
+          groupMetadata: async () => ({ subject: 'Preview group', participants: [{ id: senderJid, admin: 'admin' }, { id: '2348098765432@s.whatsapp.net', admin: null }] }),
+          groupUpdateSubject: async () => { throw new Error('Live group changes are disabled during tests.') },
+          groupUpdateDescription: async () => { throw new Error('Live group changes are disabled during tests.') },
+          groupParticipantsUpdate: async () => { throw new Error('Live participant changes are disabled during tests.') },
+          groupSettingUpdate: async () => { throw new Error('Live group settings are disabled during tests.') },
+          updateBlockStatus: async () => { throw new Error('Live contact moderation is disabled during tests.') },
+          updateProfileName: async () => { throw new Error('Live profile changes are disabled during tests.') },
+          updateProfileStatus: async () => { throw new Error('Live profile changes are disabled during tests.') },
+          newsletterCreate: async () => { throw new Error('Live newsletter creation is disabled during tests.') },
+          newsletterFollow: async () => { throw new Error('Live newsletter actions are disabled during tests.') },
+          newsletterUnfollow: async () => { throw new Error('Live newsletter actions are disabled during tests.') },
+        },
+      },
+    })
+    res.json({ ok: result.ok, dryRun: true, result })
+  } catch (error) {
+    res.status(400).json({ ok: false, dryRun: true, error: String(error?.message || error) })
+  }
 })
 
 app.get('/api/status', requireAdmin, (_req, res) => {
@@ -1462,6 +1785,31 @@ app.post('/api/update/upload/chunk', requireAdmin, async (req, res) => {
   }
 })
 
+
+app.post('/api/update/upload/abort', requireAdmin, async (req, res) => {
+  try {
+    const updateId = String(req.body?.updateId || '')
+    if (!validUpdateId(updateId)) {
+      return res.status(400).json({ ok: false, error: 'Invalid ZIP upload ID.' })
+    }
+    if (updateInProgress) {
+      return res.status(409).json({ ok: false, error: 'An update is being deployed; the upload cannot be aborted now.' })
+    }
+    const directory = uploadDirectory(updateId)
+    const metadata = await readJsonFile(join(directory, 'upload.json'))
+    if (!metadata) return res.status(404).json({ ok: false, error: 'The ZIP upload was not found.' })
+    if (metadata.status === 'validated') {
+      return res.status(409).json({ ok: false, error: 'This ZIP has already been validated. Remove it from Update packages instead.' })
+    }
+    if (metadata.status !== 'uploading') {
+      return res.status(409).json({ ok: false, error: 'This ZIP upload cannot be aborted in its current state.' })
+    }
+    await rm(directory, { recursive: true, force: true })
+    res.json({ ok: true, updateId, removed: true })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not abort the ZIP upload.') })
+  }
+})
 
 function chatAccount(value) {
   const accountId = String(value || '').toLowerCase()
@@ -1786,6 +2134,48 @@ app.post('/api/chats/:accountId/:jid/star', requireAdmin, async (req, res) => {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not update starred message.') })
   }
 })
+app.get('/api/chats/:accountId/:jid/sync', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = decodeURIComponent(String(req.params.jid || ''))
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid) || !await chatStore.hasConversation(accountId, jid)) {
+      return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    }
+    const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 200))
+    const after = Math.max(0, Number(req.query.after) || 0)
+    const before = Math.max(0, Number(req.query.before) || 0)
+    const afterId = String(req.query.afterId || '').slice(0, 256)
+    const beforeId = String(req.query.beforeId || '').slice(0, 256)
+    if (after > 0 && before > 0) return res.status(400).json({ ok: false, error: 'Use either an after or before cursor, not both.' })
+    if (afterId && !after) return res.status(400).json({ ok: false, error: 'An after message id requires an after timestamp.' })
+    if (beforeId && !before) return res.status(400).json({ ok: false, error: 'A before message id requires a before timestamp.' })
+    const messages = await chatStore.getMessages(accountId, jid, { limit, after, before, afterId, beforeId })
+    const deletedMessageIds = before > 0 ? [] : await chatStore.listDeletedMessageIds(accountId, jid)
+    const remoteDeletedMessages = await chatStore.listRemoteDeletedMessages(accountId, jid)
+    const timestamps = messages.map(message => Number(message.timestamp) || 0).filter(value => value > 0)
+    res.json({
+      ok: true,
+      messages,
+      deletedMessageIds,
+      remoteDeletedMessages,
+      hasOlder: before > 0 ? messages.length >= limit : after === 0 && messages.length >= limit,
+      hasNewer: after > 0 && messages.length >= limit,
+      oldestTimestamp: timestamps.length ? Math.min(...timestamps) : 0,
+      newestTimestamp: timestamps.length ? Math.max(...timestamps) : 0,
+      syncedAt: Date.now(),
+      cursor: {
+        after, before, afterId, beforeId, limit,
+        nextAfter: messages.length ? Number(messages[messages.length - 1].timestamp) : after,
+        nextAfterId: messages.length ? String(messages[messages.length - 1].id) : afterId,
+        nextBefore: messages.length ? Number(messages[0].timestamp) : before,
+        nextBeforeId: messages.length ? String(messages[0].id) : beforeId,
+      },
+    })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not sync conversation messages.') })
+  }
+})
+
 app.get('/api/chats/:accountId/:jid/messages', requireAdmin, async (req, res) => {
   try {
     const accountId = chatAccount(req.params.accountId)
@@ -1889,10 +2279,23 @@ app.post('/api/chats/:accountId/:jid/send', requireAdmin, async (req, res) => {
     const quotedMessageId = String(req.body?.quotedMessageId || '')
     const quoted = quotedMessageId ? await chatStore.getMessage(accountId, jid, quotedMessageId) : null
     if (quotedMessageId && !quoted?.sourceMessage) return res.status(410).json({ ok: false, error: 'The original message is not available to quote.' })
+    const clientMessageId = String(req.body?.clientMessageId || '')
+    if (clientMessageId) {
+      const intent = await chatStore.beginIdempotentSend(accountId, { clientMessageId, jid, text, quotedMessageId })
+      if (intent.state === 'sent') return res.json({ ok: true, message: intent.messageId, clientMessageId, idempotentReplay: true })
+      if (intent.state === 'uncertain') {
+        return res.status(409).json({
+          ok: false, state: 'uncertain', clientMessageId,
+          error: 'This send was already started but its final WhatsApp result was not recorded. It was not sent again to avoid a duplicate.',
+        })
+      }
+    }
     const sent = await socket.sendMessage(jid, { text }, quoted?.sourceMessage ? { quoted: quoted.sourceMessage } : undefined)
     await chatStore.recordMessage({ sessionId: accountId, message: sent, socket })
+    const messageId = sent?.key?.id || ''
+    if (clientMessageId) await chatStore.completeIdempotentSend(accountId, clientMessageId, messageId)
     publishStudioEvent('whatsapp.message.sent', { accountId, jid, type: 'text' })
-    res.json({ ok: true, message: sent?.key?.id || '' })
+    res.json({ ok: true, message: messageId, clientMessageId })
   } catch (error) {
     res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not send the message.') })
   }
@@ -2159,11 +2562,20 @@ app.get('/api/files/download', requireAdmin, async (req, res) => {
   try {
     const target = await safeSourceTarget(req.query.item)
     if (!target.info?.isFile()) return res.status(400).json({ ok: false, error: 'Choose a source file to download.' })
-    if (!SOURCE_EXTENSIONS.has(extname(target.path).toLowerCase()) && !SOURCE_ROOT_FILES.has(target.parts[0])) {
+    const extension = extname(target.path).toLowerCase()
+    const isUpdateArchive = extension === '.zip'
+    if (!SOURCE_EXTENSIONS.has(extension) && !SOURCE_ROOT_FILES.has(target.parts[0]) && !isUpdateArchive) {
       return res.status(403).json({ ok: false, error: 'This file type is not available for download.' })
     }
-    const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024
-    if (target.info.size > MAX_DOWNLOAD_BYTES) return res.status(413).json({ ok: false, error: 'This source file exceeds the 25 MB browser download limit.' })
+    const MAX_DOWNLOAD_BYTES = isUpdateArchive ? 50 * 1024 * 1024 : 25 * 1024 * 1024
+    if (target.info.size > MAX_DOWNLOAD_BYTES) {
+      return res.status(413).json({
+        ok: false,
+        error: isUpdateArchive
+          ? 'This ZIP exceeds the 50 MB update-package limit.'
+          : 'This source file exceeds the 25 MB browser download limit.'
+      })
+    }
     const info = await stat(target.full)
     if (!info.isFile() || info.size > MAX_DOWNLOAD_BYTES) return res.status(413).json({ ok: false, error: 'The source file changed or exceeds the download limit.' })
     res.set('Content-Type', 'application/octet-stream')
@@ -2210,6 +2622,79 @@ app.get('/api/files/preview', requireAdmin, async (req, res) => {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not read the selected source file.') })
   } finally {
     await handle?.close().catch(() => {})
+  }
+})
+
+app.post('/api/files/diagnostics', requireAdmin, async (req, res) => {
+  let temporary = ''
+  try {
+    const requestedPath = String(req.body?.path || '').trim()
+    const target = await safeSourceTarget(requestedPath, { allowMissing: true })
+    const extension = extname(target.path).toLowerCase()
+    const content = String(req.body?.content ?? '')
+    if (Buffer.byteLength(content, 'utf8') > MAX_SOURCE_FILE_BYTES) {
+      return res.status(413).json({ ok: false, error: 'The editor buffer exceeds the 512 KB diagnostics limit.' })
+    }
+    if (extension === '.json') {
+      try {
+        JSON.parse(content)
+        return res.json({ ok: true, supported: true, diagnostics: [] })
+      } catch (error) {
+        const message = String(error?.message || 'Invalid JSON')
+        const position = Number(message.match(/position\s+(\d+)/i)?.[1] || 0)
+        const before = content.slice(0, position)
+        return res.json({
+          ok: true,
+          supported: true,
+          diagnostics: [{
+            severity: 'error',
+            message: message.slice(0, 240),
+            line: before.split('\n').length,
+            column: before.length - before.lastIndexOf('\n'),
+          }],
+        })
+      }
+    }
+    if (!['.js', '.mjs', '.cjs'].includes(extension)) {
+      return res.json({
+        ok: true,
+        supported: false,
+        reason: 'This file type does not have a syntax checker configured on the Aharane server.',
+        diagnostics: [],
+      })
+    }
+    const checkExtension = extension === '.cjs' ? '.cjs' : '.mjs'
+    temporary = join(UPDATE_DIR, 'editor-diagnostic-' + randomUUID() + checkExtension)
+    await writeFile(temporary, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+    try {
+      await execFileAsync(process.execPath, ['--check', temporary], {
+        cwd: await currentReleaseDirectory(),
+        timeout: 10_000,
+        maxBuffer: 64 * 1024,
+      })
+      return res.json({ ok: true, supported: true, diagnostics: [] })
+    } catch (error) {
+      const output = String(error?.stderr || error?.stdout || error?.message || 'JavaScript syntax check failed.')
+      const location = output.match(/editor-diagnostic-[^:\s]+:(\d+)(?::(\d+))?/)
+      const errorLine = output.split('\n').find(line => /SyntaxError:|Error:/.test(line))
+      return res.json({
+        ok: true,
+        supported: true,
+        diagnostics: [{
+          severity: 'error',
+          message: String(errorLine || output).replaceAll(temporary, target.path).trim().slice(0, 300),
+          line: location ? Number(location[1]) : null,
+          column: location?.[2] ? Number(location[2]) : null,
+        }],
+      })
+    }
+  } catch (error) {
+    res.status(error?.status || 400).json({
+      ok: false,
+      error: String(error?.message || 'Could not run source diagnostics.'),
+    })
+  } finally {
+    if (temporary) await rm(temporary, { force: true }).catch(() => {})
   }
 })
 
@@ -2691,6 +3176,10 @@ app.post('/api/update/validate', requireAdmin, async (req, res) => {
       currentVersion: await currentBotVersion(),
     })
   } catch (error) {
+    const failedUploadId = String(req.body?.updateId || '')
+    if (validUpdateId(failedUploadId)) {
+      await rm(uploadDirectory(failedUploadId), { recursive: true, force: true }).catch(() => {})
+    }
     res.status(400).json({ ok: false, error: String(error?.message || 'ZIP validation failed.') })
   }
 })

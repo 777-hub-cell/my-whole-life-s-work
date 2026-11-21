@@ -44,29 +44,84 @@ function unwrap(content) {
   }
   return { body: current, viewOnce }
 }
+function quotedMessageId(message) {
+  const { body } = unwrap(message?.message)
+  for (const value of Object.values(body || {})) {
+    const context = value?.contextInfo
+    const id = String(context?.stanzaId || context?.quotedMessage?.key?.id || '').trim()
+    if (id) return id.slice(0, 256)
+  }
+  return ''
+}
+function quotedMessageIdFromSource(serialized) {
+  if (!serialized) return ''
+  try { return quotedMessageId(JSON.parse(serialized)) } catch { return '' }
+}
 function messageContent(message) {
   const { body, viewOnce } = unwrap(message?.message)
   const pairs = [
     ['conversation', 'conversation'], ['extendedTextMessage', 'extendedTextMessage'],
     ['imageMessage', 'image'], ['videoMessage', 'video'], ['audioMessage', 'audio'],
     ['stickerMessage', 'sticker'], ['documentMessage', 'document'],
-    ['contactMessage', 'contact'], ['locationMessage', 'location'],
-    ['liveLocationMessage', 'location'], ['pollCreationMessage', 'poll'],
-    ['pollCreationMessageV3', 'poll'], ['reactionMessage', 'reaction'],
-    ['buttonsResponseMessage', 'response'], ['listResponseMessage', 'response'],
-    ['templateButtonReplyMessage', 'response'],
+    ['contactMessage', 'contact'], ['contactsArrayMessage', 'contact'],
+    ['locationMessage', 'location'], ['liveLocationMessage', 'location'],
+    ['pollCreationMessage', 'poll'], ['pollCreationMessageV3', 'poll'],
+    ['reactionMessage', 'reaction'], ['buttonsResponseMessage', 'response'],
+    ['listResponseMessage', 'response'], ['templateButtonReplyMessage', 'response'],
   ]
   for (const [key, type] of pairs) {
     if (!body[key]) continue
     const value = body[key]
-    const text = typeof value === 'string' ? value
-      : String(value.text || value.caption || value.name || value.selectedDisplayText || value.comment || '')
+    let text = ''
+    if (typeof value === 'string') {
+      text = value
+    } else if (type === 'contact') {
+      const contacts = Array.isArray(value.contacts) ? value.contacts : [value]
+      text = contacts.map(contact => [
+        String(contact.displayName || contact.name || '').trim(),
+        String(contact.vcard || '').trim(),
+      ].filter(Boolean).join('\n')).filter(Boolean).join('\n\n')
+    } else if (type === 'location') {
+      const hasLatitude = value.degreesLatitude !== null &&
+        value.degreesLatitude !== undefined && String(value.degreesLatitude).trim() !== ''
+      const hasLongitude = value.degreesLongitude !== null &&
+        value.degreesLongitude !== undefined && String(value.degreesLongitude).trim() !== ''
+      const latitude = hasLatitude ? Number(value.degreesLatitude) : NaN
+      const longitude = hasLongitude ? Number(value.degreesLongitude) : NaN
+      const hasCoordinates = hasLatitude && hasLongitude &&
+        Number.isFinite(latitude) && Number.isFinite(longitude) &&
+        Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180
+      text = [
+        String(value.name || '').trim(),
+        String(value.address || '').trim(),
+        hasCoordinates ? 'Coordinates: ' + latitude + ', ' + longitude : '',
+        String(value.comment || value.caption || '').trim(),
+      ].filter(Boolean).join('\n')
+    } else if (type === 'poll') {
+      const options = Array.isArray(value.options) ? value.options : []
+      text = [
+        String(value.name || value.question || value.title || value.text || '').trim(),
+        ...options.map(option => String(option?.optionName || option?.name || '').trim()).filter(Boolean).map(option => '• ' + option),
+      ].filter(Boolean).join('\n')
+    } else {
+      text = String(value.text || value.caption || value.name || value.selectedDisplayText || value.comment || '')
+    }
     const mimeType = String(value.mimetype || '')
     const fileName = String(value.fileName || '')
     const size = Number(value.fileLength?.toString?.() || value.fileLength || 0) || 0
-    return { type, text: text.slice(0, MAX_TEXT), mimeType, fileName, size, duration: Math.max(0, Number(value.seconds || value.duration || 0) || 0), media: MEDIA_TYPES.has(type), viewOnce: viewOnce && VIEW_ONCE_TYPES.has(type) }
+    return {
+      type,
+      text: text.slice(0, MAX_TEXT),
+      mimeType,
+      fileName,
+      size,
+      duration: Math.max(0, Number(value.seconds || value.duration || 0) || 0),
+      ptt: type === 'audio' && value.ptt === true,
+      media: MEDIA_TYPES.has(type),
+      viewOnce: viewOnce && VIEW_ONCE_TYPES.has(type),
+    }
   }
-  return { type: 'unsupported', text: '', mimeType: '', fileName: '', size: 0, media: false, viewOnce: false }
+  return { type: 'unsupported', text: '', mimeType: '', fileName: '', size: 0, duration: 0, ptt: false, media: false, viewOnce: false }
 }
 function timestamp(value) {
   const n = Number(value?.toString?.() || value || 0)
@@ -93,6 +148,8 @@ export function createChatStore({ dataDir, logger = console } = {}) {
   const mediaRoot = join(dataDir, 'chat-media')
   const files = Object.fromEntries(['private', 'public'].map(id => [id, join(root, id + '.jsonl')]))
   const readMarkers = Object.fromEntries(['private', 'public'].map(id => [id, join(root, id + '.read.json')]))
+  const deletedFiles = Object.fromEntries(['private', 'public'].map(id => [id, join(root, id + '.deleted.jsonl')]))
+  const sendKeyFiles = Object.fromEntries(['private', 'public'].map(id => [id, join(root, id + '.send-keys.json')]))
   const queues = new Map()
   const ready = new Set()
   const initializing = new Map()
@@ -142,7 +199,10 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     const account = accountId(id)
     const previous = queues.get(account) || Promise.resolve()
     const next = previous.catch(() => {}).then(task)
-    const tracked = next.finally(() => {
+    // Keep the internal queue tail fulfilled even when an operation rejects.
+    // The caller still receives the original rejected promise, but a handled
+    // failure must not leave an unobserved rejected queue-tail promise.
+    const tracked = next.catch(() => {}).finally(() => {
       if (queues.get(account) === tracked) queues.delete(account)
     })
     queues.set(account, tracked)
@@ -169,6 +229,133 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return rows
   }
 
+  async function readSendKeys(account) {
+    return readFile(sendKeyFiles[account], 'utf8')
+      .then(JSON.parse)
+      .catch(error => {
+        if (error?.code === 'ENOENT') return {}
+        throw error
+      })
+  }
+
+  async function writeSendKeys(account, value) {
+    const temporary = sendKeyFiles[account] + '.' + randomUUID() + '.tmp'
+    try {
+      await writeFile(temporary, JSON.stringify(value), { encoding: 'utf8', mode: 0o600, flag: 'wx' })
+      await rename(temporary, sendKeyFiles[account])
+      await chmod(sendKeyFiles[account], 0o600)
+    } finally {
+      await unlink(temporary).catch(() => {})
+    }
+  }
+
+  async function beginIdempotentSend(id, { clientMessageId, jid: jidValue, text, quotedMessageId = '' } = {}) {
+    const account = accountId(id)
+    const jid = safeJid(jidValue)
+    const key = String(clientMessageId || '')
+    if (!jid || !/^[A-Za-z0-9_-]{8,128}$/.test(key)) {
+      throw Object.assign(new Error('A valid client message id and conversation are required.'), { status: 400 })
+    }
+    const content = String(text || '')
+    const quote = String(quotedMessageId || '')
+    const payloadHash = createHash('sha256').update(JSON.stringify({ jid, text: content, quotedMessageId: quote })).digest('hex')
+    await ensureReady(account)
+    return enqueue(account, async () => {
+      const entries = await readSendKeys(account)
+      const existing = entries[key]
+      if (existing) {
+        if (existing.payloadHash !== payloadHash || existing.jid !== jid) {
+          throw Object.assign(new Error('This client message id was already used for different message content.'), { status: 409 })
+        }
+        if (existing.state === 'sent') return { state: 'sent', messageId: existing.messageId || '' }
+        return { state: 'uncertain', messageId: existing.messageId || '' }
+      }
+      entries[key] = {
+        clientMessageId: key,
+        jid,
+        payloadHash,
+        state: 'sending',
+        messageId: '',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }
+      await writeSendKeys(account, entries)
+      return { state: 'sending', messageId: '' }
+    })
+  }
+
+  async function completeIdempotentSend(id, clientMessageId, messageId) {
+    const account = accountId(id), key = String(clientMessageId || '')
+    if (!/^[A-Za-z0-9_-]{8,128}$/.test(key)) throw Object.assign(new Error('Invalid client message id.'), { status: 400 })
+    return enqueue(account, async () => {
+      const entries = await readSendKeys(account)
+      const existing = entries[key]
+      if (!existing) throw Object.assign(new Error('The send intent was not found.'), { status: 404 })
+      if (existing.state === 'sent' && existing.messageId && existing.messageId !== String(messageId || '')) {
+        throw Object.assign(new Error('The client message id resolved to a different WhatsApp message.'), { status: 409 })
+      }
+      existing.state = 'sent'
+      existing.messageId = String(messageId || '').slice(0, 256)
+      existing.updatedAt = Date.now()
+      await writeSendKeys(account, entries)
+      return { state: 'sent', messageId: existing.messageId }
+    })
+  }
+
+  async function getIdempotentSend(id, clientMessageId) {
+    const account = accountId(id), key = String(clientMessageId || '')
+    if (!/^[A-Za-z0-9_-]{8,128}$/.test(key)) return null
+    const entries = await readSendKeys(account)
+    const row = entries[key]
+    return row ? { state: row.state, messageId: row.messageId || '' } : null
+  }
+
+  async function recordDeleted(id, jid, messageId) {
+    const account = accountId(id)
+    const key = String(messageId || '')
+    if (!jid || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) return
+    const rows = await readFile(deletedFiles[account], 'utf8').catch(error => {
+      if (error?.code === 'ENOENT') return ''
+      throw error
+    })
+    const existing = rows.split('\n').filter(Boolean).slice(-1000).some(line => {
+      try { const row = JSON.parse(line); return row.jid === jid && row.id === key } catch { return false }
+    })
+    if (!existing) {
+      await appendFile(deletedFiles[account], JSON.stringify({ jid, id: key, deletedAt: Date.now() }) + '\n', { encoding: 'utf8', mode: 0o600 })
+      await chmod(deletedFiles[account], 0o600)
+    }
+  }
+
+  async function listDeletedMessageIds(id, jidValue, limit = 1000) {
+    const account = accountId(id), jid = safeJid(jidValue)
+    if (!jid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
+    await ensureReady(account)
+    const content = await readFile(deletedFiles[account], 'utf8').catch(error => {
+      if (error?.code === 'ENOENT') return ''
+      throw error
+    })
+    return content.split('\n').filter(Boolean).slice(-Math.max(1, Math.min(2000, Number(limit) || 1000)))
+      .flatMap(line => {
+        try {
+          const row = JSON.parse(line)
+          return row.jid === jid && typeof row.id === 'string' ? [row.id] : []
+        } catch { return [] }
+      })
+  }
+
+  async function listRemoteDeletedMessages(id, jidValue, limit = 1000) {
+    const account = accountId(id), jid = safeJid(jidValue)
+    if (!jid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
+    await ensureReady(account)
+    const rows = await readRows(account)
+    return rows
+      .filter(row => row.jid === jid && row.deletedByRemote === true && row.viewOnce !== true)
+      .sort((a, b) => (Number(a.deletedAt) || 0) - (Number(b.deletedAt) || 0))
+      .slice(-Math.max(1, Math.min(2000, Number(limit) || 1000)))
+      .map(row => ({ id: row.id, deletedAt: Number(row.deletedAt) || 0 }))
+  }
+
   async function writeReadMarkers(id, markers) {
     const account = accountId(id)
     const file = readMarkers[account]
@@ -184,7 +371,40 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return enqueue(account, async () => {
       const key = record.jid + '|' + record.id
       const known = knownMessageKeys.get(account)
-      if (known.has(key)) return record
+      if (known.has(key)) {
+        const rows = await readRows(account)
+        const index = rows.findIndex(row => row.jid === record.jid && row.id === record.id)
+        if (index >= 0) {
+          const previous = rows[index]
+          const sameMedia = previous.type === record.type &&
+            previous.mimeType === record.mimeType &&
+            previous.fileName === record.fileName &&
+            previous.size === record.size
+          const updated = {
+            ...previous,
+            ...record,
+            status: record.status || previous.status || '',
+            reactions: Array.isArray(previous.reactions) ? previous.reactions : [],
+            starred: previous.starred === true,
+            viewOnceViewed: previous.viewOnceViewed === true,
+            mediaFile: sameMedia ? (previous.mediaFile || '') : '',
+            mediaUrl: sameMedia ? (previous.mediaUrl || '') : '',
+            mediaUnavailable: sameMedia ? (previous.mediaUnavailable || record.mediaUnavailable || '') : (record.mediaUnavailable || ''),
+            sourceMessage: sameMedia && previous.mediaFile ? '' : record.sourceMessage,
+          }
+          if (JSON.stringify(updated) !== JSON.stringify(previous)) {
+            if (!sameMedia && previous.mediaFile && /^[a-f0-9]{64}\.[a-z0-9]{1,8}$/.test(previous.mediaFile)) {
+              await unlink(join(mediaRoot, account, previous.mediaFile)).catch(() => {})
+            }
+            rows[index] = updated
+            await rewriteRows(account, rows)
+          }
+          return updated
+        }
+        // The bounded in-memory de-duplication set may have outlived an old
+        // row index. Do not append a duplicate without checking disk state.
+        return record
+      }
       await appendFile(files[account], JSON.stringify(record) + String.fromCharCode(10), { encoding: 'utf8', mode: 0o600 })
       await chmod(files[account], 0o600)
       known.add(key)
@@ -202,6 +422,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     const extracted = messageContent(message)
     const ts = timestamp(message.messageTimestamp)
     const fromMe = key.fromMe === true
+    const directionKnown = typeof key.fromMe === 'boolean'
     if (extracted.type === 'reaction') {
       const { body } = unwrap(message.message)
       const reaction = body.reactionMessage || {}
@@ -215,11 +436,13 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         if (serialized && Buffer.byteLength(serialized, 'utf8') <= 512 * 1024) sourceMessage = serialized
     } catch {}
     const record = {
-      id, jid, fromMe, participant: String(key.participant || ''),
+      id, jid, fromMe, directionKnown, participant: String(key.participant || ''),
       pushName: String(message.pushName || '').slice(0, 120),
       timestamp: ts, type: extracted.type, text: extracted.text,
       mimeType: extracted.mimeType, fileName: extracted.fileName ? safeName(extracted.fileName) : '',
-      size: extracted.size, duration: extracted.duration || 0, mediaFile: '', mediaUrl: '', sourceMessage,
+      size: extracted.size, duration: extracted.duration || 0, ptt: extracted.ptt === true,
+      mediaFile: '', mediaUrl: '', sourceMessage,
+      quotedMessageId: quotedMessageId(message),
       viewOnce: extracted.viewOnce, viewOnceViewed: false, status: '',
       reactions: [], starred: false,
     }
@@ -266,23 +489,43 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       }))
   }
 
-  async function getMessages(id, jidValue, { limit = 200, before = 0 } = {}) {
+  async function getMessages(id, jidValue, { limit = 200, before = 0, after = 0, beforeId = '', afterId = '' } = {}) {
     const account = accountId(id)
     const jid = safeJid(jidValue)
     if (!jid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
     const rows = await readRows(account)
     const maxBefore = Number(before) || Infinity
-    return rows.filter(row => row.jid === jid && row.timestamp < maxBefore)
-      .sort((a, b) => a.timestamp - b.timestamp)
-      .slice(-Math.max(1, Math.min(500, Number(limit) || 200)))
-      .map(row => ({
+    const minAfter = Number(after) || 0
+    const olderThanCursor = row => {
+      if (!Number.isFinite(maxBefore)) return true
+      if (row.timestamp < maxBefore) return true
+      if (row.timestamp > maxBefore) return false
+      return beforeId ? String(row.id).localeCompare(String(beforeId)) < 0 : false
+    }
+    const newerThanCursor = row => {
+      if (!minAfter || row.timestamp > minAfter) return true
+      if (row.timestamp < minAfter) return false
+      // Older clients without a message-id cursor receive the inclusive
+      // timestamp boundary; the composite primary key makes that safe.
+      return afterId ? String(row.id).localeCompare(String(afterId)) > 0 : true
+    }
+    const pageLimit = Math.max(1, Math.min(500, Number(limit) || 200))
+    const matching = rows.filter(row =>
+      row.jid === jid && olderThanCursor(row) && newerThanCursor(row)
+    ).sort((a, b) => a.timestamp - b.timestamp || String(a.id).localeCompare(String(b.id)))
+    const isOlderPage = Number(before) > 0
+    const isDeltaPage = Number(after) > 0
+    const page = isOlderPage ? matching.slice(-pageLimit) : isDeltaPage ? matching.slice(0, pageLimit) : matching.slice(-pageLimit)
+    return page.map(row => ({
         id: row.id, jid: row.jid, fromMe: row.fromMe, participant: row.participant,
         pushName: row.pushName, timestamp: row.timestamp, type: row.type, text: row.text,
         mimeType: row.mimeType, fileName: row.fileName, size: row.size, duration: row.duration || 0,
         mediaUrl: row.viewOnce ? '' : row.mediaFile ? row.mediaUrl || mediaUrl(account, row.id) : '',
         viewOnce: row.viewOnce === true, viewOnceViewed: row.viewOnceViewed === true,
         mediaUnavailable: row.mediaUnavailable || '', mediaAvailable: Boolean(row.sourceMessage && MEDIA_TYPES.has(row.type) && !row.mediaUnavailable),
+        quotedMessageId: row.quotedMessageId || quotedMessageIdFromSource(row.sourceMessage),
         reactions: Array.isArray(row.reactions) ? row.reactions : [], starred: row.starred === true, ptt: row.ptt === true, status: row.status || '',
+        deletedByRemote: row.deletedByRemote === true, deletedAt: Number(row.deletedAt) || 0,
       }))
   }
 
@@ -303,6 +546,8 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         id: row.id, jid: row.jid, fromMe: row.fromMe, pushName: row.pushName,
         timestamp: row.timestamp, type: row.type, text: row.text,
         fileName: row.fileName,
+        deletedByRemote: row.deletedByRemote === true,
+        deletedAt: Number(row.deletedAt) || 0,
       }))
   }
 
@@ -341,7 +586,15 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return enqueue(account, async () => {
       const rows = await readRows(account), row = rows.find(item => item.jid === jid && item.id === key)
       if (!row || !MEDIA_TYPES.has(row.type) || row.viewOnceViewed) return null
-      if (row.mediaFile) return { id: row.id, mediaUrl: row.viewOnce ? '' : row.mediaUrl || mediaUrl(account, key), viewOnce: row.viewOnce === true }
+      if (row.mediaFile && /^[a-f0-9]{64}\.[a-z0-9]{1,8}$/.test(row.mediaFile)) {
+        const cachedPath = join(mediaRoot, account, row.mediaFile)
+        const cachedInfo = await stat(cachedPath).catch(() => null)
+        if (cachedInfo?.isFile() && cachedInfo.size <= MAX_MEDIA_BYTES) {
+          return { id: row.id, mediaUrl: row.viewOnce ? '' : row.mediaUrl || mediaUrl(account, key), viewOnce: row.viewOnce === true }
+        }
+        row.mediaFile = ''
+        row.mediaUrl = ''
+      }
       if (!row.sourceMessage) return null
       if (row.size > MAX_MEDIA_BYTES) return null
       let source
@@ -399,11 +652,102 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       const rows = await readRows(account), index = rows.findIndex(item => item.jid === jid && item.id === key)
       if (index < 0) return false
       const [removed] = rows.splice(index, 1)
+      await recordDeleted(account, jid, key)
       if (removed.mediaFile && /^[a-f0-9]{64}\.[a-z0-9]{1,8}$/.test(removed.mediaFile)) {
         await unlink(join(mediaRoot, account, removed.mediaFile)).catch(() => {})
       }
       await rewriteRows(account, rows)
       return true
+    })
+  }
+
+  async function markMessageDeletedRemotely(id, jidValue, messageId, explicitFromMe = null) {
+    const account = accountId(id), jid = safeJid(jidValue), key = String(messageId || '')
+    if (!jid || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw Object.assign(new Error('Invalid message reference.'), { status: 400 })
+    return enqueue(account, async () => {
+      const rows = await readRows(account)
+      const row = rows.find(item => item.jid === jid && item.id === key)
+      if (!row || explicitFromMe === true || row.fromMe === true || row.viewOnce === true || row.deletedByRemote === true) return Boolean(row?.deletedByRemote)
+      const directionVerified = explicitFromMe === false || (row.directionKnown === true && row.fromMe === false)
+      if (!directionVerified) return false
+      row.fromMe = false
+      row.directionKnown = true
+      row.deletedByRemote = true
+      row.deletedAt = Date.now()
+      // Keep the original message body and its server-side media reference.
+      // This is an informational marker, not a local delete/tombstone.
+      await rewriteRows(account, rows)
+      return true
+    })
+  }
+
+  async function markMessageDeletedByOther(id, jidValue, messageId) {
+    const account = accountId(id), jid = safeJid(jidValue), key = String(messageId || '')
+    if (!jid || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw Object.assign(new Error('Invalid message reference.'), { status: 400 })
+    return enqueue(account, async () => {
+      const rows = await readRows(account)
+      const row = rows.find(item => item.jid === jid && item.id === key)
+      if (!row || row.viewOnce === true || row.deletedByRemote === true) return Boolean(row?.deletedByRemote)
+      row.deletedByRemote = true
+      row.deletedAt = Date.now()
+      // The caller only invokes this for a REVOKE event explicitly sent by
+      // the other WhatsApp participant. The deleted message itself may be
+      // incoming or outgoing; retain the original in either case.
+      await rewriteRows(account, rows)
+      return true
+    })
+  }
+
+  async function markConversationIncomingMessagesDeletedRemotely(id, jidValue) {
+    const account = accountId(id), jid = safeJid(jidValue)
+    if (!jid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
+    return enqueue(account, async () => {
+      const rows = await readRows(account)
+      let marked = 0
+      const deletedAt = Date.now()
+      for (const row of rows) {
+        // Only mark messages whose sender is explicitly the other participant.
+        // Unknown direction and our own messages are preserved without guessing.
+        if (row.jid !== jid || row.directionKnown === false || row.fromMe !== false || row.deletedByRemote === true || row.viewOnce === true) continue
+        row.deletedByRemote = true
+        row.deletedAt = deletedAt
+        marked += 1
+      }
+      if (marked > 0) await rewriteRows(account, rows)
+      return marked
+    })
+  }
+
+  async function updateMessageStatus(id, jidValue, messageId, status) {
+    const account = accountId(id), jid = safeJid(jidValue), key = String(messageId || '')
+    if (!jid || !/^[A-Za-z0-9_-]{1,256}$/.test(key)) throw Object.assign(new Error('Invalid message reference.'), { status: 400 })
+    const value = String(status || '').toLowerCase()
+    if (!['pending', 'sent', 'delivered', 'read', 'failed'].includes(value)) return null
+    return enqueue(account, async () => {
+      const rows = await readRows(account), row = rows.find(item => item.jid === jid && item.id === key)
+      if (!row || row.viewOnceViewed === true || row.status === value) return row || null
+      row.status = value
+      await rewriteRows(account, rows)
+      return { id: row.id, jid: row.jid, status: row.status }
+    })
+  }
+
+  async function deleteConversationMessages(id, jidValue) {
+    const account = accountId(id), jid = safeJid(jidValue)
+    if (!jid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
+    return enqueue(account, async () => {
+      const rows = await readRows(account)
+      const removed = rows.filter(row => row.jid === jid)
+      if (!removed.length) return 0
+      for (const row of removed) {
+        await recordDeleted(account, jid, row.id)
+        if (row.mediaFile && /^[a-f0-9]{64}\.[a-z0-9]{1,8}$/.test(row.mediaFile)) {
+          await unlink(join(mediaRoot, account, row.mediaFile)).catch(() => {})
+        }
+      }
+      await rewriteRows(account, rows.filter(row => row.jid !== jid))
+      for (const row of removed) knownMessageKeys.get(account)?.delete(jid + '|' + row.id)
+      return removed.length
     })
   }
 
@@ -625,5 +969,5 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return { bytes: total, files: count }
   }
 
-  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
+  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, updateMessageStatus, markMessageDeletedRemotely, markMessageDeletedByOther, markConversationIncomingMessagesDeletedRemotely, listRemoteDeletedMessages, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, deleteConversationMessages, listDeletedMessageIds, beginIdempotentSend, completeIdempotentSend, getIdempotentSend, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
 }

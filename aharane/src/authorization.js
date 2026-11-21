@@ -25,6 +25,7 @@ export function isPrivateSelfCommand({
   privateOwnerNumber,
   text,
   privateRegistry,
+  visualCommandNames = new Set(),
   prefix = '.',
 } = {}) {
   if (sessionId !== 'private' || message?.key?.fromMe !== true ||
@@ -36,13 +37,13 @@ export function isPrivateSelfCommand({
 
   const parsed = parseCommand(text, prefix)
   return Boolean(parsed && privateRegistry?.scope === 'private' &&
-    privateRegistry.commands?.has(parsed.name))
+    (privateRegistry.commands?.has(parsed.name) || visualCommandNames?.has?.(parsed.name)))
 }
 
 /** Public Owner is a separate identity; Private Owner never inherits this role. */
-export function isPublicOwnerSender({ sessionId, remoteJid, publicOwnerNumber } = {}) {
+export function isPublicOwnerSender({ sessionId, remoteJid, senderJid, publicOwnerNumber } = {}) {
   if (sessionId !== 'public') return false
   const expected = normalizePhone(publicOwnerNumber)
-  const sender = senderNumberFromJid(remoteJid)
+  const sender = senderNumberFromJid(senderJid || remoteJid)
   return Boolean(expected && sender && sender === expected)
 }

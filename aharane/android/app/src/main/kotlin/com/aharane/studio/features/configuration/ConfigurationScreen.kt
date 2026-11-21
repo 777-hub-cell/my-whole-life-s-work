@@ -377,6 +377,7 @@ private fun ConfigField(
             modifier = Modifier.padding(top = 2.dp, bottom = 7.dp)
         )
         BasicTextField(
+                    cursorBrush = SolidColor(StudioPalette.Accent),
             value = value,
             onValueChange = onValueChange,
             enabled = enabled,

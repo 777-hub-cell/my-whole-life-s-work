@@ -332,7 +332,6 @@ export function createAccountRuntime({
           session.lastError = ''
           session.reconnectAttempts = 0
           session.lastConnectedAt = Date.now()
-          void persistRateLimits()
           logger.info?.({ event: 'whatsapp.connected', accountId: id })
           emit()
           return

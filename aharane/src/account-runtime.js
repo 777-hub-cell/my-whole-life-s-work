@@ -545,11 +545,8 @@ export function createAccountRuntime({
       const previousState = session.state
       const previousSocketActive = Boolean(session.socket)
       if (session.auth?.saveCreds) await session.auth.saveCreds()
-      if (session.socket) {
-        const previousSocket = session.socket
-        session.socket = null
-        try { previousSocket.end?.(undefined) } catch {}
-      }
+      // Persist the candidate pointer while the old socket is still usable. If
+      // this fails, the existing session has not been interrupted.
       await writeActiveAuthDirectory(session, candidate.authDir)
       session.authDir = candidate.authDir
       session.auth = null
@@ -566,6 +563,11 @@ export function createAccountRuntime({
         timeoutTimer: null,
       }
       session.replacementPending = replacement
+      if (session.socket) {
+        const previousSocket = session.socket
+        session.socket = null
+        try { previousSocket.end?.(undefined) } catch {}
+      }
       replacement.timeoutTimer = setTimeout(() => {
         void serializeSessionOperation(id, () => rollbackReplacementInternal(
           id,
@@ -784,6 +786,33 @@ export function createAccountRuntime({
     }
   }
 
+  async function cancelPairingInternal(id) {
+    const session = get(id)
+    if (session.pairingCandidate) {
+      const candidate = session.pairingCandidate
+      session.pairingCandidate = null
+      candidate.closed = true
+      clearTimeout(candidate.expiryTimer)
+      candidate.rejectReady?.(new Error('This WhatsApp replacement attempt was cancelled.'))
+      try { candidate.socket?.end?.(undefined) } catch {}
+      await rm(candidate.authDir, { recursive: true, force: true }).catch(() => {})
+      session.pairingError = ''
+      session.pairingSucceeded = false
+      emit()
+      return sessionSnapshot(session)
+    }
+    if (session.replacementPending) {
+      await rollbackReplacementInternal(
+        id,
+        session.replacementPending,
+        new Error('The replacement WhatsApp link was cancelled before it became active.')
+      )
+      session.pairingError = ''
+      emit()
+    }
+    return sessionSnapshot(session)
+  }
+
   async function startPairingInternal(id) {
     const session = get(id)
     const candidate = await createPairingCandidateInternal(id)
@@ -879,6 +908,7 @@ export function createAccountRuntime({
   }
   function start(id, options) { return serializeSessionOperation(id, () => startInternal(id, options)) }
   function startPairing(id) { return serializeSessionOperation(id, () => startPairingInternal(id)) }
+  function cancelPairing(id) { return serializeSessionOperation(id, () => cancelPairingInternal(id)) }
   function requestPairingCode(id, phoneNumber) { return serializeSessionOperation(id, () => requestPairingCodeInternal(id, phoneNumber)) }
   function stop(id) { return serializeSessionOperation(id, () => stopInternal(id)) }
   function restart(id) { return serializeSessionOperation(id, () => restartInternal(id)) }
@@ -896,6 +926,7 @@ export function createAccountRuntime({
     start,
     waitUntilReady,
     startPairing,
+    cancelPairing,
     requestPairingCode,
     reconnect,
     stop,

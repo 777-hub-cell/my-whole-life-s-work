@@ -417,19 +417,25 @@ fun ChatAppearanceStudioScreen(
         onChanged()
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().background(StudioPalette.Background),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+    Column(
+        Modifier.fillMaxSize().background(StudioPalette.Background)
     ) {
-        item {
-            Text("‹  Back to Chat settings", color = StudioPalette.Accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { onBack() }.padding(vertical = 7.dp))
-            Text("Chat Appearance Studio", color = StudioPalette.Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Text("Changes are saved on this phone and previewed as you edit.", color = StudioPalette.Muted, fontSize = 12.sp)
-        }
-        item {
-            SettingSection("Apply to")
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Text("Chat Appearance Studio", color = StudioPalette.Ink, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "Adjust the conversation below and see each change as it happens.",
+                color = StudioPalette.Muted,
+                fontSize = 12.sp,
+                lineHeight = 16.sp
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Apply to", color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.weight(1f))
+                StudioTag(account.label, accent = true)
+            }
             SegmentRow(listOf("Global", "Account", "Conversation"), when (scope) {
                 "global" -> "Global"; "conversation" -> "Conversation"; else -> "Account"
             }) { label ->
@@ -438,22 +444,30 @@ fun ChatAppearanceStudioScreen(
                     selectedJid = targets.first().key.jid
                 }
             }
-            Text(
-                when (scope) {
-                    "global" -> "Global default · inherited by both accounts"
-                    "conversation" -> "A custom layer for one conversation · account: " + account.label
-                    else -> account.label + " account override · the other account stays separate"
-                },
-                color = StudioPalette.Muted, fontSize = 11.5.sp
-            )
-            SettingSection("Chat theme")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Chat theme", color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    when (scope) {
+                        "global" -> "Shared default"
+                        "conversation" -> "Conversation override"
+                        else -> account.label + " override"
+                    },
+                    color = StudioPalette.Muted,
+                    fontSize = 10.5.sp
+                )
+            }
             SegmentRow(listOf("System", "Light", "Dark"), appearance.theme.replaceFirstChar { it.uppercase() }) {
                 change("theme", it.lowercase())
             }
             if (scope == "conversation") {
                 var expanded by remember { mutableStateOf(false) }
                 Box {
-                    OutlinedButton(onClick = { expanded = true }, enabled = targets.isNotEmpty()) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = { expanded = true },
+                        enabled = targets.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Text(targets.firstOrNull { it.key.jid == currentJid }?.title ?: "Choose conversation")
                     }
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -465,34 +479,35 @@ fun ChatAppearanceStudioScreen(
                         }
                     }
                 }
-                if (targets.isEmpty()) Text("No cached conversations are available for this account yet.", color = StudioPalette.Muted, fontSize = 12.sp)
+                if (targets.isEmpty()) {
+                    Text("No cached conversations are available for this account yet.", color = StudioPalette.Muted, fontSize = 11.5.sp)
+                }
             }
-        }
-        item {
-            SettingSection("Live conversation preview")
+            val brightness = appearance.wallpaperBrightness.coerceIn(0f, 1.5f)
+            fun brighten(color: Color): Color = Color(
+                red = (color.red * brightness).coerceIn(0f, 1f),
+                green = (color.green * brightness).coerceIn(0f, 1f),
+                blue = (color.blue * brightness).coerceIn(0f, 1f),
+                alpha = color.alpha
+            )
             val surface = when (appearance.wallpaper) {
-                "solid" -> parseColor(appearance.wallpaperColor)
-                "gradient" -> parseColor(appearance.gradientStart)
+                "solid" -> brighten(parseColor(appearance.wallpaperColor))
+                "gradient" -> brighten(parseColor(appearance.gradientStart))
                 "photo" -> Color(0xFFE5EAE6)
                 else -> if (appearance.theme == "dark") Color(0xFF18211F) else Color(0xFFE9EFEB)
             }
             Box(
-                Modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(16.dp))
+                Modifier.fillMaxWidth().height(158.dp).clip(RoundedCornerShape(16.dp))
                     .background(
                         if (appearance.wallpaper == "gradient") Brush.linearGradient(
-                            listOf(parseColor(appearance.gradientStart), parseColor(appearance.gradientEnd))
+                            listOf(brighten(parseColor(appearance.gradientStart)), brighten(parseColor(appearance.gradientEnd)))
                         ) else Brush.linearGradient(listOf(surface, surface))
                     )
                     .border(1.dp, StudioPalette.Line, RoundedCornerShape(16.dp))
             ) {
                 if (appearance.wallpaper == "photo" && previewBitmap != null) {
                     val matrix = ColorMatrix().apply {
-                        setToScale(
-                            appearance.wallpaperBrightness,
-                            appearance.wallpaperBrightness,
-                            appearance.wallpaperBrightness,
-                            1f
-                        )
+                        setToScale(brightness, brightness, brightness, 1f)
                     }
                     Image(
                         previewBitmap!!,
@@ -503,14 +518,41 @@ fun ChatAppearanceStudioScreen(
                     )
                 }
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = appearance.wallpaperDim)))
-                Column(Modifier.align(Alignment.Center).fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(appearance.bubbleSpacing.dp)) {
-                    PreviewBubble("Got the notes. Thanks!", false, appearance)
-                    PreviewBubble("Perfect — I’ll review them now.", true, appearance)
+                Column(Modifier.fillMaxSize().padding(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.size(27.dp).clip(CircleShape).background(StudioPalette.Accent), contentAlignment = Alignment.Center) {
+                            Text("M", color = MaterialTheme.colorScheme.onPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text("Mira", color = readableForeground(surface), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("online · sample conversation", color = readableForeground(surface).copy(alpha = .7f), fontSize = 9.5.sp)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Text("LIVE PREVIEW", color = readableForeground(surface).copy(alpha = .8f), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Column(
+                        Modifier.weight(1f).fillMaxWidth().padding(top = 6.dp, bottom = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(appearance.bubbleSpacing.dp, Alignment.CenterVertically)
+                    ) {
+                        PreviewBubble("Got the notes. Thanks!", false, appearance)
+                        PreviewBubble("Perfect — I’ll review them now.", true, appearance)
+                    }
+                    Box(
+                        Modifier.fillMaxWidth().height(28.dp).clip(RoundedCornerShape(20.dp))
+                            .background(Color.White.copy(alpha = .82f)).padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Text("Message", color = Color(0xFF68736E), fontSize = 10.5.sp)
+                    }
                 }
-                Text("SAMPLE · NOT A REAL CHAT", color = StudioPalette.Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp))
             }
         }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
         item {
             SettingSection("Wallpaper")
             SegmentRow(listOf("Default", "Solid", "Gradient", "Photo"), when (appearance.wallpaper) {
@@ -670,17 +712,17 @@ private fun SettingSection(title: String) {
 
 @Composable
 private fun SegmentRow(options: List<String>, selected: String, onSelected: (String) -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         options.forEach { option ->
             val active = option.equals(selected, ignoreCase = true)
             Box(
-                Modifier.weight(1f).clip(RoundedCornerShape(9.dp))
+                Modifier.weight(1f).defaultMinSize(minHeight = 42.dp).clip(RoundedCornerShape(10.dp))
                     .background(if (active) StudioPalette.Soft else StudioPalette.Surface)
-                    .border(1.dp, if (active) StudioPalette.Accent.copy(alpha = .6f) else StudioPalette.Line, RoundedCornerShape(9.dp))
-                    .clickable { onSelected(option) }.padding(horizontal = 5.dp, vertical = 9.dp),
+                    .border(1.dp, if (active) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(10.dp))
+                    .clickable { onSelected(option) }.padding(horizontal = 8.dp, vertical = 9.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(option, color = if (active) StudioPalette.Accent else StudioPalette.Ink, fontSize = 10.5.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
+                Text(option, color = if (active) StudioPalette.Accent else StudioPalette.Ink, fontSize = 12.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
             }
         }
     }
@@ -689,11 +731,11 @@ private fun SegmentRow(options: List<String>, selected: String, onSelected: (Str
 @Composable
 private fun ColorPalette(selected: String, onSelected: (String) -> Unit) {
     val colors = listOf("#FFFFFF", "#DCEFE5", "#E7EAF5", "#F3E6D9", "#E9E1F1", "#26332F", "#304B43", "#202A34")
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
         colors.forEach { color ->
             val chosen = selected.equals(color, true)
             Box(
-                Modifier.size(if (chosen) 30.dp else 26.dp).clip(RoundedCornerShape(50))
+                Modifier.size(if (chosen) 34.dp else 30.dp).clip(RoundedCornerShape(50))
                     .background(parseColor(color))
                     .border(if (chosen) 2.dp else 1.dp, if (chosen) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(50))
                     .clickable { onSelected(color) }
@@ -707,13 +749,28 @@ private fun ValueSlider(
     label: String, value: Float, range: ClosedFloatingPointRange<Float>,
     suffix: String, multiplier: Float = 1f, onChange: (Float) -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, color = StudioPalette.Ink, fontSize = 12.5.sp)
+            Text(label, color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.weight(1f))
-            Text(((value * multiplier * 10).toInt() / 10f).toString() + " " + suffix, color = StudioPalette.Muted, fontSize = 11.sp)
+            Text(
+                String.format(java.util.Locale.ROOT, "%.1f %s", value * multiplier, suffix),
+                color = StudioPalette.Accent,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         }
-        Slider(value = value.coerceIn(range), onValueChange = onChange, valueRange = range)
+        Slider(
+            value = value.coerceIn(range),
+            onValueChange = onChange,
+            valueRange = range,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            colors = androidx.compose.material3.SliderDefaults.colors(
+                thumbColor = StudioPalette.Accent,
+                activeTrackColor = StudioPalette.Accent,
+                inactiveTrackColor = StudioPalette.Line
+            )
+        )
     }
 }
 

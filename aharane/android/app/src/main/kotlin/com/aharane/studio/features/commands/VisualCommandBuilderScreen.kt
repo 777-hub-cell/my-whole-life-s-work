@@ -622,10 +622,17 @@ fun VisualCommandBuilderScreen(
                                 onMeasured = { size -> if (measuredNodeSizes[node.id] != size) measuredNodeSizes[node.id] = size },
                                 onSocketPosition = { socket, output, coordinates ->
                                     val canvas = workspaceCoordinates
-                                    if (canvas != null) {
-                                        val center = canvas.localPositionOf(coordinates, Offset(coordinates.size.width / 2f, coordinates.size.height / 2f))
-                                        val key = socketPositionKey(node.id, socket.id, output)
-                                        if (measuredSocketPositions[key] != center) measuredSocketPositions[key] = center
+                                    if (canvas != null && canvas.isAttached && coordinates.isAttached) {
+                                        val center = runCatching {
+                                            canvas.localPositionOf(
+                                                coordinates,
+                                                Offset(coordinates.size.width / 2f, coordinates.size.height / 2f)
+                                            )
+                                        }.getOrNull()
+                                        if (center != null) {
+                                            val key = socketPositionKey(node.id, socket.id, output)
+                                            if (measuredSocketPositions[key] != center) measuredSocketPositions[key] = center
+                                        }
                                     }
                                 },
                             )

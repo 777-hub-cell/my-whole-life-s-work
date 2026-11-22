@@ -27,10 +27,15 @@ class CatalogRepository {
             MediaType.K_DRAMA -> searchTmdb(cleanQuery, MediaType.K_DRAMA, requireCredential(tmdbCredential))
             MediaType.TV_SERIES -> searchTmdb(cleanQuery, MediaType.TV_SERIES, requireCredential(tmdbCredential))
             null -> {
-                val credential = requireCredential(tmdbCredential)
-                val movies = searchTmdb(cleanQuery, MediaType.MOVIE, credential)
-                val series = searchTmdb(cleanQuery, MediaType.TV_SERIES, credential)
-                (movies + series).sortedByDescending { it.releaseYear ?: 0 }
+                val anime = searchAniList(cleanQuery)
+                val credential = tmdbCredential?.trim().orEmpty()
+                if (credential.isBlank()) {
+                    anime
+                } else {
+                    val movies = searchTmdb(cleanQuery, MediaType.MOVIE, credential)
+                    val series = searchTmdb(cleanQuery, MediaType.TV_SERIES, credential)
+                    (movies + series + anime).sortedByDescending { it.releaseYear ?: 0 }
+                }
             }
         }
     }

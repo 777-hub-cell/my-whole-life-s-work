@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import com.vistora.android.ui.VistoraApp
 import com.vistora.android.ui.VistoraViewModel
 import com.vistora.android.ui.theme.VistoraTheme
 

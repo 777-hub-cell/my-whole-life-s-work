@@ -187,9 +187,10 @@ fun TitleDetailsScreen(
             Text("Tap to change", color = VistoraPalette.Muted, fontSize = 11.sp)
         }
         Box(
-            Modifier.padding(top = 9.dp)
+            Modifier.padding(top = 5.dp).heightIn(min = 48.dp)
                 .semantics { contentDescription = "Change library status. Current status: ${item.status.label}"; role = Role.Button }
-                .clickable(role = Role.Button) { showStatus = true }
+                .clickable(role = Role.Button) { showStatus = true },
+            contentAlignment = Alignment.CenterStart
         ) {
             StatusLabel(status = item.status, compact = true)
         }

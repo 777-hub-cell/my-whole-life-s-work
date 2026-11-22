@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.*
 import com.vistora.android.domain.LibraryStatus
 import com.vistora.android.domain.MediaItem
 import com.vistora.android.ui.theme.VistoraPalette
+import com.vistora.android.data.media.PosterDownloader
 import com.vistora.android.ui.theme.LocalVistoraAccent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -278,7 +279,12 @@ fun PosterArt(
     val image by produceState<ImageBitmap?>(initialValue = null, key1 = posterPath) {
         value = if (posterPath.isNullOrBlank()) null else withContext(Dispatchers.IO) {
             runCatching {
-                BitmapFactory.decodeFile(posterPath)?.asImageBitmap()
+                val localPath = if (posterPath.startsWith("https://")) {
+                    PosterDownloader.cache(context, posterPath)
+                } else {
+                    posterPath
+                }
+                localPath?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() }
             }.getOrNull()
         }
     }

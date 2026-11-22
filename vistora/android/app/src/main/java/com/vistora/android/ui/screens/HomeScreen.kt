@@ -36,6 +36,7 @@ import com.vistora.android.ui.theme.VistoraPalette
 fun HomeScreen(
     items: List<MediaItem>,
     onSearch: () -> Unit,
+    onOpenDiscover: () -> Unit,
     onNotifications: () -> Unit,
     onOpenTitle: (Long) -> Unit,
     onOpenWatchlist: () -> Unit,
@@ -116,7 +117,7 @@ fun HomeScreen(
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onSearch)
+                    .clickable(onClick = onOpenDiscover)
                     .padding(start = 8.dp, top = 8.dp, bottom = 8.dp)
             )
         }

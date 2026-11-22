@@ -15,6 +15,8 @@ enum class LibraryStatus(val label: String) {
     DROPPED("Dropped")
 }
 
+enum class TrackedDate { STARTED, FINISHED, WATCHED_ON }
+
 enum class SeriesState(val label: String) {
     ONGOING("Ongoing"),
     COMPLETED("Completed"),

@@ -183,7 +183,7 @@ fun HomeScreen(
 @Composable
 private fun HeaderIcon(name: String, description: String, onClick: () -> Unit) {
     Box(
-        Modifier.size(44.dp)
+        Modifier.size(48.dp)
             .semantics { contentDescription = description; role = Role.Button }
             .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center

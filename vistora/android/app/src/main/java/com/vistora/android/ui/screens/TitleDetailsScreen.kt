@@ -131,7 +131,7 @@ fun TitleDetailsScreen(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(1.dp)) {
                 (1..5).forEach { star ->
                     Box(
-                        Modifier.size(44.dp)
+                        Modifier.size(48.dp)
                             .semantics { contentDescription = "Rate $star out of 5 stars"; role = Role.Button }
                             .clip(RoundedCornerShape(8.dp))
                             .clickable(role = Role.Button) { onRatingChange(if (item.rating == star) 0 else star) },
@@ -151,8 +151,6 @@ fun TitleDetailsScreen(
                 color = VistoraPalette.Muted,
                 fontSize = 12.sp
             )
-        }
-            }
         }
 
         Spacer(Modifier.height(27.dp))

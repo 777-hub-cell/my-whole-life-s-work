@@ -90,13 +90,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  signed-release:
-    name: Build and verify production-signed APK
-    if: github.event_name == 'workflow_dispatch' && inputs.build_signed_release
+  unsigned-release:
+    name: Build an unsigned production release candidate
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
         with:
@@ -108,57 +105,47 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           packages: ''
-      - name: Install Android 16 SDK platform and tools
-        run: sdkmanager --install "platforms;android-36" "platform-tools"
+      - name: Install Android 16 SDK and official signing tools
+        run: sdkmanager --install "platforms;android-36" "platform-tools" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v5
-      - name: Validate and load private signing key
-        id: signing
-        env:
-          AHARANE_RELEASE_KEYSTORE_BASE64: ${{ secrets.AHARANE_RELEASE_KEYSTORE_BASE64 }}
-          AHARANE_RELEASE_STORE_PASSWORD: ${{ secrets.AHARANE_RELEASE_STORE_PASSWORD }}
-          AHARANE_RELEASE_KEY_ALIAS: ${{ secrets.AHARANE_RELEASE_KEY_ALIAS }}
-          AHARANE_RELEASE_KEY_PASSWORD: ${{ secrets.AHARANE_RELEASE_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          : "${AHARANE_RELEASE_KEYSTORE_BASE64:?Missing secret AHARANE_RELEASE_KEYSTORE_BASE64}"
-          : "${AHARANE_RELEASE_STORE_PASSWORD:?Missing secret AHARANE_RELEASE_STORE_PASSWORD}"
-          : "${AHARANE_RELEASE_KEY_ALIAS:?Missing secret AHARANE_RELEASE_KEY_ALIAS}"
-          : "${AHARANE_RELEASE_KEY_PASSWORD:?Missing secret AHARANE_RELEASE_KEY_PASSWORD}"
-
-          KEYSTORE_PATH="$RUNNER_TEMP/aharane-release.jks"
-          printf '%s' "$AHARANE_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
-          chmod 600 "$KEYSTORE_PATH"
-          test -s "$KEYSTORE_PATH"
-          keytool -list -keystore "$KEYSTORE_PATH" \
-            -storepass "$AHARANE_RELEASE_STORE_PASSWORD" \
-            -alias "$AHARANE_RELEASE_KEY_ALIAS" >/dev/null
-
-          echo "keystore_path=$KEYSTORE_PATH" >> "$GITHUB_OUTPUT"
-      - name: Build signed release APK
+      - name: Build production release APK without any signing key
         working-directory: aharane/android
-        env:
-          AHARANE_RELEASE_KEYSTORE_PATH: ${{ steps.signing.outputs.keystore_path }}
-          AHARANE_RELEASE_STORE_PASSWORD: ${{ secrets.AHARANE_RELEASE_STORE_PASSWORD }}
-          AHARANE_RELEASE_KEY_ALIAS: ${{ secrets.AHARANE_RELEASE_KEY_ALIAS }}
-          AHARANE_RELEASE_KEY_PASSWORD: ${{ secrets.AHARANE_RELEASE_KEY_PASSWORD }}
         run: ./gradlew --no-daemon clean assembleRelease -PaharaneVersionCode=${GITHUB_RUN_NUMBER}
-      - name: Verify release APK signature
+      - name: Verify release build is installable and not debuggable
         working-directory: aharane/android
         run: |
           set -euo pipefail
-          APK="app/build/outputs/apk/release/app-release.apk"
+          APK="app/build/outputs/apk/release/app-release-unsigned.apk"
           test -s "$APK"
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
-          test -n "$APKSIGNER"
-          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/aharane-badging.txt"
+          grep -q "package: name='com.aharane.studio'" "$RUNNER_TEMP/aharane-badging.txt"
+          if grep -q "application-debuggable" "$RUNNER_TEMP/aharane-badging.txt"; then
+            echo "Release candidate is incorrectly debuggable" >&2
+            exit 1
+          fi
+          unzip -t "$APK" >/dev/null
           sha256sum "$APK"
-      - name: Upload signed release APK
+      - name: Stage official Android APK signing utility
+        run: |
+          set -euo pipefail
+          mkdir -p release-tools/lib
+          cp "$ANDROID_HOME/build-tools/36.0.0/apksigner" release-tools/
+          cp -R "$ANDROID_HOME/build-tools/36.0.0/lib/." release-tools/lib/
+          chmod 755 release-tools/apksigner
+      - name: Upload unsigned production APK for local signing
         uses: actions/upload-artifact@v4
         with:
-          name: aharane-android-release-signed
-          path: aharane/android/app/build/outputs/apk/release/app-release.apk
+          name: aharane-production-release-unsigned
+          path: aharane/android/app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
+      - name: Upload official Android APK signing utility
+        uses: actions/upload-artifact@v4
+        with:
+          name: aharane-apksigner-tool
+          path: release-tools/**
+          if-no-files-found: error
+          retention-days: 7
 
   preview-screenshots:
     name: Run native app and capture real emulator screenshots

@@ -1,50 +1,37 @@
 # VISTORA delivery roadmap
 
-Each milestone must preserve the original HTML reference and keep all personal library functionality local.
+The original HTML/CSS/JavaScript prototype is the running application and must remain visually recognisable.
 
-## Milestone 1 — Native foundation
-- Standalone Android Studio project under `vistora/android`.
-- Kotlin + Compose, custom VISTORA theme, navigation shell, responsive system bars.
-- Room schema and repository, ViewModel with immutable StateFlow.
-- DataStore preferences.
-- Empty-first library and settings baseline.
-- CI build, lint, unit tests.
+## Milestone 1 — Restore the intended platform
 
-## Milestone 2 — Core library
-- Add/edit title sheet and local poster picker.
-- Home categories and personal shelves.
-- Library search, combined filters, sort, 2–5 columns, no result cap.
-- Title details, status transitions, rating, dates, episode progress.
-- Episode Notes + Overall Thoughts, edit/delete/read.
-- Room migrations and migration tests.
+- [x] Make the original HTML prototype the real `index.html` entrypoint.
+- [x] Preserve the original prototype separately in `reference/`.
+- [x] Add a web app manifest, icon, and service worker for PWA installation/offline shell caching.
+- [ ] Verify the HTML application in an Android browser at phone width.
+- [ ] Verify install and offline reopen from an HTTPS origin.
 
-## Milestone 3 — Offline data safety
-- JSON/ZIP backup export and validated restore through Storage Access Framework.
-- Poster copy/downsample/caching.
-- API key vault with Android Keystore encryption.
-- No auto cloud backup or sync.
-- Round-trip backup tests.
+## Milestone 2 — Functional verification
 
-## Milestone 4 — Discovery and stats
-- Offline preview catalog.
-- Optional direct TMDB discovery for films/TV/K-dramas and AniList public GraphQL for anime. Do not use Jikan or OMDb.
-- Clear offline/error/rate-limit/key-invalid states.
-- Add-to-library explicit confirmation.
-- Live statistics calculated only from Room.
+- Verify Home categories, My Watchlist, and bottom navigation.
+- Verify add/edit/remove title flows and poster selection.
+- Verify library search, combined filters, sorting, and 2–5-column layouts.
+- Verify title status, ratings, dates, episode progress, Episode Notes, and Overall Thoughts.
+- Verify Stats and the searchable My Notes diary.
+- Verify Discover preview and explicit provider error states.
+- Verify backup/export and restore/import.
 
-## Milestone 5 — Polish and release hardening
-- Responsive layout for compact/medium/expanded widths.
-- Typography scaling, contrast, TalkBack, focus, touch target QA.
-- Motion and reduced-motion support.
-- Poster memory optimisation; Lazy grid performance.
-- Release/R8 build, CI lint/tests, Macrobenchmark/Baseline Profile for key journeys.
-- Manual testing on real Samsung Galaxy A16-class hardware.
+## Milestone 3 — Reliability
 
-## Current branch status\n\n- The original HTML reference and product/research documentation are committed.\n- The native Compose project, Room schema/repository, ViewModel, main screens, local episode diary, dates, local ZIP backup/restore, secure TMDB credential storage, and direct optional provider search are implemented in source.\n- Automated GitHub Actions build/test/lint workflow is committed. Its result must be checked before calling this a verified build.\n- Final release checks still include full CI success, a release/R8 build, device QA, TalkBack/large-font QA, and official TMDB logo/branding asset placement per its current guidelines.\n\n## Definition of done
+- Add browser-level regression checks for the core flows.
+- Guard storage quota and malformed backup edge cases.
+- Test refresh/force-close persistence.
+- Test service-worker update and offline fallback behaviour.
+- Check keyboard, dynamic text sizes, safe areas, and accessibility.
 
-- No server/backend/account required.
-- Home, Library, Title Details, notes, Stats, Settings, and backups work without internet.
-- Episode notes survive force-stop and app restart.
-- Data can be exported and restored without losing user-authored content.
-- Custom UI looks unmistakably like VISTORA and does not resemble untouched Material samples.
-- All core flows are tested and no known crash/lint blocker remains.
+## Definition of done
+
+- The real app is HTML/CSS/JavaScript, not a native rewrite.
+- The original prototype's design and interaction patterns are preserved.
+- Personal data remains in browser-local storage.
+- Core screens reopen offline after the PWA app shell has been cached.
+- No known critical visual or data-loss issue remains.

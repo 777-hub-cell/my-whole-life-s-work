@@ -38,6 +38,7 @@ import java.util.Locale
 fun TitleDetailsScreen(
     item: MediaItem,
     episodeNotes: List<EpisodeNote>,
+    initialEpisode: Int? = null,
     onBack: () -> Unit,
     onStatusChange: (LibraryStatus) -> Unit,
     onProgressChange: (Int) -> Unit,
@@ -51,9 +52,12 @@ fun TitleDetailsScreen(
     var showStatus by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var expandedSynopsis by remember(item.id) { mutableStateOf(false) }
-    var selectedEpisode by remember(item.id) {
+    var selectedEpisode by remember(item.id, initialEpisode) {
         mutableIntStateOf(
-            if(item.totalEpisodes>0) item.watchedEpisodes.coerceAtLeast(1).coerceAtMost(item.totalEpisodes) else 1
+            if (item.totalEpisodes > 0) {
+                initialEpisode?.takeIf { it in 1..item.totalEpisodes }
+                    ?: item.watchedEpisodes.coerceAtLeast(1).coerceAtMost(item.totalEpisodes)
+            } else 1
         )
     }
     var episodeDraft by remember(item.id,selectedEpisode) {

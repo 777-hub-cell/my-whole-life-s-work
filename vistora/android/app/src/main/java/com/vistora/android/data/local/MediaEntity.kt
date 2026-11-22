@@ -37,7 +37,7 @@ data class MediaEntity(
     val finishedAt: Long?,
     val watchedOn: Long?,
     val overallThoughts: String,
-    val overallThoughtsUpdatedAt: Long?
+    val overallThoughtsUpdatedAt: Long? = null
 )
 
 @Entity(

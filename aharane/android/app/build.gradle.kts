@@ -24,6 +24,8 @@ val releaseSigningConfigured = listOf(
     releaseKeyPassword
 ).all { !it.isNullOrBlank() }
 
+val appVersionCode = providers.gradleProperty("aharaneVersionCode").orNull?.toIntOrNull() ?: 1
+
 val releaseBuildRequested = gradle.startParameter.taskNames.any {
     it.endsWith("assembleRelease", ignoreCase = true) ||
         it.endsWith("bundleRelease", ignoreCase = true)
@@ -43,7 +45,7 @@ android {
         applicationId = "com.aharane.studio"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
+        versionCode = appVersionCode
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

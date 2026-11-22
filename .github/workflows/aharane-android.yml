@@ -7,6 +7,13 @@ on:
   push:
     branches: [mscc-azure]
     paths: ['aharane/android/**', 'aharane/src/**', 'aharane/test/**', 'aharane/package.json', '.github/workflows/aharane-android.yml']
+  workflow_dispatch:
+    inputs:
+      build_signed_release:
+        description: Build a production-signed APK (requires the four Aharane release signing secrets)
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -82,6 +89,63 @@ jobs:
           path: aharane/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+  unsigned-release:
+    name: Build an unsigned production release candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+      - name: Install Android 16 SDK and official signing tools
+        run: sdkmanager --install "platforms;android-36" "platform-tools" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Build production release APK without any signing key
+        working-directory: aharane/android
+        run: ./gradlew --no-daemon clean assembleRelease -PaharaneVersionCode=${GITHUB_RUN_NUMBER}
+      - name: Verify release build is installable and not debuggable
+        working-directory: aharane/android
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/aharane-badging.txt"
+          grep -q "package: name='com.aharane.studio'" "$RUNNER_TEMP/aharane-badging.txt"
+          if grep -q "application-debuggable" "$RUNNER_TEMP/aharane-badging.txt"; then
+            echo "Release candidate is incorrectly debuggable" >&2
+            exit 1
+          fi
+          unzip -t "$APK" >/dev/null
+          sha256sum "$APK"
+      - name: Stage official Android APK signing utility
+        run: |
+          set -euo pipefail
+          mkdir -p release-tools/lib
+          cp "$ANDROID_HOME/build-tools/36.0.0/apksigner" release-tools/
+          cp -R "$ANDROID_HOME/build-tools/36.0.0/lib/." release-tools/lib/
+          chmod 755 release-tools/apksigner
+      - name: Upload unsigned production APK for local signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: aharane-production-release-unsigned
+          path: aharane/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload official Android APK signing utility
+        uses: actions/upload-artifact@v4
+        with:
+          name: aharane-apksigner-tool
+          path: release-tools/**
+          if-no-files-found: error
+          retention-days: 7
 
   preview-screenshots:
     name: Run native app and capture real emulator screenshots

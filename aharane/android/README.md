@@ -101,3 +101,14 @@ When WhatsApp reports that the other participant deleted an incoming message, Ah
 ### Baileys revoke protocol handling
 
 Baileys v7 can report a delete-for-everyone action as a REVOKE protocol update through `messages.update`. Aharane now handles this separately from generic `messages.delete` keys: a REVOKE authored by the other participant retains the targeted message in Hub, regardless of whether the original message was incoming or outgoing, and marks it as deleted on WhatsApp. A REVOKE authored by the linked owner account retains the pre-existing owner-side deletion behavior. Edited-message protocol updates are also reconciled into the existing Hub message row. View-once media remains outside this retained-media path.
+
+
+ 
+## Production-signed APK builds
+
+The repository workflow creates an **unsigned production release candidate** and uploads it separately from the debug test APK. It also uploads the official Android `apksigner` utility. Neither artifact contains the release private key.
+
+The final direct-install APK must be signed locally with the permanent Aharane release keystore stored in a private secret vault/Library. Do not upload the keystore, passwords, or Base64 key material to GitHub, commits, workflow inputs, or artifacts. The resulting APK should be verified with `apksigner verify --verbose --print-certs` before distribution.
+
+Keep an offline backup of the keystore and both passwords. Every future update of `com.aharane.studio` must use this same key; losing it prevents compatible updates. The first signed APK has a different certificate from CI debug builds, so an already-installed debug copy must be uninstalled before the first signed install. Uninstalling removes that copy's local encrypted cache and sign-in session, but it does not remove server-side chats, WhatsApp sessions, or workspace files.
+

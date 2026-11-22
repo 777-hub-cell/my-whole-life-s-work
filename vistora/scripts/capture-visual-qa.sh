@@ -128,7 +128,7 @@ tap_text "Stats"
 capture "10-stats"
 tap_text "Settings"
 capture "11-settings"
-tap_text "My Notes"
+scroll_to_text_and_tap "My Notes"
 capture "12-my-notes"
 
 echo "Visual QA screenshots:"

@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 data class VistoraUiState(
     val items: List<MediaItem> = emptyList(),
     val episodeNotes: List<EpisodeNote> = emptyList(),
+    val allEpisodeNotes: List<EpisodeNote> = emptyList(),
     val notesForMediaId: Long? = null,
     val isLoading: Boolean = true,
     val message: String? = null,
@@ -40,6 +41,11 @@ class VistoraViewModel(
         viewModelScope.launch {
             repository.observeItems().collect { items ->
                 _uiState.update { it.copy(items = items, isLoading = false) }
+            }
+        }
+        viewModelScope.launch {
+            repository.observeAllEpisodeNotes().collect { notes ->
+                _uiState.update { it.copy(allEpisodeNotes = notes) }
             }
         }
     }

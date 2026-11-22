@@ -96,7 +96,7 @@ scroll_to_text_and_tap() {
 }
 
 adb shell am force-stop "$PACKAGE" || true
-adb shell monkey -p "$PACKAGE" 1 >/dev/null
+adb shell am start -W -n "$PACKAGE/.MainActivity"
 sleep 2.5
 
 # Empty-state review.

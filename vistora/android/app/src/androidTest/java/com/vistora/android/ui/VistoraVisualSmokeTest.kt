@@ -64,10 +64,10 @@ class VistoraVisualSmokeTest {
         rule.onNodeWithText("Title name").performClick()
         rule.onNodeWithText("Title name").performTextInput("VISTORA QA sample")
         rule.onNodeWithText("Add to library").performScrollTo().performClick()
-        rule.onAllNodesWithText("VISTORA QA sample").get(0).assertIsDisplayed()
+        rule.onNodeWithContentDescription("Open VISTORA QA sample details").assertIsDisplayed()
         capture("04-library-with-title")
 
-        rule.onAllNodesWithText("VISTORA QA sample").get(0).performClick()
+        rule.onNodeWithContentDescription("Open VISTORA QA sample details").performClick()
         rule.onNodeWithText("Title Details").assertIsDisplayed()
         capture("05-title-details")
         device.pressBack()

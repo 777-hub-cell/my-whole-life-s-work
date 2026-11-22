@@ -47,6 +47,11 @@ class VistoraVisualSmokeTest {
     fun captureMainScreensAndTitleFlow() {
         capture("01-home")
 
+        // The Home editorial action must open Discover, not Library search.
+        rule.onNodeWithText("Open Discover").performClick()
+        rule.onNodeWithText("Picked for tonight").assertExists()
+        rule.onNodeWithContentDescription("Home tab").performClick()
+
         // Library should begin empty; the preview catalogue must never populate it.
         rule.onNodeWithContentDescription("Library tab").performClick()
         rule.onNodeWithText("Your library is empty").assertExists()

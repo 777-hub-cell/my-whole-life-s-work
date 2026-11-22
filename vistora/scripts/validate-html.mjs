@@ -8,7 +8,7 @@ const worker = await read('../sw.js');
 
 const checks = [
   ['HTML5 document', /^<!doctype html>/i.test(html.trimStart())],
-  ['phone viewport', /name=["']viewport["']/i.test(html)],
+  ['phone viewport', /name=["']?viewport["']?/i.test(html)],
   ['app screen root', /id=["']screen["']/.test(html)],
   ['bottom navigation root', /id=["']nav["']/.test(html)],
   ['PWA manifest linked', /rel=["']manifest["']/.test(html)],

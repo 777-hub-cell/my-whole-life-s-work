@@ -62,7 +62,7 @@ fun LibraryScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+    Box(Modifier.fillMaxSize()) {\n    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         Row(
             Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -144,6 +144,18 @@ fun LibraryScreen(
                 items(filtered, key = { it.id }, contentType = { "media-poster" }) { item ->
                     PosterTile(item, { onOpenTitle(item.id) }, showStatus = true)
                 }
+            }
+        }
+    }
+        if (items.isNotEmpty()) {
+            Row(
+                Modifier.align(Alignment.BottomEnd).padding(end=20.dp,bottom=18.dp)
+                    .size(58.dp).clip(RoundedCornerShape(19.dp)).background(VistoraPalette.Burgundy)
+                    .clickable(onClick=onAdd),
+                verticalAlignment=Alignment.CenterVertically,
+                horizontalArrangement=Arrangement.Center
+            ) {
+                VistoraIcon("plus",Modifier.size(26.dp),VistoraPalette.OnAccent)
             }
         }
     }

@@ -145,8 +145,8 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                         onSearch = { route = "Library" },
                         onNotifications = { notificationsVisible = true },
                         onOpenTitle = { selectedId = it; route = "Title Details" },
-                        onOpenLibrary = { status ->
-                            filters = if (status == null) LibraryFilters() else LibraryFilters(statuses = setOf(status))
+                        onOpenWatchlist = {
+                            filters = LibraryFilters(watchlistOnly = true)
                             route = "Library"
                         },
                         onOpenCategory = { type ->

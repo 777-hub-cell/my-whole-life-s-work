@@ -22,6 +22,9 @@ class RoomLibraryRepository(
     override fun observeEpisodeNotes(mediaId: Long): Flow<List<EpisodeNote>> =
         noteDao.observeForMedia(mediaId).map { rows -> rows.map { it.toDomain() } }
 
+    override fun observeAllEpisodeNotes(): Flow<List<EpisodeNote>> =
+        noteDao.observeAll().map { rows -> rows.map { it.toDomain() } }
+
     override suspend fun saveItem(item: MediaItem): Long =
         mediaDao.upsert(item.toEntity())
 

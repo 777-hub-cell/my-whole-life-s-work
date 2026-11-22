@@ -40,3 +40,10 @@ Open `vistora/android/` in Android Studio from the full monorepo checkout. The w
 `feature/vistora-kotlin-native-android-20261122`
 
 This branch is independent of Aharane's runtime/deployment branches. Do not merge VISTORA files into Aharane's service or deployment workflow.
+
+
+## Build handoff
+
+See [BUILD_AND_OFFLINE_HANDOFF.md](docs/BUILD_AND_OFFLINE_HANDOFF.md) for the full build command, APK output path, offline behaviour, test commands, and remaining release checks.
+
+The approved Home page keeps the four categories and one **My Watchlist** shelf. Episode notes are also available in a searchable **My Notes** diary from Settings.

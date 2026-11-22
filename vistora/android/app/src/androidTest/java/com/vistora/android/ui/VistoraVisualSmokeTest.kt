@@ -79,15 +79,24 @@ class VistoraVisualSmokeTest {
         rule.waitUntil(timeoutMillis = 10_000) { savedToDatabase() }
         assertTrue("Add Title did not persist the saved title to Room", savedToDatabase())
 
-        val posterDescription = "Open VISTORA QA sample details"
-        rule.onNodeWithContentDescription(posterDescription).assertIsDisplayed()
-        capture("04-library-with-title")
-
-        rule.onNodeWithContentDescription(posterDescription).performClick()
+        // A successful manual add opens the new title's Details page first.
+        rule.waitUntil(timeoutMillis = 10_000) {
+            runCatching { rule.onNodeWithText("Title Details").fetchSemanticsNode(); true }
+                .getOrDefault(false)
+        }
         rule.onNodeWithText("Title Details").assertIsDisplayed()
-        capture("05-title-details")
+        capture("04-title-details")
+
+        // Back returns to Library, where the saved title now appears as a poster.
         device.pressBack()
         rule.waitForIdle()
+        val posterDescription = "Open VISTORA QA sample details"
+        rule.waitUntil(timeoutMillis = 10_000) {
+            runCatching { rule.onNodeWithContentDescription(posterDescription).fetchSemanticsNode(); true }
+                .getOrDefault(false)
+        }
+        rule.onNodeWithContentDescription(posterDescription).assertIsDisplayed()
+        capture("05-library-with-title")
 
         rule.onNodeWithContentDescription("Discover tab").performClick()
         rule.onNodeWithText("Picked for tonight").assertIsDisplayed()

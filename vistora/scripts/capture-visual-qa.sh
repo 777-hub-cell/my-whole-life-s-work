@@ -6,7 +6,7 @@ OUT="${RUNNER_TEMP:-/tmp}/vistora-visual-qa"
 mkdir -p "$OUT"
 rm -f "$OUT"/*.png
 XML="$OUT/window.xml"
-SIZE="$(adb shell wm size | awk -F': ' '/size:/ { value=$2 } END { print value }' | tr -d '\r')"
+SIZE="$(timeout 8s adb shell wm size | awk -F': ' '/size:/ { value=$2 } END { print value }' | tr -d '\r' || true)"
 SCREEN_W="${SIZE%x*}"
 SCREEN_H="${SIZE#*x}"
 SCREEN_W="${SCREEN_W:-1080}"
@@ -18,8 +18,11 @@ swipe_up() {
 }
 
 dump_ui() {
-  adb shell uiautomator dump /sdcard/vistora-window.xml >/dev/null 2>&1 || true
-  adb pull /sdcard/vistora-window.xml "$XML" >/dev/null 2>&1
+  # UIAutomator can occasionally hang on a just-resumed Compose window.
+  # Bound each adb operation so screenshots already captured are retained.
+  timeout 8s adb shell uiautomator dump /sdcard/vistora-window.xml >/dev/null 2>&1 || true
+  timeout 5s adb pull /sdcard/vistora-window.xml "$XML" >/dev/null 2>&1 || true
+  [[ -s "$XML" ]]
 }
 
 find_bounds() {
@@ -58,7 +61,7 @@ tap_text() {
     coords="$(find_bounds "$needle" || true)"
     if [[ -n "$coords" ]]; then
       read -r x y <<< "$coords"
-      adb shell input tap "$x" "$y"
+      timeout 5s adb shell input tap "$x" "$y"
       sleep 1.0
       return 0
     fi
@@ -71,7 +74,7 @@ tap_text() {
 capture() {
   local name="$1"
   sleep 0.8
-  adb exec-out screencap -p > "$OUT/$name.png"
+  timeout 12s adb exec-out screencap -p > "$OUT/$name.png"
   test -s "$OUT/$name.png"
   echo "Captured $name.png"
 }
@@ -88,7 +91,7 @@ scroll_to_text_and_tap() {
       sleep 1.0
       return 0
     fi
-    swipe_up
+    timeout 5s bash -c 'adb shell input swipe "$1" "$2" "$3" "$4" 350' _ "$((SCREEN_W / 2))" "$((SCREEN_H * 80 / 100))" "$((SCREEN_W / 2))" "$((SCREEN_H * 30 / 100))" || true
     sleep 0.4
   done
   echo "Could not find UI text after scrolling: $needle" >&2
@@ -99,21 +102,23 @@ scroll_to_text_and_tap() {
 # Reinstall the freshly assembled app before opening it for visual inspection.
 APK="vistora/android/app/build/outputs/apk/debug/app-debug.apk"
 test -s "$APK"
-adb install -r "$APK"
-adb shell am force-stop "$PACKAGE" || true
-LAUNCHER="$(adb shell cmd package resolve-activity --brief \
+timeout 120s adb install -r "$APK"
+timeout 8s adb shell am force-stop "$PACKAGE" || true
+LAUNCHER="$(timeout 12s adb shell cmd package resolve-activity --brief \
   -a android.intent.action.MAIN \
-  -c android.intent.category.LAUNCHER "$PACKAGE" | tr -d '\r' | tail -n 1)"
+  -c android.intent.category.LAUNCHER "$PACKAGE" | tr -d '\r' | tail -n 1 || true)"
 if [[ -z "$LAUNCHER" || "$LAUNCHER" == *"No activity found"* ]]; then
   echo "Could not resolve the VISTORA launcher activity for $PACKAGE" >&2
   adb shell pm list packages | grep -i vistora || true
   exit 1
 fi
-adb shell am start -W -n "$LAUNCHER"
+timeout 20s adb shell am start -W -n "$LAUNCHER"
 sleep 2.5
+# Capture the first screen before any semantic navigation; even if a later
+# UIAutomator lookup fails, the artifact will contain a real rendered screen.
+capture "01-home-empty"
 
 # Empty-state review.
-capture "01-home-empty"
 tap_text "Library"
 capture "02-library-empty"
 tap_text "Add your first title"

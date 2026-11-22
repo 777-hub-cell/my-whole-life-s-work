@@ -65,6 +65,7 @@ fun VistoraIcon(
         when(name) {
             "search" -> { circle(.44f,.43f,.27f); line(.64f to .64f,.84f to .84f) }
             "back" -> { line(.82f to .50f,.18f to .50f); line(.18f to .50f,.47f to .21f); line(.18f to .50f,.47f to .79f) }
+            "forward" -> { line(.18f to .50f,.82f to .50f); line(.53f to .21f,.82f to .50f); line(.53f to .79f,.82f to .50f) }
             "more" -> { circle(.5f,.2f,.055f,true);circle(.5f,.5f,.055f,true);circle(.5f,.8f,.055f,true) }
             "plus" -> { line(.5f to .18f,.5f to .82f);line(.18f to .5f,.82f to .5f) }
             "minus" -> line(.18f to .5f,.82f to .5f)

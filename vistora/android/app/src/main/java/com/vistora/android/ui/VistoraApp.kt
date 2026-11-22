@@ -176,6 +176,8 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                         onSearch = { query, type -> viewModel.searchCatalog(query, type, tmdbCredential) },
                         onClearSearch = viewModel::clearCatalogSearch,
                         onAdd = { result: CatalogResult ->
+                            detailReturnRoute = "Discover"
+                            episodeToOpen = null
                             scope.launch {
                                 val localPoster = result.posterUrl?.let { PosterDownloader.cache(context, it) }
                                 editorInitial = result.toDraft().copy(posterPath = localPoster)

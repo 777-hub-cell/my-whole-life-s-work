@@ -113,6 +113,7 @@ class CatalogRepository {
                   id
                   title { english romaji native }
                   episodes
+                  format
                   status
                   startDate { year }
                   description(asHtml: false)
@@ -163,7 +164,7 @@ class CatalogRepository {
                     title = title,
                     type = MediaType.ANIME,
                     releaseYear = item.optJSONObject("startDate")?.optInt("year")?.takeIf { it > 0 },
-                    totalEpisodes = item.optInt("episodes", 0).coerceAtLeast(0),
+                    totalEpisodes = if (isAnimeMovie) 0 else item.optInt("episodes", 0).coerceAtLeast(0),
                     seriesState = state,
                     synopsis = item.optString("description").replace(Regex("<[^>]*>"), "").take(600),
                     genres = genres,

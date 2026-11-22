@@ -95,8 +95,21 @@ scroll_to_text_and_tap() {
   return 1
 }
 
+# Instrumentation runners may uninstall the target package after tests.
+# Reinstall the freshly assembled app before opening it for visual inspection.
+APK="vistora/android/app/build/outputs/apk/debug/app-debug.apk"
+test -s "$APK"
+adb install -r "$APK"
 adb shell am force-stop "$PACKAGE" || true
-adb shell am start -W -n "$PACKAGE/.MainActivity"
+LAUNCHER="$(adb shell cmd package resolve-activity --brief \
+  -a android.intent.action.MAIN \
+  -c android.intent.category.LAUNCHER "$PACKAGE" | tr -d '\r' | tail -n 1)"
+if [[ -z "$LAUNCHER" || "$LAUNCHER" == *"No activity found"* ]]; then
+  echo "Could not resolve the VISTORA launcher activity for $PACKAGE" >&2
+  adb shell pm list packages | grep -i vistora || true
+  exit 1
+fi
+adb shell am start -W -n "$LAUNCHER"
 sleep 2.5
 
 # Empty-state review.

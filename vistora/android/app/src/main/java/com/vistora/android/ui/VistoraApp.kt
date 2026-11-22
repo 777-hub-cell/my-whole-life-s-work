@@ -147,6 +147,7 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                     "Home" -> HomeScreen(
                         items = uiState.items,
                         onSearch = { route = "Library" },
+                        onOpenDiscover = { route = "Discover" },
                         onNotifications = { notificationsVisible = true },
                         onOpenTitle = { detailReturnRoute = "Home"; episodeToOpen = null; selectedId = it; route = "Title Details" },
                         onOpenWatchlist = {

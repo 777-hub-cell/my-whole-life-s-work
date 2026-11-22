@@ -62,7 +62,8 @@ fun LibraryScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize()) {\n    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+    Box(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         Row(
             Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,

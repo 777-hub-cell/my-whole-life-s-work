@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
@@ -368,37 +369,66 @@ fun VistoraBottomBar(
 ) {
     val accent = LocalVistoraAccent.current
     val destinations = listOf(
-        Triple("Home","home","Home"),
-        Triple("Library","library","Library"),
-        Triple("Discover","discover","Discover"),
-        Triple("Stats","stats","Stats"),
-        Triple("Settings","settings","Settings")
+        Triple("Home", "home", "Home"),
+        Triple("Library", "library", "Library"),
+        Triple("Discover", "discover", "Discover"),
+        Triple("Stats", "stats", "Stats"),
+        Triple("Settings", "settings", "Settings")
     )
+
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(VistoraPalette.Ink.copy(alpha=.97f))
-            .border(width=1.dp,color=VistoraPalette.Line,shape=RoundedCornerShape(topStart=18.dp,topEnd=18.dp))
-            .padding(start=4.dp,end=4.dp,top=6.dp,bottom=5.dp),
+            .background(VistoraPalette.Ink.copy(alpha = .96f))
+            .drawBehind {
+                drawLine(
+                    color = VistoraPalette.Line,
+                    start = Offset(0f, 0f),
+                    end = Offset(size.width, 0f),
+                    strokeWidth = 1.dp.toPx()
+                )
+            }
+            .padding(start = 4.dp, end = 4.dp, top = 5.dp, bottom = 3.dp),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
         destinations.forEach { (label, icon, route) ->
             val active = selected == route
             Column(
-                modifier = Modifier.weight(1f).heightIn(min=54.dp)
-                    .clip(RoundedCornerShape(13.dp))
-                    .semantics { role = Role.Tab; stateDescription = if (active) "Selected" else "Not selected" }
-                    .clickable(role = Role.Tab,onClick={onSelect(route)})
-                    .padding(vertical=4.dp),
-                horizontalAlignment=Alignment.CenterHorizontally,
-                verticalArrangement=Arrangement.spacedBy(3.dp)
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 54.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .semantics {
+                        role = Role.Tab
+                        stateDescription = if (active) "Selected" else "Not selected"
+                    }
+                    .clickable(role = Role.Tab, onClick = { onSelect(route) })
+                    .padding(vertical = 2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Box(
-                    Modifier.width(54.dp).height(28.dp).clip(RoundedCornerShape(14.dp))
-                        .background(if(active) accent.copy(alpha=.16f) else Color.Transparent),
-                    contentAlignment=Alignment.Center
-                ) { VistoraIcon(icon, Modifier.size(20.dp), if(active) accent else VistoraPalette.Muted) }
-                Text(label, color=if(active) VistoraPalette.Text else VistoraPalette.Muted, fontSize=11.sp, fontWeight=if(active) FontWeight.SemiBold else FontWeight.Medium)
+                    Modifier
+                        .width(54.dp)
+                        .height(30.dp)
+                        .clip(RoundedCornerShape(15.dp))
+                        .background(if (active) accent.copy(alpha = .18f) else Color.Transparent),
+                    contentAlignment = Alignment.Center
+                ) {
+                    VistoraIcon(
+                        icon,
+                        Modifier.size(20.dp),
+                        if (active) accent else VistoraPalette.Muted,
+                        strokeWidth = if (active) 2.0f else 1.7f
+                    )
+                }
+                Text(
+                    label,
+                    color = if (active) VistoraPalette.Text else VistoraPalette.Muted,
+                    fontSize = 12.sp,
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1
+                )
             }
         }
     }

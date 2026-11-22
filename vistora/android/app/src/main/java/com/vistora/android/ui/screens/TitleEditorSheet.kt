@@ -8,6 +8,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowScope
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -155,15 +158,28 @@ fun TitleEditorSheet(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FlowChoiceRow(content:@Composable RowScope.()->Unit){
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp),verticalAlignment=Alignment.CenterVertically,content=content)
+private fun FlowChoiceRow(content: @Composable FlowRowScope.() -> Unit) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+        content = content
+    )
 }
 
 @Composable
-private fun SelectChip(label:String,selected:Boolean,onClick:()->Unit){
-    Text(label,modifier=Modifier.clip(RoundedCornerShape(9.dp))
-        .background(if(selected)VistoraPalette.Burgundy else VistoraPalette.Surface)
-        .clickable(onClick=onClick).padding(horizontal=10.dp,vertical=9.dp),
-        color=if(selected)VistoraPalette.OnAccent else VistoraPalette.Secondary,fontSize=12.sp,fontWeight=if(selected)FontWeight.SemiBold else FontWeight.Medium)
+private fun SelectChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        label,
+        modifier = Modifier.heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .background(if (selected) VistoraPalette.Burgundy else VistoraPalette.Surface)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        color = if (selected) VistoraPalette.OnAccent else VistoraPalette.Secondary,
+        fontSize = 12.sp,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+    )
 }

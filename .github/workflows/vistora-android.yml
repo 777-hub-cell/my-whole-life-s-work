@@ -113,7 +113,25 @@ jobs:
           script: |
             bash vistora/android/gradlew :app:connectedDebugAndroidTest
             mkdir -p "${RUNNER_TEMP}/vistora-android-qa"
-            adb pull /sdcard/Android/data/com.vistora.android/files/vistora-qa "${RUNNER_TEMP}/vistora-android-qa"
+            SCREENSHOT_DIR=""
+            for PACKAGE_NAME in com.vistora.android com.vistora.android.test; do
+              CANDIDATE="/sdcard/Android/data/${PACKAGE_NAME}/files/vistora-qa"
+              if adb shell "test -d '${CANDIDATE}'"; then
+                SCREENSHOT_DIR="${CANDIDATE}"
+                break
+              fi
+            done
+            if [ -z "${SCREENSHOT_DIR}" ]; then
+              SCREENSHOT_DIR="$(adb shell "find /sdcard/Android/data -type d -name vistora-qa 2>/dev/null | head -n 1" | tr -d '\r')"
+            fi
+            if [ -z "${SCREENSHOT_DIR}" ]; then
+              echo "VISTORA screenshot directory was not found."
+              adb shell ls -la /sdcard/Android/data/com.vistora.android/files || true
+              adb shell ls -la /sdcard/Android/data/com.vistora.android.test/files || true
+              exit 1
+            fi
+            echo "Pulling VISTORA screenshots from ${SCREENSHOT_DIR}"
+            adb pull "${SCREENSHOT_DIR}" "${RUNNER_TEMP}/vistora-android-qa"
       - name: Upload Android visual screenshots
         uses: actions/upload-artifact@v6
         with:

@@ -31,6 +31,7 @@ import com.vistora.android.domain.LibraryStatus
 import com.vistora.android.domain.MediaItem
 import com.vistora.android.domain.MediaType
 import com.vistora.android.domain.LibrarySnapshot
+import com.vistora.android.domain.TrackedDate
 import com.vistora.android.domain.CatalogResult
 import com.vistora.android.VistoraApplication
 import com.vistora.android.ui.components.StatusLabel
@@ -240,6 +241,7 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                                 onStatusChange = { viewModel.setStatus(selectedItem.id,it) },
                                 onProgressChange = { viewModel.changeProgress(selectedItem.id,it) },
                                 onRatingChange = { viewModel.setRating(selectedItem.id,it) },
+                                onDateChange = { kind, timestamp -> viewModel.setTrackedDate(selectedItem.id,kind,timestamp) },
                                 onSaveEpisodeNote = { episode,body -> viewModel.saveEpisodeNote(selectedItem.id,episode,body) },
                                 onDeleteEpisodeNote = { episode -> viewModel.deleteEpisodeNote(selectedItem.id,episode) },
                                 onSaveOverallThoughts = { viewModel.saveOverallThoughts(selectedItem.id,it) },

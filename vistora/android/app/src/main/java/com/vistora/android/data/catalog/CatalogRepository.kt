@@ -108,7 +108,7 @@ class CatalogRepository {
         val graphQl = """
             query (${': String!) {
               Page(page: 1, perPage: 20) {
-                media(search: $search, type: ANIME, sort: SEARCH_MATCH, isAdult: false) {
+                media(search: ${'$'}search, type: ANIME, sort: SEARCH_MATCH, isAdult: false) {
                   id
                   title { english romaji native }
                   episodes

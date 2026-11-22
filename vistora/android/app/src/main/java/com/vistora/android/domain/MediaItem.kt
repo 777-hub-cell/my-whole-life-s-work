@@ -43,7 +43,8 @@ data class MediaItem(
     val startedAt: Long? = null,
     val finishedAt: Long? = null,
     val watchedOn: Long? = null,
-    val overallThoughts: String = ""
+    val overallThoughts: String = "",
+    val overallThoughtsUpdatedAt: Long? = null
 ) {
     val isEpisodic: Boolean get() = totalEpisodes > 0
     val progressPercent: Int

@@ -142,6 +142,16 @@ class VistoraViewModel(
         )
     }
 
+    fun setTrackedDate(mediaId: Long, kind: com.vistora.android.domain.TrackedDate, timestamp: Long?) {
+        val item = _uiState.value.items.firstOrNull { it.id == mediaId } ?: return
+        val updated = when (kind) {
+            com.vistora.android.domain.TrackedDate.STARTED -> item.copy(startedAt = timestamp)
+            com.vistora.android.domain.TrackedDate.FINISHED -> item.copy(finishedAt = timestamp)
+            com.vistora.android.domain.TrackedDate.WATCHED_ON -> item.copy(watchedOn = timestamp)
+        }
+        saveItem(updated.copy(updatedAt = System.currentTimeMillis()))
+    }
+
     fun setRating(mediaId: Long, rating: Int) {
         val item = _uiState.value.items.firstOrNull { it.id == mediaId } ?: return
         val next = if (item.rating == rating) 0 else rating.coerceIn(1, 5)

@@ -116,7 +116,9 @@ jobs:
           script: |
             timeout 14m bash vistora/android/gradlew --no-daemon --console=plain --stacktrace :app:connectedDebugAndroidTest
             mkdir -p "${RUNNER_TEMP}/vistora-android-qa"
-            adb exec-out run-as com.vistora.android tar -C /data/user/0/com.vistora.android/files -cf - vistora-qa > "${RUNNER_TEMP}/vistora-android-qa.tar"
+            adb exec-out run-as com.vistora.android /system/bin/toybox tar -C /data/user/0/com.vistora.android/files -cf - vistora-qa > "${RUNNER_TEMP}/vistora-android-qa.tar"
+            test -s "${RUNNER_TEMP}/vistora-android-qa.tar"
+            tar -tf "${RUNNER_TEMP}/vistora-android-qa.tar" > "${RUNNER_TEMP}/vistora-android-qa-files.txt"
             tar -xf "${RUNNER_TEMP}/vistora-android-qa.tar" -C "${RUNNER_TEMP}/vistora-android-qa"
             test "$(find "${RUNNER_TEMP}/vistora-android-qa" -type f -name '*.png' | wc -l)" -ge 8
       - name: Upload Android visual screenshots

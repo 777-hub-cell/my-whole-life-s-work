@@ -65,7 +65,6 @@ class CatalogRepository {
             append("https://api.themoviedb.org/3/search/$endpoint")
             append("?query=").append(encoded)
             append("&include_adult=false&language=en-US&page=1")
-            if (type == MediaType.K_DRAMA) append("&with_original_language=ko")
             if (!isBearerToken(credential)) append("&api_key=").append(encode(credential))
         }
         val connection = URL(url).openConnection() as HttpURLConnection

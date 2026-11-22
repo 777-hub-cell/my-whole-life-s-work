@@ -204,7 +204,7 @@ Do not:
 - [Android architecture guide](https://developer.android.com/topic/architecture)
 - [Android Keystore system](https://developer.android.com/privacy-and-security/keystore)
 - [TMDB API documentation](https://developer.themoviedb.org/docs)
-- [TMDB API attribution and branding FAQ](https://www.themoviedb.org/faq/api)
+- [TMDB API attribution and branding FAQ](https://www.themoviedb.org/faq/api) — add the current official TMDB logo asset and required attribution before public release.
 - [AniList API documentation](https://docs.anilist.co/)
 - [Android architecture recommendations](https://developer.android.com/topic/architecture/recommendations)
 - [UI layer and unidirectional data flow](https://developer.android.com/topic/architecture/ui-layer)

@@ -45,6 +45,7 @@ import com.vistora.android.ui.screens.TitleDetailsScreen
 import com.vistora.android.ui.screens.TitleEditorSheet
 import com.vistora.android.ui.theme.VistoraBackdrop
 import com.vistora.android.ui.theme.VistoraPalette
+import com.vistora.android.ui.theme.VistoraTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -121,7 +122,7 @@ fun VistoraApp(viewModel: VistoraViewModel) {
         }
     }
 
-    VistoraBackdrop {
+    VistoraTheme(accent = preferences.accent) {\n    VistoraBackdrop {
         Column(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
         ) {

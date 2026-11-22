@@ -1,9 +1,9 @@
 package com.vistora.android.ui
 
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -49,12 +49,12 @@ class VistoraVisualSmokeTest {
 
         // The Home editorial action must open Discover, not Library search.
         rule.onNodeWithText("Open Discover").performClick()
-        rule.onNodeWithText("Picked for tonight").assertExists()
+        rule.onNodeWithText("Picked for tonight").assertIsDisplayed()
         rule.onNodeWithContentDescription("Home tab").performClick()
 
         // Library should begin empty; the preview catalogue must never populate it.
         rule.onNodeWithContentDescription("Library tab").performClick()
-        rule.onNodeWithText("Your library is empty").assertExists()
+        rule.onNodeWithText("Your library is empty").assertIsDisplayed()
         capture("02-library")
 
         rule.onNodeWithText("Add a title").performClick()
@@ -62,25 +62,25 @@ class VistoraVisualSmokeTest {
         rule.onNodeWithText("Title name").performClick()
         rule.onNodeWithText("Title name").performTextInput("VISTORA QA sample")
         rule.onNodeWithText("Add to library").performScrollTo().performClick()
-        rule.onNodeWithText("VISTORA QA sample").assertExists()
+        rule.onNodeWithText("VISTORA QA sample").assertIsDisplayed()
         capture("04-library-with-title")
 
-        rule.onAllNodesWithText("VISTORA QA sample").onFirst().performClick()
-        rule.onNodeWithText("Title Details").assertExists()
+        rule.onAllNodesWithText("VISTORA QA sample").get(0).performClick()
+        rule.onNodeWithText("Title Details").assertIsDisplayed()
         capture("05-title-details")
         device.pressBack()
         rule.waitForIdle()
 
         rule.onNodeWithContentDescription("Discover tab").performClick()
-        rule.onNodeWithText("Picked for tonight").assertExists()
+        rule.onNodeWithText("Picked for tonight").assertIsDisplayed()
         capture("06-discover")
 
         rule.onNodeWithContentDescription("Stats tab").performClick()
-        rule.onNodeWithText("By status").assertExists()
+        rule.onNodeWithText("By status").assertIsDisplayed()
         capture("07-stats")
 
         rule.onNodeWithContentDescription("Settings tab").performClick()
-        rule.onNodeWithText("My Notes").assertExists()
+        rule.onNodeWithText("My Notes").assertIsDisplayed()
         capture("08-more")
     }
 }

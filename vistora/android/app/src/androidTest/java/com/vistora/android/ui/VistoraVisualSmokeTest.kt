@@ -37,10 +37,9 @@ class VistoraVisualSmokeTest {
         rule.waitForIdle()
         device.waitForIdle()
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val externalFiles = requireNotNull(context.getExternalFilesDir(null))
-        val directory = File(externalFiles, "vistora-qa").apply { mkdirs() }
+        val directory = File(context.filesDir, "vistora-qa").apply { mkdirs() }
         Log.i("VistoraVisualQA", "SCREENSHOT_DIR=${directory.absolutePath}")
-        Log.i("VistoraVisualQA", "SCREENSHOT_PARENT=${externalFiles.absolutePath}")
+        Log.i("VistoraVisualQA", "SCREENSHOT_PARENT=${context.filesDir.absolutePath}")
         check(device.takeScreenshot(File(directory, "$name.png"))) {
             "Could not capture screenshot: $name"
         }

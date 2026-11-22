@@ -84,6 +84,10 @@ jobs:
 
       - name: Run Room instrumentation tests on Android
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          # The hosted Ubuntu runner disables KVM acceleration. The current
+          # Android Emulator requires explicit opt-in for TCG software mode.
+          ANDROID_I_WANT_MY_TCG: "yes"
         with:
           api-level: 36
           arch: x86_64

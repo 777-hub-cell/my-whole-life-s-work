@@ -26,6 +26,8 @@ import com.vistora.android.ui.theme.VistoraPalette
 fun SettingsScreen(
     preferences: VistoraPreferences,
     tmdbConfigured: Boolean,
+    notesCount: Int,
+    onOpenNotes: () -> Unit,
     onGrid: (Int) -> Unit,
     onAccent: (String) -> Unit,
     onSaveTmdb: (String) -> Unit,
@@ -123,6 +125,16 @@ fun SettingsScreen(
                 "Credentials are encrypted with Android Keystore and are never included in VISTORA backups. Live searches go directly from this phone to TMDB.",
                 color=VistoraPalette.Muted,fontSize=11.sp,lineHeight=17.sp
             )
+        }
+
+        SectionHeading("Your writing")
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(VistoraPalette.Surface).padding(15.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Text("Your private diary", color = VistoraPalette.Text, fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+            Text("Read and search episode notes and overall thoughts across every title.", color = VistoraPalette.Muted, fontSize = 12.sp, lineHeight = 18.sp)
+            SettingsAction("My Notes · $notesCount entries", "edit", onOpenNotes)
         }
 
         SectionHeading("Your data")

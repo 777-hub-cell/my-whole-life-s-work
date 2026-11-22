@@ -103,24 +103,12 @@ When WhatsApp reports that the other participant deleted an incoming message, Ah
 Baileys v7 can report a delete-for-everyone action as a REVOKE protocol update through `messages.update`. Aharane now handles this separately from generic `messages.delete` keys: a REVOKE authored by the other participant retains the targeted message in Hub, regardless of whether the original message was incoming or outgoing, and marks it as deleted on WhatsApp. A REVOKE authored by the linked owner account retains the pre-existing owner-side deletion behavior. Edited-message protocol updates are also reconciled into the existing Hub message row. View-once media remains outside this retained-media path.
 
 
+ 
 ## Production-signed APK builds
 
-The normal CI artifact `aharane-native-android-debug` is a test APK. For repeatable direct installation and upgrades, use the manually triggered `Aharane Android` workflow with a permanent private release key. The workflow verifies the APK signature before it uploads `aharane-android-release-signed`.
+The repository workflow creates an **unsigned production release candidate** and uploads it separately from the debug test APK. It also uploads the official Android `apksigner` utility. Neither artifact contains the release private key.
 
-Create one release keystore on a trusted device with JDK `keytool` (choose a strong store password and key password, and keep an offline backup):
+The final direct-install APK must be signed locally with the permanent Aharane release keystore stored in a private secret vault/Library. Do not upload the keystore, passwords, or Base64 key material to GitHub, commits, workflow inputs, or artifacts. The resulting APK should be verified with `apksigner verify --verbose --print-certs` before distribution.
 
-```sh
-keytool -genkeypair -v -keystore aharane-release.jks -storetype JKS -keyalg RSA -keysize 4096 -validity 10000 -alias aharane
-base64 aharane-release.jks | tr -d '\\n'
-```
+Keep an offline backup of the keystore and both passwords. Every future update of `com.aharane.studio` must use this same key; losing it prevents compatible updates. The first signed APK has a different certificate from CI debug builds, so an already-installed debug copy must be uninstalled before the first signed install. Uninstalling removes that copy's local encrypted cache and sign-in session, but it does not remove server-side chats, WhatsApp sessions, or workspace files.
 
-Add the following as **repository Actions secrets** (never as repository files, workflow variables, or chat messages):
-
-- `AHARANE_RELEASE_KEYSTORE_BASE64`: the one-line Base64 output for the keystore.
-- `AHARANE_RELEASE_STORE_PASSWORD`: the keystore password.
-- `AHARANE_RELEASE_KEY_ALIAS`: `aharane` if the command above was used.
-- `AHARANE_RELEASE_KEY_PASSWORD`: the key password.
-
-Then open **Actions → Aharane Android → Run workflow**, choose branch `mscc-azure`, enable **Build a production-signed APK**, and start the workflow. Download the `aharane-android-release-signed` artifact only after the signature verification job succeeds.
-
-Keep the original keystore and both passwords backed up securely. Every future update of `com.aharane.studio` must use this same key; losing it prevents signing compatible updates. The first signed APK has a different certificate from CI debug builds, so an already-installed debug copy must be uninstalled before the first signed install. Uninstalling removes that copy's local encrypted cache and sign-in session, but does not remove the server's chats, WhatsApp sessions, or workspace files. This is a direct-install signed APK workflow, not a Google Play publication workflow.

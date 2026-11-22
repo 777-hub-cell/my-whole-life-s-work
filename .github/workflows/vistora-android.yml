@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - "feature/vistora-kotlin-native-android-20261122"
+      - "feature/vistora-android-visual-fidelity-20261122"
     paths:
       - "vistora/**"
       - ".github/workflows/vistora-android.yml"
@@ -109,4 +110,14 @@ jobs:
           disable-linux-hw-accel: auto
           emulator-boot-timeout: 900
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
-          script: bash vistora/android/gradlew :app:connectedDebugAndroidTest
+          script: |
+            bash vistora/android/gradlew :app:connectedDebugAndroidTest
+            mkdir -p "${RUNNER_TEMP}/vistora-android-qa"
+            adb pull /sdcard/Android/data/com.vistora.android/files/vistora-qa "${RUNNER_TEMP}/vistora-android-qa"
+      - name: Upload Android visual screenshots
+        uses: actions/upload-artifact@v6
+        with:
+          name: vistora-android-visual-screenshots
+          path: ${{ runner.temp }}/vistora-android-qa/*.png
+          if-no-files-found: error
+          retention-days: 14

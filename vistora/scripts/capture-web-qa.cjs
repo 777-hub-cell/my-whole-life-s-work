@@ -35,6 +35,7 @@ const { chromium } = require('playwright');
       if (route === 'library') {
         await page.locator('#fab').click();
         await page.locator('#addForm').waitFor({ state: 'visible', timeout: 5000 });
+        await page.waitForTimeout(350);
         await page.screenshot({ path: path.join(out, '03-add-title.png') });
         await page.keyboard.press('Escape');
         await page.locator('#layer .sheet').waitFor({ state: 'detached', timeout: 5000 });

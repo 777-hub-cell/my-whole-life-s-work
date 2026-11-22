@@ -4,7 +4,9 @@ import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -54,11 +56,11 @@ class VistoraVisualSmokeTest {
         capture("03-add-title")
         rule.onNodeWithText("Title name").performClick()
         rule.onNodeWithText("Title name").performTextInput("VISTORA QA sample")
-        rule.onNodeWithText("Add to library").performClick()
+        rule.onNodeWithText("Add to library").performScrollTo().performClick()
         rule.onNodeWithText("VISTORA QA sample").assertExists()
         capture("04-library-with-title")
 
-        rule.onNodeWithText("VISTORA QA sample").performClick()
+        rule.onAllNodesWithText("VISTORA QA sample").onFirst().performClick()
         rule.onNodeWithText("Title Details").assertExists()
         capture("05-title-details")
         device.pressBack()

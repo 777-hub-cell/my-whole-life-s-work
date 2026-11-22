@@ -79,8 +79,8 @@ Top-to-bottom order:
 
 - Discover is optional convenience, never a prerequisite for using the local library.
 - Keep a built-in offline preview catalogue or explicit offline state.
-- Optional live providers: TMDb for films/series/K-dramas, and AniList or Jikan for anime; OMDb may be an optional fallback.
-- No proxy server or VISTORA backend. The Android app calls provider APIs directly.
+- Optional live providers: TMDB for films, TV series and Korean-language TV results (K-dramas); AniList public GraphQL API for anime. Jikan is not used.
+- No proxy server or VISTORA backend. The Android app calls provider APIs directly. Public Jikan API is discontinued and must not be added as a provider.
 - Do not bundle real API credentials. The user enters their own key locally.
 - Search results are not added silently. User must choose Add.
 - Provider metadata is copied to the local library only when the user adds a title.
@@ -143,6 +143,6 @@ Use a display serif paired with a clean sans-serif UI face, deliberate spacing, 
 - All user library records, progress, personal writing, preferences, and poster copies are local.
 - No sign-in, remote account, telemetry, analytics, server logging, or server-side data store.
 - Network is used only for optional metadata discovery.
-- No API secrets in source control, logs, analytics, crash reports, or backup exports.
+- No API secrets in source control, logs, analytics, crash reports, or backup exports. The optional TMDB credential is stored encrypted with Android Keystore-backed AES-GCM; AniList public anime search needs no key.
 - User-selected poster images are copied into app-private storage after selection; do not request broad media/storage permissions.
 - Manual export/import must be tested for round-trip fidelity.

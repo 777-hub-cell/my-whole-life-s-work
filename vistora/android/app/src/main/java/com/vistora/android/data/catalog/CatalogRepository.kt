@@ -105,10 +105,11 @@ class CatalogRepository {
     }
 
     private fun searchAniList(query: String): List<CatalogResult> {
+        val variable = '$' + "search"
         val graphQl = """
-            query (${': String!) {
+            query ($variable: String!) {
               Page(page: 1, perPage: 20) {
-                media(search: ${'$'}search, type: ANIME, sort: SEARCH_MATCH, isAdult: false) {
+                media(search: $variable, type: ANIME, sort: SEARCH_MATCH, isAdult: false) {
                   id
                   title { english romaji native }
                   episodes

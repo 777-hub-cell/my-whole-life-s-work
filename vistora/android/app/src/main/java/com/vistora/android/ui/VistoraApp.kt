@@ -201,6 +201,7 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                     "Settings" -> SettingsScreen(
                         preferences = preferences,
                         tmdbConfigured = tmdbConfigured,
+                        titleCount = uiState.items.size,
                         notesCount = uiState.allEpisodeNotes.size + uiState.items.count { it.overallThoughts.isNotBlank() },
                         onOpenNotes = { route = "My Notes" },
                         onGrid = { value -> scope.launch { store.setGridColumns(value) } },

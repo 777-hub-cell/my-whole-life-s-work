@@ -4,9 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
@@ -47,7 +47,14 @@ object VistoraPalette {
     val DroppedText = Color(0xFFD5A3A0)
 }
 
-val LocalVistoraAccent = compositionLocalOf { VistoraPalette.Rose }\n\nprivate fun accentFor(name: String): Color = when (name) {\n    "burgundy" -> VistoraPalette.BurgundyHigh\n    else -> VistoraPalette.Rose\n}\n\nprivate fun colorsFor(accent: Color) = darkColorScheme(
+val LocalVistoraAccent = compositionLocalOf { VistoraPalette.Rose }
+
+private fun accentFor(name: String): Color = when (name) {
+    "burgundy" -> VistoraPalette.BurgundyHigh
+    else -> VistoraPalette.Rose
+}
+
+private fun colorsFor(accent: Color) = darkColorScheme(
     primary = accent,
     onPrimary = VistoraPalette.Ink,
     primaryContainer = VistoraPalette.Burgundy,
@@ -124,13 +131,20 @@ private val VistoraShapes = Shapes(
 )
 
 @Composable
-fun VistoraTheme(content: @Composable () -> Unit) {
+fun VistoraTheme(
+    accent: String = "rose",
+    content: @Composable () -> Unit
+) {
+    val accentColor = accentFor(accent)
     MaterialTheme(
-        colorScheme = VistoraDarkColors,
+        colorScheme = colorsFor(accentColor),
         typography = VistoraTypography,
-        shapes = VistoraShapes,
-        content = content
-    )
+        shapes = VistoraShapes
+    ) {
+        CompositionLocalProvider(LocalVistoraAccent provides accentColor) {
+            content()
+        }
+    }
 }
 
 @Composable

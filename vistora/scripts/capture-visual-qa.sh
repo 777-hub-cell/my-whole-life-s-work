@@ -138,7 +138,9 @@ capture "04-title-details-top"
 # Inspect the lower detail sections as well as its header.
 timeout 5s bash -c 'adb shell input swipe "$1" "$2" "$3" "$4" 350' _ "$((SCREEN_W / 2))" "$((SCREEN_H * 80 / 100))" "$((SCREEN_W / 2))" "$((SCREEN_H * 30 / 100))" || true
 capture "05-title-details-progress"
-tap_text "Back"
+# Title Details hides bottom navigation; use Android's Back action.
+timeout 5s adb shell input keyevent 4
+sleep 1.0
 tap_text "Home"
 capture "06-home-with-watchlist"
 tap_text "Library"

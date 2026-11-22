@@ -23,12 +23,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vistora.android.data.backup.VistoraBackup
+import com.vistora.android.data.security.TmdbCredentialVault
+import com.vistora.android.data.media.PosterDownloader
 import com.vistora.android.data.preferences.VistoraPreferences
 import com.vistora.android.data.preferences.VistoraPreferencesStore
 import com.vistora.android.domain.LibraryStatus
 import com.vistora.android.domain.MediaItem
 import com.vistora.android.domain.MediaType
 import com.vistora.android.domain.LibrarySnapshot
+import com.vistora.android.domain.CatalogResult
 import com.vistora.android.VistoraApplication
 import com.vistora.android.ui.components.StatusLabel
 import com.vistora.android.ui.components.VistoraAction
@@ -58,6 +61,14 @@ fun VistoraApp(viewModel: VistoraViewModel) {
     val scope = rememberCoroutineScope()
     val application = context.applicationContext as VistoraApplication
     val repository = remember { application.libraryRepository }
+    var tmdbCredential by remember { mutableStateOf<String?>(null) }
+    var tmdbConfigured by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        val stored = TmdbCredentialVault.read(context)
+        tmdbCredential = stored
+        tmdbConfigured = !stored.isNullOrBlank()
+    }
 
     var route by rememberSaveable { mutableStateOf("Home") }
     var selectedId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -156,13 +167,44 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                     )
                     "Discover" -> DiscoverScreen(
                         library = uiState.items,
-                        onAdd = { draft -> editorInitial = draft; editorVisible = true }
+                        searchState = uiState.catalog,
+                        tmdbConfigured = tmdbConfigured,
+                        onSearch = { query, type -> viewModel.searchCatalog(query, type, tmdbCredential) },
+                        onClearSearch = viewModel::clearCatalogSearch,
+                        onAdd = { result: CatalogResult ->
+                            scope.launch {
+                                val localPoster = result.posterUrl?.let { PosterDownloader.cache(context, it) }
+                                editorInitial = result.toDraft().copy(posterPath = localPoster)
+                                editorVisible = true
+                            }
+                        }
                     )
                     "Stats" -> StatsScreen(items = uiState.items)
                     "Settings" -> SettingsScreen(
                         preferences = preferences,
+                        tmdbConfigured = tmdbConfigured,
                         onGrid = { value -> scope.launch { store.setGridColumns(value) } },
                         onAccent = { value -> scope.launch { store.setAccent(value) } },
+                        onSaveTmdb = { value ->
+                            scope.launch {
+                                runCatching { TmdbCredentialVault.save(context, value) }
+                                    .onSuccess {
+                                        tmdbCredential = value.trim()
+                                        tmdbConfigured = true
+                                        viewModel.showMessage("TMDB credential saved securely")
+                                    }
+                                    .onFailure { viewModel.showMessage(it.message ?: "Couldn't save the credential") }
+                            }
+                        },
+                        onRemoveTmdb = {
+                            scope.launch {
+                                TmdbCredentialVault.clear(context)
+                                tmdbCredential = null
+                                tmdbConfigured = false
+                                viewModel.showMessage("TMDB credential removed")
+                            }
+                        },
+                        onTestTmdb = { value -> viewModel.testTmdbCredential(value) },
                         onBackup = { backupLauncher.launch("VISTORA-backup.zip") },
                         onRestore = { restoreLauncher.launch(arrayOf("application/zip")) },
                         onReset = { resetVisible = true }

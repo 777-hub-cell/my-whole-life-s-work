@@ -354,7 +354,14 @@ fun PosterTile(
     modifier: Modifier = Modifier,
     showStatus: Boolean = true
 ) {
-    Column(modifier = modifier.clickable(onClick = onClick)) {
+    Column(
+        modifier = modifier
+            .semantics {
+                contentDescription = "Open ${item.title} details"
+                role = Role.Button
+            }
+            .clickable(role = Role.Button, onClick = onClick)
+    ) {
         PosterArt(item.title, item.type.category, item.posterPath, Modifier.fillMaxWidth(), if (showStatus) item.status else null)
         Text(item.title, modifier = Modifier.padding(top = 8.dp), color = VistoraPalette.Text,
             style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium), maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.Flow
 interface LibraryRepository {
     fun observeItems(): Flow<List<MediaItem>>
     fun observeEpisodeNotes(mediaId: Long): Flow<List<EpisodeNote>>
+    fun observeAllEpisodeNotes(): Flow<List<EpisodeNote>>
     suspend fun saveItem(item: MediaItem): Long
     suspend fun deleteItem(mediaId: Long)
     suspend fun saveEpisodeNote(note: EpisodeNote)

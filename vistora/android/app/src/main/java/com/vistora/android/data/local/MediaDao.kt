@@ -34,6 +34,9 @@ interface EpisodeNoteDao {
     @Query("SELECT * FROM episode_notes WHERE mediaId = :mediaId ORDER BY episodeNumber ASC")
     fun observeForMedia(mediaId: Long): Flow<List<EpisodeNoteEntity>>
 
+    @Query("SELECT * FROM episode_notes ORDER BY updatedAt DESC, mediaId ASC, episodeNumber DESC")
+    fun observeAll(): Flow<List<EpisodeNoteEntity>>
+
     @Query("SELECT * FROM episode_notes WHERE mediaId = :mediaId AND episodeNumber = :episode LIMIT 1")
     suspend fun find(mediaId: Long, episode: Int): EpisodeNoteEntity?
 

@@ -111,16 +111,25 @@ jobs:
           emulator-boot-timeout: 900
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
           script: |
-            bash vistora/android/gradlew :app:connectedDebugAndroidTest
+            TEST_EXIT=0
+            bash vistora/android/gradlew :app:connectedDebugAndroidTest || TEST_EXIT=$?
             mkdir -p "${RUNNER_TEMP}/vistora-android-qa"
-            adb shell run-as com.vistora.android ls -la /data/user/0/com.vistora.android/files/vistora-qa
-            adb exec-out run-as com.vistora.android tar -C /data/user/0/com.vistora.android/files/vistora-qa -cf - . > "${RUNNER_TEMP}/vistora-android-qa.tar"
-            tar -tf "${RUNNER_TEMP}/vistora-android-qa.tar" >/dev/null
-            tar -xf "${RUNNER_TEMP}/vistora-android-qa.tar" -C "${RUNNER_TEMP}/vistora-android-qa"
+            if adb shell run-as com.vistora.android test -d /data/user/0/com.vistora.android/files/vistora-qa; then
+              adb exec-out run-as com.vistora.android tar -C /data/user/0/com.vistora.android/files/vistora-qa -cf - . > "${RUNNER_TEMP}/vistora-android-qa.tar"
+              tar -tf "${RUNNER_TEMP}/vistora-android-qa.tar" >/dev/null
+              tar -xf "${RUNNER_TEMP}/vistora-android-qa.tar" -C "${RUNNER_TEMP}/vistora-android-qa"
+            elif [ "${TEST_EXIT}" -eq 0 ]; then
+              echo "Instrumentation passed but VISTORA screenshot directory was not created."
+              exit 1
+            else
+              echo "Instrumentation failed before screenshots were created; preserving the original test failure."
+            fi
+            exit "${TEST_EXIT}"
       - name: Upload Android visual screenshots
+        if: always()
         uses: actions/upload-artifact@v6
         with:
           name: vistora-android-visual-screenshots
           path: ${{ runner.temp }}/vistora-android-qa/**/*.png
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14

@@ -11,6 +11,8 @@ VISTORA helps one person organise films and series, record what they have watche
 
 The original HTML prototype is the visual and interaction source of truth. The running app at `index.html` retains that design. Do not replace its layout with a native-app redesign or a framework-generated template.
 
+A new browser profile starts with an empty personal library. Demonstration/starter titles must never be inserted as if they were the user's viewing history. Any optional starter/sample data action must be explicitly chosen by the user.
+
 ## 2. Main navigation
 
 Persistent bottom navigation:

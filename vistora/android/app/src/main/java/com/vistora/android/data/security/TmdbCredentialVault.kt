@@ -63,6 +63,10 @@ object TmdbCredentialVault {
             .remove(IV_KEY)
             .remove(CIPHER_KEY)
             .commit()
+        runCatching {
+            KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                .deleteEntry(KEY_ALIAS)
+        }
         Unit
     }
 

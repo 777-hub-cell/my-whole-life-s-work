@@ -113,7 +113,10 @@ jobs:
           script: |
             bash vistora/android/gradlew :app:connectedDebugAndroidTest
             mkdir -p "${RUNNER_TEMP}/vistora-android-qa"
-            adb exec-out run-as com.vistora.android tar -C files/vistora-qa -cf - . > "${RUNNER_TEMP}/vistora-android-qa.tar" && tar -xf "${RUNNER_TEMP}/vistora-android-qa.tar" -C "${RUNNER_TEMP}/vistora-android-qa"
+            adb shell run-as com.vistora.android ls -la /data/user/0/com.vistora.android/files/vistora-qa
+            adb exec-out run-as com.vistora.android tar -C /data/user/0/com.vistora.android/files/vistora-qa -cf - . > "${RUNNER_TEMP}/vistora-android-qa.tar"
+            tar -tf "${RUNNER_TEMP}/vistora-android-qa.tar" >/dev/null
+            tar -xf "${RUNNER_TEMP}/vistora-android-qa.tar" -C "${RUNNER_TEMP}/vistora-android-qa"
       - name: Upload Android visual screenshots
         uses: actions/upload-artifact@v6
         with:

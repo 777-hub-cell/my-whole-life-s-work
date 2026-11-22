@@ -76,3 +76,13 @@ There is no VISTORA server, login, account, cloud database, or sync service. The
 - Add the current official TMDB logo asset in the About/attribution area as required by TMDB's current branding rules; keep the required text attribution.
 - Review the current TMDB and AniList terms and rate limits.
 - Test ZIP backup/restore round-trips using a library that includes posters and long episode notes.
+
+## Download the GitHub-built APK
+
+The Actions workflow uploads the debug APK immediately after `:app:assembleDebug` succeeds. You do not need to wait for the later unit-test, emulator-test, or lint steps to finish before downloading it.
+
+1. Open the repository's Actions tab and select the latest **VISTORA Android** run.
+2. Under **Artifacts**, download `vistora-debug-apk`.
+3. Extract the ZIP and install `app-debug.apk` on the Android phone. Android may ask you to allow installs from the app used to open the file.
+
+The artifact is a debug build for testing, not a Play Store release.

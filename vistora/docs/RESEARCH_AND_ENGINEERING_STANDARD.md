@@ -27,7 +27,7 @@ Use these compatible current/stable versions as the initial checked baseline. Th
 | Android Gradle Plugin | 9.3.1 (existing Aharane Android foundation) |
 | Gradle wrapper | 9.5.0 (existing Aharane Android foundation) |
 | Kotlin | 2.4.21 (existing Aharane Android foundation) |
-| Compose BOM | 2026.09.00 |
+| Compose BOM | 2026.04.01 |
 | Activity Compose | 1.13.0 |
 | Lifecycle | 2.11.1 |
 | Navigation Compose | 2.10.2 |

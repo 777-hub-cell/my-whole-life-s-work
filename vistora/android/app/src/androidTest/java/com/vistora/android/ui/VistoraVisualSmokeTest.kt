@@ -69,10 +69,15 @@ class VistoraVisualSmokeTest {
         rule.onNodeWithText("Add to library").performScrollTo().performClick()
 
         val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as VistoraApplication
-        val savedToDatabase = runBlocking {
-            app.database.mediaDao().getAllForBackup().any { it.title == "VISTORA QA sample" }
+        val savedToDatabase = {
+            runBlocking {
+                app.database.mediaDao().getAllForBackup().any { it.title == "VISTORA QA sample" }
+            }
         }
-        assertTrue("Add Title did not persist the saved title to Room", savedToDatabase)
+        // saveItem() writes asynchronously in viewModelScope. Wait for Room rather than
+        // racing the coroutine immediately after the button tap.
+        rule.waitUntil(timeoutMillis = 10_000) { savedToDatabase() }
+        assertTrue("Add Title did not persist the saved title to Room", savedToDatabase())
 
         val posterDescription = "Open VISTORA QA sample details"
         rule.onNodeWithContentDescription(posterDescription).assertIsDisplayed()

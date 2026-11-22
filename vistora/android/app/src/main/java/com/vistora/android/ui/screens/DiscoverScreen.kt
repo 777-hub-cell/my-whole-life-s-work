@@ -270,7 +270,7 @@ private fun CatalogResultRow(result: CatalogResult, onAdd: () -> Unit) {
 @Composable
 private fun AddPill(onClick: () -> Unit) {
     Row(
-        Modifier.height(38.dp).clip(RoundedCornerShape(999.dp)).background(VistoraPalette.Burgundy)
+        Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(999.dp)).background(VistoraPalette.Burgundy)
             .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp)
@@ -287,7 +287,7 @@ private fun TypeChip(label: String, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier.clip(RoundedCornerShape(999.dp))
             .background(if (selected) VistoraPalette.Burgundy else VistoraPalette.Surface)
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 13.dp, vertical = 9.dp),
+            .padding(horizontal = 13.dp, vertical = 12.dp),
         color = if (selected) VistoraPalette.OnAccent else VistoraPalette.Secondary,
         fontSize = 12.sp,
         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium

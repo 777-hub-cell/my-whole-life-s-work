@@ -1,6 +1,5 @@
 package com.vistora.android.ui.screens
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -15,9 +14,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.TextStyle
@@ -201,42 +197,64 @@ private fun EditorialSectionHeading(title: String) {
 
 @Composable
 private fun FeaturedSuggestion(item: MediaItem, onAdd: () -> Unit) {
-    val colors = when (item.type) {
-        MediaType.K_DRAMA -> listOf(Color(0xFF5B3456), Color(0xFF29212D))
-        MediaType.ANIME -> listOf(Color(0xFF335365), Color(0xFF1C252D))
-        MediaType.MOVIE -> listOf(Color(0xFF31505B), Color(0xFF1B2429))
-        MediaType.TV_SERIES -> listOf(Color(0xFF5B4B31), Color(0xFF28231F))
-    }
-    Box(
-        Modifier.width(322.dp).height(270.dp).clip(RoundedCornerShape(19.dp))
-            .background(Brush.linearGradient(colors))
+    Row(
+        Modifier.width(314.dp).height(176.dp)
+            .clip(RoundedCornerShape(17.dp))
+            .background(VistoraPalette.Surface)
+            .clickable(role = Role.Button, onClick = onAdd)
+            .padding(11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(13.dp)
     ) {
-        Canvas(Modifier.fillMaxSize()) {
-            drawCircle(Color.White.copy(alpha = .10f), radius = size.width * .36f, center = Offset(size.width * .72f, size.height * .28f))
-            drawCircle(Color.White.copy(alpha = .06f), radius = size.width * .58f, center = Offset(size.width * .78f, size.height * .34f))
-            drawCircle(Color.Black.copy(alpha = .10f), radius = size.width * .52f, center = Offset(size.width * .04f, size.height * .92f))
-            drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .68f))))
-        }
-        Box(
-            Modifier.align(Alignment.TopStart).padding(14.dp).clip(RoundedCornerShape(999.dp))
-                .background(Color.Black.copy(alpha = .34f)).padding(horizontal = 11.dp, vertical = 5.dp)
-        ) {
-            Text("${item.type.category}  ·  ${item.genres.firstOrNull() ?: "Featured"}", color = VistoraPalette.OnAccent, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-        }
+        PosterArt(
+            item.title,
+            item.type.category,
+            item.posterPath,
+            Modifier.width(102.dp).height(153.dp)
+        )
         Column(
-            Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(17.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp)
+            Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(item.title, color = Color.White, style = TextStyle(fontFamily = FontFamily.Serif, fontSize = 27.sp, lineHeight = 29.sp, fontWeight = FontWeight.Medium), maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(item.synopsis ?: "", color = Color.White.copy(alpha = .88f), fontSize = 12.sp, lineHeight = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(listOfNotNull(item.releaseYear?.toString(), item.totalEpisodes.takeIf { it > 0 }?.let { "$it episodes" }).joinToString("  ·  "), color = Color.White.copy(alpha = .78f), fontSize = 11.sp)
-                AddPill(onAdd)
-            }
+            Text(
+                "PICKED FOR TONIGHT",
+                color = VistoraPalette.Rose,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.1.sp,
+                maxLines = 1
+            )
+            Text(
+                item.title,
+                color = VistoraPalette.Text,
+                style = TextStyle(fontFamily = FontFamily.Serif, fontSize = 22.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                listOfNotNull(item.type.category, item.releaseYear?.toString(), item.genres.firstOrNull()).joinToString(" · "),
+                color = VistoraPalette.Muted,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                item.synopsis.orEmpty(),
+                color = VistoraPalette.Secondary,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                "Add to library  +",
+                color = VistoraPalette.Rose,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }
-
 @Composable
 private fun SuggestionPoster(item: MediaItem, onAdd: () -> Unit) {
     Column(Modifier.width(112.dp)) {

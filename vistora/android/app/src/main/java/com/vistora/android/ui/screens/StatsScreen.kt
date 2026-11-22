@@ -2,6 +2,8 @@ package com.vistora.android.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,11 +31,11 @@ fun StatsScreen(items:List<MediaItem>){
     val statusCounts=LibraryStatus.entries.map{it to items.count{s->s.status==it}}
     val typeCounts=MediaType.entries.map{it to items.count{s->s.type==it}}
 
-    Column(Modifier.fillMaxSize().background(VistoraPalette.Ink).padding(horizontal=20.dp).padding(top=18.dp).padding(bottom=20.dp),verticalArrangement=Arrangement.spacedBy(20.dp)){
+    Column(Modifier.fillMaxSize().background(VistoraPalette.Ink).verticalScroll(rememberScrollState()).padding(horizontal=20.dp).padding(top=18.dp).padding(bottom=20.dp),verticalArrangement=Arrangement.spacedBy(20.dp)){
         Text("Your Stats",color=VistoraPalette.Text,style=androidx.compose.material3.MaterialTheme.typography.headlineLarge)
         Text("A quiet look at your entertainment history.",color=VistoraPalette.Muted,fontSize=14.sp)
         if(items.isEmpty()){
-            Box(Modifier.fillMaxWidth().weight(1f),contentAlignment=Alignment.Center){
+            Box(Modifier.fillMaxWidth(),contentAlignment=Alignment.Center){
                 Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(8.dp)){
                     Text("Your story starts with your first title.",color=VistoraPalette.Text,style=androidx.compose.material3.MaterialTheme.typography.titleLarge)
                     Text("As you add and complete titles, your personal statistics will appear here.",color=VistoraPalette.Muted,fontSize=14.sp,lineHeight=21.sp)

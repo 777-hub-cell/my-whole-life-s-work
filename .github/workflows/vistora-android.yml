@@ -111,7 +111,13 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
           script: |
             bash vistora/android/gradlew :app:connectedDebugAndroidTest
-            bash vistora/scripts/capture-visual-qa.sh
+            capture_status=0
+            timeout 180s bash vistora/scripts/capture-visual-qa.sh || capture_status=$?
+            screenshot_count="$(find "${RUNNER_TEMP}/vistora-visual-qa" -maxdepth 1 -type f -name '*.png' 2>/dev/null | wc -l)"
+            echo "Visual QA captured ${screenshot_count} screen(s); capture exit code: ${capture_status}"
+            if [[ "${screenshot_count}" -eq 0 ]]; then
+              exit "${capture_status:-1}"
+            fi
 
       - name: Upload VISTORA visual QA screenshots
         if: always()

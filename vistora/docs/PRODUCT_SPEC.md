@@ -31,7 +31,7 @@ Keep the navigation visually subtle, polished, compact, and clear. The selected 
 - Headline: "What you've watched, and what's next."
 - "Find something to watch" category entry points.
 - Exactly four categories: Movies, K-Dramas, Anime, TV Series.
-- Sections can show the user's own Currently Watching, Plan to Watch, On Hold, and Recently Finished titles.
+- The approved Home layout contains one **My Watchlist** shelf after the four categories. Do not add player-style sections or generic status shelves.
 - Sections are hidden or replaced by a helpful empty state when there is no matching user data.
 - No "Continue Watching" hero, video player action, or streaming-oriented UI.
 
@@ -100,7 +100,15 @@ Calculate from the local database only:
 
 All displayed values must be derived from actual stored data. Empty values should be presented honestly.
 
-## 8. Settings
+## 8. My Notes
+
+- Accessible from Settings; it is a subpage, not a sixth bottom-navigation destination.
+- Combine every title's Overall Thoughts and all episode-specific notes into one searchable diary.
+- Search by title, episode label, and note body.
+- Sort newest-edited first; opening an episode entry returns to Title Details with that episode selected.
+- Returning from a note opened here returns to My Notes.
+
+## 9. Settings
 
 - Appearance: dark theme as the default; restrained accent options; headline typography; poster corner treatment; text size; motion preference.
 - Library grid preference.
@@ -110,7 +118,7 @@ All displayed values must be derived from actual stored data. Empty values shoul
 - Reset/clear actions must require deliberate confirmation.
 - Explain that no cloud account or automatic cloud sync exists.
 
-## 9. Visual design system
+## 10. Visual design system
 
 Base palette from the approved prototype:
 
@@ -138,7 +146,7 @@ Status colours are muted, distinct, and never the sole indicator of meaning:
 
 Use a display serif paired with a clean sans-serif UI face, deliberate spacing, subtle borders, restrained elevation, and smooth but quiet motion. Keep the look recognisably VISTORA.
 
-## 10. Data and privacy
+## 11. Data and privacy
 
 - All user library records, progress, personal writing, preferences, and poster copies are local.
 - No sign-in, remote account, telemetry, analytics, server logging, or server-side data store.

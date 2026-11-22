@@ -93,16 +93,29 @@ private fun IconButton(name:String,description:String,onClick:()->Unit){
 
 @Composable
 private fun CategoryTile(label:String,icon:String,modifier:Modifier=Modifier,onClick:()->Unit){
-    Row(
-        modifier=modifier.height(82.dp).background(VistoraPalette.Surface,RoundedCornerShape(16.dp))
-            .clickable(onClick=onClick).padding(horizontal=15.dp),
-        verticalAlignment=Alignment.CenterVertically,
-        horizontalArrangement=Arrangement.spacedBy(14.dp)
+    Column(
+        modifier=modifier.heightIn(min=96.dp)
+            .background(VistoraPalette.Surface,RoundedCornerShape(16.dp))
+            .clickable(role=Role.Button,onClick=onClick)
+            .padding(horizontal=14.dp, vertical=11.dp),
+        verticalArrangement=Arrangement.spacedBy(8.dp),
+        horizontalAlignment=Alignment.Start
     ){
-        Box(Modifier.size(43.dp).background(VistoraPalette.Rose.copy(alpha=.12f),RoundedCornerShape(13.dp)),contentAlignment=Alignment.Center){
-            VistoraIcon(icon,Modifier.size(23.dp),VistoraPalette.Rose)
+        Box(
+            Modifier.size(38.dp).background(VistoraPalette.Rose.copy(alpha=.12f),RoundedCornerShape(12.dp)),
+            contentAlignment=Alignment.Center
+        ){
+            VistoraIcon(icon,Modifier.size(21.dp),VistoraPalette.Rose)
         }
-        Text(label,color=VistoraPalette.Text,style=TextStyle(fontFamily=FontFamily.Serif,fontSize=20.sp,fontWeight=FontWeight.Medium),maxLines=1,overflow=TextOverflow.Ellipsis)
+        Text(
+            label,
+            modifier=Modifier.fillMaxWidth(),
+            color=VistoraPalette.Text,
+            style=TextStyle(fontFamily=FontFamily.Serif,fontSize=18.sp,lineHeight=21.sp,fontWeight=FontWeight.Medium),
+            maxLines=1,
+            softWrap=false,
+            overflow=TextOverflow.Clip
+        )
     }
 }
 

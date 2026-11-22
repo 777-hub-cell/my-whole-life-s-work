@@ -27,6 +27,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.*
 import com.vistora.android.domain.LibraryStatus
 import com.vistora.android.domain.MediaItem
@@ -383,7 +387,8 @@ fun VistoraBottomBar(
             Column(
                 modifier = Modifier.weight(1f).heightIn(min=54.dp)
                     .clip(RoundedCornerShape(13.dp))
-                    .clickable(onClick={onSelect(route)})
+                    .semantics { role = Role.Tab; selected = active }
+                    .clickable(role = Role.Tab,onClick={onSelect(route)})
                     .padding(vertical=4.dp),
                 horizontalAlignment=Alignment.CenterHorizontally,
                 verticalArrangement=Arrangement.spacedBy(3.dp)

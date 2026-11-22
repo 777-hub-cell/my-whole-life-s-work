@@ -297,7 +297,6 @@ fun TitleDetailsScreen(
             }
         }
     }
-}
     if (dateKind != null) {
         val kind = dateKind!!
         val existing = when (kind) {
@@ -333,6 +332,8 @@ fun TitleDetailsScreen(
             }
         }
     }
+
+}
 
 
 @Composable

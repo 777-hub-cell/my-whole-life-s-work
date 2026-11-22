@@ -88,7 +88,7 @@ fun SettingsScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 (2..5).forEach { value ->
                     Box(
-                        Modifier.weight(1f).height(42.dp).clip(RoundedCornerShape(10.dp))
+                        Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(10.dp))
                             .background(if (preferences.gridColumns == value) VistoraPalette.Burgundy else VistoraPalette.Raised)
                             .clickable { onGrid(value) },
                         contentAlignment = Alignment.Center
@@ -206,7 +206,7 @@ private fun SettingsAction(label: String, icon: String, onClick: () -> Unit, dan
 @Composable
 private fun AccentOption(label: String, color: androidx.compose.ui.graphics.Color, selected: Boolean, onClick: () -> Unit) {
     Row(
-        Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick)
+        Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick)
             .background(if (selected) VistoraPalette.Raised else androidx.compose.ui.graphics.Color.Transparent).padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(7.dp)

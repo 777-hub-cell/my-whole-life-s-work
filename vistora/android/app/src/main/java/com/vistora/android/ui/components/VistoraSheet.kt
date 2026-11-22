@@ -3,6 +3,7 @@ package com.vistora.android.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -13,6 +14,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.vistora.android.ui.theme.VistoraPalette
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VistoraSheet(
     onDismiss: () -> Unit,

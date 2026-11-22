@@ -119,14 +119,39 @@ fun TitleDetailsScreen(
                     else if(item.releaseYear!=null) add(item.releaseYear.toString())
                 }.joinToString(" · ")
                 Text(meta,color=VistoraPalette.Secondary,fontSize=12.sp,lineHeight=18.sp)
-                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(2.dp)){
-                    (1..5).forEach { star ->
-                        Box(Modifier.size(38.dp).semantics { contentDescription = "Rate $star out of 5 stars"; role = Role.Button }.clip(RoundedCornerShape(7.dp)).clickable(role=Role.Button){onRatingChange(star)},contentAlignment=Alignment.Center){
-                            VistoraIcon("star",Modifier.size(22.dp),if(star<=item.rating)VistoraPalette.WatchingText else VistoraPalette.Muted,if(star<=item.rating)1.1f else 1.8f)
-                        }
+            }
+        }
+
+        // Rating remains immediately beneath the poster/title block, with comfortable 48 dp targets.
+        Row(
+            Modifier.fillMaxWidth().padding(top = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                (1..5).forEach { star ->
+                    Box(
+                        Modifier.size(44.dp)
+                            .semantics { contentDescription = "Rate $star out of 5 stars"; role = Role.Button }
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(role = Role.Button) { onRatingChange(if (item.rating == star) 0 else star) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        VistoraIcon(
+                            "star",
+                            Modifier.size(22.dp),
+                            if (star <= item.rating) VistoraPalette.WatchingText else VistoraPalette.Muted,
+                            if (star <= item.rating) 1.1f else 1.8f
+                        )
                     }
                 }
-                Text(if(item.rating==0) "Not rated yet" else "${item.rating} out of 5 stars",color=VistoraPalette.Muted,fontSize=12.sp)
+            }
+            Text(
+                if (item.rating == 0) "Not rated" else "${item.rating} / 5",
+                color = VistoraPalette.Muted,
+                fontSize = 12.sp
+            )
+        }
             }
         }
 
@@ -154,9 +179,23 @@ fun TitleDetailsScreen(
             }
         }
 
-        Spacer(Modifier.height(22.dp))
-        StatusLabel(status=item.status,modifier=Modifier.fillMaxWidth().semantics { contentDescription = "Change library status. Current status: ${item.status.label}"; role = Role.Button }.clickable(role=Role.Button){showStatus=true},compact=false)
-        Box(Modifier.fillMaxWidth().padding(top=7.dp).height(1.dp).background(VistoraPalette.Line))
+        Spacer(Modifier.height(23.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Your Status", color = VistoraPalette.Secondary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text("Tap to change", color = VistoraPalette.Muted, fontSize = 11.sp)
+        }
+        Box(
+            Modifier.padding(top = 9.dp)
+                .semantics { contentDescription = "Change library status. Current status: ${item.status.label}"; role = Role.Button }
+                .clickable(role = Role.Button) { showStatus = true }
+        ) {
+            StatusLabel(status = item.status, compact = true)
+        }
+        Box(Modifier.fillMaxWidth().padding(top = 18.dp).height(1.dp).background(VistoraPalette.Line))
 
         if(item.isEpisodic){
             Spacer(Modifier.height(23.dp))
@@ -192,12 +231,12 @@ fun TitleDetailsScreen(
             DateCard("Watched on", item.watchedOn, Modifier.fillMaxWidth()) { dateKind = TrackedDate.WATCHED_ON }
         }
 
-        Spacer(Modifier.height(26.dp))
-        SectionHeading("Episode Notes")
-        Text("Your thoughts, episode by episode. Choose an episode to write, read or revisit a note.",modifier=Modifier.padding(top=5.dp),
-            color=VistoraPalette.Muted,fontSize=13.sp,lineHeight=19.sp)
+        if (item.isEpisodic) {
+            Spacer(Modifier.height(26.dp))
+            SectionHeading("Episode Notes")
+            Text("Your thoughts, episode by episode. Choose an episode to write, read or revisit a note.",modifier=Modifier.padding(top=5.dp),
+                color=VistoraPalette.Muted,fontSize=13.sp,lineHeight=19.sp)
 
-        if(item.isEpisodic) {
             Row(Modifier.fillMaxWidth().padding(top=15.dp),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically){
                 Text("Episode",color=VistoraPalette.Secondary,fontSize=14.sp)
                 EpisodeSelector(selectedEpisode,item.totalEpisodes){selectedEpisode=it}
@@ -246,9 +285,6 @@ fun TitleDetailsScreen(
                     }
                 }
             }
-        } else {
-            Text("This is a film, so episode notes are not used. Add your reflection under Overall Thoughts below.",
-                color=VistoraPalette.Muted,fontSize=13.sp,lineHeight=19.sp,modifier=Modifier.padding(top=11.dp))
         }
 
         Spacer(Modifier.height(26.dp))

@@ -102,7 +102,7 @@ tap_text "Title name"
 adb shell input text "Vistora%20Visual%20QA"
 adb shell input keyevent 4
 sleep 0.5
-tap_text "Add to My Watchlist"
+scroll_to_text_and_tap "Add to My Watchlist"
 scroll_to_text_and_tap "Add to library"
 sleep 1.5
 capture "04-title-details-top"
@@ -110,6 +110,7 @@ capture "04-title-details-top"
 # Inspect the lower detail sections as well as its header.
 adb shell input swipe 540 1900 540 650 350
 capture "05-title-details-progress"
+tap_text "Back"
 tap_text "Home"
 capture "06-home-with-watchlist"
 tap_text "Library"

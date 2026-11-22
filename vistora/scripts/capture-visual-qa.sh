@@ -6,6 +6,16 @@ OUT="${RUNNER_TEMP:-/tmp}/vistora-visual-qa"
 mkdir -p "$OUT"
 rm -f "$OUT"/*.png
 XML="$OUT/window.xml"
+SIZE="$(adb shell wm size | awk -F': ' '/size:/ { value=$2 } END { print value }' | tr -d '\r')"
+SCREEN_W="${SIZE%x*}"
+SCREEN_H="${SIZE#*x}"
+SCREEN_W="${SCREEN_W:-1080}"
+SCREEN_H="${SCREEN_H:-1920}"
+
+swipe_up() {
+  adb shell input swipe "$((SCREEN_W / 2))" "$((SCREEN_H * 80 / 100))" \
+    "$((SCREEN_W / 2))" "$((SCREEN_H * 30 / 100))" 350
+}
 
 dump_ui() {
   adb shell uiautomator dump /sdcard/vistora-window.xml >/dev/null 2>&1 || true
@@ -78,7 +88,7 @@ scroll_to_text_and_tap() {
       sleep 1.0
       return 0
     fi
-    adb shell input swipe 540 1900 540 650 350
+    swipe_up
     sleep 0.4
   done
   echo "Could not find UI text after scrolling: $needle" >&2
@@ -108,7 +118,7 @@ sleep 1.5
 capture "04-title-details-top"
 
 # Inspect the lower detail sections as well as its header.
-adb shell input swipe 540 1900 540 650 350
+swipe_up
 capture "05-title-details-progress"
 tap_text "Back"
 tap_text "Home"

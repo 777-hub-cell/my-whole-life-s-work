@@ -38,6 +38,7 @@ import com.vistora.android.ui.components.VistoraAction
 import com.vistora.android.ui.components.VistoraBottomBar
 import com.vistora.android.ui.components.VistoraIcon
 import com.vistora.android.ui.components.VistoraSheet
+import com.vistora.android.ui.screens.AllNotesScreen
 import com.vistora.android.ui.screens.DiscoverScreen
 import com.vistora.android.ui.screens.HomeScreen
 import com.vistora.android.ui.screens.LibraryFilters
@@ -72,6 +73,8 @@ fun VistoraApp(viewModel: VistoraViewModel) {
 
     var route by rememberSaveable { mutableStateOf("Home") }
     var selectedId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var detailReturnRoute by rememberSaveable { mutableStateOf("Library") }
+    var episodeToOpen by rememberSaveable { mutableStateOf<Int?>(null) }
     var editorVisible by rememberSaveable { mutableStateOf(false) }
     var editorInitial by remember { mutableStateOf<MediaItem?>(null) }
     var filtersVisible by rememberSaveable { mutableStateOf(false) }
@@ -129,7 +132,7 @@ fun VistoraApp(viewModel: VistoraViewModel) {
             sortVisible -> sortVisible = false
             notificationsVisible -> notificationsVisible = false
             resetVisible -> resetVisible = false
-            else -> route = "Library"
+            else -> route = detailReturnRoute
         }
     }
 
@@ -144,7 +147,7 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                         items = uiState.items,
                         onSearch = { route = "Library" },
                         onNotifications = { notificationsVisible = true },
-                        onOpenTitle = { selectedId = it; route = "Title Details" },
+                        onOpenTitle = { detailReturnRoute = "Home"; episodeToOpen = null; selectedId = it; route = "Title Details" },
                         onOpenWatchlist = {
                             filters = LibraryFilters(watchlistOnly = true)
                             route = "Library"
@@ -160,8 +163,8 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                         gridColumns = preferences.gridColumns,
                         sort = sort,
                         onSortChange = { sortVisible = true },
-                        onOpenTitle = { selectedId = it; route = "Title Details" },
-                        onAdd = { editorInitial = null; editorVisible = true },
+                        onOpenTitle = { detailReturnRoute = "Library"; episodeToOpen = null; selectedId = it; route = "Title Details" },
+                        onAdd = { detailReturnRoute = "Library"; editorInitial = null; editorVisible = true },
                         onFilters = { filtersVisible = true },
                         onGridColumns = { gridVisible = true }
                     )
@@ -180,9 +183,22 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                         }
                     )
                     "Stats" -> StatsScreen(items = uiState.items)
+                    "My Notes" -> AllNotesScreen(
+                        items = uiState.items,
+                        episodeNotes = uiState.allEpisodeNotes,
+                        onBack = { route = "Settings" },
+                        onOpenNote = { mediaId, episode ->
+                            selectedId = mediaId
+                            episodeToOpen = episode.takeIf { it > 0 }
+                            detailReturnRoute = "My Notes"
+                            route = "Title Details"
+                        }
+                    )
                     "Settings" -> SettingsScreen(
                         preferences = preferences,
                         tmdbConfigured = tmdbConfigured,
+                        notesCount = uiState.allEpisodeNotes.size + uiState.items.count { it.overallThoughts.isNotBlank() },
+                        onOpenNotes = { route = "My Notes" },
                         onGrid = { value -> scope.launch { store.setGridColumns(value) } },
                         onAccent = { value -> scope.launch { store.setAccent(value) } },
                         onSaveTmdb = { value ->
@@ -219,7 +235,8 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                             TitleDetailsScreen(
                                 item = selectedItem,
                                 episodeNotes = if (uiState.notesForMediaId == selectedItem.id) uiState.episodeNotes else emptyList(),
-                                onBack = { route = "Library" },
+                                initialEpisode = episodeToOpen,
+                                onBack = { route = detailReturnRoute; episodeToOpen = null },
                                 onStatusChange = { viewModel.setStatus(selectedItem.id,it) },
                                 onProgressChange = { viewModel.changeProgress(selectedItem.id,it) },
                                 onRatingChange = { viewModel.setRating(selectedItem.id,it) },
@@ -233,7 +250,7 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                     }
                 }
             }
-            if (route != "Title Details") {
+            if (route != "Title Details" && route != "My Notes") {
                 VistoraBottomBar(selected = route, onSelect = { route = it })
             }
         }

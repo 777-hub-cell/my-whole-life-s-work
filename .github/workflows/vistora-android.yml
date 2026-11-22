@@ -59,6 +59,15 @@ jobs:
       - name: Run unit tests
         run: bash vistora/android/gradlew :app:testDebugUnitTest
 
+      - name: Run Room instrumentation tests on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          script: bash vistora/android/gradlew :app:connectedDebugAndroidTest
+
       - name: Run Android lint
         run: bash vistora/android/gradlew :app:lintDebug
 

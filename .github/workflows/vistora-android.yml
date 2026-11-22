@@ -68,6 +68,17 @@ jobs:
       - name: Assemble debug APK
         run: bash vistora/android/gradlew :app:assembleDebug
 
+      # Publish the installable APK as soon as assembly succeeds. Later test/lint
+      # failures must not prevent the user from receiving the built app.
+      - name: Upload debug APK
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: vistora-debug-apk
+          path: vistora/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Run unit tests
         run: bash vistora/android/gradlew :app:testDebugUnitTest
 
@@ -82,12 +93,3 @@ jobs:
 
       - name: Run Android lint
         run: bash vistora/android/gradlew :app:lintDebug
-
-      - name: Upload debug APK
-        if: success()
-        uses: actions/upload-artifact@v6
-        with:
-          name: vistora-debug-apk
-          path: vistora/android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 14

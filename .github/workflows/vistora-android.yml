@@ -53,6 +53,11 @@ jobs:
       - name: Allow the shared Gradle wrapper to execute
         run: chmod +x aharane/android/gradlew
 
+      - name: Install Android 37 SDK platform
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platforms;android-37"
+
       - name: Assemble debug APK
         run: bash vistora/android/gradlew :app:assembleDebug
 

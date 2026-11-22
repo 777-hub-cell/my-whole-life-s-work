@@ -6,7 +6,7 @@
     <application
         android:name=".VistoraApplication"
         android:allowBackup="false"
-        android:icon="@drawable/ic_vistora_mark"
+        android:icon="@mipmap/ic_vistora_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Vistora"

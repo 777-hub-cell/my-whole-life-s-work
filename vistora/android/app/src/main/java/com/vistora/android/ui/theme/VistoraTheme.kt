@@ -20,14 +20,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/**
+ * VISTORA's visual language follows the original HTML prototype:
+ * ink canvas, quiet charcoal surfaces, Newsreader-like serif display,
+ * clean system sans-serif body copy, and restrained burgundy/rose accents.
+ */
 object VistoraPalette {
     val Ink = Color(0xFF101114)
     val Surface = Color(0xFF202126)
     val Raised = Color(0xFF222329)
     val Field = Color(0xFF17181C)
     val Track = Color(0xFF34353B)
-    val Line = Color(0x1AFFFFFF)
-    val LineStrong = Color(0x2EFFFFFF)
+    val Line = Color(0x12FFFFFF)
+    val LineStrong = Color(0x20FFFFFF)
     val Text = Color(0xFFF0EBEC)
     val Secondary = Color(0xFFC3BEC5)
     val Muted = Color(0xFF9B979F)
@@ -57,7 +62,7 @@ private fun accentFor(name: String): Color = when (name) {
 
 private fun colorsFor(accent: Color) = darkColorScheme(
     primary = accent,
-    onPrimary = VistoraPalette.Ink,
+    onPrimary = VistoraPalette.OnAccent,
     primaryContainer = VistoraPalette.Burgundy,
     onPrimaryContainer = VistoraPalette.OnAccent,
     secondary = VistoraPalette.Secondary,
@@ -72,32 +77,38 @@ private fun colorsFor(accent: Color) = darkColorScheme(
     error = VistoraPalette.DroppedText
 )
 
+/*
+ * A compact editorial type scale. Large serif styles are reserved for page and
+ * section headings; body copy stays sans-serif for comfortable scanning.
+ */
 private val VistoraTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = FontFamily.Serif,
         fontWeight = FontWeight.Normal,
         fontSize = 40.sp,
-        lineHeight = 44.sp,
+        lineHeight = 45.sp,
         letterSpacing = (-0.8).sp
     ),
     headlineLarge = TextStyle(
         fontFamily = FontFamily.Serif,
         fontWeight = FontWeight.Medium,
-        fontSize = 34.sp,
-        lineHeight = 38.sp,
-        letterSpacing = (-0.6).sp
+        fontSize = 35.sp,
+        lineHeight = 39.sp,
+        letterSpacing = (-0.55).sp
     ),
     headlineMedium = TextStyle(
         fontFamily = FontFamily.Serif,
         fontWeight = FontWeight.Medium,
         fontSize = 28.sp,
-        lineHeight = 32.sp
+        lineHeight = 33.sp,
+        letterSpacing = (-0.35).sp
     ),
     titleLarge = TextStyle(
         fontFamily = FontFamily.Serif,
         fontWeight = FontWeight.Medium,
-        fontSize = 24.sp,
-        lineHeight = 29.sp
+        fontSize = 25.sp,
+        lineHeight = 30.sp,
+        letterSpacing = (-0.25).sp
     ),
     titleMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
@@ -119,7 +130,7 @@ private val VistoraTypography = Typography(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp,
-        lineHeight = 18.sp
+        lineHeight = 19.sp
     )
 )
 
@@ -156,8 +167,9 @@ fun VistoraBackdrop(content: @Composable BoxScope.() -> Unit) {
             .background(
                 Brush.verticalGradient(
                     colorStops = arrayOf(
-                        0f to Color(0xFF1A1418),
-                        0.34f to VistoraPalette.Ink,
+                        0f to Color(0xFF171317),
+                        0.18f to Color(0xFF131216),
+                        0.55f to VistoraPalette.Ink,
                         1f to VistoraPalette.Ink
                     )
                 )

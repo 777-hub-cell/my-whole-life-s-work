@@ -182,12 +182,12 @@ fun VistoraAction(
     val accent = LocalVistoraAccent.current
     Row(
         modifier = modifier
-            .heightIn(min = 48.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(999.dp))
             .background(if (quiet) VistoraPalette.Raised else accent)
-            .border(1.dp, if (quiet) VistoraPalette.LineStrong else Color.Transparent, RoundedCornerShape(14.dp))
+            .border(1.dp, if (quiet) VistoraPalette.LineStrong else Color.Transparent, RoundedCornerShape(999.dp))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 17.dp, vertical = 9.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {

@@ -19,7 +19,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.vistora.android.domain.LibraryStatus
 import com.vistora.android.domain.MediaItem
 import com.vistora.android.domain.MediaType
 import com.vistora.android.ui.components.PosterTile
@@ -34,7 +33,7 @@ fun HomeScreen(
     onSearch: () -> Unit,
     onNotifications: () -> Unit,
     onOpenTitle: (Long) -> Unit,
-    onOpenLibrary: (LibraryStatus?) -> Unit,
+    onOpenWatchlist: () -> Unit,
     onOpenCategory: (MediaType) -> Unit
 ) {
     Column(
@@ -75,12 +74,8 @@ fun HomeScreen(
             }
         }
 
-        val watching=items.filter { it.status==LibraryStatus.WATCHING }
-        TitleShelf("Currently watching",watching,onOpenTitle,onOpenLibrary)
-        val planned=items.filter { it.status==LibraryStatus.PLAN_TO_WATCH }
-        TitleShelf("Plan to watch",planned,onOpenTitle,onOpenLibrary)
-        val completed=items.filter { it.status==LibraryStatus.COMPLETED }.sortedByDescending { it.updatedAt }
-        TitleShelf("Recently finished",completed,onOpenTitle,onOpenLibrary)
+        val watchlist=items.filter { it.isWatchlisted }.sortedByDescending { it.updatedAt }
+        TitleShelf("My Watchlist",watchlist,onOpenTitle,onOpenWatchlist)
         Spacer(Modifier.height(10.dp))
     }
 }
@@ -112,10 +107,10 @@ private fun TitleShelf(
     title:String,
     list:List<MediaItem>,
     onOpenTitle:(Long)->Unit,
-    onSeeAll:(LibraryStatus?)->Unit
+    onSeeAll:()->Unit
 ){
     Column(verticalArrangement=Arrangement.spacedBy(12.dp)){
-        SectionHeading(title,if(list.isNotEmpty()) "See all" else null,{onSeeAll(list.firstOrNull()?.status)})
+        SectionHeading(title,if(list.isNotEmpty()) "See all" else null,{onSeeAll()})
         if(list.isEmpty()){
             Text("Your titles will appear here as you add them.",color=VistoraPalette.Muted,fontSize=13.sp)
         } else {

@@ -170,6 +170,7 @@ fun VistoraAction(
     quiet: Boolean = false,
     enabled: Boolean = true
 ) {
+    val accent = LocalVistoraAccent.current
     Row(
         modifier = modifier
             .heightIn(min = 48.dp)
@@ -342,7 +343,8 @@ fun VistoraBottomBar(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val accent = LocalVistoraAccent.current\n    val destinations = listOf(
+    val accent = LocalVistoraAccent.current
+    val destinations = listOf(
         Triple("Home","home","Home"),
         Triple("Library","library","Library"),
         Triple("Discover","discover","Discover"),

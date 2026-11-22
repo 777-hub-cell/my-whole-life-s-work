@@ -2,6 +2,7 @@ package com.vistora.android.ui.theme
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -148,7 +149,7 @@ fun VistoraTheme(
 }
 
 @Composable
-fun VistoraBackdrop(content: @Composable () -> Unit) {
+fun VistoraBackdrop(content: @Composable BoxScope.() -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()

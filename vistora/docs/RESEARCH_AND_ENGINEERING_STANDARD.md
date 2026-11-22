@@ -29,7 +29,7 @@ Use these compatible current/stable versions as the initial checked baseline. Th
 | Kotlin | 2.4.21 (existing Aharane Android foundation) |
 | Compose BOM | 2026.09.00 |
 | Activity Compose | 1.13.0 |
-| Lifecycle | 2.12.0 |
+| Lifecycle | 2.11.1 |
 | Navigation Compose | 2.10.2 |
 | Room | 2.8.5 |
 | DataStore | 1.3.0 |

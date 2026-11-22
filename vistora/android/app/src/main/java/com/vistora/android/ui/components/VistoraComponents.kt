@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.*
 import com.vistora.android.domain.LibraryStatus
 import com.vistora.android.domain.MediaItem
 import com.vistora.android.ui.theme.VistoraPalette
+import com.vistora.android.ui.theme.LocalVistoraAccent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.min
@@ -173,7 +174,7 @@ fun VistoraAction(
         modifier = modifier
             .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(14.dp))
-            .background(if (quiet) VistoraPalette.Raised else VistoraPalette.Burgundy)
+            .background(if (quiet) VistoraPalette.Raised else accent)
             .border(1.dp, if (quiet) VistoraPalette.LineStrong else Color.Transparent, RoundedCornerShape(14.dp))
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -220,7 +221,7 @@ fun VistoraTextField(
                 lineHeight = 23.sp,
                 fontWeight = FontWeight.Normal
             ),
-            cursorBrush = SolidColor(VistoraPalette.Rose),
+            cursorBrush = SolidColor(LocalVistoraAccent.current),
             minLines = minLines,
             maxLines = maxLines,
             singleLine = singleLine,
@@ -341,7 +342,7 @@ fun VistoraBottomBar(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val destinations = listOf(
+    val accent = LocalVistoraAccent.current\n    val destinations = listOf(
         Triple("Home","home","Home"),
         Triple("Library","library","Library"),
         Triple("Discover","discover","Discover"),
@@ -368,9 +369,9 @@ fun VistoraBottomBar(
             ) {
                 Box(
                     Modifier.width(54.dp).height(28.dp).clip(RoundedCornerShape(14.dp))
-                        .background(if(active) VistoraPalette.Rose.copy(alpha=.16f) else Color.Transparent),
+                        .background(if(active) accent.copy(alpha=.16f) else Color.Transparent),
                     contentAlignment=Alignment.Center
-                ) { VistoraIcon(icon, Modifier.size(20.dp), if(active) VistoraPalette.Rose else VistoraPalette.Muted) }
+                ) { VistoraIcon(icon, Modifier.size(20.dp), if(active) accent else VistoraPalette.Muted) }
                 Text(label, color=if(active) VistoraPalette.Text else VistoraPalette.Muted, fontSize=11.sp, fontWeight=if(active) FontWeight.SemiBold else FontWeight.Medium)
             }
         }

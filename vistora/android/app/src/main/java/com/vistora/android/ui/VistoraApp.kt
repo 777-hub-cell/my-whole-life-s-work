@@ -166,6 +166,7 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                         onSortChange = { sortVisible = true },
                         onOpenTitle = { detailReturnRoute = "Library"; episodeToOpen = null; selectedId = it; route = "Title Details" },
                         onAdd = { detailReturnRoute = "Library"; editorInitial = null; editorVisible = true },
+                        onDiscover = { route = "Discover" },
                         onFilters = { filtersVisible = true },
                         onGridColumns = { gridVisible = true }
                     )

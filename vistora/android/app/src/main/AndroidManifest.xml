@@ -13,7 +13,6 @@
         android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"
-            android:configChanges="uiMode|screenSize|smallestScreenSize|orientation"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

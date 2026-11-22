@@ -30,7 +30,9 @@ val releaseBuildRequested = gradle.startParameter.taskNames.any {
     it.endsWith("assembleRelease", ignoreCase = true) ||
         it.endsWith("bundleRelease", ignoreCase = true)
 }
-if (releaseBuildRequested && !releaseSigningConfigured) {
+val requireReleaseSigning = providers.gradleProperty("aharaneRequireReleaseSigning").orNull?.toBoolean() ?: false
+
+if (releaseBuildRequested && requireReleaseSigning && !releaseSigningConfigured) {
     throw GradleException(
         "Aharane release signing is not configured. Set AHARANE_RELEASE_KEYSTORE_PATH, " +
             "AHARANE_RELEASE_STORE_PASSWORD, AHARANE_RELEASE_KEY_ALIAS and " +

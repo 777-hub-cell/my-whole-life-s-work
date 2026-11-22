@@ -20,6 +20,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -119,10 +123,17 @@ fun TitleEditorSheet(
             FlowChoiceRow { SeriesState.entries.forEach { s-> if(s!=SeriesState.UNKNOWN)SelectChip(s.label,seriesState==s){seriesState=s} } }
         }
         Text("Your rating",color=VistoraPalette.Secondary,fontSize=13.sp,fontWeight=FontWeight.SemiBold,modifier=Modifier.padding(top=15.dp,bottom=7.dp))
-        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)){
+        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(2.dp)){
             (1..5).forEach{ n->
-                Text("★",modifier=Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).clickable{rating=if(rating==n)0 else n}.wrapContentSize(Alignment.Center),
-                    color=if(n<=rating)VistoraPalette.WatchingText else VistoraPalette.Muted,fontSize=26.sp)
+                Box(
+                    Modifier.size(48.dp)
+                        .semantics { contentDescription = "Rate $n out of 5 stars"; role = Role.Button }
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(role = Role.Button){rating=if(rating==n)0 else n},
+                    contentAlignment=Alignment.Center
+                ){
+                    Text("★",color=if(n<=rating)VistoraPalette.WatchingText else VistoraPalette.Muted,fontSize=24.sp)
+                }
             }
             Text(if(rating==0)"Not rated" else "$rating / 5",color=VistoraPalette.Muted,fontSize=12.sp)
         }

@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -59,7 +60,6 @@ fun TitleDetailsScreen(
         mutableStateOf(episodeNotes.firstOrNull{it.episodeNumber==selectedEpisode}?.body.orEmpty())
     }
     var overallDraft by remember(item.id,item.overallThoughts) { mutableStateOf(item.overallThoughts) }
-    var overallEditing by remember(item.id) { mutableStateOf(item.overallThoughts.isBlank()) }
 
     LaunchedEffect(item.id,selectedEpisode,episodeNotes) {
         episodeDraft=episodeNotes.firstOrNull{it.episodeNumber==selectedEpisode}?.body.orEmpty()
@@ -74,13 +74,13 @@ fun TitleDetailsScreen(
             horizontalArrangement=Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(7.dp)){
-                Box(Modifier.size(42.dp).clip(RoundedCornerShape(13.dp)).clickable(onClick=onBack),contentAlignment=Alignment.Center){
+                Box(Modifier.size(48.dp).clip(RoundedCornerShape(13.dp)).clickable(role=Role.Button,onClick=onBack),contentAlignment=Alignment.Center){
                     VistoraIcon("back",Modifier.size(21.dp),VistoraPalette.Text)
                 }
                 Text("Title Details",color=VistoraPalette.Text,style=TextStyle(fontFamily=FontFamily.Serif,fontSize=22.sp,fontWeight=FontWeight.Medium))
             }
             Box {
-                Box(Modifier.size(42.dp).clip(RoundedCornerShape(13.dp)).clickable{showMenu=true},contentAlignment=Alignment.Center){
+                Box(Modifier.size(48.dp).clip(RoundedCornerShape(13.dp)).clickable(role=Role.Button){showMenu=true},contentAlignment=Alignment.Center){
                     VistoraIcon("more",Modifier.size(21.dp),VistoraPalette.Text)
                 }
             }
@@ -103,7 +103,7 @@ fun TitleDetailsScreen(
                 Text(meta,color=VistoraPalette.Secondary,fontSize=12.sp,lineHeight=18.sp)
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(2.dp)){
                     (1..5).forEach { star ->
-                        Box(Modifier.size(30.dp).clip(RoundedCornerShape(6.dp)).clickable{onRatingChange(star)},contentAlignment=Alignment.Center){
+                        Box(Modifier.size(38.dp).clip(RoundedCornerShape(7.dp)).clickable(role=Role.Button){onRatingChange(star)},contentAlignment=Alignment.Center){
                             VistoraIcon("star",Modifier.size(22.dp),if(star<=item.rating)VistoraPalette.WatchingText else VistoraPalette.Muted,if(star<=item.rating)1.1f else 1.8f)
                         }
                     }
@@ -137,7 +137,7 @@ fun TitleDetailsScreen(
         }
 
         Spacer(Modifier.height(22.dp))
-        StatusLabel(status=item.status,modifier=Modifier.fillMaxWidth().clickable{showStatus=true}.padding(0.dp),compact=false)
+        StatusLabel(status=item.status,modifier=Modifier.fillMaxWidth().clickable(role=Role.Button){showStatus=true},compact=false)
         Box(Modifier.fillMaxWidth().padding(top=7.dp).height(1.dp).background(VistoraPalette.Line))
 
         if(item.isEpisodic){
@@ -227,7 +227,7 @@ fun TitleDetailsScreen(
         Text("A note for the whole title, separate from individual episode entries.",modifier=Modifier.padding(top=5.dp),color=VistoraPalette.Muted,fontSize=13.sp)
         VistoraTextField(
             value=overallDraft,
-            onValueChange={overallDraft=it;overallEditing=true},
+            onValueChange={overallDraft=it},
             placeholder="Your overall opinion, favourite characters, reminders or final thoughts…",
             minLines=5,
             maxLines=10,
@@ -235,7 +235,7 @@ fun TitleDetailsScreen(
             modifier=Modifier.fillMaxWidth().padding(top=12.dp)
         )
         Row(Modifier.fillMaxWidth().padding(top=10.dp),horizontalArrangement=Arrangement.End){
-            VistoraAction("Save overall thoughts",onClick={onSaveOverallThoughts(overallDraft);overallEditing=false},leading="check",quiet=true)
+            VistoraAction("Save overall thoughts",onClick={onSaveOverallThoughts(overallDraft)},leading="check",quiet=true)
         }
         Spacer(Modifier.height(30.dp))
     }
@@ -272,7 +272,7 @@ fun TitleDetailsScreen(
 
 @Composable
 private fun StepButton(icon:String,enabled:Boolean,onClick:()->Unit){
-    Box(Modifier.size(46.dp).clip(RoundedCornerShape(14.dp)).background(VistoraPalette.Surface)
+    Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(VistoraPalette.Surface)
         .border(1.dp,VistoraPalette.LineStrong,RoundedCornerShape(14.dp))
         .clickable(enabled=enabled,onClick=onClick),contentAlignment=Alignment.Center){
         VistoraIcon(icon,Modifier.size(21.dp),if(enabled)VistoraPalette.Text else VistoraPalette.Muted.copy(alpha=.45f))
@@ -283,7 +283,7 @@ private fun StepButton(icon:String,enabled:Boolean,onClick:()->Unit){
 private fun EpisodeSelector(current:Int,total:Int,onSelect:(Int)->Unit){
     var value by remember(current){mutableStateOf(current.toString())}
     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)){
-        Box(Modifier.width(64.dp).clip(RoundedCornerShape(10.dp)).background(VistoraPalette.Field).border(1.dp,VistoraPalette.LineStrong,RoundedCornerShape(10.dp)).padding(horizontal=10.dp,vertical=7.dp)){
+        Box(Modifier.width(76.dp).heightIn(min=48.dp).clip(RoundedCornerShape(10.dp)).background(VistoraPalette.Field).border(1.dp,VistoraPalette.LineStrong,RoundedCornerShape(10.dp)).padding(horizontal=10.dp,vertical=7.dp)){
             androidx.compose.foundation.text.BasicTextField(
                 value=value,
                 onValueChange={raw->

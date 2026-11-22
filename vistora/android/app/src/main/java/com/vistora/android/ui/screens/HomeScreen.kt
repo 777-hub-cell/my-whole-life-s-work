@@ -16,6 +16,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,7 +86,7 @@ fun HomeScreen(
 
 @Composable
 private fun IconButton(name:String,description:String,onClick:()->Unit){
-    Box(Modifier.size(44.dp).clickable(onClick=onClick),contentAlignment=Alignment.Center){
+    Box(Modifier.size(48.dp).semantics { contentDescription = description; role = Role.Button }.clickable(role=Role.Button,onClick=onClick),contentAlignment=Alignment.Center){
         VistoraIcon(name,Modifier.size(21.dp),VistoraPalette.Text)
     }
 }

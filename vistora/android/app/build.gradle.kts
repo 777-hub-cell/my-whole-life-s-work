@@ -16,6 +16,18 @@ plugins {
 
 apply(plugin = "org.jetbrains.kotlin.plugin.compose")
 
+// Some recent AndroidX publishers request Lifecycle 2.12.0 before its stable
+// artifacts are available. Keep all Lifecycle modules aligned to the latest
+// published stable release so CI resolves reproducibly.
+configurations.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "androidx.lifecycle") {
+            useVersion("2.11.1")
+            because("Use the latest published stable Lifecycle release")
+        }
+    }
+}
+
 android {
     namespace = "com.vistora.android"
     compileSdk {

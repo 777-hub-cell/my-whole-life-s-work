@@ -75,7 +75,7 @@ fun SettingsScreen(
                 Text("My Notes", color = VistoraPalette.Text, style = TextStyle(fontFamily = FontFamily.Serif, fontSize = 22.sp, fontWeight = FontWeight.Medium))
                 Text(if (notesCount == 0) "Nothing written yet" else "$notesCount notes in your diary", color = VistoraPalette.Muted, fontSize = 12.sp)
             }
-            VistoraIcon("back", Modifier.size(18.dp), VistoraPalette.Muted)
+            VistoraIcon("forward", Modifier.size(18.dp), VistoraPalette.Muted)
         }
 
         SectionHeading("Library")

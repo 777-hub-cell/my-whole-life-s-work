@@ -37,7 +37,9 @@ class CatalogRepository {
 
     suspend fun testTmdbCredential(credential: String) = withContext(Dispatchers.IO) {
         val clean = requireCredential(credential)
-        val connection = URL("https://api.themoviedb.org/3/configuration").openConnection() as HttpURLConnection
+        val endpoint = "https://api.themoviedb.org/3/configuration"
+        val url = if (isBearerToken(clean)) endpoint else endpoint + "?api_key=" + encode(clean)
+        val connection = URL(url).openConnection() as HttpURLConnection
         try {
             configureTmdb(connection, clean)
             val code = connection.responseCode
@@ -64,6 +66,7 @@ class CatalogRepository {
             append("?query=").append(encoded)
             append("&include_adult=false&language=en-US&page=1")
             if (type == MediaType.K_DRAMA) append("&with_original_language=ko")
+            if (!isBearerToken(credential)) append("&api_key=").append(encode(credential))
         }
         val connection = URL(url).openConnection() as HttpURLConnection
         try {
@@ -168,17 +171,17 @@ class CatalogRepository {
         }
     }
 
+    private fun isBearerToken(value: String): Boolean = value.count { it == '.' } == 2
+
+    private fun encode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
+
     private fun configureTmdb(connection: HttpURLConnection, credential: String) {
         connection.connectTimeout = 12_000
         connection.readTimeout = 15_000
         // TMDB recommends the Read Access Token as a Bearer credential.
         // Legacy v3 API keys remain supported by TMDB for applicable endpoints.
-        if (credential.count { it == '.' } == 2) {
+        if (isBearerToken(credential)) {
             connection.setRequestProperty("Authorization", "Bearer $credential")
-        } else {
-            val url = connection.url
-            val separator = if (url.query.isNullOrBlank()) "?" else "&"
-            connection.url = URL(url.toString() + separator + "api_key=" + URLEncoder.encode(credential, Charsets.UTF_8.name()))
         }
         connection.setRequestProperty("Accept", "application/json")
     }

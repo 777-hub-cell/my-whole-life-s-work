@@ -223,7 +223,7 @@ private fun EmptyLibrary(onAdd: () -> Unit, onDiscover: () -> Unit, modifier: Mo
 @Composable
 private fun PillAction(label: String, primary: Boolean, onClick: () -> Unit) {
     Row(
-        Modifier.heightIn(min = 42.dp).clip(RoundedCornerShape(999.dp))
+        Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(999.dp))
             .background(if (primary) VistoraPalette.Burgundy else VistoraPalette.Raised)
             .then(if (primary) Modifier else Modifier.border(1.dp, VistoraPalette.LineStrong, RoundedCornerShape(999.dp)))
             .clickable(role = Role.Button, onClick = onClick)
@@ -239,7 +239,7 @@ private fun PillAction(label: String, primary: Boolean, onClick: () -> Unit) {
 @Composable
 private fun HeaderAction(icon: String, label: String, active: Boolean, onClick: () -> Unit) {
     Box(
-        Modifier.size(44.dp).clip(RoundedCornerShape(12.dp))
+        Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
             .background(if (active) VistoraPalette.Raised else androidx.compose.ui.graphics.Color.Transparent)
             .semantics { contentDescription = label; role = Role.Button }
             .clickable(role = Role.Button, onClick = onClick),

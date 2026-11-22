@@ -10,6 +10,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import android.util.Log
 import androidx.test.uiautomator.UiDevice
 import com.vistora.android.MainActivity
 import org.junit.Rule
@@ -38,6 +39,8 @@ class VistoraVisualSmokeTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val externalFiles = requireNotNull(context.getExternalFilesDir(null))
         val directory = File(externalFiles, "vistora-qa").apply { mkdirs() }
+        Log.i("VistoraVisualQA", "SCREENSHOT_DIR=${directory.absolutePath}")
+        Log.i("VistoraVisualQA", "SCREENSHOT_PARENT=${externalFiles.absolutePath}")
         check(device.takeScreenshot(File(directory, "$name.png"))) {
             "Could not capture screenshot: $name"
         }

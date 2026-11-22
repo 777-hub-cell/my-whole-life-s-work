@@ -53,13 +53,16 @@ jobs:
       - name: Allow the shared Gradle wrapper to execute
         run: chmod +x aharane/android/gradlew
 
-      - name: Set up Android SDK tools
+      - name: Set up Android SDK tools and API 37.0
         uses: android-actions/setup-android@v4
         with:
-          packages: ''
+          packages: 'platforms;android-37.0'
 
-      - name: Install Android 37 SDK platform
-        run: sdkmanager "platforms;android-37"
+      - name: Add Android 37 compatibility path for Gradle
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          test -d "$SDK_ROOT/platforms/android-37.0"
+          ln -sfn "$SDK_ROOT/platforms/android-37.0" "$SDK_ROOT/platforms/android-37"
 
       - name: Assemble debug APK
         run: bash vistora/android/gradlew :app:assembleDebug

@@ -67,7 +67,8 @@ jobs:
 
 
       - name: Assemble debug APK
-        run: bash vistora/android/gradlew :app:assembleDebug
+        timeout-minutes: 15
+        run: timeout 14m bash vistora/android/gradlew --no-daemon --console=plain --stacktrace :app:assembleDebug
 
       # Publish the installable APK as soon as assembly succeeds. Later test/lint
       # failures must not prevent the user from receiving the built app.
@@ -81,10 +82,12 @@ jobs:
           retention-days: 14
 
       - name: Run unit tests
-        run: bash vistora/android/gradlew :app:testDebugUnitTest
+        timeout-minutes: 10
+        run: timeout 9m bash vistora/android/gradlew --no-daemon --console=plain --stacktrace :app:testDebugUnitTest
 
       - name: Run Android lint
-        run: bash vistora/android/gradlew :app:lintDebug
+        timeout-minutes: 10
+        run: timeout 9m bash vistora/android/gradlew --no-daemon --console=plain --stacktrace :app:lintDebug
 
       # Expose KVM when the hosted runner provides it. The emulator action's
       # auto mode then uses hardware acceleration instead of a very slow TCG
@@ -111,14 +114,16 @@ jobs:
           emulator-boot-timeout: 900
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
           script: |
-            bash vistora/android/gradlew :app:connectedDebugAndroidTest
+            timeout 14m bash vistora/android/gradlew --no-daemon --console=plain --stacktrace :app:connectedDebugAndroidTest
             mkdir -p "${RUNNER_TEMP}/vistora-android-qa"
-            adb exec-out run-as com.vistora.android tar -C /data/user/0/com.vistora.android/files -cf - vistora-qa | tar -xf - -C "${RUNNER_TEMP}/vistora-android-qa"
+            adb exec-out run-as com.vistora.android tar -C /data/user/0/com.vistora.android/files -cf - vistora-qa > "${RUNNER_TEMP}/vistora-android-qa.tar"
+            tar -xf "${RUNNER_TEMP}/vistora-android-qa.tar" -C "${RUNNER_TEMP}/vistora-android-qa"
+            test "$(find "${RUNNER_TEMP}/vistora-android-qa" -type f -name '*.png' | wc -l)" -ge 8
       - name: Upload Android visual screenshots
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: vistora-android-visual-screenshots
           path: ${{ runner.temp }}/vistora-android-qa/**/*.png
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14

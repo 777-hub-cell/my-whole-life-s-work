@@ -7,6 +7,13 @@ on:
   push:
     branches: [mscc-azure]
     paths: ['aharane/android/**', 'aharane/src/**', 'aharane/test/**', 'aharane/package.json', '.github/workflows/aharane-android.yml']
+  workflow_dispatch:
+    inputs:
+      build_signed_release:
+        description: Build a production-signed APK (requires the four Aharane release signing secrets)
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -82,6 +89,75 @@ jobs:
           path: aharane/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+  signed-release:
+    name: Build and verify production-signed APK
+    if: github.event_name == 'workflow_dispatch' && inputs.build_signed_release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+      - name: Install Android 16 SDK platform and tools
+        run: sdkmanager --install "platforms;android-36" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Validate and load private signing key
+        id: signing
+        env:
+          AHARANE_RELEASE_KEYSTORE_BASE64: ${{ secrets.AHARANE_RELEASE_KEYSTORE_BASE64 }}
+          AHARANE_RELEASE_STORE_PASSWORD: ${{ secrets.AHARANE_RELEASE_STORE_PASSWORD }}
+          AHARANE_RELEASE_KEY_ALIAS: ${{ secrets.AHARANE_RELEASE_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          : "${AHARANE_RELEASE_KEYSTORE_BASE64:?Missing secret AHARANE_RELEASE_KEYSTORE_BASE64}"
+          : "${AHARANE_RELEASE_STORE_PASSWORD:?Missing secret AHARANE_RELEASE_STORE_PASSWORD}"
+          : "${AHARANE_RELEASE_KEY_ALIAS:?Missing secret AHARANE_RELEASE_KEY_ALIAS}"
+          : "${{ secrets.AHARANE_RELEASE_KEY_PASSWORD }}"
+
+          KEYSTORE_PATH="$RUNNER_TEMP/aharane-release.jks"
+          printf '%s' "$AHARANE_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+          keytool -list -keystore "$KEYSTORE_PATH" \
+            -storepass "$AHARANE_RELEASE_STORE_PASSWORD" \
+            -alias "$AHARANE_RELEASE_KEY_ALIAS" >/dev/null
+
+          echo "keystore_path=$KEYSTORE_PATH" >> "$GITHUB_OUTPUT"
+      - name: Build signed release APK
+        working-directory: aharane/android
+        env:
+          AHARANE_RELEASE_KEYSTORE_PATH: ${{ steps.signing.outputs.keystore_path }}
+          AHARANE_RELEASE_STORE_PASSWORD: ${{ secrets.AHARANE_RELEASE_STORE_PASSWORD }}
+          AHARANE_RELEASE_KEY_ALIAS: ${{ secrets.AHARANE_RELEASE_KEY_ALIAS }}
+          AHARANE_RELEASE_KEY_PASSWORD: ${{ secrets.AHARANE_RELEASE_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon clean assembleRelease
+      - name: Verify release APK signature
+        working-directory: aharane/android
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          sha256sum "$APK"
+      - name: Upload signed release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: aharane-android-release-signed
+          path: aharane/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
 
   preview-screenshots:
     name: Run native app and capture real emulator screenshots

@@ -183,7 +183,7 @@ fun VistoraAction(
     val accent = LocalVistoraAccent.current
     Row(
         modifier = modifier
-            .heightIn(min = 44.dp)
+            .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(999.dp))
             .background(if (quiet) VistoraPalette.Raised else accent)
             .border(1.dp, if (quiet) VistoraPalette.LineStrong else Color.Transparent, RoundedCornerShape(999.dp))

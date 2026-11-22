@@ -36,7 +36,8 @@ const { chromium } = require('playwright');
         await page.locator('#fab').click();
         await page.locator('#addForm').waitFor({ state: 'visible', timeout: 5000 });
         await page.screenshot({ path: path.join(out, '03-add-title.png') });
-        await page.locator('#layer [data-a="closesheet"]').first().click();
+        await page.keyboard.press('Escape');
+        await page.locator('#layer .sheet').waitFor({ state: 'detached', timeout: 5000 });
       }
     }
     if (errors.length) {

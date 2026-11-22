@@ -117,12 +117,13 @@ jobs:
           AHARANE_RELEASE_KEYSTORE_BASE64: ${{ secrets.AHARANE_RELEASE_KEYSTORE_BASE64 }}
           AHARANE_RELEASE_STORE_PASSWORD: ${{ secrets.AHARANE_RELEASE_STORE_PASSWORD }}
           AHARANE_RELEASE_KEY_ALIAS: ${{ secrets.AHARANE_RELEASE_KEY_ALIAS }}
+          AHARANE_RELEASE_KEY_PASSWORD: ${{ secrets.AHARANE_RELEASE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           : "${AHARANE_RELEASE_KEYSTORE_BASE64:?Missing secret AHARANE_RELEASE_KEYSTORE_BASE64}"
           : "${AHARANE_RELEASE_STORE_PASSWORD:?Missing secret AHARANE_RELEASE_STORE_PASSWORD}"
           : "${AHARANE_RELEASE_KEY_ALIAS:?Missing secret AHARANE_RELEASE_KEY_ALIAS}"
-          : "${{ secrets.AHARANE_RELEASE_KEY_PASSWORD }}"
+          : "${AHARANE_RELEASE_KEY_PASSWORD:?Missing secret AHARANE_RELEASE_KEY_PASSWORD}"
 
           KEYSTORE_PATH="$RUNNER_TEMP/aharane-release.jks"
           printf '%s' "$AHARANE_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
@@ -140,7 +141,7 @@ jobs:
           AHARANE_RELEASE_STORE_PASSWORD: ${{ secrets.AHARANE_RELEASE_STORE_PASSWORD }}
           AHARANE_RELEASE_KEY_ALIAS: ${{ secrets.AHARANE_RELEASE_KEY_ALIAS }}
           AHARANE_RELEASE_KEY_PASSWORD: ${{ secrets.AHARANE_RELEASE_KEY_PASSWORD }}
-        run: ./gradlew --no-daemon clean assembleRelease
+        run: ./gradlew --no-daemon clean assembleRelease -PaharaneVersionCode=${GITHUB_RUN_NUMBER}
       - name: Verify release APK signature
         working-directory: aharane/android
         run: |

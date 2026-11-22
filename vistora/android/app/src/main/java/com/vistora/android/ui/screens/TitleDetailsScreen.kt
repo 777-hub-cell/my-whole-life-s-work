@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import com.vistora.android.domain.EpisodeNote
 import com.vistora.android.domain.LibraryStatus
 import com.vistora.android.domain.MediaItem
+import com.vistora.android.domain.TrackedDate
 import com.vistora.android.ui.components.PosterArt
 import com.vistora.android.ui.components.SectionHeading
 import com.vistora.android.ui.components.StatusLabel
@@ -33,6 +36,10 @@ import com.vistora.android.ui.theme.VistoraPalette
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.time.Instant
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.ZoneOffset
 
 @Composable
 fun TitleDetailsScreen(
@@ -43,6 +50,7 @@ fun TitleDetailsScreen(
     onStatusChange: (LibraryStatus) -> Unit,
     onProgressChange: (Int) -> Unit,
     onRatingChange: (Int) -> Unit,
+    onDateChange: (TrackedDate, Long?) -> Unit,
     onSaveEpisodeNote: (Int, String) -> Unit,
     onDeleteEpisodeNote: (Int) -> Unit,
     onSaveOverallThoughts: (String) -> Unit,
@@ -51,6 +59,7 @@ fun TitleDetailsScreen(
 ) {
     var showStatus by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    var dateKind by remember(item.id) { mutableStateOf<TrackedDate?>(null) }
     var expandedSynopsis by remember(item.id) { mutableStateOf(false) }
     var selectedEpisode by remember(item.id, initialEpisode) {
         mutableIntStateOf(
@@ -167,6 +176,17 @@ fun TitleDetailsScreen(
             Text("Progress is tracked manually. It never plays an episode here.",color=VistoraPalette.Muted,fontSize=12.sp,modifier=Modifier.padding(top=6.dp))
         }
 
+        Spacer(Modifier.height(25.dp))
+        SectionHeading("Dates")
+        if (item.isEpisodic) {
+            Row(Modifier.fillMaxWidth().padding(top=10.dp),horizontalArrangement=Arrangement.spacedBy(9.dp)) {
+                DateCard("Started", item.startedAt, Modifier.weight(1f)) { dateKind = TrackedDate.STARTED }
+                DateCard("Finished", item.finishedAt, Modifier.weight(1f)) { dateKind = TrackedDate.FINISHED }
+            }
+        } else {
+            DateCard("Watched on", item.watchedOn, Modifier.fillMaxWidth()) { dateKind = TrackedDate.WATCHED_ON }
+        }
+
         Spacer(Modifier.height(26.dp))
         SectionHeading("Episode Notes")
         Text("Your thoughts, episode by episode. Choose an episode to write, read or revisit a note.",modifier=Modifier.padding(top=5.dp),
@@ -272,6 +292,62 @@ fun TitleDetailsScreen(
             }
         }
     }
+}
+    if (dateKind != null) {
+        val kind = dateKind!!
+        val existing = when (kind) {
+            TrackedDate.STARTED -> item.startedAt
+            TrackedDate.FINISHED -> item.finishedAt
+            TrackedDate.WATCHED_ON -> item.watchedOn
+        }
+        val pickerState = rememberDatePickerState(initialSelectedDateMillis = existing ?: System.currentTimeMillis())
+        val heading = when (kind) {
+            TrackedDate.STARTED -> "Started watching"
+            TrackedDate.FINISHED -> "Finished watching"
+            TrackedDate.WATCHED_ON -> "Watched on"
+        }
+        VistoraSheet(onDismiss = { dateKind = null }) {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max=690.dp).verticalScroll(rememberScrollState())
+                    .padding(horizontal=16.dp).padding(bottom=20.dp)
+            ) {
+                Text(heading,color=VistoraPalette.Text,style=androidx.compose.material3.MaterialTheme.typography.headlineMedium)
+                Text("Keep a personal record of when you watched this title.",color=VistoraPalette.Muted,fontSize=12.sp,modifier=Modifier.padding(top=4.dp))
+                DatePicker(state=pickerState,showModeToggle=false)
+                Row(Modifier.fillMaxWidth().padding(top=4.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    VistoraAction("Clear",{
+                        onDateChange(kind,null)
+                        dateKind=null
+                    },Modifier.weight(1f),quiet=true)
+                    VistoraAction("Cancel",{dateKind=null},Modifier.weight(1f),quiet=true)
+                    VistoraAction("Save",{
+                        pickerState.selectedDateMillis?.let { onDateChange(kind, pickerDateToLocalNoon(it)) }
+                        dateKind=null
+                    },Modifier.weight(1f))
+                }
+            }
+        }
+    }
+
+
+@Composable
+private fun DateCard(label:String,value:Long?,modifier:Modifier=Modifier,onClick:()->Unit) {
+    Column(
+        modifier.clip(RoundedCornerShape(14.dp))
+            .background(VistoraPalette.Surface)
+            .border(1.dp,VistoraPalette.Line,RoundedCornerShape(14.dp))
+            .clickable(role=Role.Button,onClick=onClick)
+            .padding(horizontal=14.dp,vertical=12.dp),
+        verticalArrangement=Arrangement.spacedBy(4.dp)
+    ) {
+        Text(label,color=VistoraPalette.Muted,fontSize=11.sp,fontWeight=FontWeight.Medium)
+        Text(value?.let(::dateLabel) ?: "Add date",color=if(value==null)VistoraPalette.Rose else VistoraPalette.Text,fontSize=14.sp,fontWeight=FontWeight.SemiBold)
+    }
+}
+
+private fun pickerDateToLocalNoon(value:Long):Long {
+    val date=Instant.ofEpochMilli(value).atZone(ZoneOffset.UTC).toLocalDate()
+    return date.atTime(LocalTime.NOON).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
 }
 
 @Composable

@@ -149,9 +149,10 @@ class CatalogRepository {
                 val title = sequenceOf("english", "romaji", "native")
                     .map { titleObject.optString(it).trim() }
                     .firstOrNull { it.isNotBlank() } ?: return@mapNotNull null
-                val state = when (item.optString("status")) {
+                val isAnimeMovie = item.optString("format") == "MOVIE"
+                val state = if (isAnimeMovie) SeriesState.UNKNOWN else when (item.optString("status")) {
                     "RELEASING" -> SeriesState.ONGOING
-                    "FINISHED", "CANCELLED", "HIATUS" -> SeriesState.COMPLETED
+                    "FINISHED" -> SeriesState.COMPLETED
                     "NOT_YET_RELEASED" -> SeriesState.UPCOMING
                     else -> SeriesState.UNKNOWN
                 }

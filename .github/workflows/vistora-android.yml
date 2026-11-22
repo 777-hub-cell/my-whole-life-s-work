@@ -116,7 +116,9 @@ jobs:
           script: |
             timeout 14m bash vistora/android/gradlew --no-daemon --console=plain --stacktrace :app:connectedDebugAndroidTest
             mkdir -p "${RUNNER_TEMP}/vistora-android-qa"
-            adb exec-out run-as com.vistora.android /system/bin/cat /data/user/0/com.vistora.android/files/vistora-qa.zip > "${RUNNER_TEMP}/vistora-android-qa.zip"
+            adb root
+            adb wait-for-device
+            adb pull /data/user/0/com.vistora.android/files/vistora-qa.zip "${RUNNER_TEMP}/vistora-android-qa.zip"
             test -s "${RUNNER_TEMP}/vistora-android-qa.zip"
             unzip -q "${RUNNER_TEMP}/vistora-android-qa.zip" -d "${RUNNER_TEMP}/vistora-android-qa"
             test "$(find "${RUNNER_TEMP}/vistora-android-qa" -type f -name '*.png' | wc -l)" -eq 8

@@ -302,7 +302,7 @@ private fun AddPill(onClick: () -> Unit) {
 private fun TypeChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Text(
         label,
-        modifier = Modifier.clip(RoundedCornerShape(999.dp))
+        modifier = Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(999.dp))
             .background(if (selected) VistoraPalette.Burgundy else VistoraPalette.Surface)
             .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 13.dp, vertical = 12.dp),

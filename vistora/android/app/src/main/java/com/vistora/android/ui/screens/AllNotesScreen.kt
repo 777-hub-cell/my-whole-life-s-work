@@ -55,7 +55,7 @@ fun AllNotesScreen(
                             title = item.title,
                             subtitle = "Overall thoughts",
                             body = item.overallThoughts,
-                            updatedAt = item.updatedAt
+                            updatedAt = item.overallThoughtsUpdatedAt ?: item.updatedAt
                         )
                     )
                 }

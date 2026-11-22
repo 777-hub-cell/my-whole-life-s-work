@@ -124,7 +124,7 @@ fun VistoraApp(viewModel: VistoraViewModel) {
         }
     }
 
-    BackHandler(enabled = route == "Title Details" || editorVisible || filtersVisible || gridVisible || sortVisible || notificationsVisible || resetVisible) {
+    BackHandler(enabled = route == "Title Details" || route == "My Notes" || editorVisible || filtersVisible || gridVisible || sortVisible || notificationsVisible || resetVisible) {
         when {
             editorVisible -> editorVisible = false
             filtersVisible -> filtersVisible = false
@@ -132,7 +132,7 @@ fun VistoraApp(viewModel: VistoraViewModel) {
             sortVisible -> sortVisible = false
             notificationsVisible -> notificationsVisible = false
             resetVisible -> resetVisible = false
-            else -> route = detailReturnRoute
+            else -> route = if (route == "My Notes") "Settings" else detailReturnRoute
         }
     }
 

@@ -106,9 +106,195 @@ class CatalogRepository {
 
     private fun searchAniList(query: String): List<CatalogResult> {
         val graphQl = """
-            query ($search: String!) {
+            query (${': String!) {
               Page(page: 1, perPage: 20) {
                 media(search: $search, type: ANIME, sort: SEARCH_MATCH, isAdult: false) {
+                  id
+                  title { english romaji native }
+                  episodes
+                  status
+                  startDate { year }
+                  description(asHtml: false)
+                  genres
+                  coverImage { large }
+                }
+              }
+            }
+        """.trimIndent()
+        val payload = JSONObject()
+            .put("query", graphQl)
+            .put("variables", JSONObject().put("search", query))
+        val connection = URL("https://graphql.anilist.co").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 12_000
+            connection.readTimeout = 15_000
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("Accept", "application/json")
+            connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+            val root = readJson(connection)
+            val errors = root.optJSONArray("errors")
+            if (errors != null && errors.length() > 0) {
+                throw IOException(errors.optJSONObject(0)?.optString("message") ?: "AniList search failed.")
+            }
+            val rows = root.optJSONObject("data")
+                ?.optJSONObject("Page")
+                ?.optJSONArray("media") ?: return emptyList()
+            return (0 until rows.length()).mapNotNull { index ->
+                val item = rows.optJSONObject(index) ?: return@mapNotNull null
+                val titleObject = item.optJSONObject("title") ?: JSONObject()
+                val title = sequenceOf("english", "romaji", "native")
+                    .map { titleObject.optString(it).trim() }
+                    .firstOrNull { it.isNotBlank() } ?: return@mapNotNull null
+                val state = when (item.optString("status")) {
+                    "RELEASING" -> SeriesState.ONGOING
+                    "FINISHED", "CANCELLED", "HIATUS" -> SeriesState.COMPLETED
+                    "NOT_YET_RELEASED" -> SeriesState.UPCOMING
+                    else -> SeriesState.UNKNOWN
+                }
+                val genresArray = item.optJSONArray("genres")
+                val genres = if (genresArray == null) emptyList() else
+                    (0 until minOf(genresArray.length(), 8)).mapNotNull { genresArray.optString(it).takeIf(String::isNotBlank) }
+                val poster = item.optJSONObject("coverImage")?.optString("large")?.takeIf { it.startsWith("https://") }
+                CatalogResult(
+                    providerId = "anilist:${item.optInt("id")}",
+                    title = title,
+                    type = MediaType.ANIME,
+                    releaseYear = item.optJSONObject("startDate")?.optInt("year")?.takeIf { it > 0 },
+                    totalEpisodes = item.optInt("episodes", 0).coerceAtLeast(0),
+                    seriesState = state,
+                    synopsis = item.optString("description").replace(Regex("<[^>]*>"), "").take(600),
+                    genres = genres,
+                    posterUrl = poster,
+                    source = "AniList"
+                )
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun isBearerToken(value: String): Boolean = value.count { it == '.' } == 2
+
+    private fun encode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
+
+    private fun configureTmdb(connection: HttpURLConnection, credential: String) {
+        connection.connectTimeout = 12_000
+        connection.readTimeout = 15_000
+        // TMDB recommends the Read Access Token as a Bearer credential.
+        // Legacy v3 API keys remain supported by TMDB for applicable endpoints.
+        if (isBearerToken(credential)) {
+            connection.setRequestProperty("Authorization", "Bearer $credential")
+        }
+        connection.setRequestProperty("Accept", "application/json")
+    }
+
+    private fun readJson(connection: HttpURLConnection): JSONObject {
+        val code = connection.responseCode
+        val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+        val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+        if (code == 401 || code == 403) throw IOException("The provider rejected the credential. Check Settings.")
+        if (code == 429) throw IOException("Too many searches in a short time. Please wait and try again.")
+        if (code !in 200..299) throw IOException("Provider search failed (HTTP $code).")
+        return runCatching { JSONObject(body) }.getOrElse { throw IOException("The provider returned an unreadable response.") }
+    }
+}
+}search: String!) {
+              Page(page: 1, perPage: 20) {
+                media(search: ${', type: ANIME, sort: SEARCH_MATCH, isAdult: false) {
+                  id
+                  title { english romaji native }
+                  episodes
+                  status
+                  startDate { year }
+                  description(asHtml: false)
+                  genres
+                  coverImage { large }
+                }
+              }
+            }
+        """.trimIndent()
+        val payload = JSONObject()
+            .put("query", graphQl)
+            .put("variables", JSONObject().put("search", query))
+        val connection = URL("https://graphql.anilist.co").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 12_000
+            connection.readTimeout = 15_000
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("Accept", "application/json")
+            connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+            val root = readJson(connection)
+            val errors = root.optJSONArray("errors")
+            if (errors != null && errors.length() > 0) {
+                throw IOException(errors.optJSONObject(0)?.optString("message") ?: "AniList search failed.")
+            }
+            val rows = root.optJSONObject("data")
+                ?.optJSONObject("Page")
+                ?.optJSONArray("media") ?: return emptyList()
+            return (0 until rows.length()).mapNotNull { index ->
+                val item = rows.optJSONObject(index) ?: return@mapNotNull null
+                val titleObject = item.optJSONObject("title") ?: JSONObject()
+                val title = sequenceOf("english", "romaji", "native")
+                    .map { titleObject.optString(it).trim() }
+                    .firstOrNull { it.isNotBlank() } ?: return@mapNotNull null
+                val state = when (item.optString("status")) {
+                    "RELEASING" -> SeriesState.ONGOING
+                    "FINISHED", "CANCELLED", "HIATUS" -> SeriesState.COMPLETED
+                    "NOT_YET_RELEASED" -> SeriesState.UPCOMING
+                    else -> SeriesState.UNKNOWN
+                }
+                val genresArray = item.optJSONArray("genres")
+                val genres = if (genresArray == null) emptyList() else
+                    (0 until minOf(genresArray.length(), 8)).mapNotNull { genresArray.optString(it).takeIf(String::isNotBlank) }
+                val poster = item.optJSONObject("coverImage")?.optString("large")?.takeIf { it.startsWith("https://") }
+                CatalogResult(
+                    providerId = "anilist:${item.optInt("id")}",
+                    title = title,
+                    type = MediaType.ANIME,
+                    releaseYear = item.optJSONObject("startDate")?.optInt("year")?.takeIf { it > 0 },
+                    totalEpisodes = item.optInt("episodes", 0).coerceAtLeast(0),
+                    seriesState = state,
+                    synopsis = item.optString("description").replace(Regex("<[^>]*>"), "").take(600),
+                    genres = genres,
+                    posterUrl = poster,
+                    source = "AniList"
+                )
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun isBearerToken(value: String): Boolean = value.count { it == '.' } == 2
+
+    private fun encode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
+
+    private fun configureTmdb(connection: HttpURLConnection, credential: String) {
+        connection.connectTimeout = 12_000
+        connection.readTimeout = 15_000
+        // TMDB recommends the Read Access Token as a Bearer credential.
+        // Legacy v3 API keys remain supported by TMDB for applicable endpoints.
+        if (isBearerToken(credential)) {
+            connection.setRequestProperty("Authorization", "Bearer $credential")
+        }
+        connection.setRequestProperty("Accept", "application/json")
+    }
+
+    private fun readJson(connection: HttpURLConnection): JSONObject {
+        val code = connection.responseCode
+        val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+        val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+        if (code == 401 || code == 403) throw IOException("The provider rejected the credential. Check Settings.")
+        if (code == 429) throw IOException("Too many searches in a short time. Please wait and try again.")
+        if (code !in 200..299) throw IOException("Provider search failed (HTTP $code).")
+        return runCatching { JSONObject(body) }.getOrElse { throw IOException("The provider returned an unreadable response.") }
+    }
+}
+}search, type: ANIME, sort: SEARCH_MATCH, isAdult: false) {
                   id
                   title { english romaji native }
                   episodes

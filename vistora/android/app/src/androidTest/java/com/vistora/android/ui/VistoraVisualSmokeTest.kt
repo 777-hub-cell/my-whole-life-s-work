@@ -75,9 +75,6 @@ class VistoraVisualSmokeTest {
         assertTrue("Add Title did not persist the saved title to Room", savedToDatabase)
 
         val posterDescription = "Open VISTORA QA sample details"
-        rule.waitUntil(timeoutMillis = 10_000) {
-            rule.onAllNodesWithContentDescription(posterDescription).fetchSemanticsNodes().isNotEmpty()
-        }
         rule.onNodeWithContentDescription(posterDescription).assertIsDisplayed()
         capture("04-library-with-title")
 

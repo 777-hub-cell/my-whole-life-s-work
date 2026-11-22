@@ -13,7 +13,7 @@ Research checked **22 November 2026**. Official Android and Kotlin documentation
 - Kotlin coroutines and Flow for asynchronous work and database observation.
 - Room as the canonical local data store.
 - Preferences DataStore for non-secret preferences.
-- Android Keystore-backed encryption for user-supplied provider keys.
+- Android Keystore-backed AES-GCM encryption for the user's optional TMDB credential. AniList's public GraphQL endpoint does not require a key for anime search.
 - Android Photo Picker for poster selection.
 - Storage Access Framework for explicit backup export/import.
 - JUnit, Room instrumentation tests, and Compose UI tests.
@@ -202,6 +202,10 @@ Do not:
 ## 12. Primary references
 
 - [Android architecture guide](https://developer.android.com/topic/architecture)
+- [Android Keystore system](https://developer.android.com/privacy-and-security/keystore)
+- [TMDB API documentation](https://developer.themoviedb.org/docs)
+- [TMDB API attribution and branding FAQ](https://www.themoviedb.org/faq/api)
+- [AniList API documentation](https://docs.anilist.co/)
 - [Android architecture recommendations](https://developer.android.com/topic/architecture/recommendations)
 - [UI layer and unidirectional data flow](https://developer.android.com/topic/architecture/ui-layer)
 - [State holders and UI state](https://developer.android.com/topic/architecture/ui-layer/stateholders)

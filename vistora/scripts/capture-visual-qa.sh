@@ -57,7 +57,7 @@ tap_text() {
   local tries="${2:-8}"
   local coords=""
   for _ in $(seq 1 "$tries"); do
-    dump_ui
+    dump_ui || true
     coords="$(find_bounds "$needle" || true)"
     if [[ -n "$coords" ]]; then
       read -r x y <<< "$coords"
@@ -82,12 +82,12 @@ capture() {
 scroll_to_text_and_tap() {
   local needle="$1"
   for _ in $(seq 1 7); do
-    dump_ui
+    dump_ui || true
     local coords
     coords="$(find_bounds "$needle" || true)"
     if [[ -n "$coords" ]]; then
       read -r x y <<< "$coords"
-      adb shell input tap "$x" "$y"
+      timeout 5s adb shell input tap "$x" "$y"
       sleep 1.0
       return 0
     fi
@@ -127,7 +127,7 @@ capture "03-add-title-sheet"
 # Create one clearly labelled local sample so the library grid, stats and
 # title-detail layouts can be reviewed using real persisted app data.
 tap_text "Title name"
-adb shell input text "Vistora%20Visual%20QA"
+adb shell input text "Vistora%sVisual%sQA"
 adb shell input keyevent 4
 sleep 0.5
 scroll_to_text_and_tap "Add to My Watchlist"
@@ -136,7 +136,7 @@ sleep 1.5
 capture "04-title-details-top"
 
 # Inspect the lower detail sections as well as its header.
-swipe_up
+timeout 5s bash -c 'adb shell input swipe "$1" "$2" "$3" "$4" 350' _ "$((SCREEN_W / 2))" "$((SCREEN_H * 80 / 100))" "$((SCREEN_W / 2))" "$((SCREEN_H * 30 / 100))" || true
 capture "05-title-details-progress"
 tap_text "Back"
 tap_text "Home"

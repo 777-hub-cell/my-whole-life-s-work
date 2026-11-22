@@ -1,5 +1,6 @@
 package com.vistora.android.ui
 
+import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -33,7 +34,8 @@ class VistoraVisualSmokeTest {
         rule.waitForIdle()
         device.waitForIdle()
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val directory = File(context.getExternalFilesDir(null), "vistora-qa").apply { mkdirs() }
+        val externalFiles = requireNotNull(context.getExternalFilesDir(null))
+        val directory = File(externalFiles, "vistora-qa").apply { mkdirs() }
         check(device.takeScreenshot(File(directory, "$name.png"))) {
             "Could not capture screenshot: $name"
         }

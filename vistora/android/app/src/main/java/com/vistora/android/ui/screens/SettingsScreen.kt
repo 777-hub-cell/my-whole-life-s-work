@@ -1,6 +1,7 @@
 package com.vistora.android.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -13,6 +14,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vistora.android.data.preferences.VistoraPreferences
@@ -26,6 +30,7 @@ import com.vistora.android.ui.theme.VistoraPalette
 fun SettingsScreen(
     preferences: VistoraPreferences,
     tmdbConfigured: Boolean,
+    titleCount: Int,
     notesCount: Int,
     onOpenNotes: () -> Unit,
     onGrid: (Int) -> Unit,
@@ -45,9 +50,32 @@ fun SettingsScreen(
             .padding(horizontal = 20.dp).padding(top = 18.dp, bottom = 28.dp),
         verticalArrangement = Arrangement.spacedBy(21.dp)
     ) {
-        Column {
-            Text("Settings", color = VistoraPalette.Text, style = androidx.compose.material3.MaterialTheme.typography.headlineLarge)
-            Text("Make VISTORA feel like your own.", color = VistoraPalette.Muted, fontSize = 14.sp, modifier = Modifier.padding(top = 4.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("More", color = VistoraPalette.Text, style = androidx.compose.material3.MaterialTheme.typography.headlineLarge)
+            Box(Modifier.clip(RoundedCornerShape(6.dp)).background(VistoraPalette.Raised).padding(horizontal = 8.dp, vertical = 4.dp)) {
+                Text(if (tmdbConfigured) "LIVE" else "PREVIEW", color = VistoraPalette.Muted, fontSize = 10.sp, fontWeight = FontWeight.Medium, letterSpacing = 1.sp)
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SummaryMetric("Titles", titleCount.toString(), Modifier.weight(1f))
+            SummaryMetric("Notes written", notesCount.toString(), Modifier.weight(1f))
+        }
+
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                .background(VistoraPalette.Surface)
+                .border(1.dp, VistoraPalette.Line, RoundedCornerShape(16.dp))
+                .clickable(onClick = onOpenNotes)
+                .padding(horizontal = 17.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("My Notes", color = VistoraPalette.Text, style = TextStyle(fontFamily = FontFamily.Serif, fontSize = 22.sp, fontWeight = FontWeight.Medium))
+                Text(if (notesCount == 0) "Nothing written yet" else "$notesCount notes in your diary", color = VistoraPalette.Muted, fontSize = 12.sp)
+            }
+            VistoraIcon("back", Modifier.size(18.dp), VistoraPalette.Muted)
         }
 
         SectionHeading("Library")
@@ -186,5 +214,21 @@ private fun AccentOption(label: String, color: androidx.compose.ui.graphics.Colo
         Box(Modifier.size(22.dp).clip(RoundedCornerShape(7.dp)).background(color))
         Text(label.replaceFirstChar { it.uppercase() }, color = VistoraPalette.Secondary, fontSize = 12.sp)
         if (selected) VistoraIcon("check", Modifier.size(15.dp), VistoraPalette.Rose)
+    }
+}
+
+
+@Composable
+private fun SummaryMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier.clip(RoundedCornerShape(17.dp))
+            .background(VistoraPalette.Surface)
+            .border(1.dp, VistoraPalette.Line, RoundedCornerShape(17.dp))
+            .padding(horizontal = 16.dp, vertical = 13.dp)
+            .heightIn(min = 82.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(value, color = VistoraPalette.Text, style = TextStyle(fontFamily = FontFamily.Serif, fontSize = 32.sp, lineHeight = 36.sp, fontWeight = FontWeight.Medium))
+        Text(label, color = VistoraPalette.Muted, fontSize = 12.sp)
     }
 }

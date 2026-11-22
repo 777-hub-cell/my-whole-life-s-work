@@ -122,7 +122,8 @@ fun VistoraApp(viewModel: VistoraViewModel) {
         }
     }
 
-    VistoraTheme(accent = preferences.accent) {\n    VistoraBackdrop {
+    VistoraTheme(accent = preferences.accent) {
+    VistoraBackdrop {
         Column(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
         ) {

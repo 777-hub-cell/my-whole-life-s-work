@@ -57,6 +57,7 @@ object VistoraBackup {
                 put("finishedAt", item.finishedAt ?: JSONObject.NULL)
                 put("watchedOn", item.watchedOn ?: JSONObject.NULL)
                 put("overallThoughts", item.overallThoughts)
+                put("overallThoughtsUpdatedAt", item.overallThoughtsUpdatedAt ?: JSONObject.NULL)
             })
         }
         snapshot.episodeNotes.forEach { note ->
@@ -166,7 +167,8 @@ object VistoraBackup {
                     startedAt = obj.takeNullableLong("startedAt"),
                     finishedAt = obj.takeNullableLong("finishedAt"),
                     watchedOn = obj.takeNullableLong("watchedOn"),
-                    overallThoughts = obj.optString("overallThoughts").take(50_000)
+                    overallThoughts = obj.optString("overallThoughts").take(50_000),
+                    overallThoughtsUpdatedAt = obj.takeNullableLong("overallThoughtsUpdatedAt")
                 )
             )
         }

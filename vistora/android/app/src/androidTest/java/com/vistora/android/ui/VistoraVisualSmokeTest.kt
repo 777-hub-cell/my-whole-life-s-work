@@ -20,6 +20,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 /**
  * Real emulator visual smoke test.
@@ -46,6 +48,26 @@ class VistoraVisualSmokeTest {
         check(device.takeScreenshot(File(directory, "$name.png"))) {
             "Could not capture screenshot: $name"
         }
+    }
+
+    private fun packageScreenshots() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = File(context.filesDir, "vistora-qa")
+        val screenshots = requireNotNull(directory.listFiles { file -> file.isFile && file.extension == "png" })
+            .sortedBy { it.name }
+        check(screenshots.size == 8) {
+            "Expected 8 screenshots, found ${screenshots.size}: ${screenshots.map { it.name }}"
+        }
+        val archive = File(context.filesDir, "vistora-qa.zip")
+        ZipOutputStream(archive.outputStream().buffered()).use { zip ->
+            screenshots.forEach { screenshot ->
+                zip.putNextEntry(ZipEntry(screenshot.name))
+                screenshot.inputStream().buffered().use { input -> input.copyTo(zip) }
+                zip.closeEntry()
+            }
+        }
+        check(archive.length() > 0L) { "VISTORA screenshot ZIP is empty" }
+        Log.i("VistoraVisualQA", "SCREENSHOT_ZIP=${archive.absolutePath}, bytes=${archive.length()}")
     }
 
     @Test
@@ -109,5 +131,6 @@ class VistoraVisualSmokeTest {
         rule.onNodeWithContentDescription("Settings tab").performClick()
         rule.onNodeWithText("My Notes").assertIsDisplayed()
         capture("08-more")
+        packageScreenshots()
     }
 }

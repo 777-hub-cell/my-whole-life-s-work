@@ -9,6 +9,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.Assert.assertTrue
+import kotlinx.coroutines.runBlocking
+import com.vistora.android.VistoraApplication
 import androidx.test.platform.app.InstrumentationRegistry
 import android.util.Log
 import androidx.test.uiautomator.UiDevice
@@ -64,10 +67,21 @@ class VistoraVisualSmokeTest {
         rule.onNodeWithText("Title name").performClick()
         rule.onNodeWithText("Title name").performTextInput("VISTORA QA sample")
         rule.onNodeWithText("Add to library").performScrollTo().performClick()
-        rule.onNodeWithContentDescription("Open VISTORA QA sample details").assertIsDisplayed()
+
+        val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as VistoraApplication
+        val savedToDatabase = runBlocking {
+            app.database.mediaDao().getAllForBackup().any { it.title == "VISTORA QA sample" }
+        }
+        assertTrue("Add Title did not persist the saved title to Room", savedToDatabase)
+
+        val posterDescription = "Open VISTORA QA sample details"
+        rule.waitUntil(timeoutMillis = 10_000) {
+            rule.onAllNodesWithContentDescription(posterDescription).fetchSemanticsNodes().isNotEmpty()
+        }
+        rule.onNodeWithContentDescription(posterDescription).assertIsDisplayed()
         capture("04-library-with-title")
 
-        rule.onNodeWithContentDescription("Open VISTORA QA sample details").performClick()
+        rule.onNodeWithContentDescription(posterDescription).performClick()
         rule.onNodeWithText("Title Details").assertIsDisplayed()
         capture("05-title-details")
         device.pressBack()

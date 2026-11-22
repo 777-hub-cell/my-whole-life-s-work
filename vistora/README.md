@@ -17,8 +17,8 @@ VISTORA is a private, personal entertainment library and watch diary. It is a na
 - No VISTORA backend, server, login, account, cloud sync, or remote database.
 - Core library, progress, ratings, personal notes, and settings are stored on this device.
 - The library must remain usable in airplane mode.
-- Optional catalogue discovery may call public provider APIs directly from the device. It is not required to use the library.
-- API keys, when configured by the user, are stored locally and never committed or included in exported backups.
+- Optional catalogue discovery calls TMDB directly for films, TV series and K-dramas, and AniList's public GraphQL API for anime. It is not required to use the library. Jikan is not used.
+- The optional TMDB credential is encrypted using Android Keystore-backed AES-GCM and never committed or included in exported backups. AniList anime search needs no key.
 - VISTORA is not a video player. No playback screen and no player-style "Continue Watching" hero.
 - The four categories are **Movies**, **K-Dramas**, **Anime**, and **TV Series**. Anime Movies belong under Anime.
 - Navigation: **Home**, **Library**, **Discover**, **Stats**, **Settings**.
@@ -33,7 +33,7 @@ Retain the prototype's ink-black background, muted burgundy, dusty rose, quiet s
 
 ## Build
 
-Open `android/` as a standalone project in Android Studio. The source uses Kotlin, Jetpack Compose, Room, DataStore, Navigation Compose, and lifecycle-aware ViewModels. See the engineering standard for pinned baseline versions and release checks.
+Open `vistora/android/` in Android Studio from the full monorepo checkout. The wrapper delegates to the shared `aharane/android/gradlew` distribution in this repository. The source uses Kotlin, Jetpack Compose, Room, DataStore, Navigation Compose, and lifecycle-aware ViewModels. See the engineering standard for pinned baseline versions and release checks.
 
 ## Current development branch
 

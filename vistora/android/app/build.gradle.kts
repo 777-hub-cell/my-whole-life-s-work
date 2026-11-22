@@ -18,7 +18,11 @@ apply(plugin = "org.jetbrains.kotlin.plugin.compose")
 
 android {
     namespace = "com.vistora.android"
-    compileSdk = 37
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 0
+        }
+    }
 
     defaultConfig {
         applicationId = "com.vistora.android"

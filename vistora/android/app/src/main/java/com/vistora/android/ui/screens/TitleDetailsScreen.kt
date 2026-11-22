@@ -14,6 +14,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -87,13 +90,13 @@ fun TitleDetailsScreen(
             horizontalArrangement=Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(7.dp)){
-                Box(Modifier.size(48.dp).clip(RoundedCornerShape(13.dp)).clickable(role=Role.Button,onClick=onBack),contentAlignment=Alignment.Center){
+                Box(Modifier.size(48.dp).semantics { contentDescription = "Back"; role = Role.Button }.clip(RoundedCornerShape(13.dp)).clickable(role=Role.Button,onClick=onBack),contentAlignment=Alignment.Center){
                     VistoraIcon("back",Modifier.size(21.dp),VistoraPalette.Text)
                 }
                 Text("Title Details",color=VistoraPalette.Text,style=TextStyle(fontFamily=FontFamily.Serif,fontSize=22.sp,fontWeight=FontWeight.Medium))
             }
             Box {
-                Box(Modifier.size(48.dp).clip(RoundedCornerShape(13.dp)).clickable(role=Role.Button){showMenu=true},contentAlignment=Alignment.Center){
+                Box(Modifier.size(48.dp).semantics { contentDescription = "More title options"; role = Role.Button }.clip(RoundedCornerShape(13.dp)).clickable(role=Role.Button){showMenu=true},contentAlignment=Alignment.Center){
                     VistoraIcon("more",Modifier.size(21.dp),VistoraPalette.Text)
                 }
             }
@@ -116,7 +119,7 @@ fun TitleDetailsScreen(
                 Text(meta,color=VistoraPalette.Secondary,fontSize=12.sp,lineHeight=18.sp)
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(2.dp)){
                     (1..5).forEach { star ->
-                        Box(Modifier.size(38.dp).clip(RoundedCornerShape(7.dp)).clickable(role=Role.Button){onRatingChange(star)},contentAlignment=Alignment.Center){
+                        Box(Modifier.size(38.dp).semantics { contentDescription = "Rate $star out of 5 stars"; role = Role.Button }.clip(RoundedCornerShape(7.dp)).clickable(role=Role.Button){onRatingChange(star)},contentAlignment=Alignment.Center){
                             VistoraIcon("star",Modifier.size(22.dp),if(star<=item.rating)VistoraPalette.WatchingText else VistoraPalette.Muted,if(star<=item.rating)1.1f else 1.8f)
                         }
                     }
@@ -150,7 +153,7 @@ fun TitleDetailsScreen(
         }
 
         Spacer(Modifier.height(22.dp))
-        StatusLabel(status=item.status,modifier=Modifier.fillMaxWidth().clickable(role=Role.Button){showStatus=true},compact=false)
+        StatusLabel(status=item.status,modifier=Modifier.fillMaxWidth().semantics { contentDescription = "Change library status. Current status: ${item.status.label}"; role = Role.Button }.clickable(role=Role.Button){showStatus=true},compact=false)
         Box(Modifier.fillMaxWidth().padding(top=7.dp).height(1.dp).background(VistoraPalette.Line))
 
         if(item.isEpisodic){
@@ -169,8 +172,8 @@ fun TitleDetailsScreen(
             Row(Modifier.fillMaxWidth().padding(top=13.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
                 Text("${item.progressPercent}% completed",color=VistoraPalette.Muted,fontSize=12.sp)
                 Row(horizontalArrangement=Arrangement.spacedBy(9.dp)){
-                    StepButton("minus",enabled=item.watchedEpisodes>0){onProgressChange(-1)}
-                    StepButton("plus",enabled=item.watchedEpisodes<item.totalEpisodes){onProgressChange(1)}
+                    StepButton("minus","Decrease watched episodes",enabled=item.watchedEpisodes>0){onProgressChange(-1)}
+                    StepButton("plus","Increase watched episodes",enabled=item.watchedEpisodes<item.totalEpisodes){onProgressChange(1)}
                 }
             }
             Text("Progress is tracked manually. It never plays an episode here.",color=VistoraPalette.Muted,fontSize=12.sp,modifier=Modifier.padding(top=6.dp))
@@ -351,8 +354,8 @@ private fun pickerDateToLocalNoon(value:Long):Long {
 }
 
 @Composable
-private fun StepButton(icon:String,enabled:Boolean,onClick:()->Unit){
-    Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(VistoraPalette.Surface)
+private fun StepButton(icon:String,label:String,enabled:Boolean,onClick:()->Unit){
+    Box(Modifier.size(48.dp).semantics { contentDescription = label; role = Role.Button }.clip(RoundedCornerShape(14.dp)).background(VistoraPalette.Surface)
         .border(1.dp,VistoraPalette.LineStrong,RoundedCornerShape(14.dp))
         .clickable(enabled=enabled,onClick=onClick),contentAlignment=Alignment.Center){
         VistoraIcon(icon,Modifier.size(21.dp),if(enabled)VistoraPalette.Text else VistoraPalette.Muted.copy(alpha=.45f))

@@ -2,48 +2,37 @@
 
 **Your entertainment, all in one place.**
 
-VISTORA is a private, personal entertainment library and watch diary. It is a native Android application written in Kotlin with Jetpack Compose. It is not a streaming player.
+VISTORA is a personal entertainment library and watch diary. The actual application is plain **HTML, CSS and JavaScript**. It is not a native Kotlin app and it is not a streaming player.
 
-## Project layout
+## Open the app
 
-- `android/` — native Kotlin/Jetpack Compose Android application.
-- `reference/Vistora.prototype.html` — the original HTML prototype preserved unchanged as the product/design reference.
-- `docs/PRODUCT_SPEC.md` — agreed product behaviour and screen requirements.
-- `docs/RESEARCH_AND_ENGINEERING_STANDARD.md` — Android/Kotlin research, engineering standards, do's and don'ts.
-- `docs/ROADMAP.md` — implementation milestones and quality gates.
+- Main application: [index.html](index.html)
+- Original design/reference file: [Vistora.prototype.html](reference/Vistora.prototype.html)
+- PWA install settings: [manifest.webmanifest](manifest.webmanifest)
+- Offline app-shell cache: [sw.js](sw.js)
 
-## Non-negotiable product decisions
+Open `index.html` in a browser to use the app. When hosted over HTTPS (or localhost), VISTORA also registers its service worker and can be installed as a Progressive Web App from the browser.
 
-- No VISTORA backend, server, login, account, cloud sync, or remote database.
-- Core library, progress, ratings, personal notes, and settings are stored on this device.
-- The library must remain usable in airplane mode.
-- Optional catalogue discovery calls TMDB directly for films, TV series and K-dramas, and AniList's public GraphQL API for anime. It is not required to use the library. Jikan is not used.
-- The optional TMDB credential is encrypted using Android Keystore-backed AES-GCM and never committed or included in exported backups. AniList anime search needs no key.
-- VISTORA is not a video player. No playback screen and no player-style "Continue Watching" hero.
-- The four categories are **Movies**, **K-Dramas**, **Anime**, and **TV Series**. Anime Movies belong under Anime.
-- Navigation: **Home**, **Library**, **Discover**, **Stats**, **Settings**.
-- Default library grid is two columns; the user can choose 2, 3, 4, or 5.
-- Series progress is manually tracked as episodes watched / total episodes.
-- Episode Notes are separate entries, one per title and episode number, editable and readable later. Overall thoughts are supported separately.
-- Titles and statistics are user data, not hard-coded demo counts. A fresh install starts with an empty personal library.
+## Important project decision
 
-## Design direction
+The original HTML prototype is now the real application entrypoint. Its layout, typography, category tiles, navigation, sheets, posters, and interaction patterns are intentionally preserved. Do not translate it into Compose, React, or another framework, and do not redesign the screens as part of ordinary maintenance.
 
-Retain the prototype's ink-black background, muted burgundy, dusty rose, quiet secondary surfaces, serif display typography, compact poster grid, and restrained status colours. Refine the visual system rather than replacing it with a generic template. Avoid neon, excessive cards, overly heavy typography, default-looking controls, and unnecessary decoration.
+## Data and privacy
 
-## Build
+- The library, progress, ratings, notes, and appearance settings are stored locally in the browser using `localStorage`.
+- There is no VISTORA backend, account, login, cloud database, or automatic sync.
+- The core library remains usable offline once the app shell has been cached by the service worker.
+- Catalogue discovery is optional and needs an internet connection. API credentials entered in the current HTML prototype are stored in browser local storage, so use a trusted personal device and browser profile.
+- Use the app's backup/export controls before clearing browser data or moving to another device.
 
-Open `vistora/android/` in Android Studio from the full monorepo checkout. The wrapper delegates to the shared `aharane/android/gradlew` distribution in this repository. The source uses Kotlin, Jetpack Compose, Room, DataStore, Navigation Compose, and lifecycle-aware ViewModels. See the engineering standard for pinned baseline versions and release checks.
+## Main structure
 
-## Current development branch
+- `index.html` — the running HTML/CSS/JavaScript application.
+- `reference/Vistora.prototype.html` — the original prototype retained unchanged.
+- `manifest.webmanifest` — installable web app metadata.
+- `sw.js` — offline app-shell caching.
+- `vistora-icon.svg` — application icon.
+- `docs/` — product and maintenance notes.
+- `scripts/validate-html.mjs` — lightweight source/manifest validation.
 
-`feature/vistora-kotlin-native-android-20261122`
-
-This branch is independent of Aharane's runtime/deployment branches. Do not merge VISTORA files into Aharane's service or deployment workflow.
-
-
-## Build handoff
-
-See [BUILD_AND_OFFLINE_HANDOFF.md](docs/BUILD_AND_OFFLINE_HANDOFF.md) for the full build command, APK output path, offline behaviour, test commands, and remaining release checks.
-
-The approved Home page keeps the four categories and one **My Watchlist** shelf. Episode notes are also available in a searchable **My Notes** diary from Settings.
+The previous native Android experiment is no longer the application or build target. Its source was removed from the active project branch; the earlier Git history still retains it.

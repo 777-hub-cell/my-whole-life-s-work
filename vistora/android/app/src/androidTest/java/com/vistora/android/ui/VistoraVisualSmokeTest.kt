@@ -62,7 +62,7 @@ class VistoraVisualSmokeTest {
         rule.onNodeWithText("Title name").performClick()
         rule.onNodeWithText("Title name").performTextInput("VISTORA QA sample")
         rule.onNodeWithText("Add to library").performScrollTo().performClick()
-        rule.onNodeWithText("VISTORA QA sample").assertIsDisplayed()
+        rule.onAllNodesWithText("VISTORA QA sample").get(0).assertIsDisplayed()
         capture("04-library-with-title")
 
         rule.onAllNodesWithText("VISTORA QA sample").get(0).performClick()

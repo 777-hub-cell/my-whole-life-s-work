@@ -109,4 +109,15 @@ jobs:
           disable-linux-hw-accel: auto
           emulator-boot-timeout: 900
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
-          script: bash vistora/android/gradlew :app:connectedDebugAndroidTest
+          script: |
+            bash vistora/android/gradlew :app:connectedDebugAndroidTest
+            bash vistora/scripts/capture-visual-qa.sh
+
+      - name: Upload VISTORA visual QA screenshots
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: vistora-visual-qa
+          path: ${{ runner.temp }}/vistora-visual-qa/*.png
+          if-no-files-found: warn
+          retention-days: 14

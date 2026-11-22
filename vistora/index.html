@@ -700,7 +700,7 @@ function viewSources(){
 
 /** data class UiState(val items: MutableList<Item>, val view: String, val tab: String, ...) */
 var S={
-  items:saved?saved.items:seed(),cols:saved&&saved.cols?saved.cols:2,ap:Object.assign({},DEF_AP,saved&&saved.ap),mode:(saved&&saved.mode)||'preview',src:(saved&&saved.src)||'anilist',
+  items:saved?saved.items:[],cols:saved&&saved.cols?saved.cols:2,ap:Object.assign({},DEF_AP,saved&&saved.ap),mode:(saved&&saved.mode)||'preview',src:(saved&&saved.src)||'anilist',
   view:'home',tab:'home',tid:0,
   status:'all',types:[],minRating:0,wlOnly:false,sort:'added',q:'',searchOpen:false,
   list:[],shown:0,editing:false,nt:'overall',nep:1,expand:false,lastTid:0,formImg:undefined

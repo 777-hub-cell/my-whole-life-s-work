@@ -1,6 +1,8 @@
 package com.vistora.android.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -19,11 +21,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.vistora.android.data.backup.VistoraBackup
 import com.vistora.android.data.preferences.VistoraPreferences
 import com.vistora.android.data.preferences.VistoraPreferencesStore
 import com.vistora.android.domain.LibraryStatus
 import com.vistora.android.domain.MediaItem
 import com.vistora.android.domain.MediaType
+import com.vistora.android.domain.LibrarySnapshot
+import com.vistora.android.VistoraApplication
 import com.vistora.android.ui.components.StatusLabel
 import com.vistora.android.ui.components.VistoraAction
 import com.vistora.android.ui.components.VistoraBottomBar
@@ -49,6 +54,8 @@ fun VistoraApp(viewModel: VistoraViewModel) {
     val preferences by store.preferences.collectAsStateWithLifecycle(initialValue = VistoraPreferences())
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    val application = context.applicationContext as VistoraApplication
+    val repository = remember { application.libraryRepository }
 
     var route by rememberSaveable { mutableStateOf("Home") }
     var selectedId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -59,10 +66,38 @@ fun VistoraApp(viewModel: VistoraViewModel) {
     var sortVisible by rememberSaveable { mutableStateOf(false) }
     var notificationsVisible by rememberSaveable { mutableStateOf(false) }
     var resetVisible by rememberSaveable { mutableStateOf(false) }
+    var restoreCandidate by remember { mutableStateOf<LibrarySnapshot?>(null) }
     var filters by remember { mutableStateOf(LibraryFilters()) }
     var sort by rememberSaveable { mutableStateOf("Recently updated") }
 
     val selectedItem = uiState.items.firstOrNull { it.id == selectedId }
+
+    val backupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                runCatching {
+                    val snapshot = repository.exportSnapshot()
+                    VistoraBackup.export(context, uri, snapshot)
+                }.onSuccess { viewModel.showMessage("Backup exported successfully") }
+                    .onFailure { viewModel.showMessage(it.message ?: "Backup export failed") }
+            }
+        }
+    }
+    val restoreLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                runCatching { VistoraBackup.import(context, uri) }
+                    .onSuccess { candidate ->
+                        restoreCandidate = candidate
+                    }
+                    .onFailure { viewModel.showMessage(it.message ?: "This backup couldn't be restored") }
+            }
+        }
+    }
     LaunchedEffect(selectedId) {
         selectedId?.let(viewModel::observeNotes)
     }
@@ -125,8 +160,8 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                         preferences = preferences,
                         onGrid = { value -> scope.launch { store.setGridColumns(value) } },
                         onAccent = { value -> scope.launch { store.setAccent(value) } },
-                        onBackup = { viewModel.showMessage("Backup export is being added to this native build.") },
-                        onRestore = { viewModel.showMessage("Backup restore is being added to this native build.") },
+                        onBackup = { backupLauncher.launch("VISTORA-backup.zip") },
+                        onRestore = { restoreLauncher.launch(arrayOf("application/zip")) },
                         onReset = { resetVisible = true }
                     )
                     "Title Details" -> {
@@ -239,6 +274,31 @@ fun VistoraApp(viewModel: VistoraViewModel) {
             }
         }
     }
+    if (restoreCandidate != null) {
+        val candidate = restoreCandidate!!
+        VistoraSheet(onDismiss = { restoreCandidate = null }) {
+            Column(Modifier.fillMaxWidth().padding(horizontal=20.dp).padding(bottom=22.dp)) {
+                Text("Restore this backup?",color=VistoraPalette.Text,style=androidx.compose.material3.MaterialTheme.typography.headlineMedium)
+                Text(
+                    "This will replace the current library with ${candidate.items.size} titles and ${candidate.episodeNotes.size} episode notes. Poster images will be copied into this app's private storage.",
+                    color=VistoraPalette.Muted,fontSize=13.sp,lineHeight=20.sp,modifier=Modifier.padding(top=7.dp,bottom=17.dp)
+                )
+                Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){
+                    VistoraAction("Cancel",{restoreCandidate=null},Modifier.weight(1f),quiet=true)
+                    VistoraAction("Replace library",{
+                        scope.launch {
+                            runCatching { repository.replaceSnapshot(candidate) }
+                                .onSuccess { viewModel.showMessage("Backup restored successfully") }
+                                .onFailure { viewModel.showMessage(it.message ?: "Restore failed") }
+                            restoreCandidate=null
+                            selectedId=null
+                            route="Library"
+                        }
+                    },Modifier.weight(1f))
+                }
+            }
+        }
+    }
     if (resetVisible) {
         VistoraSheet(onDismiss = { resetVisible = false }) {
             Column(Modifier.fillMaxWidth().padding(horizontal=20.dp).padding(bottom=22.dp)) {
@@ -248,9 +308,11 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                     VistoraAction("Cancel",{resetVisible=false},Modifier.weight(1f),quiet=true)
                     VistoraAction("Clear library",{
                         scope.launch {
-                            uiState.items.forEach{viewModel.deleteItem(it.id)}
+                            runCatching { repository.replaceSnapshot(LibrarySnapshot(emptyList(), emptyList())) }
+                                .onSuccess { viewModel.showMessage("Library cleared") }
+                                .onFailure { viewModel.showMessage("Couldn't clear the library") }
+                            selectedId=null
                             resetVisible=false
-                            viewModel.showMessage("Library cleared")
                         }
                     },Modifier.weight(1f))
                 }

@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import com.vistora.android.domain.LibraryStatus
@@ -201,7 +202,8 @@ fun VistoraTextField(
     minLines: Int = 1,
     maxLines: Int = 1,
     singleLine: Boolean = true,
-    keyboardType: KeyboardType = KeyboardType.Text
+    keyboardType: KeyboardType = KeyboardType.Text,
+    visualTransformation: VisualTransformation = VisualTransformation.None
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(7.dp)) {
         if (label != null) {
@@ -227,6 +229,7 @@ fun VistoraTextField(
             maxLines = maxLines,
             singleLine = singleLine,
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+            visualTransformation = visualTransformation,
             decorationBox = { inner ->
                 Box {
                     if (value.isEmpty()) Text(placeholder, color = VistoraPalette.Muted, fontSize = 15.sp)

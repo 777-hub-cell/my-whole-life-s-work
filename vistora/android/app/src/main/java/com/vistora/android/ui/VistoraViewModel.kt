@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.vistora.android.data.repository.LibraryRepository
+import com.vistora.android.data.catalog.CatalogRepository
+import com.vistora.android.domain.CatalogResult
+import com.vistora.android.domain.CatalogSearchState
 import com.vistora.android.domain.EpisodeNote
 import com.vistora.android.domain.LibraryStatus
 import com.vistora.android.domain.MediaItem
@@ -21,11 +24,13 @@ data class VistoraUiState(
     val episodeNotes: List<EpisodeNote> = emptyList(),
     val notesForMediaId: Long? = null,
     val isLoading: Boolean = true,
-    val message: String? = null
+    val message: String? = null,
+    val catalog: CatalogSearchState = CatalogSearchState()
 )
 
 class VistoraViewModel(
-    private val repository: LibraryRepository
+    private val repository: LibraryRepository,
+    private val catalogRepository: CatalogRepository = CatalogRepository()
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(VistoraUiState())
     val uiState: StateFlow<VistoraUiState> = _uiState.asStateFlow()
@@ -178,6 +183,47 @@ class VistoraViewModel(
         val item = _uiState.value.items.firstOrNull { it.id == mediaId } ?: return
         saveItem(item.copy(overallThoughts = thoughts, updatedAt = System.currentTimeMillis()))
         showMessage("Overall thoughts saved")
+    }
+
+    fun searchCatalog(query: String, type: MediaType?, tmdbCredential: String?) {
+        val clean = query.trim()
+        if (clean.isBlank()) {
+            _uiState.update { it.copy(catalog = CatalogSearchState(query = query, error = "Enter a title to search.")) }
+            return
+        }
+        _uiState.update { it.copy(catalog = CatalogSearchState(query = clean, isLoading = true)) }
+        viewModelScope.launch {
+            runCatching { catalogRepository.search(clean, type, tmdbCredential) }
+                .onSuccess { results ->
+                    _uiState.update {
+                        it.copy(catalog = CatalogSearchState(
+                            query = clean,
+                            results = results,
+                            sourceLabel = when (type) {
+                                MediaType.ANIME -> "AniList"
+                                MediaType.MOVIE, MediaType.K_DRAMA, MediaType.TV_SERIES, null -> "TMDB"
+                            }
+                        ))
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(catalog = CatalogSearchState(query = clean, error = error.message ?: "Search failed. Try again."))
+                    }
+                }
+        }
+    }
+
+    fun clearCatalogSearch() {
+        _uiState.update { it.copy(catalog = CatalogSearchState()) }
+    }
+
+    fun testTmdbCredential(credential: String) {
+        viewModelScope.launch {
+            runCatching { catalogRepository.testTmdbCredential(credential) }
+                .onSuccess { showMessage("TMDB credential works") }
+                .onFailure { showMessage(it.message ?: "TMDB credential check failed") }
+        }
     }
 
     fun clearMessage() {

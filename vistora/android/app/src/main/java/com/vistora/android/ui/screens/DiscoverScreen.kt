@@ -3,6 +3,8 @@ package com.vistora.android.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,7 +53,7 @@ fun DiscoverScreen(
             Text("Find new titles to add to your personal library.",color=VistoraPalette.Muted,fontSize=14.sp,modifier=Modifier.padding(top=4.dp))
         }
         VistoraTextField(query,{query=it},"Search the offline preview catalogue")
-        Row(horizontalArrangement=Arrangement.spacedBy(7.dp)){
+        Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)){
             TypeChip("All",selectedType==null){selectedType=null}
             MediaType.entries.forEach{type->TypeChip(type.category,selectedType==type){selectedType=type}}
         }
@@ -67,7 +69,7 @@ fun DiscoverScreen(
                 Text("No titles in this preview match your search.",color=VistoraPalette.Muted,fontSize=14.sp)
             }
         }else{
-            androidx.compose.foundation.lazy.LazyColumn(verticalArrangement=Arrangement.spacedBy(12.dp),contentPadding=PaddingValues(bottom=24.dp)){
+            androidx.compose.foundation.lazy.LazyColumn(modifier=Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(12.dp),contentPadding=PaddingValues(bottom=24.dp)){
                 items(results,key={it.title}){item->
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(VistoraPalette.Surface).padding(11.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(13.dp)){
                         PosterArt(item.title,item.type.category,null,Modifier.width(76.dp))

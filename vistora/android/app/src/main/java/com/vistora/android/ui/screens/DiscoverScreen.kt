@@ -142,7 +142,7 @@ fun DiscoverScreen(
 private fun CatalogResultRow(result:CatalogResult,onAdd:()->Unit){
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(VistoraPalette.Surface).padding(10.dp),
         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){
-        PosterArt(result.title,result.type.category,result.posterUrl,Modifier.width(72.dp))
+        PosterArt(result.title,result.type.category,null,Modifier.width(72.dp))
         Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)){
             Text(result.title,color=VistoraPalette.Text,fontWeight=FontWeight.SemiBold,fontSize=14.sp,lineHeight=18.sp)
             Text(listOfNotNull(result.type.category,result.releaseYear?.toString(),result.totalEpisodes.takeIf{it>0}?.let{"$it episodes"}).joinToString(" · "),

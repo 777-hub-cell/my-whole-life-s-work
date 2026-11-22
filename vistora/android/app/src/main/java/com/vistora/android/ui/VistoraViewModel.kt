@@ -197,8 +197,15 @@ class VistoraViewModel(
 
     fun saveOverallThoughts(mediaId: Long, thoughts: String) {
         val item = _uiState.value.items.firstOrNull { it.id == mediaId } ?: return
-        saveItem(item.copy(overallThoughts = thoughts, updatedAt = System.currentTimeMillis()))
-        showMessage("Overall thoughts saved")
+        val clean = thoughts.trim()
+        val now = System.currentTimeMillis()
+        saveItem(
+            item.copy(
+                overallThoughts = clean,
+                overallThoughtsUpdatedAt = if (clean.isBlank()) null else now,
+                updatedAt = now
+            )
+        )
     }
 
     fun searchCatalog(query: String, type: MediaType?, tmdbCredential: String?) {

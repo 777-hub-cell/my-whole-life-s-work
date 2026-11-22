@@ -26,7 +26,7 @@ object PosterDownloader {
         try {
             connection.connectTimeout = 12_000
             connection.readTimeout = 15_000
-            connection.instanceFollowRedirects = false
+            connection.instanceFollowRedirects = true
             val code = connection.responseCode
             if (code !in 200..299) return@withContext null
             val contentType = connection.contentType.orEmpty()

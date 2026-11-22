@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -206,6 +208,8 @@ fun VistoraTextField(
     keyboardType: KeyboardType = KeyboardType.Text,
     visualTransformation: VisualTransformation = VisualTransformation.None
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(7.dp)) {
         if (label != null) {
             Text(label, color = VistoraPalette.Secondary, style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
@@ -217,7 +221,7 @@ fun VistoraTextField(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
                 .background(VistoraPalette.Field)
-                .border(1.dp, VistoraPalette.LineStrong, RoundedCornerShape(14.dp))
+                .border(1.dp, if (focused) LocalVistoraAccent.current else VistoraPalette.LineStrong, RoundedCornerShape(14.dp))
                 .padding(horizontal = 15.dp, vertical = if (singleLine) 14.dp else 14.dp),
             textStyle = TextStyle(
                 color = VistoraPalette.Text,
@@ -226,6 +230,7 @@ fun VistoraTextField(
                 fontWeight = FontWeight.Normal
             ),
             cursorBrush = SolidColor(LocalVistoraAccent.current),
+            interactionSource = interactionSource,
             minLines = minLines,
             maxLines = maxLines,
             singleLine = singleLine,
@@ -254,17 +259,22 @@ fun StatusLabel(
         LibraryStatus.ON_HOLD -> VistoraPalette.HoldSurface to VistoraPalette.HoldText
         LibraryStatus.DROPPED -> VistoraPalette.DroppedSurface to VistoraPalette.DroppedText
     }
-    Text(
-        status.label,
+    Box(
         modifier = modifier
+            .heightIn(min = if (compact) 23.dp else 48.dp)
             .clip(RoundedCornerShape(7.dp))
             .background(bg)
             .border(1.dp, fg.copy(alpha = 0.24f), RoundedCornerShape(7.dp))
-            .padding(horizontal = if (compact) 8.dp else 11.dp, vertical = if (compact) 4.dp else 7.dp),
-        color = fg,
-        style = TextStyle(fontSize = if (compact) 10.sp else 13.sp, fontWeight = FontWeight.SemiBold),
-        maxLines = 1
-    )
+            .padding(horizontal = if (compact) 8.dp else 13.dp, vertical = if (compact) 3.dp else 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            status.label,
+            color = fg,
+            style = TextStyle(fontSize = if (compact) 10.sp else 13.sp, fontWeight = FontWeight.SemiBold),
+            maxLines = 1
+        )
+    }
 }
 
 @Composable

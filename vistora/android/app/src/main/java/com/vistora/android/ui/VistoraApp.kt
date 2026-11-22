@@ -322,6 +322,7 @@ fun VistoraApp(viewModel: VistoraViewModel) {
             }
         }
     }
+    }
 }
 
 @Composable

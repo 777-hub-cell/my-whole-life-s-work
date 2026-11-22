@@ -37,6 +37,7 @@ private data class NoteEntry(
 fun AllNotesScreen(
     items: List<MediaItem>,
     episodeNotes: List<EpisodeNote>,
+    onBack: () -> Unit,
     onOpenNote: (mediaId: Long, episodeNumber: Int) -> Unit
 ) {
     var query by remember { mutableStateOf("") }
@@ -89,7 +90,7 @@ fun AllNotesScreen(
         verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)){
-            Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).clickable(role=Role.Button){onOpenNote(-1L,-1)},contentAlignment=Alignment.Center){
+            Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).clickable(role=Role.Button,onClick=onBack),contentAlignment=Alignment.Center){
                 VistoraIcon("back",Modifier.size(20.dp),VistoraPalette.Text)
             }
             Column(Modifier.weight(1f)){

@@ -118,6 +118,6 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: vistora-android-visual-screenshots
-          path: ${{ runner.temp }}/vistora-android-qa/*.png
+          path: ${{ runner.temp }}/vistora-android-qa/**/*.png
           if-no-files-found: error
           retention-days: 14

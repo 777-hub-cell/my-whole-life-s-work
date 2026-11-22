@@ -1,6 +1,7 @@
 package com.vistora.android.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -12,11 +13,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vistora.android.domain.LibraryStatus
@@ -43,18 +46,22 @@ fun LibraryScreen(
     onSortChange: () -> Unit,
     onOpenTitle: (Long) -> Unit,
     onAdd: () -> Unit,
+    onDiscover: () -> Unit,
     onFilters: () -> Unit,
     onGridColumns: () -> Unit
 ) {
     var query by remember { mutableStateOf("") }
-    var showSearch by remember { mutableStateOf(true) }
+    var showSearch by remember { mutableStateOf(false) }
     val filtered = remember(items, query, filters, sort) {
         val base = items.asSequence()
             .filter { filters.types.isEmpty() || it.type in filters.types }
             .filter { filters.statuses.isEmpty() || it.status in filters.statuses }
             .filter { filters.minimumRating == 0 || it.rating >= filters.minimumRating }
             .filter { !filters.watchlistOnly || it.isWatchlisted }
-            .filter { query.isBlank() || it.title.contains(query.trim(), ignoreCase = true) || it.genres.any { g -> g.contains(query.trim(), true) } }
+            .filter {
+                query.isBlank() || it.title.contains(query.trim(), ignoreCase = true) ||
+                    it.genres.any { genre -> genre.contains(query.trim(), true) }
+            }
             .toList()
         when (sort) {
             "Title A–Z" -> base.sortedBy { it.title.lowercase() }
@@ -65,116 +72,179 @@ fun LibraryScreen(
             else -> base.sortedByDescending { it.updatedAt }
         }
     }
+    val hasFilters = filters.types.isNotEmpty() || filters.statuses.isNotEmpty() ||
+        filters.minimumRating > 0 || filters.watchlistOnly
 
     Box(Modifier.fillMaxSize()) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-        Row(
-            Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text("My Library", color = VistoraPalette.Text, style = androidx.compose.material3.MaterialTheme.typography.headlineLarge)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                HeaderAction("search", "Search") { showSearch = !showSearch; if (!showSearch) query = "" }
-                HeaderAction("filter", "Filters", onFilters)
-            }
-        }
-        if (showSearch) {
-            VistoraTextField(query, { query = it }, "Search your library", Modifier.fillMaxWidth())
-            Spacer(Modifier.height(13.dp))
-        }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(
-                when {
-                    filtered.isEmpty() && items.isEmpty() -> "Your collection"
-                    filtered.isEmpty() -> "No matching titles"
-                    else -> "Your collection"
-                },
-                color = VistoraPalette.Secondary, fontSize = 14.sp, fontWeight = FontWeight.Medium
-            )
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(sort, color = VistoraPalette.Muted, fontSize = 12.sp,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onSortChange).padding(horizontal = 5.dp, vertical = 8.dp))
-                Box(Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onGridColumns), contentAlignment = Alignment.Center) {
-                    VistoraIcon("grid", Modifier.size(19.dp), VistoraPalette.Secondary)
+        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "My Library",
+                    color = VistoraPalette.Text,
+                    style = androidx.compose.material3.MaterialTheme.typography.headlineLarge
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    HeaderAction("search", "Search", showSearch) {
+                        showSearch = !showSearch
+                        if (!showSearch) query = ""
+                    }
+                    HeaderAction("filter", "Filters", hasFilters, onFilters)
                 }
             }
-        }
-        if (filters.types.isNotEmpty() || filters.statuses.isNotEmpty() || filters.minimumRating > 0 || filters.watchlistOnly) {
-            Text(
-                buildList {
-                    filters.types.forEach { add(it.category) }
-                    filters.statuses.forEach { add(it.label) }
-                    if (filters.minimumRating > 0) add("${filters.minimumRating}+ stars")
-                    if (filters.watchlistOnly) add("Watchlist")
-                }.joinToString(" · "),
-                color = VistoraPalette.Rose, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp)
-            )
-        }
-        Spacer(Modifier.height(12.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(VistoraPalette.LineStrong))
-        Spacer(Modifier.height(14.dp))
-        if (filtered.isEmpty()) {
-            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        if (items.isEmpty()) "Your library starts here." else "No titles match these filters.",
-                        color = VistoraPalette.Text, style = androidx.compose.material3.MaterialTheme.typography.titleLarge
-                    )
-                    Text(
-                        if (items.isEmpty()) "Add a film or series to begin building your collection." else "Try another search or adjust your filters.",
-                        color = VistoraPalette.Muted, fontSize = 14.sp
-                    )
-                    if (items.isEmpty()) {
-                        Row(
-                            Modifier.clip(RoundedCornerShape(13.dp)).background(VistoraPalette.Burgundy).clickable(onClick = onAdd)
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            VistoraIcon("plus", Modifier.size(18.dp), VistoraPalette.OnAccent)
-                            Spacer(Modifier.width(7.dp))
-                            Text("Add your first title", color = VistoraPalette.OnAccent, fontWeight = FontWeight.SemiBold)
-                        }
+
+            if (showSearch) {
+                VistoraTextField(query, { query = it }, "Search your library", Modifier.fillMaxWidth())
+                Spacer(Modifier.height(12.dp))
+            }
+
+            Row(
+                Modifier.fillMaxWidth().padding(top = 5.dp, bottom = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    if (filtered.isEmpty() && (query.isNotBlank() || hasFilters)) "No matches" else "All Titles",
+                    color = VistoraPalette.Text,
+                    style = TextStyle(fontFamily = FontFamily.Serif, fontSize = 25.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium)
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Row(
+                        Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onSortChange)
+                            .padding(horizontal = 4.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text(sort, color = VistoraPalette.Secondary, fontSize = 12.sp, maxLines = 1)
+                        VistoraIcon("sort", Modifier.size(17.dp), VistoraPalette.Secondary)
+                    }
+                    Box(
+                        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onGridColumns),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        VistoraIcon("grid", Modifier.size(19.dp), VistoraPalette.Secondary)
                     }
                 }
             }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(gridColumns.coerceIn(2, 5)),
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(bottom = 28.dp),
-                horizontalArrangement = Arrangement.spacedBy(if (gridColumns >= 4) 8.dp else 12.dp),
-                verticalArrangement = Arrangement.spacedBy(if (gridColumns >= 4) 14.dp else 18.dp)
-            ) {
-                items(filtered, key = { it.id }, contentType = { "media-poster" }) { item ->
-                    PosterTile(item, { onOpenTitle(item.id) }, showStatus = true)
+
+            if (hasFilters) {
+                Text(
+                    buildList {
+                        filters.types.forEach { add(it.category) }
+                        filters.statuses.forEach { add(it.label) }
+                        if (filters.minimumRating > 0) add("${filters.minimumRating}+ stars")
+                        if (filters.watchlistOnly) add("Watchlist")
+                    }.joinToString("  ·  "),
+                    color = VistoraPalette.Rose,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+
+            if (filtered.isEmpty()) {
+                if (items.isEmpty() && query.isBlank() && !hasFilters) {
+                    EmptyLibrary(onAdd = onAdd, onDiscover = onDiscover, modifier = Modifier.fillMaxWidth().padding(top = 3.dp))
+                } else {
+                    Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                            Text("No titles match these filters.", color = VistoraPalette.Text, style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
+                            Text("Try another search or adjust your filters.", color = VistoraPalette.Muted, fontSize = 14.sp)
+                        }
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(gridColumns.coerceIn(2, 5)),
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 96.dp),
+                    horizontalArrangement = Arrangement.spacedBy(if (gridColumns >= 4) 8.dp else 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (gridColumns >= 4) 14.dp else 18.dp)
+                ) {
+                    items(filtered, key = { it.id }, contentType = { "media-poster" }) { item ->
+                        PosterTile(item, { onOpenTitle(item.id) }, showStatus = true)
+                    }
                 }
             }
         }
-    }
-        if (items.isNotEmpty()) {
-            Row(
-                Modifier.align(Alignment.BottomEnd).padding(end=20.dp,bottom=18.dp)
-                    .size(58.dp).clip(RoundedCornerShape(19.dp)).background(VistoraPalette.Burgundy)
-                    .clickable(role=Role.Button,onClick=onAdd)
-                    .semantics { contentDescription = "Add a title to your library" },
-                verticalAlignment=Alignment.CenterVertically,
-                horizontalArrangement=Arrangement.Center
-            ) {
-                VistoraIcon("plus",Modifier.size(26.dp),VistoraPalette.OnAccent)
-            }
+
+        // Keep the Add action discoverable even when the library is empty.
+        Row(
+            Modifier.align(Alignment.BottomEnd).padding(end = 2.dp, bottom = 18.dp)
+                .size(58.dp).clip(RoundedCornerShape(19.dp)).background(VistoraPalette.Burgundy)
+                .clickable(role = Role.Button, onClick = onAdd)
+                .semantics { contentDescription = "Add a title to your library"; role = Role.Button },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            VistoraIcon("plus", Modifier.size(26.dp), VistoraPalette.OnAccent)
         }
     }
 }
 
 @Composable
-private fun HeaderAction(icon: String, label: String, onClick: () -> Unit) {
+private fun EmptyLibrary(onAdd: () -> Unit, onDiscover: () -> Unit, modifier: Modifier = Modifier) {
     Column(
-        Modifier.width(46.dp).height(48.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick),
+        modifier.clip(RoundedCornerShape(16.dp))
+            .background(VistoraPalette.Surface)
+            .border(1.dp, VistoraPalette.LineStrong, RoundedCornerShape(16.dp))
+            .padding(horizontal = 18.dp, vertical = 26.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        VistoraIcon(icon, Modifier.size(20.dp), VistoraPalette.Secondary)
-        Text(label, color = VistoraPalette.Muted, fontSize = 9.sp)
+        Box(
+            Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(VistoraPalette.Burgundy),
+            contentAlignment = Alignment.Center
+        ) {
+            VistoraIcon("clap", Modifier.size(26.dp), VistoraPalette.OnAccent)
+        }
+        Text(
+            "Your library is empty",
+            color = VistoraPalette.Text,
+            style = TextStyle(fontFamily = FontFamily.Serif, fontSize = 24.sp, lineHeight = 29.sp, fontWeight = FontWeight.Medium)
+        )
+        Text(
+            "Add the first title you are watching, or pick something in Discover.",
+            color = VistoraPalette.Muted,
+            fontSize = 14.sp,
+            lineHeight = 21.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        Spacer(Modifier.height(1.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            PillAction("Add a title", true, onAdd)
+            PillAction("Open Discover", false, onDiscover)
+        }
+    }
+}
+
+@Composable
+private fun PillAction(label: String, primary: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.heightIn(min = 42.dp).clip(RoundedCornerShape(999.dp))
+            .background(if (primary) VistoraPalette.Burgundy else VistoraPalette.Raised)
+            .then(if (primary) Modifier else Modifier.border(1.dp, VistoraPalette.LineStrong, RoundedCornerShape(999.dp)))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        if (primary) VistoraIcon("plus", Modifier.size(15.dp), VistoraPalette.OnAccent)
+        Text(label, color = VistoraPalette.OnAccent.takeIf { primary } ?: VistoraPalette.Text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun HeaderAction(icon: String, label: String, active: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.size(44.dp).clip(RoundedCornerShape(12.dp))
+            .background(if (active) VistoraPalette.Raised else androidx.compose.ui.graphics.Color.Transparent)
+            .semantics { contentDescription = label; role = Role.Button }
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        VistoraIcon(icon, Modifier.size(21.dp), if (active) VistoraPalette.Rose else VistoraPalette.Text)
     }
 }

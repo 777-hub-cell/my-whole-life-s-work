@@ -8,6 +8,8 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -45,8 +47,8 @@ object VistoraPalette {
     val DroppedText = Color(0xFFD5A3A0)
 }
 
-private val VistoraDarkColors = darkColorScheme(
-    primary = VistoraPalette.Rose,
+val LocalVistoraAccent = compositionLocalOf { VistoraPalette.Rose }\n\nprivate fun accentFor(name: String): Color = when (name) {\n    "burgundy" -> VistoraPalette.BurgundyHigh\n    else -> VistoraPalette.Rose\n}\n\nprivate fun colorsFor(accent: Color) = darkColorScheme(
+    primary = accent,
     onPrimary = VistoraPalette.Ink,
     primaryContainer = VistoraPalette.Burgundy,
     onPrimaryContainer = VistoraPalette.OnAccent,

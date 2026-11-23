@@ -70,3 +70,17 @@ test('atomic save/reload preserves distinct Owner values', async t => {
   assert.equal(loaded.publicBotNumber, '447700900123')
   assert.equal(JSON.parse(await readFile(file, 'utf8')).version, 4)
 })
+
+test('clearing Public Owner must not inherit Private Owner on reload', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'aharane-v4-clear-'))
+  t.after(() => rm(root, {recursive:true, force:true}))
+  const file = join(root, 'owner-config.json')
+  await saveOwnerConfig(file, {
+    privateOwnerNumber: '2348012345678',
+    publicOwnerNumber: '',
+    publicBotNumber: '447700900123',
+  })
+  const next = await loadOwnerConfig(file)
+  assert.equal(next.privateOwnerNumber, '2348012345678')
+  assert.equal(next.publicOwnerNumber, '')
+})

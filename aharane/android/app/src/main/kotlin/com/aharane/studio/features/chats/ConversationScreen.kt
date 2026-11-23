@@ -532,11 +532,12 @@ fun ConversationScreen(
                         }
                     }
                     itemsIndexed(visible, key = { _, item -> item.messageId }) { index, message ->
-                        val previous = visible.getOrNull(index - 1)
-                        if (appearance.showDateSeparators && (previous == null || !sameDay(previous.timestampMillis, message.timestampMillis))) {
-                            ConversationDayDivider(message.timestampMillis)
-                        }
-                        MessageBubble(
+                        Column(Modifier.animateItem()) {
+                            val previous = visible.getOrNull(index - 1)
+                            if (appearance.showDateSeparators && (previous == null || !sameDay(previous.timestampMillis, message.timestampMillis))) {
+                                ConversationDayDivider(message.timestampMillis)
+                            }
+                            MessageBubble(
                             message = message,
                             appearance = appearance,
                             autoDownloadImages = autoDownloadImages,
@@ -567,8 +568,9 @@ fun ConversationScreen(
                             onLoadVideo = { onLoadVideo(message) },
                             onLoadAudio = { onLoadAudio(message) },
                             onDownloadMedia = { onDownloadMedia(message) },
-                            onOpenLocation = { onOpenLocation(message) }
-                        )
+                                onOpenLocation = { onOpenLocation(message) }
+                            )
+                        }
                     }
                 }
             }

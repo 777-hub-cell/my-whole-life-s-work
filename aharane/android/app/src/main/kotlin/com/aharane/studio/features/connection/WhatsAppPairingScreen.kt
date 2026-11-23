@@ -272,6 +272,7 @@ fun WhatsAppPairingScreen(
                 )
             }
             StudioActionButton("Back to accounts", modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp), onClick = onBack)
+            }
         }
     }
 }

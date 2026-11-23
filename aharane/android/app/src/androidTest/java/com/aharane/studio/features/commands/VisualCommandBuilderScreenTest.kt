@@ -3,6 +3,8 @@ package com.aharane.studio.features.commands
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
@@ -43,6 +45,8 @@ class VisualCommandBuilderScreenTest {
         compose.waitForIdle()
         compose.onNodeWithText("Apply").performClick()
 
+        compose.onNodeWithTag("visual-command-node-library")
+            .performScrollToNode(hasTestTag("add-node-message.sendText"))
         compose.onNodeWithTag("add-node-message.sendText").performClick()
         compose.onNodeWithTag("node-config-field-text").performTextClearance()
         compose.onNodeWithTag("node-config-field-text").performTextInput("Hello from the builder")

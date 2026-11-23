@@ -29,7 +29,8 @@ fun WhatsAppUpdatesScreen(
     repository: AharaneRepository,
     selectedAccount: ChatAccount,
     onAccountSelected: (ChatAccount) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    connected: Boolean = false
 ) {
     val scope = rememberCoroutineScope()
     var channelRows by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
@@ -45,6 +46,15 @@ fun WhatsAppUpdatesScreen(
     }
 
     suspend fun refresh() {
+        if (!connected) {
+            channelRows = emptyList()
+            chosenChannel = ""
+            updateRows = emptyList()
+            explanation = "Connect to your Aharane server and pair a WhatsApp account to browse Channels."
+            error = ""
+            loading = false
+            return
+        }
         loading = true
         error = ""
         try {
@@ -62,7 +72,7 @@ fun WhatsAppUpdatesScreen(
         }
     }
 
-    LaunchedEffect(selectedAccount) {
+    LaunchedEffect(selectedAccount, connected) {
         channelRows = emptyList()
         chosenChannel = ""
         updateRows = emptyList()
@@ -104,6 +114,10 @@ fun WhatsAppUpdatesScreen(
         }
 
         when {
+            !connected -> StudioEmpty(
+                title = "Connect a paired WhatsApp account to browse Channels.",
+                description = explanation
+            )
             error.isNotBlank() -> StudioErrorState(
                 title = "Channels could not be loaded",
                 description = error,

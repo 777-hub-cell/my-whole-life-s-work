@@ -472,7 +472,7 @@ function triggerAllowsGroups(trigger) {
 function safeChat(context, trigger) {
   const jid = textValue(context.remoteJid, 100)
   const scope = textValue(trigger?.config?.chatScope, 16) || 'direct'
-  const direct = /^\d{7,15}@s\.whatsapp\.net$/.test(jid)
+  const direct = /^\d{7,15}@s\.whatsapp\.net$/.test(jid) || /^\d{5,25}@lid$/.test(jid)
   if (direct) return scope === 'direct' || scope === 'both'
   return context.sessionId === 'public' && context.allowedPublicSender === true &&
     isGroupJid(jid) && (scope === 'groups' || scope === 'both')

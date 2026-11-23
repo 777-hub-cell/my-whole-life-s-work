@@ -58,6 +58,7 @@ data class StudioFileEntry(
 @Composable
 fun FilesScreen(
     onEditorVisibility: (Boolean) -> Unit,
+    onOpenEngines: () -> Unit = {},
     entries: List<StudioFileEntry> = emptyList(),
     connected: Boolean = false,
     initialPath: String = "",
@@ -105,7 +106,7 @@ fun FilesScreen(
     }
 
     val visibleEntries = remember(entries, query, currentPath) {
-        entries.asSequence()
+        (entries.filterNot { it.path == "Engines" } + StudioFileEntry("Engines", "Engines", true)).asSequence()
             .filter { entry ->
                 val parent = entry.path.substringBeforeLast('/', "")
                 parent == currentPath
@@ -356,7 +357,9 @@ fun FilesScreen(
                                 if (!selectedPaths.remove(entry.path)) selectedPaths.add(entry.path)
                             },
                             onOpen = {
-                                if (entry.isDirectory) {
+                                if (entry.path == "Engines") {
+                                    onOpenEngines()
+                                } else if (entry.isDirectory) {
                                     currentPath = entry.path
                                     query = ""
                                     selectedPaths.clear()
@@ -690,7 +693,7 @@ private fun FileEntryRow(
                 maxLines = 1
             )
         }
-        if (entry.path != "Update packages") {
+        if (entry.path != "Update packages" && entry.path != "Engines") {
             Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
                 Box(
                     Modifier.size(34.dp).clip(CircleShape).clickable(onClick = onMenuToggle),

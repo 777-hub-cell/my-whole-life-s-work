@@ -270,7 +270,7 @@ fun FilesScreen(
             Spacer(Modifier.height(4.dp))
         }
         item {
-            StudioCard {
+            StudioCard(modifier = Modifier.animateItem()) {
                 if (visibleEntries.isEmpty()) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
                         Text(

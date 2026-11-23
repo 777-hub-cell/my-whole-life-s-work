@@ -8,7 +8,7 @@ enum class ChatAccount(val apiValue: String, val label: String) {
 }
 
 enum class ChatFilter(val label: String) {
-    ALL("All"), UNREAD("Unread"), GROUPS("Groups"), ARCHIVED("Archived")
+    ALL("All"), UNREAD("Unread"), GROUPS("Groups"), CHANNELS("Channels"), ARCHIVED("Archived")
 }
 
 data class ConversationKey(val account: ChatAccount, val jid: String) {

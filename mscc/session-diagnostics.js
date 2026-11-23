@@ -56,6 +56,7 @@ export function sessionSnapshot(account, nowMs = Date.now()) {
   const nextAt = Number(account?.nextReconnectAt) || 0
   return {
     id: String(account.id),
+    slot: String(account.slot || account.id),
     displayName: String(account.displayName || '').slice(0, 48),
     role: account.role === 'owner' ? 'owner' : 'linked',
     profile: String(account.profile || 'unassigned').slice(0, 64),
@@ -64,6 +65,11 @@ export function sessionSnapshot(account, nowMs = Date.now()) {
     connected: account.connected === true,
     paused: account.paused === true,
     registered: account.registered === true,
+    authInvalid: account.invalid === true,
+    backupAvailable: account.backupAvailable === true,
+    pairingMode: ['qr', 'code'].includes(account.pairingMode) ? account.pairingMode : '',
+    pairingReady: Boolean(account.pairingCode || account.pairingQr),
+    pairingError: sanitizeSessionReason(account.pairingError),
     reconnectAttempts: Math.max(0, Number(account.reconnectAttempts) || 0),
     nextReconnectAt: nextAt > nowMs ? nextAt : 0,
     lastConnectedAt: Math.max(0, Number(account.lastConnectedAt) || 0),

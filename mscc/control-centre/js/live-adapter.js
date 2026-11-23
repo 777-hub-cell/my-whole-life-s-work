@@ -117,6 +117,7 @@ NIGHT.LiveAdapter = (function () {
     },
     getOverview: () => request('GET', '/overview'),
     listAccounts: () => request('GET', '/accounts'),
+    getAccountSlots: () => request('GET', '/account-slots'),
     createAccount: (data) => request('POST', '/accounts', data),
     pairAccount: (accountId, method, phone) => send('POST', '/accounts/' + id(accountId) + '/pair', { method, phone: phone || null }, false, 35000),
     getPairStatus: (accountId) => request('GET', '/accounts/' + id(accountId) + '/pair-status'),

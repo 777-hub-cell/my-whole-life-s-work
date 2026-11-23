@@ -28,7 +28,7 @@ test('monthly chart counts ordinary inbound and outbound chats and avoids duplic
     assert.equal(stats.received, 1)
     assert.equal(stats.dailySent.reduce((a, b) => a + b, 0), 1)
     assert.equal(stats.dailyReceived.reduce((a, b) => a + b, 0), 1)
-    assert.match(stats.availableSince, /^\\d{4}-\\d{2}-\\d{2}T/)
+    assert.equal(Number.isNaN(Date.parse(stats.availableSince)), false)
     assert.equal(stats.dailySent.length, stats.dailyReceived.length)
   } finally {
     await rm(dataDir, { recursive: true, force: true })

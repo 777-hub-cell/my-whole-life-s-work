@@ -173,6 +173,7 @@ fun StudioBottomNavigation(
                     modifier = Modifier.weight(1f).fillMaxHeight()
                         .semantics { this.selected = active }
                         .clickable(role = Role.Tab) { onNavigate(destination) }
+                        .testTag("studio-bottom-navigation-${destination.name.lowercase()}")
                         .padding(top = 7.dp, bottom = 5.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically)

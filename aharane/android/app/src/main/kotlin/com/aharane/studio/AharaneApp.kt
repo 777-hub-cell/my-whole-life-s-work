@@ -1465,7 +1465,7 @@ fun AharaneApp(
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
         if (!editorOpen && activeConversation == null && !commandBuilderOpen) {
-            StudioHeader()
+            StudioHeader(connected = connected, preview = previewMode)
         }
 
         if (previewMode) {
@@ -2109,7 +2109,7 @@ fun AharaneApp(
                             false
                         } else {
                         val updatedOwners = if (profile == "Private") {
-                            owners.copy(privateOwnerNumber = values["PRIVATE_OWNER_NUMBER"] ?: owners.privateOwnerNumber)
+                            owners.copy(ownerNumber = values["PRIVATE_OWNER_NUMBER"] ?: owners.ownerNumber)
                         } else {
                             owners.copy(publicBotNumber = values["PUBLIC_BOT_NUMBER"] ?: owners.publicBotNumber)
                         }
@@ -2170,6 +2170,19 @@ fun AharaneApp(
                         onFilterSelected = { filterName = it.name },
                         conversations = currentChats,
                         accountConnected = if (previewMode) true else runtime?.let { if (selectedAccount == ChatAccount.PRIVATE) it.privateAccount.connected else it.publicAccount.connected } == true,
+                        onConnectAccount = {
+                            if (previewMode) {
+                                openPairingScreen(selectedAccount)
+                            } else if (connected) {
+                                connectionScope.launch {
+                                    try {
+                                        beginAccountLink(selectedAccount)
+                                    } catch (error: Exception) {
+                                        Toast.makeText(context, error.message ?: "Account pairing could not start.", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        },
                         onConversationSelected = { activeConversation = it },
                         onChatAction = { chat, action ->
                             if (previewMode) return@ChatsScreen
@@ -2418,10 +2431,8 @@ fun AharaneApp(
                         connected = connected,
                         privateAccountStatus = runtime?.privateAccount?.let(::accountStateLabel) ?: "Status not loaded",
                         publicAccountStatus = runtime?.publicAccount?.let(::accountStateLabel) ?: "Status not loaded",
-                        privateOwnerNumber = owners.privateOwnerNumber,
-                        publicOwnerNumber = owners.publicOwnerNumber,
+                        ownerNumber = owners.ownerNumber,
                         publicBotNumber = owners.publicBotNumber,
-                        allowedPublicSenders = owners.allowedPublicSenders.joinToString(", "),
                         activityEntries = activityRows.map { "${it.timestamp} · ${it.level.uppercase(Locale.ROOT)} · ${it.source} · ${it.message}" },
                         storageSummary = storageSnapshot?.let { formatBytes(it.usedBytes) } ?: "—",
                         storageTotalSummary = storageSnapshot?.let { formatBytes(it.totalBytes) } ?: "—",
@@ -2456,18 +2467,14 @@ fun AharaneApp(
                                 }
                             }
                         },
-                        onSaveOwnerSettings = { privateOwner, publicOwner, publicBot, allowed ->
+                        onSaveOwnerSettings = { owner, publicBot ->
                             if (previewMode || !connected) {
-                                Toast.makeText(context, "Preview mode cannot save owner settings to a server.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Connect to your Aharane server to save owner settings.", Toast.LENGTH_SHORT).show()
                             } else connectionScope.launch {
                                 try {
-                                    val updated = ServerOwnerSettings(
-                                        privateOwnerNumber = privateOwner,
-                                        publicOwnerNumber = publicOwner,
-                                        publicBotNumber = publicBot,
-                                        allowedPublicSenders = allowed.split(',').map(String::trim).filter(String::isNotBlank)
+                                    repository.saveOwnerSettings(
+                                        ServerOwnerSettings(ownerNumber = owner, publicBotNumber = publicBot)
                                     )
-                                    repository.saveOwnerSettings(updated)
                                     owners = repository.ownerSettings()
                                     Toast.makeText(context, "Owner settings saved.", Toast.LENGTH_SHORT).show()
                                 } catch (error: Exception) {

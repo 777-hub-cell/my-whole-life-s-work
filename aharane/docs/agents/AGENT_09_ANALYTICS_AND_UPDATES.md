@@ -1,4 +1,4 @@
-# Agent 09 — Analytics, notifications, Channels, Status and updates
+# Agent 09 — Analytics, notifications, Channels and updates
 
 **Initial status:** NOT STARTED  
 **Owner:** Agent 09  
@@ -10,15 +10,15 @@ Read `aharane/docs/MASTER_PROJECT_CONTEXT.md` and `aharane/docs/AUTONOMOUS_EXECU
 
 ## Mission
 
-Own activity insight and update surfaces: accurate sent/incoming/handled analytics, charts/date ranges, notification delivery/background refresh, Channels and Status presentation/compatibility, update experience and related Android lifecycle behavior. Coordinate event sources with Agent 03, chat with Agent 02, background/storage with Agent 08 and visual foundations with Agent 01. Distinguish total incoming/outgoing from bot-handled events.
+Own activity insight and update surfaces: accurate sent/incoming/handled analytics, charts/date ranges, notification delivery/background refresh, Channels presentation/compatibility, update experience and related Android lifecycle behavior. Coordinate event sources with Agent 03, chat with Agent 02, background/storage with Agent 08 and visual foundations with Agent 01. Distinguish total incoming/outgoing from bot-handled events.
 
 ## Acceptance criteria
 
-Acceptance: metrics derive from correct persisted events; default date range/chart behavior matches requirements; notifications respect permissions/lifecycle; Channels/Status match supported backend capabilities; update flow is safe and understandable.
+Acceptance: metrics derive from correct persisted events; default date range/chart behavior matches requirements; notifications respect permissions/lifecycle; Channels match supported backend capabilities; update flow is safe and understandable.
 
 ## Ownership and boundaries
 
-Primary ownership: analytics, notifications, updates and WhatsApp Updates feature surfaces. Coordinate shared event schemas, background workers and API contracts.
+Primary ownership: analytics, notifications, updates and Channels feature surfaces. **Status is excluded from Aharane** and must not be implemented or surfaced by this workstream. Coordinate shared event schemas, background workers and API contracts.
 
 These are coordination boundaries, not permission to overwrite shared files. Check current file overlap and coordinate before changing shared contracts or files.
 

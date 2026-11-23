@@ -6,7 +6,7 @@ import {
 
 const manifest = {
   id: 'pinterest', name: 'Pinterest image search', version: 1,
-  entryPoint: 'run', permissions: ['network.fetch'], timeoutMs: 5000, maxResults: 10,
+  entryPoint: 'run', permissions: ['network.fetch'], allowedHosts: ['images.example.com'], timeoutMs: 5000, maxResults: 10,
   inputs: [{ id: 'query', type: 'string' }],
   outputs: [{ id: 'images', type: 'list' }],
 }
@@ -18,6 +18,8 @@ test('accepts valid versioned Engine contracts without executing code', () => {
 test('rejects arbitrary entry points, unknown capabilities and invalid ports', () => {
   assert.throws(() => validateEngineManifest({ ...manifest, entryPoint: '../auth/creds.json' }), /entry point/)
   assert.throws(() => validateEngineManifest({ ...manifest, permissions: ['filesystem.read'] }), /unsupported permission/)
+  assert.throws(() => validateEngineManifest({ ...manifest, allowedHosts: ['127.0.0.1'] }), /public DNS hostnames/)
+  assert.throws(() => validateEngineManifest({ ...manifest, allowedHosts: ['*.example.com'] }), /public DNS hostnames/)
   assert.throws(() => validateEngineManifest({ ...manifest, outputs: [{ id: 'bad space', type: 'text' }] }), /port/)
 })
 test('enforces outputs, results and input limits', () => {

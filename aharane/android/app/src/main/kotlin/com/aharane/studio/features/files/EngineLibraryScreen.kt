@@ -63,6 +63,7 @@ fun EngineLibraryScreen(
     var savedVersion by remember { mutableIntStateOf(0) }
     var inputs by remember { mutableStateOf("query:string") }
     var outputs by remember { mutableStateOf("results:list") }
+    var allowedHosts by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("export async function run(inputs) {\n  return { results: [inputs.query] }\n}") }
     var deletingId by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
@@ -109,7 +110,7 @@ fun EngineLibraryScreen(
             }
         }
         Text(
-            "Engine code is stored safely. Execution is unavailable until the isolated runtime is verified.",
+            "Engines run in a restricted JavaScript runtime. External requests require approved HTTPS hostnames below.",
             fontSize = 12.sp, color = StudioPalette.Muted
         )
         if (error.isNotBlank()) {
@@ -122,6 +123,7 @@ fun EngineLibraryScreen(
                 OutlinedTextField(value = version, onValueChange = { version = it.filter(Char::isDigit).take(5) }, label = { Text("Version") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 OutlinedTextField(value = inputs, onValueChange = { inputs = it }, label = { Text("Inputs · query:string") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 OutlinedTextField(value = outputs, onValueChange = { outputs = it }, label = { Text("Outputs · results:list") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(value = allowedHosts, onValueChange = { allowedHosts = it.take(2000) }, label = { Text("Approved HTTPS hosts · optional") }, placeholder = { Text("images.example.com, api.example.com") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 OutlinedTextField(
                     value = code, onValueChange = { if (it.length <= 65536) code = it },
                     label = { Text("JavaScript · export async function run(inputs)") },
@@ -142,7 +144,8 @@ fun EngineLibraryScreen(
                                     .put("entryPoint", "run")
                                     .put("inputs", portDefinitions(inputs))
                                     .put("outputs", portDefinitions(outputs))
-                                    .put("permissions", JSONArray())
+                                    .put("permissions", JSONArray().apply { if (allowedHosts.isNotBlank()) put("network.fetch") })
+                                    .put("allowedHosts", JSONArray(allowedHosts.split(Regex("[,\\n]+")).map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct()))
                                     .put("timeoutMs", 10000)
                                     .put("maxResults", 10)
                                 if (editingId == null) repository.createEngine(manifest, code)
@@ -168,7 +171,7 @@ fun EngineLibraryScreen(
                 onClick = {
                     editingId = null
                     id = ""; name = ""; version = "1"; savedVersion = 0
-                    inputs = "query:string"; outputs = "results:list"
+                    inputs = "query:string"; outputs = "results:list"; allowedHosts = ""
                     code = "export async function run(inputs) {\n  return { results: [inputs.query] }\n}"
                     editorVisible = true; error = ""
                 },
@@ -204,6 +207,9 @@ fun EngineLibraryScreen(
                                         outputs = (manifest.optJSONArray("outputs") ?: JSONArray()).let { array ->
                                             (0 until array.length()).mapNotNull { array.optJSONObject(it) }
                                                 .joinToString(", ") { it.optString("id") + ":" + it.optString("type") }
+                                        }
+                                        allowedHosts = (manifest.optJSONArray("allowedHosts") ?: JSONArray()).let { array ->
+                                            (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotBlank) }.joinToString(", ")
                                         }
                                         code = item.optString("code")
                                         editorVisible = true

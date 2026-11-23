@@ -125,7 +125,7 @@ fun FilesScreen(
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         item {
-            StudioPageTitle("Files", "Browse and edit Aharane source files.")
+            StudioPageTitle("Files", "Browse and edit Aharane source files.", compact = true)
             Spacer(Modifier.height(14.dp))
         }
         if (pendingEdits && connected) {

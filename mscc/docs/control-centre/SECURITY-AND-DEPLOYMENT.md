@@ -22,7 +22,7 @@ A strong `WEB_PASSWORD` must be set in protected service configuration. The same
 
 ## Environment and files
 
-Environment metadata is read-only; secret values are never sent to the browser. Environment writes are disabled. The file browser is read-only and exposes selected source/document roots and file types; it excludes hidden, runtime, auth, session, database and secret paths, checks symlinks, validates canonical containment and limits previews to 512 KiB. No arbitrary shell execution, archive extraction, file mutation, systemd control or raw credential view is exposed.
+Environment metadata masks secret values. A **limited, backend-managed allowlist** can be changed using authenticated, CSRF-protected `PUT /env/:key`; arbitrary environment writes are forbidden. Source files remain read-only, but narrowly validated create/edit/rename/delete operations inside the designated `custom-commands` workspace are supported and audited. Hidden, runtime, auth, session, database and secret paths are excluded; previews are limited to 512 KiB with canonical containment and symlink checks. No arbitrary shell execution, archive extraction, general filesystem mutation, systemd control or raw credential view is exposed.
 
 ## Supported telemetry
 
@@ -30,7 +30,9 @@ The available callbacks expose process/runtime state, OS load average, process m
 
 ## Website host proxy
 
-For Bot-Hosting.net, use the bundled `mscc/control-centre/server.mjs` as the Node web process. It binds the platform `SERVER_PORT`, serves only the public dashboard assets, and proxies `/api/control-centre/*` server-to-server to a fixed `NIGHT_API_UPSTREAM`. Optional Cloudflare Access service-token credentials are read only from hosting-panel environment variables. Keep the app in mock mode until this authenticated HTTPS upstream is configured.
+For Vercel hosting, follow `mscc/control-centre/deployment/VERCEL.md`, with mock-only previews, a server-side API function and a fixed secure upstream. The bundled local Node server remains supported.
+
+For legacy Bot-Hosting.net, use the bundled `mscc/control-centre/server.mjs` as the Node web process. It binds the platform `SERVER_PORT`, serves only the public dashboard assets, and proxies `/api/control-centre/*` server-to-server to a fixed `NIGHT_API_UPSTREAM`. Optional Cloudflare Access service-token credentials are read only from hosting-panel environment variables. Keep the app in mock mode until this authenticated HTTPS upstream is configured.
 
 For other static hosts, use the example in `mscc/control-centre/deployment/nginx-control-centre-api.conf.example` or an equivalent private reverse-proxy rule. The proxy upstream must be reachable only over a private network or authenticated tunnel. The website host serves static files; the bot host serves only the API.
 

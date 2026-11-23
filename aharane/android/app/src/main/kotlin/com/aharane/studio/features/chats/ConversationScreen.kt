@@ -7,6 +7,13 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -52,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Brush
@@ -1131,16 +1139,56 @@ private fun MessageBubble(
     onOpenLocation: () -> Unit
 ) {
     val outgoing = message.direction == MessageDirection.OUTGOING
+    val swipeOffset = remember(message.messageId) { Animatable(0f) }
+    val swipeScope = rememberCoroutineScope()
+    val swipeThreshold = with(LocalDensity.current) { 64.dp.toPx() }
+    val swipeLimit = with(LocalDensity.current) { 98.dp.toPx() }
+    val motionEnabled = LocalStudioMotionEnabled.current
     val bubble = appearanceColor(if (outgoing) appearance.outgoingBubble else appearance.incomingBubble)
     val foreground = readableAppearanceText(bubble)
     val timestamp = remember(message.timestampMillis) {
         SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(message.timestampMillis))
     }
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start,
-        verticalAlignment = Alignment.Bottom
-    ) {
+    Box(Modifier.fillMaxWidth()) {
+        if (swipeOffset.value > 2f) {
+            Icon(
+                Icons.Outlined.ArrowBack,
+                contentDescription = "Swipe right to reply",
+                tint = if (swipeOffset.value >= swipeThreshold) StudioPalette.Accent else StudioPalette.Muted,
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = 13.dp)
+                    .size(22.dp).graphicsLayer { rotationZ = 180f }
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth()
+                .offset { IntOffset(swipeOffset.value.roundToInt(), 0) }
+                .pointerInput(message.messageId, swipeThreshold, swipeLimit, motionEnabled) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            val activated = swipeOffset.value >= swipeThreshold
+                            if (activated) onReply()
+                            swipeScope.launch {
+                                if (motionEnabled) swipeOffset.animateTo(0f, spring(stiffness = 650f))
+                                else swipeOffset.snapTo(0f)
+                            }
+                        },
+                        onDragCancel = {
+                            swipeScope.launch {
+                                if (motionEnabled) swipeOffset.animateTo(0f, spring(stiffness = 650f))
+                                else swipeOffset.snapTo(0f)
+                            }
+                        },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            swipeScope.launch {
+                                swipeOffset.snapTo((swipeOffset.value + dragAmount).coerceIn(0f, swipeLimit))
+                            }
+                        }
+                    )
+                },
+            horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start,
+            verticalAlignment = Alignment.Bottom
+        ) {
         if (!outgoing && appearance.showAvatars) {
             Box(
                 Modifier.size(24.dp).clip(CircleShape).background(StudioPalette.Soft),
@@ -1173,7 +1221,7 @@ private fun MessageBubble(
                     ) else Modifier
                 )
                 .combinedClickable(
-                    onClick = onReply,
+                    onClick = {},
                     onLongClick = { if (connected) onStar() }
                 )
                 .testTag("message-bubble-" + message.messageId)
@@ -1325,6 +1373,7 @@ private fun MessageBubble(
             }
         }
     }
+}
 }
 
 @Composable

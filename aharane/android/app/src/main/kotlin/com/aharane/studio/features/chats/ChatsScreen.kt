@@ -318,7 +318,7 @@ fun ChatsScreen(
                 }
                 Spacer(Modifier.height(16.dp))
             } else {
-                StudioCard {
+                StudioCard(modifier = Modifier.animateItem()) {
                     visibleChats.forEachIndexed { index, chat ->
                         if (index > 0) StudioDivider()
                         ChatListRow(

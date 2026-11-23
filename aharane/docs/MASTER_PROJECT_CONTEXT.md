@@ -87,7 +87,7 @@ All agents must read this entire document, the execution protocol and **all ten 
 6. Agent 06 — Engine runtime, sandbox and Engine Library.
 7. Agent 07 — Scheduler and automation.
 8. Agent 08 — Files, Notes, offline storage and synchronization.
-9. Agent 09 — Analytics, notifications, Channels, Status and updates.
+9. Agent 09 — Analytics, notifications, Channels and updates (Status excluded).
 10. Agent 10 — QA, security, cross-workstream integration and release readiness.
 
 Agent 10 independently reviews integration and security; it does not take over feature ownership. A lead integrator coordinates sequencing, resolves ownership conflicts and reviews integration. No agent may merge to the production/base branch or deploy without explicit owner approval.

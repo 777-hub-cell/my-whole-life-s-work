@@ -155,7 +155,7 @@ function applyEnvP(){
  const value=key=>String(P.env.find(x=>x.key===key)?.value??'');
  envs.push(
   {k:'PRIVATE_PREFIX',v:value('PRIVATE_COMMAND_PREFIX')||'.',readOnly:true},
-  {k:'OWNER_NUMBER',v:P.owners.privateOwnerNumber||''},
+  {k:'OWNER_NUMBER',v:P.owners.ownerNumber||P.owners.privateOwnerNumber||''},
   {k:'PUBLIC_PREFIX',v:value('PUBLIC_COMMAND_PREFIX')||'!',readOnly:true},
   {k:'PUBLIC_NUMBER',v:P.owners.publicBotNumber||''}
  );
@@ -646,7 +646,8 @@ function accountViewP(){
    :a.registered?'<button class="btn sm" data-account="'+id+'" data-action="reconnect">Reconnect</button>':'';
   return '<div class="row"><span class="av">'+(id==='private'?'P':'A')+'<i class="st av-dot '+(a.connected?'':'off')+'"></i></span><span class="grow"><div class="t">'+(id==='private'?'Private account':'Public account')+'</div><div class="d">'+escP(state)+' · '+(a.registered?'Paired':'Not paired')+'</div></span>'+pairButton+'</div>'+(actions?'<div class="row" style="padding-left:64px;flex-wrap:wrap">'+actions+'</div>':'');
  }).join('');
- return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Accounts</h1><p class="sub">Two independent WhatsApp sessions. Pairing numbers are saved in Configuration.</p><div class="card list">'+rows+'</div><h2>Owner identities</h2><p class="sub">Private Owner controls the Private self-chat. Public Owner controls owner-only commands on the Public bot. The Public bot number is configured separately.</p><div class="card list" style="padding:14px"><label class="d" for="owner-private">Private Owner number</label><input class="field" id="owner-private" value="'+escP(P.owners.privateOwnerNumber||'')+'" inputmode="numeric"><label class="d" for="owner-public" style="display:block;margin-top:12px">Public Owner number</label><input class="field" id="owner-public" value="'+escP(P.owners.publicOwnerNumber||'')+'" inputmode="numeric"><div class="env"><label class="d" for="owner-public-bot">Public bot WhatsApp number</label><input class="field" id="owner-public-bot" value="'+escP(P.owners.publicBotNumber||'')+'" disabled><p class="d" style="white-space:normal;margin-top:6px">Change this under Home → Configuration → Public account.</p></div><label class="d" for="owner-allow" style="display:block;margin-top:12px">Allowed public senders</label><input class="field" id="owner-allow" value="'+escP((P.owners.allowedPublicSenders||[]).join(', '))+'"><div class="btns"><button class="btn p" id="save-owners">Save owner settings</button></div></div>';
+ const owner=P.owners.ownerNumber||P.owners.privateOwnerNumber||P.owners.publicOwnerNumber||'';
+ return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Accounts</h1><p class="sub">Two independent WhatsApp sessions with separate connection status.</p><div class="card list">'+rows+'</div><h2>Owner</h2><p class="sub">One Owner number controls owner privileges on both sessions. The Public bot is open to WhatsApp users; owner-only actions remain protected. The Public bot number belongs to its separate WhatsApp account.</p><div class="card list" style="padding:14px"><label class="d" for="owner-number">Owner phone number</label><input class="field" id="owner-number" value="'+escP(owner)+'" inputmode="numeric"><div class="env"><label class="d" for="owner-public-bot">Public bot WhatsApp number</label><input class="field" id="owner-public-bot" value="'+escP(P.owners.publicBotNumber||'')+'" disabled><p class="d" style="white-space:normal;margin-top:6px">Change this under Configuration → Public account.</p></div><div class="btns"><button class="btn p" id="save-owners">Save owner settings</button></div></div>';
 }
 
 function pairStatusLabelP(a){
@@ -670,8 +671,8 @@ async function refreshPairViewAfterFailureP(){
 }
 function pairViewP(){
  const id=accts[S.pi]?.slot==='public'?'public':'private',a=P.runtime?.accounts?.[id]||{};
- const number=id==='private'?P.owners.privateOwnerNumber:P.owners.publicBotNumber;
- const label=id==='private'?'Private Owner number':'Public bot WhatsApp number';
+ const number=id==='private'?(P.owners.ownerNumber||P.owners.privateOwnerNumber):P.owners.publicBotNumber;
+ const label=id==='private'?'Owner number':'Public bot WhatsApp number';
  let panel='';
  if(a.pairingSucceeded){
   panel+='<div class="empty" style="margin-bottom:12px"><strong>Replacement link connected</strong><p class="d" style="white-space:normal">The new WhatsApp session is active. The previous authentication was retained.</p></div>';
@@ -765,9 +766,17 @@ async function reconnectPairP(){
  catch(error){await refreshPairViewAfterFailureP();notifyP(error.message)}
 }
 async function saveOwnersP(){
- try{const r=await apiP('owners',{method:'PUT',body:pack({privateOwnerNumber:Q('#owner-private').value,publicOwnerNumber:Q('#owner-public').value,publicBotNumber:P.owners.publicBotNumber||'',allowedPublicSenders:Q('#owner-allow').value.split(/[,\s]+/).filter(Boolean)})});P.owners=r.owners;notifyP('Owner identities saved');render()}
- catch(error){notifyP(error.message)}
+ try{
+  const r=await apiP('owners',{method:'PUT',body:pack({
+   ownerNumber:Q('#owner-number').value,
+   publicBotNumber:P.owners.publicBotNumber||''
+  })});
+  P.owners=r.owners;
+  notifyP('Owner settings saved');
+  render();
+ }catch(error){notifyP(error.message)}
 }
+
 function envViewP(){
  return '<h1>ENV</h1><p class="sub">Managed environment values for the Private and Public accounts. Command prefixes are fixed by Aharane.</p><div class="card list">'+P.env.map((x,i)=>'<div class="env"><label for="e'+i+'">'+escP(x.key)+(x.readOnly?' · Fixed':'')+'</label><input class="field" id="e'+i+'" data-e="'+i+'" value="'+escP(x.value)+'" '+(x.readOnly?'disabled':'')+' autocomplete="off"></div>').join('')+'</div><div class="btns"><button class="btn p" id="prod-save-env">Save changes</button></div>';
 }
@@ -778,12 +787,10 @@ async function saveConfigP(){
   const profile=S.cprof==='public'?'public':'private';
   const clean=value=>String(value||'').replace(/\D/g,'');
   const ownerValue=clean(C.owner);
-  if(ownerValue&&!/^\d{7,15}$/.test(ownerValue))throw new Error((profile==='private'?'Owner number':'Public account number')+' must contain 7–15 digits, including the country code.');
+  if(ownerValue&&!/^\d{7,15}$/.test(ownerValue))throw new Error((profile==='private'?'Owner number':'Public bot WhatsApp number')+' must contain 7–15 digits, including the country code.');
   const owners={
-   privateOwnerNumber:profile==='private'?ownerValue:(P.owners.privateOwnerNumber||''),
-   publicOwnerNumber:P.owners.publicOwnerNumber||'',
-   publicBotNumber:profile==='public'?ownerValue:(P.owners.publicBotNumber||''),
-   allowedPublicSenders:P.owners.allowedPublicSenders||[]
+   ownerNumber:profile==='private'?ownerValue:(P.owners.ownerNumber||P.owners.privateOwnerNumber||''),
+   publicBotNumber:profile==='public'?ownerValue:(P.owners.publicBotNumber||'')
   };
   const ownerResult=await apiP('owners',{method:'PUT',body:pack(owners)});
   P.owners=ownerResult.owners||owners;
@@ -793,7 +800,7 @@ async function saveConfigP(){
   applyEnvP();
   loadP(profile);
   C=CS[profile];
-  C.owner=profile==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');
+  C.owner=profile==='private'?(P.owners.ownerNumber||P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');
   C.prefix=profile==='private'?'.':'!';
   C0=JSON.stringify(C);C0S[profile]=C0;
   cfgDirty(false);
@@ -1207,7 +1214,7 @@ function bindProductionP(){
  const reconnect=Q('#prod-pair-reconnect');if(reconnect)reconnect.onclick=reconnectPairP;
  const openConfig=Q('#pair-open-config');if(openConfig)openConfig.onclick=()=>{
   S.cprof=S.pi===1?'public':'private';C=CS[S.cprof];
-  C.owner=S.cprof==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');C.prefix=S.cprof==='private'?'.':'!';
+  C.owner=S.cprof==='private'?(P.owners.ownerNumber||P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');C.prefix=S.cprof==='private'?'.':'!';
   C0=JSON.stringify(C);C0S[S.cprof]=C0;cfgD=false;DS[S.cprof]=false;openCfg();
  };
  const copy=Q('#prod-copy-code');if(copy)copy.onclick=()=>navigator.clipboard?.writeText(S.pin||'').then(()=>notifyP('Pairing code copied')).catch(()=>notifyP('Select and copy the code'));
@@ -1269,11 +1276,12 @@ function homeViewP(){
   return '<div class="row"><span class="av">'+(id==='private'?'P':'A')+'<i class="st av-dot '+(a.connected?'':'off')+'"></i></span><span class="grow"><div class="t">'+name+'</div><div class="d">'+escP(state)+'</div></span><span class="btns" style="margin:0;gap:6px;flex-wrap:wrap">'+action+'</span></div>';
  }).join('');
  const service=P.runtime?'Connected to Aharane service':'Service unavailable';
- const ownerPrivate=P.owners.privateOwnerNumber?'Configured':'Needs configuration';
- const ownerPublic=P.owners.publicOwnerNumber?'Configured':'Needs configuration';
+ const owner=P.owners.ownerNumber||P.owners.privateOwnerNumber||P.owners.publicOwnerNumber;
+ const ownerStatus=owner?'Configured':'Needs configuration';
  const publicBot=P.owners.publicBotNumber?'Configured':'Needs configuration';
- return '<h1>Welcome back</h1><p class="sub">Your Aharane workspace.</p><div class="card" style="padding:16px"><div class="row" style="padding:4px 0"><span class="grow"><div class="t">Aharane service</div><div class="d">'+service+'</div></span><span class="pill"><span class="dot"></span>Online</span></div><div class="d" style="white-space:normal;margin-top:8px">Each WhatsApp account has its own connection and controls. An offline account does not stop the other one.</div></div><h2>WhatsApp accounts</h2><div class="card list">'+accounts+'</div><h2>Setup</h2><div class="card list"><button class="row" onclick="openCfg()"><span class="ic">'+ico('cfg')+'</span><span class="grow"><div class="t">Configuration</div><div class="d">Private Owner · '+ownerPrivate+' · Public Owner · '+ownerPublic+' · Public bot number · '+publicBot+'</div></span><span class="d">›</span></button></div><h2>Recent activity</h2><div class="card log" id="log">'+logs.map(l=>'<div><b>'+escP(l[1]||'now')+'</b>  '+escP(l[0])+'</div>').join('')+'</div>';
+ return '<h1>Welcome back</h1><p class="sub">Your Aharane workspace.</p><div class="card" style="padding:16px"><div class="row" style="padding:4px 0"><span class="grow"><div class="t">Aharane service</div><div class="d">'+service+'</div></span><span class="pill"><span class="dot"></span>Online</span></div><div class="d" style="white-space:normal;margin-top:8px">Private and Public are independent WhatsApp sessions. An offline account does not stop the other one.</div></div><h2>WhatsApp accounts</h2><div class="card list">'+accounts+'</div><h2>Setup</h2><div class="card list"><button class="row" onclick="openCfg()"><span class="ic">'+ico('cfg')+'</span><span class="grow"><div class="t">Configuration</div><div class="d">Shared Owner · '+ownerStatus+' · Public bot number · '+publicBot+'</div></span><span class="d">›</span></button></div><h2>Recent activity</h2><div class="card log" id="log">'+logs.map(l=>'<div><b>'+escP(l[1]||'now')+'</b>  '+escP(l[0])+'</div>').join('')+'</div>';
 }
+
 function installFileSaveLifecycleP(){
  if(window.__aharaneFileSaveLifecycle)return;
  window.__aharaneFileSaveLifecycle=true;
@@ -1600,7 +1608,7 @@ function installBridgeP(){
   if(!DS[next]){
    loadP(next);
    C=CS[next];
-   C.owner=next==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');
+   C.owner=next==='private'?(P.owners.ownerNumber||P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');
    C.prefix=next==='private'?'.':'!';
    C0=JSON.stringify(C);C0S[next]=C0;
   }else C0=C0S[next];
@@ -1615,7 +1623,7 @@ function installBridgeP(){
  openCfg=function(){
   if(!cfgD){
    cfgLoad();C=CS[S.cprof];
-   C.owner=S.cprof==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');
+   C.owner=S.cprof==='private'?(P.owners.ownerNumber||P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'');
    C.prefix=S.cprof==='private'?'.':'!';
    C0=JSON.stringify(C);C0S[S.cprof]=C0;
   }

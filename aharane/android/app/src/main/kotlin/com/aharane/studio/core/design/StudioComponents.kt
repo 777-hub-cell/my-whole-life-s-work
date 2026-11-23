@@ -132,7 +132,7 @@ fun StudioBottomNavigation(
                 val tint = if (active) StudioPalette.Accent else StudioPalette.Muted
                 Column(
                     modifier = Modifier.weight(1f).fillMaxHeight()
-                        .semantics { selected = active }
+                        .semantics { this.selected = active }
                         .clickable { onNavigate(destination) }
                         .padding(top = 7.dp, bottom = 5.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,

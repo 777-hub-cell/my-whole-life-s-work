@@ -951,6 +951,43 @@ function markMessageSeen(id) {
   return false
 }
 
+async function resolvePrivateSelfChat(currentSocket, message) {
+  const key = message?.key || {}
+  const remoteJid = String(key.remoteJid || '')
+  let remoteJidAlt = String(key.remoteJidAlt || '')
+  const ownJid = String(currentSocket?.user?.id || '')
+  const ownLid = String(currentSocket?.user?.lid || '')
+
+  // Baileys normally provides remoteJidAlt. If WhatsApp omits it for a LID
+  // self-chat, use the already-cached local LID→PN mapping as a fallback.
+  // This lookup is local to Baileys' signal store; it does not query contacts
+  // or broaden authorization to an unknown identity.
+  if (!remoteJidAlt && remoteJid.endsWith('@lid')) {
+    try {
+      const mapping = currentSocket?.signalRepository?.lidMapping
+      if (typeof mapping?.getPNForLID === 'function') {
+        remoteJidAlt = String(await mapping.getPNForLID(remoteJid) || '')
+      }
+    } catch {
+      // Missing mappings must fail closed in isPrivateSelfChat below.
+    }
+  }
+
+  return {
+    remoteJidAlt,
+    ownJid,
+    ownLid,
+    matches: isPrivateSelfChat({
+      sessionId: 'private',
+      remoteJid,
+      remoteJidAlt,
+      ownJid,
+      ownLid,
+      privateOwnerNumber: ownerConfig.privateOwnerNumber,
+    }),
+  }
+}
+
 async function handleMessages(sessionId, currentSocket, event) {
   if (!isSafeMessageUpsert(event)) return
   for (const message of event.messages) {
@@ -972,12 +1009,9 @@ async function handleMessages(sessionId, currentSocket, event) {
 
     if (sessionId === 'private') {
       if (!isPrivateVisibleChatJid(remoteJid)) continue
-      const privateSelfChat = isPrivateSelfChat({
-        sessionId, remoteJid, ownJid: currentSocket.user?.id || '',
-        privateOwnerNumber: ownerConfig.privateOwnerNumber,
-      })
+      const privateIdentity = await resolvePrivateSelfChat(currentSocket, message)
       await chatStore.recordMessage({ sessionId, message, socket: currentSocket })
-      if (message.key.fromMe !== true || !privateSelfChat) continue
+      if (message.key.fromMe !== true || !privateIdentity.matches) continue
       const visualCommandNames = new Set(visualCommandStore.list('private')
         .filter(workflow => workflow.enabled)
         .flatMap(workflow => {
@@ -988,7 +1022,9 @@ async function handleMessages(sessionId, currentSocket, event) {
         sessionId,
         message,
         remoteJid,
-        ownJid: currentSocket.user?.id || '',
+        remoteJidAlt: privateIdentity.remoteJidAlt,
+        ownJid: privateIdentity.ownJid,
+        ownLid: privateIdentity.ownLid,
         privateOwnerNumber: ownerConfig.privateOwnerNumber,
         text: messageText,
         privateRegistry: privateCommandRegistry,

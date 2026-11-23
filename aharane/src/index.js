@@ -26,7 +26,7 @@ import { createChatStore } from './chat-store.js'
 import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, normalizeChatVisibility, normalizeChatAppearance, isChatVisible, envView } from './studio-settings.js'
 import { createActivityStore } from './activity-store.js'
 import { createAiReplyService } from './ai-reply.js'
-import { createVisualCommandStore, normalizeWorkflow, validateWorkflow, executeVisualWorkflow, VISUAL_NODE_LIBRARY } from './visual-command-builder.js'
+import { createVisualCommandStore, normalizeWorkflow, validateWorkflow, executeVisualWorkflow, currentVisualNodeLibrary } from './visual-command-builder.js'
 
 const APP_NAME = 'Aharane'
 const PROCESS_STARTED_AT = Date.now()
@@ -1402,7 +1402,29 @@ app.get('/api/visual-commands', requireAdmin, (req, res) => {
     return res.status(400).json({ ok: false, error: 'Account must be private or public.' })
   }
   const workflows = visualCommandStore.list(account || undefined).map(visualWorkflowPayload)
-  res.json({ ok: true, workflows, library: VISUAL_NODE_LIBRARY, storageWarning: visualCommandStore.storageWarning() })
+  res.json({ ok: true, workflows, library: currentVisualNodeLibrary(), customNodes: visualCommandStore.listCustomNodes(), storageWarning: visualCommandStore.storageWarning() })
+})
+
+app.get('/api/custom-nodes', requireAdmin, (_req, res) => {
+  res.json({ ok: true, nodes: visualCommandStore.listCustomNodes() })
+})
+app.post('/api/custom-nodes', requireAdmin, async (req, res) => {
+  try {
+    const node = await visualCommandStore.saveCustomNode(req.body?.node || req.body || {})
+    res.status(201).json({ ok: true, node, library: currentVisualNodeLibrary() })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+app.delete('/api/custom-nodes/:id', requireAdmin, async (req, res) => {
+  try {
+    if (req.body?.confirm !== true) return res.status(400).json({ ok: false, error: 'Confirm custom node deletion.' })
+    const removed = await visualCommandStore.removeCustomNode(req.params.id)
+    if (!removed) return res.status(404).json({ ok: false, error: 'Custom node not found.' })
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(409).json({ ok: false, error: String(error?.message || error) })
+  }
 })
 
 app.post('/api/visual-commands', requireAdmin, async (req, res) => {

@@ -327,6 +327,12 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
     suspend fun whatsappStatuses(account: ChatAccount): JSONObject =
         api.get("whatsapp/${account.apiValue}/statuses")
 
+    suspend fun whatsappStatusMedia(account: ChatAccount, senderJid: String, messageId: String): ByteArray =
+        api.getBytes(
+            "whatsapp/${account.apiValue}/statuses/${encodePath(senderJid)}/${encodePath(messageId)}/media"
+        )
+
+
     suspend fun whatsappChannels(account: ChatAccount): JSONObject =
         api.get("whatsapp/${account.apiValue}/channels")
 

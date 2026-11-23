@@ -50,20 +50,17 @@ class StudioBottomNavigationTest {
 
     @Test
     fun sharedHeaderCanHideTheWordmarkOutsideHome() {
+        val showBrand = mutableStateOf(false)
         compose.setContent {
             AharaneTheme(themeMode = "light") {
-                StudioHeader(connected = true, showBrand = false)
+                StudioHeader(connected = true, showBrand = showBrand.value)
             }
         }
 
         compose.onNodeWithText("Aharane").assertDoesNotExist()
         compose.onNodeWithText("Online").assertIsDisplayed()
 
-        compose.setContent {
-            AharaneTheme(themeMode = "light") {
-                StudioHeader(connected = true, showBrand = true)
-            }
-        }
+        compose.runOnIdle { showBrand.value = true }
         compose.onNodeWithText("Aharane").assertIsDisplayed()
     }
 

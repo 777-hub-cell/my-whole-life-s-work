@@ -2135,7 +2135,7 @@ app.get('/api/chats/:accountId/:jid/avatar', requireAdmin, async (req, res) => {
     const cached = whatsappAvatarCache.get(key)
     if (cached && cached.expiresAt > now && req.query.refresh !== '1') {
       res.set('Cache-Control', 'private, max-age=300')
-      return res.json({ ok: true, jid, pictureUrl: cached.url, available: Boolean(cached.url) })
+      return res.json({ ok: true, jid, sourceSession: ownJid, pictureUrl: cached.url, available: Boolean(cached.url) })
     }
     let pictureUrl = ''
     try {
@@ -2150,7 +2150,7 @@ app.get('/api/chats/:accountId/:jid/avatar', requireAdmin, async (req, res) => {
       }
     }
     res.set('Cache-Control', 'private, max-age=300')
-    res.json({ ok: true, jid, pictureUrl, available: Boolean(pictureUrl) })
+    res.json({ ok: true, jid, sourceSession: ownJid, pictureUrl, available: Boolean(pictureUrl) })
   } catch (error) {
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not read WhatsApp profile picture.') })
   }

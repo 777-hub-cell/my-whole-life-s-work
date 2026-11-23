@@ -2,6 +2,12 @@ package com.aharane.studio.features.files
 
 import android.widget.Toast
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -156,10 +162,10 @@ fun FilesScreen(
             Spacer(Modifier.height(12.dp))
         }
         item {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            FlowRow(
+                Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (currentPath == "Update packages") {
                     StudioActionButton("Upload ZIP", compact = true, primary = true, onClick = {
@@ -213,99 +219,131 @@ fun FilesScreen(
                 Modifier.fillMaxWidth().heightIn(min = 40.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    Modifier.clickable {
-                        if (visibleEntries.isNotEmpty()) {
+                if (visibleEntries.isNotEmpty()) {
+                    Row(
+                        Modifier.clickable {
                             if (selectedPaths.containsAll(visibleEntries.map { it.path })) {
                                 selectedPaths.removeAll(visibleEntries.map { it.path }.toSet())
                             } else {
                                 visibleEntries.forEach { if (it.path !in selectedPaths) selectedPaths.add(it.path) }
                             }
-                        }
-                    },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val allSelected = visibleEntries.isNotEmpty() &&
-                        selectedPaths.containsAll(visibleEntries.map { it.path })
-                    Box(
-                        Modifier.size(19.dp).clip(RoundedCornerShape(5.dp))
-                            .background(if (allSelected) StudioPalette.Accent else StudioPalette.Surface)
-                            .border(1.dp, if (allSelected) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(5.dp)),
-                        contentAlignment = Alignment.Center
+                        },
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (allSelected) Text("✓", color = androidx.compose.ui.graphics.Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        val allSelected = selectedPaths.containsAll(visibleEntries.map { it.path })
+                        Box(
+                            Modifier.size(19.dp).clip(RoundedCornerShape(5.dp))
+                                .background(if (allSelected) StudioPalette.Accent else StudioPalette.Surface)
+                                .border(1.dp, if (allSelected) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(5.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (allSelected) Text("✓", color = androidx.compose.ui.graphics.Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Text(
+                            "Select all",
+                            color = StudioPalette.Ink,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
                     }
-                    Text(
-                        "Select all",
-                        color = StudioPalette.Ink,
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
                 }
                 Spacer(Modifier.weight(1f))
-                if (selectedEntries.isNotEmpty()) {
-                    Text(
-                        "${selectedEntries.size} selected",
-                        color = StudioPalette.Muted,
-                        fontSize = 11.5.sp,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                    StudioActionButton(
-                        "Move", compact = true,
-                        onClick = { serverAction("move files", { onBulkAction(selectedEntries, "move") }) }
-                    )
-                    Spacer(Modifier.width(5.dp))
-                    StudioActionButton(
-                        "ZIP", compact = true,
-                        onClick = { serverAction("export selected files", { onBulkAction(selectedEntries, "zip") }) }
-                    )
-                    Spacer(Modifier.width(5.dp))
-                    StudioActionButton(
-                        "Delete", compact = true, destructive = true,
-                        onClick = { serverAction("delete files", { onBulkAction(selectedEntries, "delete") }) }
-                    )
+                AnimatedVisibility(
+                    visible = selectedEntries.isNotEmpty(),
+                    enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 130 else 0)) +
+                        expandHorizontally(tween(if (LocalStudioMotionEnabled.current) 180 else 0), expandFrom = Alignment.End),
+                    exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 90 else 0)) +
+                        shrinkHorizontally(tween(if (LocalStudioMotionEnabled.current) 130 else 0), shrinkTowards = Alignment.End)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(
+                            "${selectedEntries.size} selected",
+                            color = StudioPalette.Muted,
+                            fontSize = 11.sp
+                        )
+                        StudioActionButton(
+                            "Move", compact = true,
+                            onClick = { serverAction("move files", { onBulkAction(selectedEntries, "move") }) }
+                        )
+                        StudioActionButton(
+                            "ZIP", compact = true,
+                            onClick = { serverAction("export selected files", { onBulkAction(selectedEntries, "zip") }) }
+                        )
+                        StudioActionButton(
+                            "Delete", compact = true, destructive = true,
+                            onClick = { serverAction("delete files", { onBulkAction(selectedEntries, "delete") }) }
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(4.dp))
         }
         item {
-            StudioCard {
+            StudioCard(modifier = Modifier.animateItem()) {
                 if (visibleEntries.isEmpty()) {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(9.dp)
+                    ) {
+                        Box(
+                            Modifier.size(48.dp).clip(CircleShape).background(StudioPalette.Soft),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Outlined.Folder,
+                                contentDescription = null,
+                                tint = StudioPalette.Accent,
+                                modifier = Modifier.size(23.dp)
+                            )
+                        }
                         Text(
-                            if (query.isBlank()) "This folder is empty. Create a file to start."
-                            else "No match for “$query”.",
-                            color = StudioPalette.Muted,
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().padding(top = 3.dp, bottom = 32.dp)
+                            if (query.isBlank()) "This folder is empty"
+                            else "No files found",
+                            color = StudioPalette.Ink,
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center
                         )
+                        Text(
+                            if (query.isBlank()) "Create a file or folder, or upload your existing bot source."
+                            else "Try a different name or clear your search.",
+                            color = StudioPalette.Muted,
+                            fontSize = 12.5.sp,
+                            lineHeight = 18.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        if (query.isBlank()) {
+                            StudioActionButton("Create file", compact = true, primary = true, onClick = onCreateFile)
+                        } else {
+                            StudioActionButton("Clear search", compact = true, onClick = { query = "" })
+                        }
                         Text(
                             "Folders A–Z first, then files A–Z.",
                             color = StudioPalette.Muted,
-                            fontSize = 12.5.sp,
-                            lineHeight = 17.sp
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
                         )
-                        Row(
-                            Modifier.fillMaxWidth().padding(top = 30.dp, bottom = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "Code editor",
-                                color = StudioPalette.Ink,
-                                fontSize = 17.sp,
-                                lineHeight = 22.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(Modifier.weight(1f))
-                            StudioActionButton(
-                                "Open editor",
-                                compact = true,
-                                onClick = { onEditorVisibility(true) }
-                            )
-                        }
+                    }
+                    StudioDivider()
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Code editor",
+                            color = StudioPalette.Ink,
+                            fontSize = 15.sp,
+                            lineHeight = 20.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.weight(1f))
+                        StudioActionButton(
+                            "Open editor",
+                            compact = true,
+                            onClick = { onEditorVisibility(true) }
+                        )
                     }
                 } else {
                     visibleEntries.forEachIndexed { index, entry ->

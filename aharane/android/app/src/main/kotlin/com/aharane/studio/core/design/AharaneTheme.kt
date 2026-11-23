@@ -1,5 +1,9 @@
 package com.aharane.studio.core.design
 
+import android.animation.ValueAnimator
+import android.os.Build
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
@@ -8,6 +12,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
@@ -30,6 +35,8 @@ private val BricolageGrotesque = FontFamily(
     Font(R.font.bricolage_grotesque, FontWeight.SemiBold),
     Font(R.font.bricolage_grotesque, FontWeight.Bold)
 )
+
+val LocalStudioMotionEnabled = staticCompositionLocalOf { true }
 
 private val Light = lightColorScheme(
     primary = Color(0xFF0E7A5C),
@@ -135,6 +142,26 @@ fun AharaneTheme(
         surfaceVariant = if (amoled) Color(0xFF101614) else Dark.surfaceVariant,
         outline = if (amoled) Color(0xFF202725) else Dark.outline
     )
+    // Respect Android's system-wide animation setting, including Battery Saver.
+    val motionEnabled = Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ValueAnimator.areAnimatorsEnabled()
+    val colorTarget = if (dark) darkScheme else lightScheme
+    val colorDuration = if (motionEnabled) 260 else 0
+    // Theme changes transition as one coherent palette rather than repainting
+    // each surface and label in a single frame.
+    val animatedScheme = colorTarget.copy(
+        primary = animateColorAsState(colorTarget.primary, tween(colorDuration), label = "theme-primary").value,
+        onPrimary = animateColorAsState(colorTarget.onPrimary, tween(colorDuration), label = "theme-on-primary").value,
+        primaryContainer = animateColorAsState(colorTarget.primaryContainer, tween(colorDuration), label = "theme-primary-container").value,
+        onPrimaryContainer = animateColorAsState(colorTarget.onPrimaryContainer, tween(colorDuration), label = "theme-on-primary-container").value,
+        background = animateColorAsState(colorTarget.background, tween(colorDuration), label = "theme-background").value,
+        onBackground = animateColorAsState(colorTarget.onBackground, tween(colorDuration), label = "theme-on-background").value,
+        surface = animateColorAsState(colorTarget.surface, tween(colorDuration), label = "theme-surface").value,
+        onSurface = animateColorAsState(colorTarget.onSurface, tween(colorDuration), label = "theme-on-surface").value,
+        surfaceVariant = animateColorAsState(colorTarget.surfaceVariant, tween(colorDuration), label = "theme-surface-variant").value,
+        onSurfaceVariant = animateColorAsState(colorTarget.onSurfaceVariant, tween(colorDuration), label = "theme-on-surface-variant").value,
+        outline = animateColorAsState(colorTarget.outline, tween(colorDuration), label = "theme-outline").value,
+        error = animateColorAsState(colorTarget.error, tween(colorDuration), label = "theme-error").value
+    )
     val baseDensity = LocalDensity.current
     val scaledDensity = Density(
         density = baseDensity.density * interfaceScale.coerceIn(.88f, 1.12f),
@@ -143,11 +170,12 @@ fun AharaneTheme(
 
     CompositionLocalProvider(
         LocalDensity provides scaledDensity,
+        LocalStudioMotionEnabled provides motionEnabled,
         LocalStudioCornerScale provides cornerScale.coerceIn(.65f, 1.3f),
         LocalStudioRowScale provides rowScale.coerceIn(.85f, 1.2f)
     ) {
         MaterialTheme(
-            colorScheme = if (dark) darkScheme else lightScheme,
+            colorScheme = animatedScheme,
             typography = StudioTypography,
             content = content
         )

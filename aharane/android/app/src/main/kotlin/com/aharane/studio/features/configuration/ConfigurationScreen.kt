@@ -1,6 +1,14 @@
 package com.aharane.studio.features.configuration
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -207,7 +215,7 @@ fun ConfigurationScreen(
                 ConfigField("Command prefix", "PREFIX", prefix, editable, onValueChange = { prefix = it; dirty = true }, singleLine = true)
                 StudioDivider()
                 ConfigField(
-                    if (profile == "Public") "Account number" else "Owner number",
+                    if (profile == "Public") "Public bot WhatsApp number" else "Owner number",
                     if (profile == "Public") "PUBLIC_NUMBER" else "OWNER_NUMBER",
                     ownerNumber,
                     editable,
@@ -280,7 +288,13 @@ fun ConfigurationScreen(
                         lineHeight = 18.sp,
                         modifier = Modifier.weight(1f)
                     )
-                    if (dirty) {
+                    AnimatedVisibility(
+                        visible = dirty,
+                        enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 130 else 0)) +
+                            expandVertically(tween(if (LocalStudioMotionEnabled.current) 160 else 0)),
+                        exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 90 else 0)) +
+                            shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 120 else 0))
+                    ) {
                         StudioActionButton("Discard", compact = true, onClick = ::resetDraft)
                     }
                 }
@@ -307,10 +321,17 @@ fun ConfigurationScreen(
                     StudioTag("Not connected")
                 }
                 Spacer(Modifier.height(9.dp))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                AnimatedVisibility(
+                    visible = dirty || saving,
+                    enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 140 else 0)) +
+                        expandVertically(tween(if (LocalStudioMotionEnabled.current) 180 else 0)),
+                    exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
+                        shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 140 else 0))
                 ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                     StudioActionButton(
                         "Discard",
                         modifier = Modifier.weight(1f),
@@ -349,6 +370,7 @@ fun ConfigurationScreen(
                             }
                         }
                     )
+                    }
                 }
             }
         }
@@ -437,14 +459,27 @@ private fun ConfigToggle(
                 if (!enabled) StudioTag("Not loaded")
             }
         }
-        val track = if (checked) StudioPalette.Accent else StudioPalette.Line
+        val motionEnabled = LocalStudioMotionEnabled.current
+        val trackTarget = if (enabled && checked) StudioPalette.Accent else StudioPalette.Line
+        val track by animateColorAsState(
+            trackTarget,
+            animationSpec = tween(if (motionEnabled) 160 else 0),
+            label = "configuration-toggle-track"
+        )
+        val thumbX by animateDpAsState(
+            if (checked) 19.dp else 3.dp,
+            animationSpec = tween(if (motionEnabled) 180 else 0),
+            label = "configuration-toggle-thumb"
+        )
         Box(
             Modifier.size(width = 38.dp, height = 22.dp).clip(RoundedCornerShape(99.dp))
-                .background(if (enabled) track else StudioPalette.Line)
+                .background(track)
                 .clickable(enabled = enabled) { onCheckedChange(!checked) },
-            contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
+            contentAlignment = Alignment.CenterStart
         ) {
-            Box(Modifier.padding(horizontal = 3.dp).size(16.dp).clip(CircleShape).background(StudioPalette.Surface))
+            Box(
+                Modifier.offset(x = thumbX).size(16.dp).clip(CircleShape).background(StudioPalette.Surface)
+            )
         }
     }
 }

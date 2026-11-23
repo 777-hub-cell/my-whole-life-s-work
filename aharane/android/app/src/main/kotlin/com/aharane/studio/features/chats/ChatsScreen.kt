@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Public
 
@@ -54,6 +55,7 @@ fun ChatsScreen(
     conversations: List<ChatSummary> = emptyList(),
     accountDisplayName: String = account.label,
     accountConnected: Boolean = false,
+    onConnectAccount: () -> Unit = {},
     onConversationSelected: (ChatSummary) -> Unit = {},
     onChatAction: (ChatSummary, String) -> Unit = { _, _ -> },
     showIndividuals: Boolean = true,
@@ -284,25 +286,66 @@ fun ChatsScreen(
         }
         item {
             if (visibleChats.isEmpty()) {
-                StudioCard(padding = PaddingValues(horizontal = 16.dp, vertical = 28.dp)) {
-                    Text(
-                        when {
-                            !accountConnected -> "This WhatsApp account is not connected yet. Link it from Home to load conversations."
-                            filter == ChatFilter.UNREAD -> "No unread chats."
-                            filter == ChatFilter.GROUPS -> "No groups match."
-                            filter == ChatFilter.ARCHIVED -> "No archived chats."
-                            else -> "No chats match."
-                        },
-                        color = StudioPalette.Muted,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                StudioCard(padding = PaddingValues(horizontal = 16.dp, vertical = 26.dp)) {
+                    Column(
+                        Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            Modifier.size(44.dp).clip(CircleShape).background(StudioPalette.Soft),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Outlined.ChatBubbleOutline,
+                                contentDescription = null,
+                                tint = StudioPalette.Accent,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Text(
+                            when {
+                                !accountConnected -> "Connect this WhatsApp account"
+                                query.isNotBlank() -> "No chats match your search."
+                                filter == ChatFilter.UNREAD -> "No unread chats."
+                                filter == ChatFilter.GROUPS -> "No groups yet."
+                                filter == ChatFilter.ARCHIVED -> "No archived chats."
+                                accountConversations.isEmpty() -> "No conversations yet."
+                                else -> "No chats match these filters."
+                            },
+                            color = StudioPalette.Ink,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 20.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            when {
+                                !accountConnected -> "Link this account to load its conversations."
+                                query.isNotBlank() -> "Try a different search or clear the current query."
+                                filter == ChatFilter.UNREAD -> "Unread conversations will appear here."
+                                filter == ChatFilter.GROUPS -> "Group conversations will appear here."
+                                filter == ChatFilter.ARCHIVED -> "Archived conversations will appear here."
+                                accountConversations.isEmpty() -> "New conversations will appear here when this account receives messages."
+                                else -> "Try another filter to find the conversation you need."
+                            },
+                            color = StudioPalette.Muted,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (!accountConnected) {
+                            StudioActionButton("Link account", compact = true, primary = true, onClick = onConnectAccount)
+                        } else if (query.isNotBlank()) {
+                            StudioActionButton("Clear search", compact = true, onClick = { query = "" })
+                        }
+                    }
                 }
                 Spacer(Modifier.height(16.dp))
             } else {
-                StudioCard {
+                StudioCard(modifier = Modifier.animateItem()) {
                     visibleChats.forEachIndexed { index, chat ->
                         if (index > 0) StudioDivider()
                         ChatListRow(

@@ -6,6 +6,8 @@ export function normalizePhone(value) {
 }
 
 export function parseAllowedSenders(value) {
+  // Retained only as a compatibility utility for old data readers. Public
+  // access no longer uses or persists a sender allow-list.
   const result = new Set()
   for (const entry of String(value ?? '').split(',')) {
     const number = normalizePhone(entry)
@@ -16,40 +18,56 @@ export function parseAllowedSenders(value) {
 
 export function senderNumberFromJid(jid) {
   const value = String(jid ?? '')
-  // Deliberately reject LID, group, broadcast and status JIDs. Do not guess
-  // a phone number from opaque WhatsApp identifiers.
   if (!value.endsWith('@s.whatsapp.net')) return ''
   const local = value.slice(0, -'@s.whatsapp.net'.length).split(':', 1)[0]
   return normalizePhone(local)
 }
 
+function isNumericLid(value) {
+  const jid = String(value ?? '').trim()
+  return /^\d{5,25}(?:@lid)$/.test(jid)
+}
+
+function isPublicSenderIdentity(value) {
+  return Boolean(senderNumberFromJid(value) || isNumericLid(value))
+}
+
 export function isPrivateVisibleChatJid(value) {
   const jid = String(value ?? '').trim()
-  // The signed-in Private WhatsApp account may display its own newly received
-  // direct, group, and LID-addressed chats. Broadcast/status/newsletter feeds
-  // are intentionally excluded.
   return /^\d{7,15}@s\.whatsapp\.net$/.test(jid)
     || /^\d{5,25}-\d{5,25}@g\.us$/.test(jid)
     || /^\d{5,25}@lid$/.test(jid)
 }
 
+/**
+ * Public access is intentionally open to ordinary WhatsApp senders. The
+ * primary and Baileys-paired alternate JIDs are both trusted message metadata;
+ * LIDs are accepted as opaque identities and are never converted to guessed
+ * phone numbers. Groups are eligible only when the caller explicitly enables
+ * them for the workflow being evaluated.
+ */
 export function isAllowedInbound({
   remoteJid,
+  remoteJidAlt,
   participantJid,
+  participantAltJid,
   allowGroups = false,
   fromMe = false,
-  allowedSenders = new Set(),
 } = {}) {
   if (fromMe === true) return false
-  const jid = String(remoteJid ?? '')
-  if (!jid || jid === 'status@broadcast' || jid.endsWith('@broadcast')) return false
-  let senderJid = jid
+  const jid = String(remoteJid ?? '').trim()
+  if (!jid || jid === 'status@broadcast' || jid.endsWith('@broadcast') ||
+      jid.endsWith('@newsletter')) return false
+
   if (jid.endsWith('@g.us')) {
     if (!allowGroups || !/^\d{5,25}-\d{5,25}@g\.us$/.test(jid)) return false
-    senderJid = String(participantJid ?? '')
+    const participant = String(participantJid ?? '').trim()
+    const alternate = String(participantAltJid ?? '').trim()
+    return isPublicSenderIdentity(participant) || isPublicSenderIdentity(alternate)
   }
-  const sender = senderNumberFromJid(senderJid)
-  return Boolean(sender && allowedSenders instanceof Set && allowedSenders.has(sender))
+
+  if (isPublicSenderIdentity(jid)) return true
+  return isPublicSenderIdentity(remoteJidAlt)
 }
 
 export function commandResponse(rawText) {
@@ -61,16 +79,6 @@ export function commandResponse(rawText) {
   return null
 }
 
-/**
- * Reject Baileys message-upsert events associated with placeholder-resend
- * spoofing attempts. The pinned upstream release is patched as well; this
- * additional guard is defense in depth.
- */
 export function isSafeMessageUpsert(event) {
-  return Boolean(
-    event
-    && !event.requestId
-    && event.type === 'notify'
-    && Array.isArray(event.messages)
-  )
+  return Boolean(event && !event.requestId && event.type === 'notify' && Array.isArray(event.messages))
 }

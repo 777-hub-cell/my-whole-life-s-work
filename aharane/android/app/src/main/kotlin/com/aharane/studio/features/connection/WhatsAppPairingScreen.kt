@@ -1,6 +1,13 @@
 package com.aharane.studio.features.connection
 
 import android.graphics.Bitmap
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aharane.studio.R
 import com.aharane.studio.core.design.StudioActionButton
+import com.aharane.studio.core.design.LocalStudioMotionEnabled
 import com.aharane.studio.core.design.StudioPalette
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
@@ -148,8 +156,13 @@ fun WhatsAppPairingScreen(
                         )
                     }
                 }
-                if (method == "qr") {
-                PairingInfoPanel {
+                Crossfade(
+                    targetState = method == "qr",
+                    animationSpec = tween(if (LocalStudioMotionEnabled.current) 200 else 0),
+                    label = "pairing-method-transition"
+                ) { showQr ->
+                    if (showQr) {
+                        PairingInfoPanel {
                     Text("On your phone, open WhatsApp → Linked devices → Link a device. Scan the QR code below.", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
                     Box(
                         Modifier.fillMaxWidth().heightIn(min = 236.dp)
@@ -220,10 +233,16 @@ fun WhatsAppPairingScreen(
                         )
                     }
                 }
-            }
+                }
             }
 
-            if (loading) {
+            AnimatedVisibility(
+                visible = loading,
+                enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 140 else 0)) +
+                    expandVertically(tween(if (LocalStudioMotionEnabled.current) 180 else 0)),
+                exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
+                    shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 140 else 0))
+            ) {
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
@@ -233,7 +252,13 @@ fun WhatsAppPairingScreen(
                     Text(" Contacting WhatsApp…", color = StudioPalette.Muted, fontSize = 12.sp)
                 }
             }
-            if (errorMessage.isNotBlank()) {
+            AnimatedVisibility(
+                visible = errorMessage.isNotBlank(),
+                enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 160 else 0)) +
+                    expandVertically(tween(if (LocalStudioMotionEnabled.current) 180 else 0)),
+                exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
+                    shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 140 else 0))
+            ) {
                 Text(
                     errorMessage,
                     color = if (errorMessage.contains("is connected", ignoreCase = true)) StudioPalette.Accent else StudioPalette.Bad,
@@ -247,6 +272,7 @@ fun WhatsAppPairingScreen(
                 )
             }
             StudioActionButton("Back to accounts", modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp), onClick = onBack)
+            }
         }
     }
 }

@@ -2,6 +2,7 @@ package com.aharane.studio.features.chats
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.performClick
@@ -155,7 +156,10 @@ class ConversationScreenTest {
             }
         }
         compose.onNodeWithTag("conversation-composer").performTextInput("Hello from the chat test")
-        compose.onNodeWithContentDescription("Send message").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("conversation-composer").assertTextEquals("Hello from the chat test")
+        compose.onNodeWithTag("conversation-send").assertIsDisplayed().assertIsEnabled().performClick()
+        compose.waitForIdle()
         compose.runOnIdle { assertEquals(listOf("Hello from the chat test"), sent) }
         compose.onNodeWithTag("conversation-composer").performTextInput("Second draft")
         compose.onNodeWithTag("conversation-composer").assertTextEquals("Second draft")

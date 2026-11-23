@@ -1,6 +1,8 @@
 package com.aharane.studio.features.more
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -77,10 +79,8 @@ fun MoreScreen(
     connected: Boolean = false,
     privateAccountStatus: String = "Status not loaded",
     publicAccountStatus: String = "Status not loaded",
-    privateOwnerNumber: String = "",
-    publicOwnerNumber: String = "",
+    ownerNumber: String = "",
     publicBotNumber: String = "",
-    allowedPublicSenders: String = "",
     activityEntries: List<String> = emptyList(),
     storageSummary: String = "—",
     storageTotalSummary: String = "—",
@@ -90,7 +90,7 @@ fun MoreScreen(
     largestFiles: List<String> = emptyList(),
     folderSummaries: List<String> = emptyList(),
     onAccountAction: (String) -> Unit = {},
-    onSaveOwnerSettings: (String, String, String, String) -> Unit = { _, _, _, _ -> },
+    onSaveOwnerSettings: (String, String) -> Unit = { _, _ -> },
     onClearActivity: () -> Unit = {},
     onRefreshActivity: () -> Unit = {},
     onCopyActivity: () -> Unit = {},
@@ -137,18 +137,14 @@ fun MoreScreen(
             }
         }
     }
-    var privateOwnerDraft by rememberSaveable { mutableStateOf(privateOwnerNumber) }
-    var publicOwnerDraft by rememberSaveable { mutableStateOf(publicOwnerNumber) }
+    var ownerDraft by rememberSaveable { mutableStateOf(ownerNumber) }
     var publicBotDraft by rememberSaveable { mutableStateOf(publicBotNumber) }
-    var allowedSendersDraft by rememberSaveable { mutableStateOf(allowedPublicSenders) }
     var currentPassword by rememberSaveable { mutableStateOf("") }
     var newPassword by rememberSaveable { mutableStateOf("") }
 
-    LaunchedEffect(privateOwnerNumber, publicOwnerNumber, publicBotNumber, allowedPublicSenders) {
-        privateOwnerDraft = privateOwnerNumber
-        publicOwnerDraft = publicOwnerNumber
+    LaunchedEffect(ownerNumber, publicBotNumber) {
+        ownerDraft = ownerNumber
         publicBotDraft = publicBotNumber
-        allowedSendersDraft = allowedPublicSenders
     }
     val context = LocalContext.current
 
@@ -167,7 +163,12 @@ fun MoreScreen(
         onPageChange(if (page == "chat-appearance-studio") "chat-settings" else "more")
     }
 
-    if (page == "appearance") {
+    Crossfade(
+        targetState = page,
+        animationSpec = tween(if (LocalStudioMotionEnabled.current) 210 else 0),
+        label = "more-page-transition"
+    ) { targetPage ->
+    if (targetPage == "appearance") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -312,7 +313,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "chat-settings") {
+    } else if (targetPage == "chat-settings") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
@@ -505,7 +506,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "chat-appearance-studio") {
+    } else if (targetPage == "chat-appearance-studio") {
         if (appearanceStore != null) {
             ChatAppearanceStudioScreen(
                 account = selectedChatAccount,
@@ -521,7 +522,7 @@ fun MoreScreen(
                 Text("The local appearance store could not be opened.", color = StudioPalette.Muted, fontSize = 12.sp)
             }
         }
-    } else if (page == "starred") {
+    } else if (targetPage == "starred") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -554,14 +555,14 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "accounts") {
+    } else if (targetPage == "accounts") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
         ) {
             item {
                 Spacer(Modifier.height(12.dp))
-                StudioPageTitle("Accounts", "Two independent WhatsApp sessions. Pairing numbers are saved in Configuration.")
+                StudioPageTitle("Accounts & owners", "Two independent WhatsApp sessions, one shared Owner identity.")
                 Spacer(Modifier.height(14.dp))
             }
             item {
@@ -593,25 +594,28 @@ fun MoreScreen(
                     )
                 }
             }
-            item { StudioSectionHeading("Owner identities") }
+            item { StudioSectionHeading("Owner") }
             item {
                 StudioCard(padding = PaddingValues(14.dp)) {
-                    OwnerNumberField("Private Owner number", privateOwnerDraft, connected) { privateOwnerDraft = it }
-                    Spacer(Modifier.height(12.dp))
-                    OwnerNumberField("Public Owner number", publicOwnerDraft, connected) { publicOwnerDraft = it }
+                    Text(
+                        "The same Owner number controls owner permissions on both WhatsApp sessions. The Public bot number identifies the separate bot account.",
+                        color = StudioPalette.Muted,
+                        fontSize = 12.5.sp,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(Modifier.height(13.dp))
+                    OwnerNumberField("Owner phone number", ownerDraft, connected) { ownerDraft = it }
                     Spacer(Modifier.height(12.dp))
                     OwnerNumberField("Public bot WhatsApp number", publicBotDraft, connected) { publicBotDraft = it }
-                    Spacer(Modifier.height(12.dp))
-                    OwnerNumberField("Allowed public senders (comma separated)", allowedSendersDraft, connected) { allowedSendersDraft = it }
                     Spacer(Modifier.height(14.dp))
                     StudioActionButton(
                         "Save owner settings",
                         primary = true,
                         enabled = connected,
-                        onClick = { onSaveOwnerSettings(privateOwnerDraft, publicOwnerDraft, publicBotDraft, allowedSendersDraft) }
+                        onClick = { onSaveOwnerSettings(ownerDraft, publicBotDraft) }
                     )
                     if (!connected) Text(
-                        "Connect to your Aharane server to load or save owner identities.",
+                        "Connect to your Aharane server to load or save these settings.",
                         color = StudioPalette.Muted,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 8.dp)
@@ -619,7 +623,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "activity") {    } else if (page == "activity") {
+    } else if (targetPage == "activity") {    } else if (targetPage == "activity") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -691,7 +695,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "storage") {
+    } else if (targetPage == "storage") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -789,7 +793,7 @@ fun MoreScreen(
                 StudioCard {
                     StudioRow(
                         "Accounts & owners",
-                        "Pair the two WhatsApp sessions and set their separate Owner identities",
+                        "Manage both sessions with one shared Owner identity",
                         icon = null,
                         trailing = "›",
                         onClick = { onPageChange("accounts") }
@@ -887,6 +891,8 @@ fun MoreScreen(
         }
     }
 
+
+    }
     if (customColorOpen) {
         Dialog(onDismissRequest = { customColorOpen = false }) {
             Column(

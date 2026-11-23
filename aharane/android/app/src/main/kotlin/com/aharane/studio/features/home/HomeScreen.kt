@@ -3,6 +3,8 @@ package com.aharane.studio.features.home
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -50,6 +52,7 @@ fun HomeScreen(
     onAccountAction: (ChatAccount) -> Unit = {},
     recentActivity: List<String> = emptyList()
 ) {
+    val previewMode = serviceSubtitle.equals("Preview only", ignoreCase = true)
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
@@ -60,7 +63,7 @@ fun HomeScreen(
             Spacer(Modifier.height(18.dp))
         }
         item {
-            StudioCard(padding = PaddingValues(16.dp)) {
+            StudioCard(modifier = Modifier.animateItem(), padding = PaddingValues(16.dp)) {
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 42.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -84,6 +87,7 @@ fun HomeScreen(
                         Modifier.clip(RoundedCornerShape(99.dp))
                             .background(
                                 when {
+                                    previewMode -> StudioPalette.Accent.copy(alpha = 0.12f)
                                     !serviceConnected -> StudioPalette.Bad.copy(alpha = 0.12f)
                                     serviceDegraded -> Color(0xFFB87928).copy(alpha = 0.16f)
                                     else -> StudioPalette.Accent.copy(alpha = 0.12f)
@@ -93,14 +97,21 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(7.dp)
                     ) {
-                        HomeConnectionIndicator(connected = serviceConnected, degraded = serviceDegraded, size = 20.dp)
+                        HomeConnectionIndicator(
+                            connected = serviceConnected,
+                            degraded = serviceDegraded,
+                            preview = previewMode,
+                            size = 20.dp
+                        )
                         Text(
                             when {
+                                previewMode -> "Preview"
                                 !serviceConnected -> "Offline"
                                 serviceDegraded -> "Partial"
                                 else -> "Online"
                             },
                             color = when {
+                                previewMode -> StudioPalette.Accent
                                 !serviceConnected -> StudioPalette.Bad
                                 serviceDegraded -> Color(0xFFB87928)
                                 else -> StudioPalette.Accent
@@ -110,6 +121,13 @@ fun HomeScreen(
                         )
                     }
                 }
+                Text(
+                    "Private and Public are independent WhatsApp sessions.",
+                    color = StudioPalette.Muted,
+                    fontSize = 11.5.sp,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.padding(top = 7.dp)
+                )
                 StudioDivider()
                 Column(
                     Modifier.fillMaxWidth().padding(top = 11.dp),
@@ -137,14 +155,22 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
                         verticalAlignment = Alignment.Bottom
                     ) {
-                        samples.forEach { count ->
+                        samples.forEachIndexed { index, count ->
                             val fraction = if (count == 0) 0.045f else (count.toFloat() / peak).coerceIn(0.08f, 1f)
+                            val animatedFraction = animateFloatAsState(
+                                targetValue = fraction,
+                                animationSpec = tween(
+                                    durationMillis = if (LocalStudioMotionEnabled.current) 420 else 0,
+                                    delayMillis = if (LocalStudioMotionEnabled.current) index * 14 else 0
+                                ),
+                                label = "home-hourly-bar"
+                            ).value
                             Box(
                                 Modifier.weight(1f).fillMaxHeight(),
                                 contentAlignment = Alignment.BottomCenter
                             ) {
                                 Box(
-                                    Modifier.fillMaxWidth().fillMaxHeight(fraction)
+                                    Modifier.fillMaxWidth().fillMaxHeight(animatedFraction)
                                         .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
                                         .background(if (count == 0) StudioPalette.Line else StudioPalette.Accent)
                                 )
@@ -184,11 +210,11 @@ fun HomeScreen(
             StudioCard {
                 StudioRow(
                     title = "Configuration",
-                    subtitle = "Private Owner · Public Owner · Public bot number",
+                    subtitle = "One shared Owner · Public bot number",
                     icon = Icons.Outlined.Tune,
                     trailing = "›",
                     onClick = onOpenConfiguration,
-                    subtitleMaxLines = 1
+                    subtitleMaxLines = 2
                 )
                 StudioDivider()
                 StudioRow(
@@ -263,20 +289,29 @@ fun HomeScreen(
 private fun HomeConnectionIndicator(
     connected: Boolean,
     degraded: Boolean = false,
+    preview: Boolean = false,
     size: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier
 ) {
-    val tint = when { !connected -> StudioPalette.Bad; degraded -> Color(0xFFB87928); else -> StudioPalette.Accent }
-    val transition = rememberInfiniteTransition(label = "home-connection-pulse")
-    val progress = transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1900, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "home-connection-ring"
-    ).value
+    val tint = when {
+        preview -> StudioPalette.Accent
+        !connected -> StudioPalette.Bad
+        degraded -> Color(0xFFB87928)
+        else -> StudioPalette.Accent
+    }
+    val motionEnabled = LocalStudioMotionEnabled.current
+    val progress = if (connected && !preview && motionEnabled) {
+        val transition = rememberInfiniteTransition(label = "home-connection-pulse")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1900, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "home-connection-ring"
+        ).value
+    } else 0f
     Canvas(modifier.size(size)) {
         val center = androidx.compose.ui.geometry.Offset(this.size.width / 2f, this.size.height / 2f)
         val maxRadius = this.size.minDimension * .43f
@@ -291,7 +326,7 @@ private fun HomeConnectionIndicator(
         if (connected) {
             drawLine(Color.White, androidx.compose.ui.geometry.Offset(this.size.width * .34f, this.size.height * .51f), androidx.compose.ui.geometry.Offset(this.size.width * .46f, this.size.height * .64f), strokeWidth = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
             drawLine(Color.White, androidx.compose.ui.geometry.Offset(this.size.width * .46f, this.size.height * .64f), androidx.compose.ui.geometry.Offset(this.size.width * .69f, this.size.height * .37f), strokeWidth = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
-        } else {
+        } else if (!preview) {
             drawLine(Color.White, androidx.compose.ui.geometry.Offset(this.size.width * .39f, this.size.height * .39f), androidx.compose.ui.geometry.Offset(this.size.width * .61f, this.size.height * .61f), strokeWidth = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
             drawLine(Color.White, androidx.compose.ui.geometry.Offset(this.size.width * .61f, this.size.height * .39f), androidx.compose.ui.geometry.Offset(this.size.width * .39f, this.size.height * .61f), strokeWidth = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
         }
@@ -308,6 +343,7 @@ private fun AccountRow(
     val isPrivate = account == ChatAccount.PRIVATE
     Row(
         Modifier.fillMaxWidth().defaultMinSize(minHeight = 65.dp)
+            .animateContentSize()
             .padding(horizontal = 13.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(11.dp)

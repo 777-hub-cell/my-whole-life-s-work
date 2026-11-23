@@ -127,6 +127,27 @@ test('public workflow requires the existing authorized sender gate', async t => 
   assert.equal(accepted.ok, true, accepted.error)
 })
 
+test('Public direct command workflows accept numeric LID-addressed direct chats after sender authorization', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('public')
+  draft.nodes[0].config.command = 'hello'
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    dryRun: true,
+    context: context({
+      sessionId: 'public',
+      privateControl: false,
+      allowedPublicSender: true,
+      remoteJid: '123456789012345@lid',
+      sender: '2348012345678@s.whatsapp.net',
+      senderJid: '2348012345678@s.whatsapp.net',
+      messageText: '!hello',
+    }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.equal(result.dryRun, true)
+})
+
 test('conditional nodes select the correct YES and NO execution branch', async t => {
   const { store } = await makeStore(t)
   const draft = createWorkflowDraft()

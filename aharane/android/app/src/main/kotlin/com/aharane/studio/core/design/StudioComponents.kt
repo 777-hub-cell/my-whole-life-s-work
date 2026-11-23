@@ -93,9 +93,13 @@ fun StudioHeader(
         else -> "Offline"
     }
     val statusColor = when {
-        preview -> StudioPalette.Accent
-        connected -> StudioPalette.Accent
-        else -> StudioPalette.Muted
+        preview || connected -> StudioPalette.Accent
+        else -> StudioPalette.Bad
+    }
+    val statusBackground = if (preview || connected) {
+        StudioPalette.Soft
+    } else {
+        StudioPalette.Bad.copy(alpha = 0.08f)
     }
     Row(
         modifier = Modifier.fillMaxWidth().background(StudioPalette.Background)
@@ -125,7 +129,7 @@ fun StudioHeader(
         Row(
             Modifier.heightIn(min = 36.dp)
                 .clip(RoundedCornerShape(99.dp))
-                .background(StudioPalette.Surface)
+                .background(statusBackground)
                 .border(1.dp, StudioPalette.Line, RoundedCornerShape(99.dp))
                 .padding(horizontal = 11.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,

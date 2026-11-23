@@ -52,6 +52,7 @@ fun HomeScreen(
     onAccountAction: (ChatAccount) -> Unit = {},
     recentActivity: List<String> = emptyList()
 ) {
+    val previewMode = serviceSubtitle.equals("Preview only", ignoreCase = true)
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
@@ -86,6 +87,7 @@ fun HomeScreen(
                         Modifier.clip(RoundedCornerShape(99.dp))
                             .background(
                                 when {
+                                    previewMode -> StudioPalette.Accent.copy(alpha = 0.12f)
                                     !serviceConnected -> StudioPalette.Bad.copy(alpha = 0.12f)
                                     serviceDegraded -> Color(0xFFB87928).copy(alpha = 0.16f)
                                     else -> StudioPalette.Accent.copy(alpha = 0.12f)
@@ -95,14 +97,21 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(7.dp)
                     ) {
-                        HomeConnectionIndicator(connected = serviceConnected, degraded = serviceDegraded, size = 20.dp)
+                        HomeConnectionIndicator(
+                            connected = serviceConnected,
+                            degraded = serviceDegraded,
+                            preview = previewMode,
+                            size = 20.dp
+                        )
                         Text(
                             when {
+                                previewMode -> "Preview"
                                 !serviceConnected -> "Offline"
                                 serviceDegraded -> "Partial"
                                 else -> "Online"
                             },
                             color = when {
+                                previewMode -> StudioPalette.Accent
                                 !serviceConnected -> StudioPalette.Bad
                                 serviceDegraded -> Color(0xFFB87928)
                                 else -> StudioPalette.Accent
@@ -280,12 +289,18 @@ fun HomeScreen(
 private fun HomeConnectionIndicator(
     connected: Boolean,
     degraded: Boolean = false,
+    preview: Boolean = false,
     size: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier
 ) {
-    val tint = when { !connected -> StudioPalette.Bad; degraded -> Color(0xFFB87928); else -> StudioPalette.Accent }
+    val tint = when {
+        preview -> StudioPalette.Accent
+        !connected -> StudioPalette.Bad
+        degraded -> Color(0xFFB87928)
+        else -> StudioPalette.Accent
+    }
     val motionEnabled = LocalStudioMotionEnabled.current
-    val progress = if (connected && motionEnabled) {
+    val progress = if (connected && !preview && motionEnabled) {
         val transition = rememberInfiniteTransition(label = "home-connection-pulse")
         transition.animateFloat(
             initialValue = 0f,
@@ -311,7 +326,7 @@ private fun HomeConnectionIndicator(
         if (connected) {
             drawLine(Color.White, androidx.compose.ui.geometry.Offset(this.size.width * .34f, this.size.height * .51f), androidx.compose.ui.geometry.Offset(this.size.width * .46f, this.size.height * .64f), strokeWidth = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
             drawLine(Color.White, androidx.compose.ui.geometry.Offset(this.size.width * .46f, this.size.height * .64f), androidx.compose.ui.geometry.Offset(this.size.width * .69f, this.size.height * .37f), strokeWidth = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
-        } else {
+        } else if (!preview) {
             drawLine(Color.White, androidx.compose.ui.geometry.Offset(this.size.width * .39f, this.size.height * .39f), androidx.compose.ui.geometry.Offset(this.size.width * .61f, this.size.height * .61f), strokeWidth = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
             drawLine(Color.White, androidx.compose.ui.geometry.Offset(this.size.width * .61f, this.size.height * .39f), androidx.compose.ui.geometry.Offset(this.size.width * .39f, this.size.height * .61f), strokeWidth = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
         }

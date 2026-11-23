@@ -34,3 +34,27 @@ test('monthly chart counts ordinary inbound and outbound chats and avoids duplic
     await rm(dataDir, { recursive: true, force: true })
   }
 })
+
+test('delayed receipts do not downgrade confirmed read delivery', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'aharane-receipt-'))
+  try {
+    const store = createChatStore({ dataDir })
+    const jid = '2348012345678@s.whatsapp.net'
+    const id = 'out-of-order-status'
+    await store.recordMessage({
+      sessionId: 'public',
+      message: {
+        key: { id, remoteJid: jid, fromMe: true },
+        messageTimestamp: Math.floor(Date.now() / 1000) - 30,
+        message: { conversation: 'sent text' }
+      }
+    })
+    await store.updateMessageStatus('public', jid, id, 'read')
+    await store.updateMessageStatus('public', jid, id, 'delivered')
+    await store.updateMessageStatus('public', jid, id, 'failed')
+    const messages = await store.getMessages('public', jid, { limit: 5 })
+    assert.equal(messages.find(row => row.id === id)?.status, 'read')
+  } finally {
+    await rm(dataDir, { recursive: true, force: true })
+  }
+})

@@ -156,10 +156,10 @@ fun FilesScreen(
             Spacer(Modifier.height(12.dp))
         }
         item {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            FlowRow(
+                Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (currentPath == "Update packages") {
                     StudioActionButton("Upload ZIP", compact = true, primary = true, onClick = {

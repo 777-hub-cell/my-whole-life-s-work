@@ -56,6 +56,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -138,64 +139,60 @@ fun StudioBottomNavigation(
     onNavigate: (MainDestination) -> Unit
 ) {
     val motionEnabled = LocalStudioMotionEnabled.current
+    val navDuration = StudioFoundationContract.Motion.durationMillis(
+        enabled = motionEnabled,
+        targetMillis = StudioFoundationContract.Motion.StateChangeMillis
+    )
     Column(Modifier.fillMaxWidth().background(StudioPalette.Surface).navigationBarsPadding()) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(StudioPalette.Line))
-        Row(Modifier.fillMaxWidth().height(58.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().height(StudioFoundationContract.Layout.BottomNavigationHeight),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             MainDestination.entries.forEach { destination ->
                 val active = selected == destination
                 val tintTarget = if (active) StudioPalette.Accent else StudioPalette.Muted
                 val tint by animateColorAsState(
                     tintTarget,
-                    animationSpec = tween(if (motionEnabled) 190 else 0),
+                    animationSpec = tween(navDuration),
                     label = "bottom-nav-tint"
                 )
                 val scale by animateFloatAsState(
-                    if (active && motionEnabled) 1.07f else 1f,
-                    animationSpec = tween(if (motionEnabled) 190 else 0),
+                    if (active && motionEnabled) 1.06f else 1f,
+                    animationSpec = tween(navDuration),
                     label = "bottom-nav-scale"
                 )
-                val indicatorColor by animateColorAsState(
-                    if (active) StudioPalette.Soft else Color.Transparent,
-                    animationSpec = tween(if (motionEnabled) 190 else 0),
-                    label = "bottom-nav-indicator"
-                )
+                val icon = when (destination) {
+                    MainDestination.HOME -> Icons.Outlined.Home
+                    MainDestination.CHATS -> Icons.Outlined.ChatBubbleOutline
+                    MainDestination.FILES -> Icons.Outlined.FolderOpen
+                    MainDestination.ENVIRONMENT -> Icons.Outlined.Terminal
+                    MainDestination.MORE -> Icons.Outlined.MoreHoriz
+                }
                 Column(
                     modifier = Modifier.weight(1f).fillMaxHeight()
                         .semantics { this.selected = active }
-                        .clickable { onNavigate(destination) }
+                        .clickable(role = Role.Tab) { onNavigate(destination) }
                         .padding(top = 7.dp, bottom = 5.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically)
                 ) {
-                    val icon = when (destination) {
-                        MainDestination.HOME -> Icons.Outlined.Home
-                        MainDestination.CHATS -> Icons.Outlined.ChatBubbleOutline
-                        MainDestination.FILES -> Icons.Outlined.FolderOpen
-                        MainDestination.ENVIRONMENT -> Icons.Outlined.Terminal
-                        MainDestination.MORE -> Icons.Outlined.MoreHoriz
-                    }
-                    Box(
-                        Modifier.size(width = 48.dp, height = 28.dp)
-                            .clip(CircleShape)
-                            .background(indicatorColor),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            icon,
-                            contentDescription = null,
-                            tint = tint,
-                            modifier = Modifier.size(20.dp).graphicsLayer {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(StudioFoundationContract.Layout.NavigationIconSize)
+                            .graphicsLayer {
                                 scaleX = scale
                                 scaleY = scale
                             }
-                        )
-                    }
+                    )
                     Text(
                         destination.label,
                         color = tint,
-                        fontSize = 11.5.sp,
+                        fontSize = StudioFoundationContract.TypeScale.BottomNavigationLabel,
                         lineHeight = 13.sp,
-                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
                         maxLines = 1
                     )
                 }

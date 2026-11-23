@@ -312,9 +312,11 @@ def main():
     if tap_label("Choose photo", scroll_to_find=True, required=False):
         capture("06c-android-photo-picker.png", 1)
         back()
-    tap_label("Message bubbles", scroll_to_find=True)
+    # These are section headings inside the Appearance Studio, not buttons.
+    # Scroll them into view and capture the controls beneath each heading.
+    scroll_until_label_visible("Message bubbles")
     capture("06d-message-bubble-customisation.png")
-    tap_label("Typography", scroll_to_find=True)
+    scroll_until_label_visible("Typography")
     capture("06e-typography-settings.png")
     scroll_back_until_label_visible("Apply to")
     tap_label("Conversation")

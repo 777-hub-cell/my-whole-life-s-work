@@ -1,6 +1,8 @@
 buildscript {
     repositories {
         google()
+        // Google-hosted Maven Central mirror avoids transient Central 429 throttling.
+        maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
         mavenCentral()
     }
     dependencies {

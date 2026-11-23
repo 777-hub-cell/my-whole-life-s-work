@@ -168,7 +168,8 @@ data class VisualNodeDefinition(
     val name: String,
     val description: String,
     val inputs: List<VisualSocket>,
-    val outputs: List<VisualSocket>
+    val outputs: List<VisualSocket>,
+    val version: Int = 1
 ) {
     companion object {
         fun fromJson(json: JSONObject): VisualNodeDefinition {
@@ -184,7 +185,8 @@ data class VisualNodeDefinition(
                 name = json.optString("name"),
                 description = json.optString("description"),
                 inputs = parse("inputs"),
-                outputs = parse("outputs")
+                outputs = parse("outputs"),
+                version = json.optInt("version", 1)
             )
         }
     }

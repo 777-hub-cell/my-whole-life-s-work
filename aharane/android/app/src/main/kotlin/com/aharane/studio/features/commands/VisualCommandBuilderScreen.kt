@@ -71,7 +71,8 @@ internal fun workspaceNodeOffset(node: VisualNode): Offset =
 fun VisualCommandBuilderScreen(
     repository: VisualCommandDataSource,
     connected: Boolean,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onManageEngines: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val workspaceScroll = rememberScrollState()
@@ -518,6 +519,7 @@ fun VisualCommandBuilderScreen(
                     }
                 }
             )
+            StudioActionButton("Engine library", compact = true, enabled = connected, onClick = onManageEngines)
             StudioActionButton("Delete", compact = true, destructive = true, enabled = saved && connected, onClick = { showDelete = true })
         }
 

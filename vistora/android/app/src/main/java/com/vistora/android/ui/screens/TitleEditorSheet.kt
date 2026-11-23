@@ -98,7 +98,7 @@ fun TitleEditorSheet(
                 Text("Stored privately on this device.",color=VistoraPalette.Muted,fontSize=11.sp)
             }
         }
-        VistoraTextField(title,{title=it;error=null},"Title name",label="Title",modifier=Modifier.padding(top=18.dp))
+        VistoraTextField(title,{title=it;error=null},"Title name",label="Title",modifier=Modifier.padding(top=18.dp),testTag="title-input")
         Text("Content type",color=VistoraPalette.Secondary,fontSize=13.sp,fontWeight=FontWeight.SemiBold,modifier=Modifier.padding(top=17.dp,bottom=8.dp))
         FlowChoiceRow { 
             MediaType.entries.forEach{ t-> SelectChip(t.category,type==t){type=t;if(t==MediaType.MOVIE)episodes=""} }

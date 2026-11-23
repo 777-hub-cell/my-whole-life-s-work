@@ -1,9 +1,9 @@
 package com.vistora.android.ui
 
 import android.graphics.Bitmap
+import com.vistora.android.MainActivity
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodes
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -35,11 +35,9 @@ class VistoraVisualCaptureTest {
         compose.waitForIdle()
         capture("03-add-title")
 
-        compose.onAllNodes(hasSetTextAction(), useUnmergedTree = true)
-            .fetchSemanticsNodes()
-            .first()
-        compose.onAllNodes(hasSetTextAction(), useUnmergedTree = true)[0]
-            .performTextInput("VISTORA QA Sample")
+        val editableFields = compose.onAllNodes(hasSetTextAction(), useUnmergedTree = true)
+        check(editableFields.fetchSemanticsNodes().isNotEmpty()) { "Add Title form did not expose an editable title field" }
+        editableFields[0].performTextInput("VISTORA QA Sample")
         compose.onNodeWithText("Add to library").performScrollTo().performClick()
         compose.waitForIdle()
         capture("04-title-details")
@@ -60,7 +58,7 @@ class VistoraVisualCaptureTest {
         compose.waitForIdle()
         capture("08-settings")
 
-        compose.onNodeWithText("My Notes").performClick()
+        compose.onNodeWithText("My Notes", substring = true).performClick()
         compose.waitForIdle()
         capture("09-my-notes")
     }

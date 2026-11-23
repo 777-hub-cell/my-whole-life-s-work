@@ -54,6 +54,7 @@ fun ChatsScreen(
     conversations: List<ChatSummary> = emptyList(),
     accountDisplayName: String = account.label,
     accountConnected: Boolean = false,
+    onConnectAccount: () -> Unit = {},
     onConversationSelected: (ChatSummary) -> Unit = {},
     onChatAction: (ChatSummary, String) -> Unit = { _, _ -> },
     showIndividuals: Boolean = true,
@@ -284,21 +285,36 @@ fun ChatsScreen(
         }
         item {
             if (visibleChats.isEmpty()) {
-                StudioCard(padding = PaddingValues(horizontal = 16.dp, vertical = 28.dp)) {
-                    Text(
-                        when {
-                            !accountConnected -> "This WhatsApp account is not connected yet. Link it from Home to load conversations."
-                            filter == ChatFilter.UNREAD -> "No unread chats."
-                            filter == ChatFilter.GROUPS -> "No groups match."
-                            filter == ChatFilter.ARCHIVED -> "No archived chats."
-                            else -> "No chats match."
-                        },
-                        color = StudioPalette.Muted,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                StudioCard(padding = PaddingValues(horizontal = 16.dp, vertical = 26.dp)) {
+                    Column(
+                        Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            when {
+                                !accountConnected -> "This WhatsApp account is not connected yet."
+                                filter == ChatFilter.UNREAD -> "No unread chats."
+                                filter == ChatFilter.GROUPS -> "No groups match."
+                                filter == ChatFilter.ARCHIVED -> "No archived chats."
+                                else -> "No chats match."
+                            },
+                            color = StudioPalette.Muted,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (!accountConnected) {
+                            Text(
+                                "Link this account to load its conversations.",
+                                color = StudioPalette.Muted,
+                                fontSize = 12.5.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            StudioActionButton("Link account", compact = true, primary = true, onClick = onConnectAccount)
+                        }
+                    }
                 }
                 Spacer(Modifier.height(16.dp))
             } else {

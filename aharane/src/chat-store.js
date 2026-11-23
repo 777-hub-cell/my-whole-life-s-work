@@ -745,6 +745,13 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return enqueue(account, async () => {
       const rows = await readRows(account), row = rows.find(item => item.jid === jid && item.id === key)
       if (!row || row.viewOnceViewed === true || row.status === value) return row || null
+      // Receipt events can arrive out of order after reconnects. A stale
+      // delivered event must never turn actual blue read ticks grey.
+      const receiptOrder = { pending: 0, sent: 1, delivered: 2, read: 3 }
+      if (row.status in receiptOrder && value in receiptOrder &&
+          receiptOrder[value] <= receiptOrder[row.status]) return row
+      // A late failure cannot undo a confirmed delivery or read receipt.
+      if (value === 'failed' && ['delivered', 'read'].includes(row.status)) return row
       row.status = value
       await rewriteRows(account, rows)
       return { id: row.id, jid: row.jid, status: row.status }

@@ -167,6 +167,7 @@ data class VisualNodeDefinition(
     val type: String,
     val name: String,
     val description: String,
+    val category: String = "",
     val inputs: List<VisualSocket>,
     val outputs: List<VisualSocket>,
     val version: Int = 1
@@ -184,6 +185,7 @@ data class VisualNodeDefinition(
                 type = json.optString("type"),
                 name = json.optString("name"),
                 description = json.optString("description"),
+                category = json.optString("category"),
                 inputs = parse("inputs"),
                 outputs = parse("outputs"),
                 version = json.optInt("version", 1)

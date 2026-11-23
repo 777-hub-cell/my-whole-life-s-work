@@ -121,6 +121,7 @@ fun MoreScreen(
     appearanceStore: ChatAppearanceStore? = null,
     notesStore: EncryptedNotesStore? = null,
     updatesRepository: AharaneRepository? = null,
+    channelsEnabled: Boolean = false,
     appearanceRevision: Int = 0,
     cachedConversations: List<ChatSummary> = emptyList(),
     mediaCache: EncryptedMediaCache? = null,
@@ -183,6 +184,7 @@ fun MoreScreen(
             repository = updatesRepository,
             selectedAccount = selectedChatAccount,
             onAccountSelected = onChatAccountSelected,
+            connected = channelsEnabled,
             onBack = { onPageChange("more") }
         )
     } else if (targetPage == "notes" && notesStore != null) {

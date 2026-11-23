@@ -1,6 +1,12 @@
 package com.aharane.studio.features.connection
 
 import androidx.compose.foundation.Image
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -99,7 +105,13 @@ fun ConnectionScreen(
                 onValueChange = onStudioUrlChange
             )
 
-            if (serverVerified) {
+            AnimatedVisibility(
+                visible = serverVerified,
+                enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 160 else 0)) +
+                    expandVertically(tween(if (LocalStudioMotionEnabled.current) 210 else 0)),
+                exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
+                    shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 150 else 0))
+            ) {
                 Spacer(Modifier.height(18.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.Lock, null, tint = StudioPalette.Accent, modifier = Modifier.size(19.dp))
@@ -128,7 +140,13 @@ fun ConnectionScreen(
                 )
             }
 
-            if (setupRequired) {
+            AnimatedVisibility(
+                visible = setupRequired,
+                enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 160 else 0)) +
+                    expandVertically(tween(if (LocalStudioMotionEnabled.current) 190 else 0)),
+                exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
+                    shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 140 else 0))
+            ) {
                 Text(
                     "A Studio password has not been created on this server yet. Open the web Studio once, complete its one-time password setup, then return here to sign in.",
                     color = StudioPalette.Muted,
@@ -138,7 +156,13 @@ fun ConnectionScreen(
                 )
             }
 
-            if (errorMessage.isNotBlank()) {
+            AnimatedVisibility(
+                visible = errorMessage.isNotBlank(),
+                enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 140 else 0)) +
+                    expandVertically(tween(if (LocalStudioMotionEnabled.current) 180 else 0)),
+                exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
+                    shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 130 else 0))
+            ) {
                 Text(
                     errorMessage,
                     color = StudioPalette.Bad,

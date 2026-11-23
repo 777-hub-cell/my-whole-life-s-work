@@ -37,7 +37,7 @@ Important source areas include `aharane/android/` and `aharane/src/`. Verify exa
 ### Chat and messaging
 - Intended filters: All, Unread, Groups, Channels and Archived.
 - Delivery/read receipts must reflect actual WhatsApp receipt events, never online presence.
-- Media, stickers, voice notes, polls, profile photos, archive/pin/mute and offline behavior require real backend verification, not only mocked UI.
+- Media, stickers (required), voice notes, polls, profile photos, archive/pin/mute and offline behavior require real backend verification, not only mocked UI. Channels are included as a distinct feature/filter. **Status is explicitly excluded from Aharane**: no Status screen, feed, composer, viewer, tab, setting or navigation entry. See `aharane/docs/WHATSAPP_ANDROID_FEATURE_RESEARCH_2026-11-23.md`.
 - Preserve agreed gestures/navigation and avoid redundant branding/status pills.
 
 ### Visual workflows and Engine

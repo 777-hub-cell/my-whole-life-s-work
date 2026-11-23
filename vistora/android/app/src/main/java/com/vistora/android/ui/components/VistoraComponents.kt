@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -210,7 +211,8 @@ fun VistoraTextField(
     maxLines: Int = 1,
     singleLine: Boolean = true,
     keyboardType: KeyboardType = KeyboardType.Text,
-    visualTransformation: VisualTransformation = VisualTransformation.None
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    testTag: String? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
@@ -226,7 +228,8 @@ fun VistoraTextField(
                 .clip(RoundedCornerShape(14.dp))
                 .background(VistoraPalette.Field)
                 .border(1.dp, if (focused) LocalVistoraAccent.current else VistoraPalette.LineStrong, RoundedCornerShape(14.dp))
-                .padding(horizontal = 15.dp, vertical = if (singleLine) 14.dp else 14.dp),
+                .padding(horizontal = 15.dp, vertical = if (singleLine) 14.dp else 14.dp)
+                .then(if (testTag == null) Modifier else Modifier.testTag(testTag)),
             textStyle = TextStyle(
                 color = VistoraPalette.Text,
                 fontSize = 15.sp,

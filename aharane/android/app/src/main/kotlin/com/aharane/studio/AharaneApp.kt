@@ -1497,7 +1497,7 @@ fun AharaneApp(
     Column(
         Modifier
             .then(
-                if (editorOpen || activeConversation != null || commandBuilderOpen) Modifier
+                if (editorOpen || activeConversation != null || commandBuilderOpen || engineLibraryOpen) Modifier
                 else Modifier.widthIn(max = StudioFoundationContract.Layout.ContentMaxWidth)
             )
             .fillMaxSize()
@@ -2745,7 +2745,7 @@ fun AharaneApp(
             }
         }
 
-        if (!editorOpen && activeConversation == null && !commandBuilderOpen) {
+        if (!editorOpen && activeConversation == null && !commandBuilderOpen && !engineLibraryOpen) {
             StudioBottomNavigation(
                 selected = currentDestination,
                 onNavigate = {

@@ -1489,7 +1489,7 @@ fun AharaneApp(
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
         if (!editorOpen && activeConversation == null && !commandBuilderOpen && !engineLibraryOpen &&
-            !configurationOpen && currentDestination == MainDestination.HOME) {
+            !configurationOpen) {
             StudioHeader(connected = connected, preview = previewMode)
         }
 

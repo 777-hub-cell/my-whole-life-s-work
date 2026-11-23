@@ -2227,6 +2227,14 @@ fun AharaneApp(
                                 }
                             }
                         },
+                        onLoadChannels = { account ->
+                            if (previewMode || !connected) JSONObject().put("supported", false).put("reason", "Connect a real paired session to load Channels.")
+                            else repository.subscribedChannels(account)
+                        },
+                        onLoadChannelUpdates = { account, jid ->
+                            if (previewMode || !connected) JSONObject().put("supported", false).put("reason", "Channel updates require a paired session.")
+                            else repository.channelUpdates(account, jid)
+                        },
                         onConversationSelected = { activeConversation = it },
                         onLoadAvatar = { chat ->
                             if (previewMode || !connected) null else repository.whatsappAvatarBytes(chat)

@@ -1,6 +1,8 @@
 package com.aharane.studio.features.chats
 
 import androidx.compose.animation.core.animateDpAsState
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,6 +10,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,6 +30,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
@@ -41,6 +48,9 @@ import com.aharane.studio.core.model.ChatMessage
 import android.app.DatePickerDialog
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import java.util.Calendar
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -58,6 +68,7 @@ fun ChatsScreen(
     onConnectAccount: () -> Unit = {},
     onConversationSelected: (ChatSummary) -> Unit = {},
     onChatAction: (ChatSummary, String) -> Unit = { _, _ -> },
+    onLoadAvatar: suspend (ChatSummary) -> ByteArray? = { null },
     showIndividuals: Boolean = true,
     showGroups: Boolean = true,
     savedChatTheme: String = "system",
@@ -136,8 +147,10 @@ fun ChatsScreen(
             .toList()
     }
 
+    val chatListState = rememberLazyListState()
     MaterialTheme(colorScheme = chatScheme) {
     LazyColumn(
+        state = chatListState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp)
@@ -344,23 +357,26 @@ fun ChatsScreen(
                     }
                 }
                 Spacer(Modifier.height(16.dp))
-            } else {
-                StudioCard(modifier = Modifier.animateItem()) {
-                    visibleChats.forEachIndexed { index, chat ->
-                        if (index > 0) StudioDivider()
-                        ChatListRow(
-                            chat = chat,
-                            connected = accountConnected,
-                            showAvatar = showAvatars,
-                            showPreview = showPreviews,
-                            showTimestamp = showTimestamps,
-                            onClick = { onConversationSelected(chat) },
-                            onAction = { action -> onChatAction(chat, action) }
-                        )
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
             }
+        }
+        if (visibleChats.isNotEmpty()) {
+            itemsIndexed(
+                items = visibleChats,
+                key = { _, chat -> chat.key.account.apiValue + ":" + chat.key.jid }
+            ) { index, chat ->
+                if (index > 0) StudioDivider()
+                ChatListRow(
+                    chat = chat,
+                    connected = accountConnected,
+                    showAvatar = showAvatars,
+                    showPreview = showPreviews,
+                    showTimestamp = showTimestamps,
+                    onLoadAvatar = onLoadAvatar,
+                    onClick = { onConversationSelected(chat) },
+                    onAction = { action -> onChatAction(chat, action) }
+                )
+            }
+            item { Spacer(Modifier.height(16.dp)) }
         }
     }
     }
@@ -390,6 +406,7 @@ private fun ChatListRow(
     showAvatar: Boolean,
     showPreview: Boolean,
     showTimestamp: Boolean,
+    onLoadAvatar: suspend (ChatSummary) -> ByteArray?,
     onClick: () -> Unit,
     onAction: (String) -> Unit
 ) {
@@ -403,6 +420,26 @@ private fun ChatListRow(
     val rowScale = LocalStudioRowScale.current
     val avatarInitials = chat.title.trim().split(Regex("\\s+"))
         .filter { it.isNotEmpty() }.take(2).joinToString("") { it.take(1) }.uppercase()
+    // The composable is only composed for visible rows, so images load lazily.
+    // No generated or internet stock image is substituted for WhatsApp photos.
+    val profilePicture by produceState<ImageBitmap?>(
+        initialValue = null, chat.key, connected, showAvatar
+    ) {
+        if (connected && showAvatar) {
+            val bytes = try {
+                onLoadAvatar(chat)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            value = bytes?.let { data ->
+                withContext(Dispatchers.Default) {
+                    BitmapFactory.decodeByteArray(data, 0, data.size)?.asImageBitmap()
+                }
+            }
+        }
+    }
 
     Box(
         Modifier.fillMaxWidth().heightIn(min = 66.dp * rowScale).clip(RoundedCornerShape(0.dp))
@@ -462,12 +499,21 @@ private fun ChatListRow(
                     Modifier.size(40.dp).clip(CircleShape).background(StudioPalette.Soft),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        if (chat.isGroup) "◎" else avatarInitials.ifBlank { "?" },
-                        color = StudioPalette.Accent,
-                        fontSize = if (chat.isGroup) 21.sp else 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (profilePicture != null) {
+                        Image(
+                            bitmap = profilePicture!!,
+                            contentDescription = "WhatsApp profile picture of " + chat.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize().clip(CircleShape)
+                        )
+                    } else {
+                        Text(
+                            if (chat.isGroup) "◎" else avatarInitials.ifBlank { "?" },
+                            color = StudioPalette.Accent,
+                            fontSize = if (chat.isGroup) 21.sp else 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {

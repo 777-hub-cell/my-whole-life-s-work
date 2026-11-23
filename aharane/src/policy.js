@@ -35,7 +35,9 @@ export function isPrivateVisibleChatJid(value) {
 
 export function isAllowedInbound({
   remoteJid,
+  remoteJidAlt,
   participantJid,
+  participantAltJid,
   allowGroups = false,
   fromMe = false,
   allowedSenders = new Set(),
@@ -43,12 +45,19 @@ export function isAllowedInbound({
   if (fromMe === true) return false
   const jid = String(remoteJid ?? '')
   if (!jid || jid === 'status@broadcast' || jid.endsWith('@broadcast')) return false
+
+  // WhatsApp may address a direct chat by LID while supplying its paired
+  // phone-number JID as remoteJidAlt. Group participants can be represented
+  // the same way through participantAlt. Only trust alternates supplied by
+  // the authenticated Baileys message key; never derive a phone from an LID.
   let senderJid = jid
+  let alternateJid = remoteJidAlt
   if (jid.endsWith('@g.us')) {
     if (!allowGroups || !/^\d{5,25}-\d{5,25}@g\.us$/.test(jid)) return false
     senderJid = String(participantJid ?? '')
+    alternateJid = participantAltJid
   }
-  const sender = senderNumberFromJid(senderJid)
+  const sender = senderNumberFromJid(senderJid) || senderNumberFromJid(alternateJid)
   return Boolean(sender && allowedSenders instanceof Set && allowedSenders.has(sender))
 }
 

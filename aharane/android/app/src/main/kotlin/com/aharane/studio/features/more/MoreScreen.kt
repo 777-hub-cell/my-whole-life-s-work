@@ -834,8 +834,8 @@ fun MoreScreen(
                     )
                     StudioDivider()
                     StudioRow(
-                        "Status & Channels",
-                        "Browse updates available to each linked WhatsApp account",
+                        "Channels",
+                        "Browse Channels followed by each linked WhatsApp account",
                         icon = null,
                         trailing = "›",
                         onClick = { onPageChange("whatsapp-updates") }

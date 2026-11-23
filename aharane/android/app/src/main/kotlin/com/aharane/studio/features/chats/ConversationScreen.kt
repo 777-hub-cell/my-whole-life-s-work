@@ -61,6 +61,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
@@ -1145,7 +1146,8 @@ private fun MessageBubble(
     val swipeLimit = with(LocalDensity.current) { 98.dp.toPx() }
     val motionEnabled = LocalStudioMotionEnabled.current
     val bubble = appearanceColor(if (outgoing) appearance.outgoingBubble else appearance.incomingBubble)
-    val foreground = readableAppearanceText(bubble)
+    val foreground = chatReadableForeground(bubble)
+    val mutedForeground = chatSecondaryForeground(bubble)
     val timestamp = remember(message.timestampMillis) {
         SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(message.timestampMillis))
     }
@@ -1230,7 +1232,7 @@ private fun MessageBubble(
             if (!outgoing && appearance.showSenderLabels && !message.senderName.isNullOrBlank()) {
                 Text(
                     message.senderName,
-                    color = if (appearanceLuminance(bubble) > 0.45f) StudioPalette.Accent else foreground.copy(alpha = .85f),
+                    color = mutedForeground,
                     fontSize = 10.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(bottom = 4.dp)
@@ -1246,13 +1248,13 @@ private fun MessageBubble(
                 ) {
                     Text(
                         if (reply?.direction == MessageDirection.OUTGOING) "You" else "Reply",
-                        color = if (outgoing) Color.White.copy(alpha = .9f) else StudioPalette.Accent,
+                        color = chatReadableForeground(if (outgoing) Color.White.copy(alpha = .13f).compositeOver(bubble) else StudioPalette.Background),
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         quotedPreview,
-                        color = foreground.copy(alpha = .78f),
+                        color = chatReadableForeground(if (outgoing) Color.White.copy(alpha = .13f).compositeOver(bubble) else StudioPalette.Background),
                         fontSize = 11.5.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
@@ -1323,7 +1325,7 @@ private fun MessageBubble(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (showTimestamp) {
-                        Text(timestamp, color = foreground.copy(alpha = if (outgoing) .72f else .55f), fontSize = 9.5.sp)
+                        Text(timestamp, color = mutedForeground, fontSize = 9.5.sp)
                     }
                     if (message.isStarred) {
                         Text("★  ", color = foreground.copy(alpha = .9f), fontSize = 10.sp)
@@ -1833,13 +1835,6 @@ private fun StudioPaletteAction(label: String, onClick: () -> Unit) {
 private fun appearanceColor(value: String): Color =
     runCatching { Color(android.graphics.Color.parseColor(value)) }.getOrDefault(StudioPalette.Background)
 
-private fun readableAppearanceText(background: Color): Color {
-    val luminance = .2126f * background.red + .7152f * background.green + .0722f * background.blue
-    return if (luminance > .52f) Color(0xFF17201C) else Color.White
-}
-
-private fun appearanceLuminance(color: Color): Float =
-    .2126f * color.red + .7152f * color.green + .0722f * color.blue
 
 
 @Composable

@@ -81,3 +81,27 @@ Every workstream reports: what changed; requirements satisfied; files/APIs affec
 ## Safety and release boundaries
 
 Never expose secrets, tokens, pairing credentials or private user data in docs/logs/screenshots/commits. Never weaken authorization, encryption, sandboxing, rate limits or isolation to pass tests. Do not perform destructive migrations without a recovery plan. Do not merge to the production/base branch, publish releases or deploy without explicit owner approval. Mark skipped, cancelled or unrun tests accurately as NOT RUN.
+
+## Package-based parallel execution (mandatory)
+
+Each agent must execute the independently bounded packages in its manifest, not treat the mission as one serial task. A dependency blocks only the integration package that needs it. Continue unrelated code, test design, fixture-based UI, schema work and pure logic while waiting.
+
+### Four kinds of readiness
+- **Draft contract:** enough typed shape/example/error semantics for parallel adapter work; explicitly labelled DRAFT.
+- **Accepted contract:** producer and consumers agree version, compatibility and tests.
+- **Implemented:** source code exists but may not be integrated or verified.
+- **Verified integration:** the real producer and consumer work together with evidence.
+
+Never confuse these milestones. A mock only validates the consumer against the fixture/mock. It cannot establish actual transport, persistence, QuickJS execution, OS notification delivery or end-to-end behaviour.
+
+### Dependency and file ownership
+Read and follow `WORKSTREAM_DEPENDENCY_AND_CONTRACT_MAP.md`. Every shared contract has one owner. Every protected shared file has one declared implementation owner and one editor at a time. Feature owners must not create competing versions of authorization, transport, persistence, workflow or schedule logic. Before a shared file/schema/API change, document affected consumers, announce the change, agree version/migration and update contract tests.
+
+### No-idle blocker rule
+Mark only the blocked package BLOCKED. State missing input, responsible owner, exact hand-off, prepared work, safe temporary adapter and next independent package. Do not stop the whole agent or repeatedly ask the owner for routine technical decisions. Do not use a temporary mock in connected production builds.
+
+### Integration order is not serial implementation
+Contracts have a recommended readiness order in the dependency map. All agents may audit, create draft contracts, implement isolated packages, build tests and produce screenshots concurrently. Integrate thin vertical slices once their contracts are accepted. Agent 10 prepares the test matrix from the beginning and independently verifies each slice.
+
+### Isolated branches and shared-file protocol
+Use separate branches/PRs per workstream/package or clearly isolated commits. Never push concurrent edits to a common branch. Where two packages need the same shared file, the declared owner makes the change or explicitly accepts a coordinated patch. Integrate small slices and rerun affected tests. No merge to base/production or deployment without owner approval.

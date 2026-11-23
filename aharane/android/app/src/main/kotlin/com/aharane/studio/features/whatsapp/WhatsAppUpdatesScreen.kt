@@ -1,21 +1,23 @@
 package com.aharane.studio.features.whatsapp
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aharane.studio.core.design.StudioActionButton
+import com.aharane.studio.core.design.StudioDivider
 import com.aharane.studio.core.design.StudioEmpty
 import com.aharane.studio.core.design.StudioErrorState
 import com.aharane.studio.core.design.StudioLoadingState
+import com.aharane.studio.core.design.StudioPageTitle
 import com.aharane.studio.core.design.StudioPalette
+import com.aharane.studio.core.design.StudioRow
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.network.AharaneRepository
 import kotlinx.coroutines.launch
@@ -72,6 +74,26 @@ fun WhatsAppUpdatesScreen(
         }
     }
 
+    fun openChannel(row: JSONObject) {
+        val jid = row.optString("jid")
+        scope.launch {
+            loading = true
+            error = ""
+            try {
+                val response = repository.whatsappChannelUpdates(selectedAccount, jid)
+                chosenChannel = jid
+                updateRows = rows(response, "updates")
+                explanation = response.optString("reason").ifBlank {
+                    "Updates received from the selected authenticated WhatsApp account."
+                }
+            } catch (failure: Exception) {
+                error = failure.message ?: "Channel updates could not be loaded."
+            } finally {
+                loading = false
+            }
+        }
+    }
+
     LaunchedEffect(selectedAccount, connected) {
         channelRows = emptyList()
         chosenChannel = ""
@@ -83,28 +105,39 @@ fun WhatsAppUpdatesScreen(
         Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onBack) { Text("Back") }
-            Text(
-                "Channels",
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                color = StudioPalette.Ink,
-                modifier = Modifier.padding(top = 12.dp)
-            )
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            StudioActionButton(label = "Back", compact = true, onClick = onBack)
+            Column(Modifier.weight(1f)) {
+                StudioPageTitle(
+                    title = "Channels",
+                    subtitle = "Followed Channels for the selected account",
+                    compact = true
+                )
+            }
         }
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
             ChatAccount.entries.forEach { account ->
-                OutlinedButton(onClick = { onAccountSelected(account) }) {
-                    Text(if (selectedAccount == account) "✓ " + account.label else account.label)
-                }
+                StudioActionButton(
+                    label = account.label,
+                    compact = true,
+                    primary = selectedAccount == account,
+                    onClick = { onAccountSelected(account) }
+                )
             }
             Spacer(Modifier.weight(1f))
             StudioActionButton(
                 label = if (loading) "Loading…" else "Refresh",
                 compact = true,
-                enabled = !loading,
+                enabled = connected && !loading,
                 onClick = { scope.launch { refresh() } }
             )
         }
@@ -125,28 +158,27 @@ fun WhatsAppUpdatesScreen(
             )
             loading -> StudioLoadingState("Loading Channels…")
             chosenChannel.isNotBlank() -> {
-                OutlinedButton(
+                StudioActionButton(
+                    label = "All subscribed Channels",
+                    compact = true,
                     onClick = { chosenChannel = ""; updateRows = emptyList() }
-                ) { Text("All subscribed Channels") }
+                )
                 if (updateRows.isEmpty()) {
                     StudioEmpty("No accessible updates.")
                 } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                         items(updateRows) { update ->
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(
-                                    update.optString("text").ifBlank {
-                                        update.optString("mediaKind").replaceFirstChar { it.uppercase() } +
-                                            " update — media preview is not available."
-                                    },
-                                    color = StudioPalette.Ink
-                                )
-                                Text(
-                                    DateFormat.getDateTimeInstance().format(Date(update.optLong("timestampMillis"))),
-                                    color = StudioPalette.Muted,
-                                    fontSize = 11.sp
-                                )
+                            val title = update.optString("text").ifBlank {
+                                update.optString("mediaKind").replaceFirstChar { it.uppercase() } +
+                                    " update — media preview is not available."
                             }
+                            StudioRow(
+                                title = title,
+                                subtitle = DateFormat.getDateTimeInstance().format(
+                                    Date(update.optLong("timestampMillis"))
+                                )
+                            )
+                            StudioDivider()
                         }
                     }
                 }
@@ -155,37 +187,15 @@ fun WhatsAppUpdatesScreen(
                 title = "No subscribed Channels are available for this account.",
                 description = explanation
             )
-            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                 items(channelRows, key = { it.optString("jid") }) { row ->
-                    Column(
-                        Modifier.fillMaxWidth().clickable {
-                            val jid = row.optString("jid")
-                            scope.launch {
-                                loading = true
-                                error = ""
-                                try {
-                                    val response = repository.whatsappChannelUpdates(selectedAccount, jid)
-                                    chosenChannel = jid
-                                    updateRows = rows(response, "updates")
-                                    explanation = response.optString("reason").ifBlank {
-                                        "Updates received from the selected authenticated WhatsApp account."
-                                    }
-                                } catch (failure: Exception) {
-                                    error = failure.message ?: "Channel updates could not be loaded."
-                                } finally {
-                                    loading = false
-                                }
-                            }
-                        }.padding(vertical = 9.dp),
-                        verticalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Text(
-                            row.optString("name"),
-                            fontWeight = FontWeight.SemiBold,
-                            color = StudioPalette.Ink
-                        )
-                        Text(row.optString("description"), color = StudioPalette.Muted, fontSize = 12.sp)
-                    }
+                    StudioRow(
+                        title = row.optString("name").ifBlank { "Channel" },
+                        subtitle = row.optString("description"),
+                        trailing = "›",
+                        onClick = { openChannel(row) }
+                    )
+                    StudioDivider()
                 }
             }
         }

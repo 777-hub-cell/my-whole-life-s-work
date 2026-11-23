@@ -1488,7 +1488,11 @@ fun AharaneApp(
         contentAlignment = Alignment.TopCenter
     ) {
     Column(
-        Modifier.widthIn(max = StudioFoundationContract.Layout.ContentMaxWidth)
+        Modifier
+            .then(
+                if (editorOpen || activeConversation != null || commandBuilderOpen) Modifier
+                else Modifier.widthIn(max = StudioFoundationContract.Layout.ContentMaxWidth)
+            )
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars)

@@ -50,6 +50,8 @@ import com.aharane.studio.core.model.ChatSummary
 import com.aharane.studio.features.chats.ChatAppearanceStore
 import com.aharane.studio.features.chats.ChatAppearanceStudioScreen
 import com.aharane.studio.core.storage.EncryptedMediaCache
+import com.aharane.studio.features.notes.EncryptedNotesStore
+import com.aharane.studio.features.notes.NotesScreen
 
 private val AccentChoices = listOf(
     "#0E7A5C", "#3867D6", "#8752C7", "#B34D76", "#B56C22", "#4D7779"
@@ -114,6 +116,7 @@ fun MoreScreen(
     onChatAppearanceChange: (String, Boolean, Boolean, Boolean) -> Unit = { _, _, _, _ -> },
     onChatMessageSizeChanged: (Int) -> Unit = {},
     appearanceStore: ChatAppearanceStore? = null,
+    notesStore: EncryptedNotesStore? = null,
     appearanceRevision: Int = 0,
     cachedConversations: List<ChatSummary> = emptyList(),
     mediaCache: EncryptedMediaCache? = null,
@@ -171,7 +174,9 @@ fun MoreScreen(
         animationSpec = tween(if (LocalStudioMotionEnabled.current) 210 else 0),
         label = "more-page-transition"
     ) { targetPage ->
-    if (targetPage == "appearance") {
+    if (targetPage == "notes" && notesStore != null) {
+        NotesScreen(store = notesStore, onBack = { onPageChange("more") })
+    } else if (targetPage == "appearance") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -628,7 +633,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (targetPage == "activity") {    } else if (targetPage == "activity") {
+    } else if (targetPage == "activity") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -798,7 +803,7 @@ fun MoreScreen(
                 StudioCard {
                     StudioRow(
                         "Accounts & owners",
-                        "Manage both sessions with one shared Owner identity",
+                        "Set separate Private and Public Owner identities",
                         icon = null,
                         trailing = "›",
                         onClick = { onPageChange("accounts") }
@@ -809,6 +814,14 @@ fun MoreScreen(
             item { StudioSectionHeading("Tools") }
             item {
                 StudioCard {
+                    StudioRow(
+                        "Notes",
+                        "Encrypted notes stored privately on this device",
+                        icon = null,
+                        trailing = "›",
+                        onClick = { onPageChange("notes") }
+                    )
+                    StudioDivider()
                     StudioRow(
                         "Activity and logs",
                         "Review bot activity and diagnostic records",

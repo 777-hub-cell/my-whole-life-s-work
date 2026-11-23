@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.aharane.studio.core.design.StudioActionButton
+import com.aharane.studio.core.design.LocalStudioMotionEnabled
 import com.aharane.studio.core.design.StudioPalette
 import com.aharane.studio.core.network.VisualCommandDataSource
 import kotlinx.coroutines.launch

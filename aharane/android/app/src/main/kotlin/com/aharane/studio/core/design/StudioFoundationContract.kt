@@ -1,5 +1,11 @@
 package com.aharane.studio.core.design
 
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.TweenSpec
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -10,7 +16,7 @@ import androidx.compose.ui.unit.sp
  * competing app-wide typography, spacing, component or motion constants.
  */
 object StudioFoundationContract {
-    const val VERSION = 1
+    const val VERSION = 2
 
     object Layout {
         val ContentMaxWidth = 640.dp
@@ -45,11 +51,41 @@ object StudioFoundationContract {
         const val ChartTransitionMillis = 280
         const val MediaViewerMillis = 220
 
+        // One restrained curve for state changes; entering/exiting use the
+        // standard deceleration/acceleration curves respectively.
+        val StateChangeEasing: Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+        val EnterEasing: Easing = LinearOutSlowInEasing
+        val ExitEasing: Easing = FastOutLinearInEasing
+
         /**
          * Centralizes system/reduced-motion handling for shared Compose motion.
          * Callers pass the resolved system/app motion preference.
          */
         fun durationMillis(enabled: Boolean, targetMillis: Int): Int =
             if (enabled) targetMillis.coerceAtLeast(0) else 0
+
+        fun <T> stateChangeSpec(
+            enabled: Boolean,
+            targetMillis: Int = StateChangeMillis
+        ): TweenSpec<T> = tween(
+            durationMillis = durationMillis(enabled, targetMillis),
+            easing = StateChangeEasing
+        )
+
+        fun <T> enterSpec(
+            enabled: Boolean,
+            targetMillis: Int = ScreenTransitionMillis
+        ): TweenSpec<T> = tween(
+            durationMillis = durationMillis(enabled, targetMillis),
+            easing = EnterEasing
+        )
+
+        fun <T> exitSpec(
+            enabled: Boolean,
+            targetMillis: Int = ScreenTransitionMillis
+        ): TweenSpec<T> = tween(
+            durationMillis = durationMillis(enabled, targetMillis),
+            easing = ExitEasing
+        )
     }
 }

@@ -1,6 +1,13 @@
 package com.aharane.studio.core.design
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -34,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -124,12 +132,28 @@ fun StudioBottomNavigation(
     selected: MainDestination,
     onNavigate: (MainDestination) -> Unit
 ) {
+    val motionEnabled = LocalStudioMotionEnabled.current
     Column(Modifier.fillMaxWidth().background(StudioPalette.Surface).navigationBarsPadding()) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(StudioPalette.Line))
         Row(Modifier.fillMaxWidth().height(58.dp), verticalAlignment = Alignment.CenterVertically) {
             MainDestination.entries.forEach { destination ->
                 val active = selected == destination
-                val tint = if (active) StudioPalette.Accent else StudioPalette.Muted
+                val tintTarget = if (active) StudioPalette.Accent else StudioPalette.Muted
+                val tint by animateColorAsState(
+                    tintTarget,
+                    animationSpec = tween(if (motionEnabled) 190 else 0),
+                    label = "bottom-nav-tint"
+                )
+                val scale by animateFloatAsState(
+                    if (active && motionEnabled) 1.07f else 1f,
+                    animationSpec = tween(if (motionEnabled) 190 else 0),
+                    label = "bottom-nav-scale"
+                )
+                val indicatorColor by animateColorAsState(
+                    if (active) StudioPalette.Soft else Color.Transparent,
+                    animationSpec = tween(if (motionEnabled) 190 else 0),
+                    label = "bottom-nav-indicator"
+                )
                 Column(
                     modifier = Modifier.weight(1f).fillMaxHeight()
                         .semantics { this.selected = active }
@@ -145,13 +169,28 @@ fun StudioBottomNavigation(
                         MainDestination.ENVIRONMENT -> Icons.Outlined.Terminal
                         MainDestination.MORE -> Icons.Outlined.MoreHoriz
                     }
-                    Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+                    Box(
+                        Modifier.size(width = 48.dp, height = 28.dp)
+                            .clip(CircleShape)
+                            .background(indicatorColor),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            icon,
+                            contentDescription = null,
+                            tint = tint,
+                            modifier = Modifier.size(20.dp).graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                            }
+                        )
+                    }
                     Text(
                         destination.label,
                         color = tint,
                         fontSize = 11.5.sp,
                         lineHeight = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                         maxLines = 1
                     )
                 }
@@ -210,8 +249,11 @@ fun StudioCard(
     padding: PaddingValues = PaddingValues(0.dp),
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val motionEnabled = LocalStudioMotionEnabled.current
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .then(if (motionEnabled) Modifier.animateContentSize() else Modifier)
+            .fillMaxWidth(),
         color = StudioPalette.Surface,
         shape = RoundedCornerShape(18.dp * LocalStudioCornerScale.current),
         border = BorderStroke(1.dp, StudioPalette.Line),
@@ -300,6 +342,7 @@ fun StudioActionButton(
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
+    val motionEnabled = LocalStudioMotionEnabled.current
     val bg = when {
         !enabled -> StudioPalette.Background
         primary -> StudioPalette.Accent
@@ -311,13 +354,34 @@ fun StudioActionButton(
         destructive -> StudioPalette.Bad
         else -> StudioPalette.Ink
     }
+    val animatedBackground by animateColorAsState(
+        bg,
+        animationSpec = tween(if (motionEnabled) 150 else 0),
+        label = "action-button-background"
+    )
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        if (motionEnabled && enabled && pressed) .975f else 1f,
+        animationSpec = tween(if (motionEnabled) 110 else 0),
+        label = "action-button-press"
+    )
     val shape = RoundedCornerShape(12.dp * LocalStudioCornerScale.current)
     Box(
         modifier = modifier.defaultMinSize(minHeight = if (compact) 40.dp else 48.dp)
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
             .clip(shape)
-            .background(bg)
-             .border(1.dp, if (primary && enabled) StudioPalette.Accent else StudioPalette.Line, shape)
-            .clickable(enabled = enabled, onClick = onClick)
+            .background(animatedBackground)
+            .border(1.dp, if (primary && enabled) StudioPalette.Accent else StudioPalette.Line, shape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                enabled = enabled,
+                onClick = onClick
+            )
             .padding(horizontal = if (compact) 11.dp else 14.dp, vertical = if (compact) 6.dp else 10.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -530,6 +594,7 @@ fun StudioColorWheel(
 
 @Composable
 fun StudioSegmented(options: List<String>, selected: String, onSelect: (String) -> Unit) {
+    val motionEnabled = LocalStudioMotionEnabled.current
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp * LocalStudioCornerScale.current)).background(StudioPalette.Background).padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp)
@@ -537,18 +602,32 @@ fun StudioSegmented(options: List<String>, selected: String, onSelect: (String) 
         options.forEach { option ->
             val active = option == selected
             val shape = RoundedCornerShape(9.dp * LocalStudioCornerScale.current)
+            val fill by animateColorAsState(
+                if (active) StudioPalette.Soft else Color.Transparent,
+                animationSpec = tween(if (motionEnabled) 180 else 0),
+                label = "segmented-fill"
+            )
+            val outline by animateColorAsState(
+                if (active) StudioPalette.Accent else Color.Transparent,
+                animationSpec = tween(if (motionEnabled) 180 else 0),
+                label = "segmented-outline"
+            )
+            val tint by animateColorAsState(
+                if (active) StudioPalette.Accent else StudioPalette.Muted,
+                animationSpec = tween(if (motionEnabled) 180 else 0),
+                label = "segmented-tint"
+            )
             Box(
                 Modifier.weight(1f).defaultMinSize(minHeight = 48.dp).clip(shape)
-                    .then(
-                        if (active) Modifier.background(StudioPalette.Soft)
-                            .border(1.dp, StudioPalette.Accent, shape)
-                        else Modifier.background(Color.Transparent)
-                    )
-                    .clickable { onSelect(option) }.padding(horizontal = 6.dp, vertical = 10.dp),
+                    .background(fill)
+                    .border(1.dp, outline, shape)
+                    .clickable { onSelect(option) }
+                    .padding(horizontal = 6.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(option, color = if (active) StudioPalette.Accent else StudioPalette.Muted,
-                    fontSize = 13.sp, lineHeight = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text(option, color = tint,
+                    fontSize = 13.sp, lineHeight = 17.sp,
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
             }
         }
     }

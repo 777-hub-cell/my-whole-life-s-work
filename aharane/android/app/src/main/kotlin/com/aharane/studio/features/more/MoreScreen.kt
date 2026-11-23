@@ -807,7 +807,7 @@ fun MoreScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
-            item { StudioPageTitle("More", "Additional tools and information") }
+            item { StudioPageTitle("More", "Additional tools and information", compact = true) }
 
             item {
                 Spacer(Modifier.height(18.dp))

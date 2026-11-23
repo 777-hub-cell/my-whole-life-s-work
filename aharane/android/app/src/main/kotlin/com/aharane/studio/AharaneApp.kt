@@ -2111,7 +2111,7 @@ fun AharaneApp(
                             false
                         } else {
                         val updatedOwners = if (profile == "Private") {
-                            owners.copy(ownerNumber = values["PRIVATE_OWNER_NUMBER"] ?: owners.ownerNumber)
+                            owners.copy(privateOwnerNumber = values["PRIVATE_OWNER_NUMBER"] ?: owners.privateOwnerNumber)
                         } else {
                             owners.copy(publicBotNumber = values["PUBLIC_BOT_NUMBER"] ?: owners.publicBotNumber)
                         }
@@ -2438,7 +2438,8 @@ fun AharaneApp(
                         connected = connected,
                         privateAccountStatus = runtime?.privateAccount?.let(::accountStateLabel) ?: "Status not loaded",
                         publicAccountStatus = runtime?.publicAccount?.let(::accountStateLabel) ?: "Status not loaded",
-                        ownerNumber = owners.ownerNumber,
+                        ownerNumber = owners.privateOwnerNumber,
+                        publicOwnerNumber = owners.publicOwnerNumber,
                         publicBotNumber = owners.publicBotNumber,
                         activityEntries = activityRows.map { "${it.timestamp} · ${it.level.uppercase(Locale.ROOT)} · ${it.source} · ${it.message}" },
                         storageSummary = storageSnapshot?.let { formatBytes(it.usedBytes) } ?: "—",
@@ -2474,13 +2475,13 @@ fun AharaneApp(
                                 }
                             }
                         },
-                        onSaveOwnerSettings = { owner, publicBot ->
+                        onSaveOwnerSettings = { privateOwner, publicOwner, publicBot ->
                             if (previewMode || !connected) {
                                 Toast.makeText(context, "Connect to your Aharane server to save owner settings.", Toast.LENGTH_SHORT).show()
                             } else connectionScope.launch {
                                 try {
                                     repository.saveOwnerSettings(
-                                        ServerOwnerSettings(ownerNumber = owner, publicBotNumber = publicBot)
+                                        ServerOwnerSettings(privateOwnerNumber = privateOwner, publicOwnerNumber = publicOwner, publicBotNumber = publicBot)
                                     )
                                     owners = repository.ownerSettings()
                                     Toast.makeText(context, "Owner settings saved.", Toast.LENGTH_SHORT).show()

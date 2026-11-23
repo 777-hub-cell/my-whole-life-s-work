@@ -70,29 +70,29 @@ private val Dark = darkColorScheme(
 
 private val StudioTypography = Typography(
     displayLarge = TextStyle(fontFamily = BricolageGrotesque, fontWeight = FontWeight.Bold,
-        fontSize = 30.sp, lineHeight = 34.sp, letterSpacing = (-0.75).sp),
+        fontSize = StudioFoundationContract.TypeScale.DisplayTitle, lineHeight = 34.sp, letterSpacing = (-0.75).sp),
     displayMedium = TextStyle(fontFamily = BricolageGrotesque, fontWeight = FontWeight.Bold,
         fontSize = 26.sp, lineHeight = 30.sp, letterSpacing = (-0.55).sp),
     headlineLarge = TextStyle(fontFamily = BricolageGrotesque, fontWeight = FontWeight.Bold,
-        fontSize = 30.sp, lineHeight = 34.sp, letterSpacing = (-0.75).sp),
+        fontSize = StudioFoundationContract.TypeScale.DisplayTitle, lineHeight = 34.sp, letterSpacing = (-0.75).sp),
     headlineMedium = TextStyle(fontFamily = BricolageGrotesque, fontWeight = FontWeight.Bold,
         fontSize = 26.sp, lineHeight = 30.sp, letterSpacing = (-0.55).sp),
     titleLarge = TextStyle(fontFamily = BricolageGrotesque, fontWeight = FontWeight.Bold,
-        fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.15).sp),
+        fontSize = StudioFoundationContract.TypeScale.SectionTitle, lineHeight = 22.sp, letterSpacing = (-0.15).sp),
     titleMedium = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp, lineHeight = 19.sp),
     bodyLarge = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.Normal,
-        fontSize = 15.sp, lineHeight = 21.sp),
+        fontSize = StudioFoundationContract.TypeScale.Body, lineHeight = 21.sp),
     bodyMedium = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.Normal,
         fontSize = 14.sp, lineHeight = 20.sp),
     bodySmall = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.Normal,
-        fontSize = 12.5.sp, lineHeight = 17.sp),
+        fontSize = StudioFoundationContract.TypeScale.Supporting, lineHeight = 17.sp),
     labelLarge = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp, lineHeight = 18.sp),
     labelMedium = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
         fontSize = 12.5.sp, lineHeight = 16.sp),
     labelSmall = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
-        fontSize = 11.5.sp, lineHeight = 14.sp)
+        fontSize = StudioFoundationContract.TypeScale.BottomNavigationLabel, lineHeight = 14.sp)
 )
 
 private fun blend(from: Color, to: Color, amount: Float): Color = Color(
@@ -145,7 +145,10 @@ fun AharaneTheme(
     // Respect Android's system-wide animation setting, including Battery Saver.
     val motionEnabled = Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ValueAnimator.areAnimatorsEnabled()
     val colorTarget = if (dark) darkScheme else lightScheme
-    val colorDuration = if (motionEnabled) 260 else 0
+    val colorDuration = StudioFoundationContract.Motion.durationMillis(
+        enabled = motionEnabled,
+        targetMillis = StudioFoundationContract.Motion.ThemeTransitionMillis
+    )
     // Theme changes transition as one coherent palette rather than repainting
     // each surface and label in a single frame.
     val animatedScheme = colorTarget.copy(

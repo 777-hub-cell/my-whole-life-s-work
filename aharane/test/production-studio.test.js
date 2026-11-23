@@ -138,6 +138,16 @@ test('Home exposes service health and separate Private/Public WhatsApp status', 
  assert.ok(!home.includes("svc('stop')"))
 })
 
+test('ENV and Home display useful empty states instead of blank panels', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const env=bridge.slice(bridge.indexOf('function envViewP(){'),bridge.indexOf('async function saveEnvP(){'))
+ const home=bridge.slice(bridge.indexOf('function homeViewP(){'),bridge.indexOf('function installFileSaveLifecycleP(){'))
+ assert.ok(env.includes('No environment values are available yet.'))
+ assert.ok(env.includes('id="prod-save-env"'))
+ assert.ok(env.includes("P.env.length?'':'"))
+ assert.ok(home.includes('No recent activity yet.'))
+})
+ 
 test('Chats search updates in place and preserves message reading position', async () => {
  const bridge=await read('../control-centre/production-bridge.js')
  assert.ok(bridge.includes("apiP('chats/'+account+'/search?q='"))

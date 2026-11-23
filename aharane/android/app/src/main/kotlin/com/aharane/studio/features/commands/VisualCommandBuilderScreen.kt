@@ -1,6 +1,12 @@
 package com.aharane.studio.features.commands
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -509,8 +515,15 @@ fun VisualCommandBuilderScreen(
             StudioActionButton("Delete", compact = true, destructive = true, enabled = saved && connected, onClick = { showDelete = true })
         }
 
-        if (validation.errors.isNotEmpty() || validation.warnings.isNotEmpty()) {
-            val hasErrors = validation.errors.isNotEmpty()
+        val hasValidation = validation.errors.isNotEmpty() || validation.warnings.isNotEmpty()
+        val hasErrors = validation.errors.isNotEmpty()
+        AnimatedVisibility(
+            visible = hasValidation,
+            enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 130 else 0)) +
+                expandVertically(tween(if (LocalStudioMotionEnabled.current) 170 else 0)),
+            exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 90 else 0)) +
+                shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 120 else 0))
+        ) {
             Text(
                 if (hasErrors) validation.errors.size.toString() + " errors · " + validation.errors.first().message
                 else validation.warnings.size.toString() + " warnings · " + validation.warnings.first().message,
@@ -739,7 +752,13 @@ fun VisualCommandBuilderScreen(
             }
         }
 
-        if (notice.isNotBlank()) {
+        AnimatedVisibility(
+            visible = notice.isNotBlank(),
+            enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 130 else 0)) +
+                expandVertically(tween(if (LocalStudioMotionEnabled.current) 170 else 0)),
+            exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 90 else 0)) +
+                shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 120 else 0))
+        ) {
             Text(
                 notice,
                 color = if (notice.contains("error", true) || notice.contains("failed", true) || notice.contains("rejected", true)) StudioPalette.Bad else StudioPalette.Muted,

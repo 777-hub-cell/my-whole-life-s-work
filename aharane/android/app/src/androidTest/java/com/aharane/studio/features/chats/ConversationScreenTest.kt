@@ -11,7 +11,8 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.test.espresso.Espresso.closeSoftKeyboard
+import android.view.KeyEvent
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -87,7 +88,7 @@ class ConversationScreenTest {
         compose.onAllNodesWithText("This is the older message being quoted.").assertCountEquals(2)
         compose.onNodeWithText("Professional").performClick()
         compose.onNodeWithTag("ai-reply-instruction").performTextInput("Keep it warm and brief.")
-        closeSoftKeyboard()
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         compose.waitForIdle()
         compose.onNodeWithText("Generate reply").performClick()
         compose.waitUntil(timeoutMillis = 5_000) {

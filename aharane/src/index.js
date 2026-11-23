@@ -82,7 +82,8 @@ await mkdir(UPDATE_DIR, { recursive: true, mode: 0o700 })
 await mkdir(UPLOADS_DIR, { recursive: true, mode: 0o700 })
 
 let ownerConfig = await loadOwnerConfig(OWNER_CONFIG_FILE, {
-  ownerNumber: LEGACY_PRIVATE_OWNER_NUMBER || LEGACY_PUBLIC_OWNER_NUMBER,
+  privateOwnerNumber: LEGACY_PRIVATE_OWNER_NUMBER,
+  publicOwnerNumber: LEGACY_PUBLIC_OWNER_NUMBER,
   publicBotNumber: LEGACY_PUBLIC_BOT_NUMBER,
 })
 const chatStore = createChatStore({ dataDir: DATA_DIR, logger })
@@ -1537,11 +1538,12 @@ app.get('/api/owners', requireAdmin, (_req, res) => {
 app.put('/api/owners', requireAdmin, async (req, res) => {
   try {
     const next = normalizeOwnerConfig({
-      ownerNumber: req.body?.ownerNumber || req.body?.privateOwnerNumber || req.body?.publicOwnerNumber,
-      publicBotNumber: req.body?.publicBotNumber,
+      privateOwnerNumber: req.body?.privateOwnerNumber ?? req.body?.ownerNumber ?? ownerConfig.privateOwnerNumber,
+      publicOwnerNumber: req.body?.publicOwnerNumber ?? ownerConfig.publicOwnerNumber,
+      publicBotNumber: req.body?.publicBotNumber ?? ownerConfig.publicBotNumber,
     })
-    // One shared Owner number identifies the same person across both sessions.
-    // The Private session is paired to that owner's WhatsApp identity.
+    // Only the Private Owner must match the paired Private identity.
+    // Public Owner is independently configurable and may equal its bot identity.
     const privateSession = accountRuntime.get('private')
     const publicSession = accountRuntime.get('public')
     const privateOwnNumber = senderNumberFromJid(
@@ -1550,20 +1552,17 @@ app.put('/api/owners', requireAdmin, async (req, res) => {
     const publicBotNumber = senderNumberFromJid(
       publicSession.socket?.user?.id || publicSession.auth?.state?.creds?.me?.id || ''
     )
-    if (next.ownerNumber && privateOwnNumber && next.ownerNumber !== privateOwnNumber) {
+    if (next.privateOwnerNumber && privateOwnNumber && next.privateOwnerNumber !== privateOwnNumber) {
       return res.status(409).json({ ok: false, error: 'Owner number must match the phone number paired to the Private WhatsApp session.' })
-    }
-    if (next.ownerNumber && publicBotNumber && next.ownerNumber === publicBotNumber) {
-      return res.status(409).json({ ok: false, error: 'The Owner number must be different from the Public bot WhatsApp number.' })
     }
     if (next.publicBotNumber && publicBotNumber && next.publicBotNumber !== publicBotNumber) {
       return res.status(409).json({ ok: false, error: 'Public bot WhatsApp number must match the number already paired to the Public session.' })
     }
     ownerConfig = await saveOwnerConfig(OWNER_CONFIG_FILE, next)
     publishStudioEvent('owners.updated', {
-      ownerConfigured: Boolean(ownerConfig.ownerNumber),
-      privateOwnerConfigured: Boolean(ownerConfig.ownerNumber),
-      publicOwnerConfigured: Boolean(ownerConfig.ownerNumber),
+      ownerConfigured: Boolean(ownerConfig.privateOwnerNumber && ownerConfig.publicOwnerNumber),
+      privateOwnerConfigured: Boolean(ownerConfig.privateOwnerNumber),
+      publicOwnerConfigured: Boolean(ownerConfig.publicOwnerNumber),
     })
     res.json({ ok: true, owners: ownerConfig })
   } catch (error) {
@@ -1674,9 +1673,6 @@ app.post('/api/pair-code', requireAdmin, async (req, res) => {
     }
     if (phoneNumber !== ownerConfig.publicBotNumber) {
       return res.status(409).json({ ok: false, error: 'The supplied number does not match the saved Public bot WhatsApp number. Update Configuration first.' })
-    }
-    if ([ownerConfig.privateOwnerNumber, ownerConfig.publicOwnerNumber].includes(phoneNumber)) {
-      return res.status(400).json({ ok: false, error: 'The public bot must use its own WhatsApp number, separate from both owner identities.' })
     }
     const pairingCode = await accountRuntime.requestPairingCode('public', ownerConfig.publicBotNumber)
     res.json({ ok: true, accountId: 'public', pairingCode })

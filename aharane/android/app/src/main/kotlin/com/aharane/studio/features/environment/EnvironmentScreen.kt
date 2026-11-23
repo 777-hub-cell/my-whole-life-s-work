@@ -141,10 +141,16 @@ fun EnvironmentScreen(
             }
         } else {
             item {
-                Box(
-                    Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 15.dp)
-                        .height(1.dp).background(StudioPalette.Line)
-                )
+                StudioCard(padding = PaddingValues(horizontal = 15.dp, vertical = 18.dp)) {
+                    Text(
+                        if (connected || previewMode) "No environment values are available yet."
+                        else "Connect to your Aharane server to load its managed environment values.",
+                        color = StudioPalette.Muted,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
 

@@ -18,6 +18,8 @@ import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -1259,6 +1261,23 @@ fun AharaneApp(
     }
 
     val currentDestination = MainDestination.valueOf(destinationName)
+    val tabPagerState = rememberPagerState(initialPage = MainDestination.entries.indexOf(currentDestination)) {
+        MainDestination.entries.size
+    }
+    LaunchedEffect(currentDestination) {
+        val index = MainDestination.entries.indexOf(currentDestination)
+        if (index >= 0 && tabPagerState.settledPage != index) {
+            tabPagerState.animateScrollToPage(index)
+        }
+    }
+    LaunchedEffect(tabPagerState) {
+        snapshotFlow { tabPagerState.settledPage }.collect { page ->
+            if (page in MainDestination.entries.indices) {
+                val name = MainDestination.entries[page].name
+                if (destinationName != name) destinationName = name
+            }
+        }
+    }
     val selectedAccount = ChatAccount.valueOf(accountName)
     val selectedFilter = ChatFilter.valueOf(filterName)
     val connected = authenticated && !previewMode && serverReachable
@@ -2158,11 +2177,11 @@ fun AharaneApp(
                         }
                     }
                 )
-                else -> Crossfade(
-                    targetState = currentDestination,
-                    animationSpec = tween(if (LocalStudioMotionEnabled.current) 210 else 0),
-                    label = "studio-tab-transition"
-                ) { destination ->
+                else -> HorizontalPager(
+                    state = tabPagerState,
+                    modifier = Modifier.fillMaxSize()
+                ) { page ->
+                    val destination = MainDestination.entries[page]
                     when (destination) {
                     MainDestination.HOME -> HomeScreen(
                         onOpenChats = { destinationName = MainDestination.CHATS.name },

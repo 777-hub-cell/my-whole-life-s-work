@@ -213,7 +213,7 @@ private fun StatusShelf(
     if (shelf.isEmpty()) return
 
     Column(modifier = Modifier.padding(top = 28.dp)) {
-        SectionHeading(title, "View all") { onSeeAll(status) }
+        SectionHeading(title, "View all", onAction = { onSeeAll(status) })
         LazyRow(
             modifier = Modifier.padding(top = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),

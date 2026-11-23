@@ -60,7 +60,7 @@ fun HomeScreen(
             Spacer(Modifier.height(18.dp))
         }
         item {
-            StudioCard(padding = PaddingValues(16.dp)) {
+            StudioCard(modifier = Modifier.animateItem(), padding = PaddingValues(16.dp)) {
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 42.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -274,16 +274,19 @@ private fun HomeConnectionIndicator(
     modifier: Modifier = Modifier
 ) {
     val tint = when { !connected -> StudioPalette.Bad; degraded -> Color(0xFFB87928); else -> StudioPalette.Accent }
-    val transition = rememberInfiniteTransition(label = "home-connection-pulse")
-    val progress = transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1900, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "home-connection-ring"
-    ).value
+    val motionEnabled = LocalStudioMotionEnabled.current
+    val progress = if (connected && motionEnabled) {
+        val transition = rememberInfiniteTransition(label = "home-connection-pulse")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1900, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "home-connection-ring"
+        ).value
+    } else 0f
     Canvas(modifier.size(size)) {
         val center = androidx.compose.ui.geometry.Offset(this.size.width / 2f, this.size.height / 2f)
         val maxRadius = this.size.minDimension * .43f

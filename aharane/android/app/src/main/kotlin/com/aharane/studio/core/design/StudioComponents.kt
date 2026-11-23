@@ -166,12 +166,12 @@ fun StudioBottomNavigation(
                 val tintTarget = if (active) StudioPalette.Accent else StudioPalette.Muted
                 val tint by animateColorAsState(
                     tintTarget,
-                    animationSpec = StudioFoundationContract.Motion.stateChangeSpec(motionEnabled),
+                    animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Color>(motionEnabled),
                     label = "bottom-nav-tint"
                 )
                 val scale by animateFloatAsState(
                     if (active && motionEnabled) 1.06f else 1f,
-                    animationSpec = StudioFoundationContract.Motion.stateChangeSpec(motionEnabled),
+                    animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Float>(motionEnabled),
                     label = "bottom-nav-scale"
                 )
                 val icon = when (destination) {
@@ -389,7 +389,7 @@ fun StudioActionButton(
     }
     val animatedBackground by animateColorAsState(
         bg,
-        animationSpec = StudioFoundationContract.Motion.stateChangeSpec(
+        animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Color>(
             motionEnabled,
             StudioFoundationContract.Motion.StateChangeMillis
         ),
@@ -399,7 +399,7 @@ fun StudioActionButton(
     val pressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
         if (motionEnabled && enabled && pressed) .975f else 1f,
-        animationSpec = StudioFoundationContract.Motion.stateChangeSpec(
+        animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Float>(
             motionEnabled,
             StudioFoundationContract.Motion.PressFeedbackMillis
         ),
@@ -431,12 +431,12 @@ fun StudioActionButton(
             targetState = label,
             transitionSpec = {
                 fadeIn(
-                    StudioFoundationContract.Motion.enterSpec(
+                    StudioFoundationContract.Motion.enterSpec<Float>(
                         motionEnabled,
                         StudioFoundationContract.Motion.PressFeedbackMillis
                     )
                 ) togetherWith fadeOut(
-                    StudioFoundationContract.Motion.exitSpec(motionEnabled, 90)
+                    StudioFoundationContract.Motion.exitSpec<Float>(motionEnabled, 90)
                 )
             },
             label = "action-button-label"
@@ -666,7 +666,7 @@ fun StudioSegmented(options: List<String>, selected: String, onSelect: (String) 
             val shape = RoundedCornerShape(9.dp * LocalStudioCornerScale.current)
             val fill by animateColorAsState(
                 if (active) StudioPalette.Soft else Color.Transparent,
-                animationSpec = StudioFoundationContract.Motion.stateChangeSpec(
+                animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Color>(
                     motionEnabled,
                     StudioFoundationContract.Motion.StateChangeMillis
                 ),
@@ -674,7 +674,7 @@ fun StudioSegmented(options: List<String>, selected: String, onSelect: (String) 
             )
             val outline by animateColorAsState(
                 if (active) StudioPalette.Accent else Color.Transparent,
-                animationSpec = StudioFoundationContract.Motion.stateChangeSpec(
+                animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Color>(
                     motionEnabled,
                     StudioFoundationContract.Motion.StateChangeMillis
                 ),
@@ -682,7 +682,7 @@ fun StudioSegmented(options: List<String>, selected: String, onSelect: (String) 
             )
             val tint by animateColorAsState(
                 if (active) StudioPalette.Accent else StudioPalette.Muted,
-                animationSpec = StudioFoundationContract.Motion.stateChangeSpec(
+                animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Color>(
                     motionEnabled,
                     StudioFoundationContract.Motion.StateChangeMillis
                 ),

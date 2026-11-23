@@ -144,7 +144,7 @@ def assert_visible_texts(labels):
         if not missing:
             return
         time.sleep(0.35)
-    raise RuntimeError(f"File popup is missing expected actions: {missing!r}")
+    raise RuntimeError(f"Expected UI text is not visible: {missing!r}")
 
 def assert_absent_texts(labels):
     """Ensure removed or relocated entries do not reappear on More."""
@@ -204,13 +204,13 @@ def main():
     # The header's Preview status badge is not interactive. Open the Private
     # account's Preview action (the second visible Preview label).
     tap_label("Preview", occurrence=1)
-    assert_visible_texts(["Pairing code", "QR code", "This is a preview", "Back to accounts"])
+    assert_visible_texts(["Pairing code", "QR code", "This is a preview"])
     capture("01a-whatsapp-pairing-code-choice.png")
     tap_label("QR code")
     capture("01aa-whatsapp-qr-choice.png")
     tap_label("Pairing code")
     capture("01ab-whatsapp-pairing-code-choice.png")
-    tap_label("Back to accounts")
+    tap_label("Back to accounts", scroll_to_find=True)
     tap_label("Configuration", scroll_to_find=True)
     capture("01b-configuration.png")
     tap_label("Edit config.js", scroll_to_find=True)

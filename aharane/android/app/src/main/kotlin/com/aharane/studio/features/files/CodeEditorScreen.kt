@@ -1,6 +1,14 @@
 package com.aharane.studio.features.files
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -43,6 +51,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.aharane.studio.core.design.StudioPalette
+import com.aharane.studio.core.design.LocalStudioMotionEnabled
 import com.aharane.studio.core.network.EditorDiagnostic
 import com.aharane.studio.core.network.ServerActivityEntry
 import androidx.compose.ui.unit.sp
@@ -218,7 +227,13 @@ fun CodeEditorScreen(
         }
 
         // The web workbench has no empty placeholder tab strip.
-        if (openDocuments.isNotEmpty()) {
+        AnimatedVisibility(
+            visible = openDocuments.isNotEmpty(),
+            enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 140 else 0)) +
+                slideInVertically(tween(if (LocalStudioMotionEnabled.current) 180 else 0)) { -it / 3 },
+            exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
+                slideOutVertically(tween(if (LocalStudioMotionEnabled.current) 140 else 0)) { -it / 3 }
+        ) {
             Row(
                 Modifier.fillMaxWidth().height(40.dp).background(EditorPanel)
                     .horizontalScroll(rememberScrollState()),
@@ -279,7 +294,14 @@ fun CodeEditorScreen(
                         )
                     }
                 }
-                if (explorerOpen) {
+                AnimatedVisibility(
+                    visible = explorerOpen,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                    enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 150 else 0)) +
+                        slideInHorizontally(tween(if (LocalStudioMotionEnabled.current) 210 else 0)) { -it / 3 },
+                    exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 110 else 0)) +
+                        slideOutHorizontally(tween(if (LocalStudioMotionEnabled.current) 160 else 0)) { -it / 3 }
+                ) {
                     ExplorerDrawer(
                         files = availableFiles,
                         activePath = activeDocumentPath,
@@ -287,9 +309,15 @@ fun CodeEditorScreen(
                         onClose = { explorerOpen = false }
                     )
                 }
-                if (panelOpen) {
+                AnimatedVisibility(
+                    visible = panelOpen,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 140 else 0)) +
+                        slideInVertically(tween(if (LocalStudioMotionEnabled.current) 210 else 0)) { it / 2 },
+                    exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 110 else 0)) +
+                        slideOutVertically(tween(if (LocalStudioMotionEnabled.current) 170 else 0)) { it / 2 }
+                ) {
                     EditorBottomPanel(
-                        modifier = Modifier.align(Alignment.BottomCenter),
                         tab = panelTab,
                         onTabSelected = { panelTab = it },
                         onClose = { panelOpen = false },

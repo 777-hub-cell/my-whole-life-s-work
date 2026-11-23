@@ -1644,7 +1644,33 @@ function installBridgeP(){
  };
  openPairBaseP=openPair;openPair=async function(i){if(P.qrTimer){clearInterval(P.qrTimer);P.qrTimer=null}S.pin=null;S.qrRequested=false;try{await refreshRuntimeP()}catch(error){notifyP('Could not refresh account status: '+error.message)}openPairBaseP(i)};
  const chatsBaseP=chatsV;chatsV=function(){
-  const html=chatsBaseP().replace('</button></div><p class="sub">','</button><button class="modeb" id="chat-visibility" aria-label="Configure chat visibility">'+ico('cfg')+'</button><button class="modeb" id="chat-starred" aria-label="Starred messages">★</button><button class="modeb" id="chat-appearance-list" aria-label="Chat appearance">Aa</button></div><p class="sub">');
+  let html=chatsBaseP().replace('</button></div><p class="sub">','</button><button class="modeb" id="chat-visibility" aria-label="Configure chat visibility">'+ico('cfg')+'</button><button class="modeb" id="chat-starred" aria-label="Starred messages">★</button><button class="modeb" id="chat-appearance-list" aria-label="Chat appearance">Aa</button></div><p class="sub">');
+  const accountId=S.cacc==='public'?'public':'private';
+  const account=P.runtime?.accounts?.[accountId]||{};
+  if(P.runtime&&CH.length===0&&!String(S.cq||'').trim()&&(S.fl||'all')==='all'&&!account.connected){
+   const accountName=accountId==='public'?'Public':'Private';
+   const needsRepair=['needs-pairing','reconnect-exhausted'].includes(account.state);
+   const linking=['pairing','connecting'].includes(account.state);
+   let title='Link your '+accountName+' WhatsApp account';
+   let copy='Connect this session to start receiving and viewing conversations.';
+   let action='<button class="btn p sm" data-pair-account="'+accountId+'">Link account</button>';
+   if(needsRepair){
+    title='Re-pair your '+accountName+' WhatsApp account';
+    copy='This session needs a fresh WhatsApp link before its conversations can load.';
+    action='<button class="btn p sm" data-pair-account="'+accountId+'">Re-pair account</button>';
+   }else if(linking){
+    title='Finish linking your '+accountName+' account';
+    copy='Complete the WhatsApp pairing steps. Your conversations will appear here when the session connects.';
+    action='<button class="btn p sm" data-pair-account="'+accountId+'">Continue pairing</button>';
+   }else if(account.registered){
+    title=accountName+' WhatsApp account is offline';
+    copy='Reconnect this session to load its conversations.';
+    action='<button class="btn p sm" data-account="'+accountId+'" data-action="reconnect">Reconnect account</button>';
+   }
+   const empty='<div class="chats-empty" aria-live="polite"><span class="chats-empty-mark">'+ico('chats')+'</span><strong>'+title+'</strong><p>'+copy+'</p>'+action+'</div>';
+   const start=html.indexOf('<div class="chats-empty">'),end=start<0?-1:html.indexOf('</div>',start)+6;
+   if(start>=0&&end>start)html=html.slice(0,start)+empty+html.slice(end);
+  }
   return html.replace('<div class="card list">','<div id="chat-search-results">'+chatSearchPanelP()+'</div><div class="card list">');
  };
  filesV=filesScreenP;envV=envViewP;accV=accountViewP;pairV=pairViewP;moreV=moreViewP;storV=storageViewP;

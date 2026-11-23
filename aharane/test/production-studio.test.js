@@ -148,6 +148,13 @@ test('Base Studio Files and Chats render contextual empty states without dead se
  assert.ok(app.includes("id=\"clear-chat-search\""))
  const css=await read('../control-centre/styles.css')
  assert.ok(css.includes('.files-empty,.chats-empty'))
+ const bridge=await read('../control-centre/production-bridge.js')
+ const chats=bridge.slice(bridge.indexOf('const chatsBaseP=chatsV;'),bridge.indexOf('filesV=filesScreenP'))
+ assert.ok(chats.includes("let title='Link your '+accountName"))
+ assert.ok(chats.includes('data-pair-account='))
+ assert.ok(chats.includes('data-action="reconnect"'))
+ assert.ok(chats.includes('Re-pair account'))
+ assert.ok(chats.includes('Continue pairing'))
 })
  
 test('ENV and Home display useful empty states instead of blank panels', async () => {

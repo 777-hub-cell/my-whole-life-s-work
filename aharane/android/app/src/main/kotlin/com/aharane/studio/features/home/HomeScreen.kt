@@ -12,6 +12,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -49,6 +51,12 @@ fun HomeScreen(
     metricsAvailable: Boolean = false,
     messagesLast24h: Int = 0,
     hourlyMessageCounts: List<Int> = emptyList(),
+    monthUtc: String = "",
+    monthlyDataSince: String? = null,
+    dailySent: List<Int> = emptyList(),
+    dailyReceived: List<Int> = emptyList(),
+    sentThisMonth: Int = 0,
+    receivedThisMonth: Int = 0,
     onAccountAction: (ChatAccount) -> Unit = {},
     recentActivity: List<String> = emptyList()
 ) {
@@ -104,52 +112,94 @@ fun HomeScreen(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "Messages handled, last 24 hours",
+                            "Message activity · This Month",
                             color = StudioPalette.Ink,
-                            fontSize = 12.5.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                         Spacer(Modifier.weight(1f))
                         Text(
-                            if (metricsAvailable) messagesLast24h.toString() else "—",
+                            if (monthUtc.isNotEmpty()) "$monthUtc · UTC" else "—",
                             color = StudioPalette.Muted,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontSize = 10.5.sp
                         )
                     }
-                    val samples = (0 until 24).map { hourlyMessageCounts.getOrNull(it) ?: 0 }
-                    val peak = samples.maxOrNull()?.coerceAtLeast(1) ?: 1
-                    Row(
-                        Modifier.fillMaxWidth().height(48.dp),
-                        horizontalArrangement = Arrangement.spacedBy(3.dp),
-                        verticalAlignment = Alignment.Bottom
-                    ) {
-                        samples.forEachIndexed { index, count ->
-                            val fraction = if (count == 0) 0.045f else (count.toFloat() / peak).coerceIn(0.08f, 1f)
-                            val animatedFraction = animateFloatAsState(
-                                targetValue = fraction,
-                                animationSpec = tween(
-                                    durationMillis = if (LocalStudioMotionEnabled.current) 420 else 0,
-                                    delayMillis = if (LocalStudioMotionEnabled.current) index * 14 else 0
-                                ),
-                                label = "home-hourly-bar"
-                            ).value
-                            Box(
-                                Modifier.weight(1f).fillMaxHeight(),
-                                contentAlignment = Alignment.BottomCenter
+                    if (!metricsAvailable || monthUtc.isEmpty() || dailySent.isEmpty()) {
+                        Text(
+                            "Monthly message history is unavailable.",
+                            color = StudioPalette.Muted,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(vertical = 16.dp)
+                        )
+                    } else {
+                        val sentColor = Color(0xFF638A79)
+                        val receivedColor = Color(0xFF987C9E)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(8.dp).clip(CircleShape).background(sentColor))
+                            Spacer(Modifier.width(5.dp))
+                            Text("Sent  $sentThisMonth", color = StudioPalette.Ink, fontSize = 12.sp)
+                            Spacer(Modifier.width(20.dp))
+                            Box(Modifier.size(8.dp).clip(CircleShape).background(receivedColor))
+                            Spacer(Modifier.width(5.dp))
+                            Text("Received  $receivedThisMonth", color = StudioPalette.Ink, fontSize = 12.sp)
+                        }
+                        val days = maxOf(dailySent.size, dailyReceived.size)
+                        val peak = (dailySent + dailyReceived).maxOrNull()?.coerceAtLeast(1) ?: 1
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(
+                                modifier = Modifier.height(88.dp).padding(end = 6.dp),
+                                verticalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Box(
-                                    Modifier.fillMaxWidth().fillMaxHeight(animatedFraction)
-                                        .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                                        .background(if (count == 0) StudioPalette.Line else StudioPalette.Accent)
-                                )
+                                Text(peak.toString(), fontSize = 9.sp, color = StudioPalette.Muted)
+                                Text("0", fontSize = 9.sp, color = StudioPalette.Muted)
+                            }
+                            Row(
+                                modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.Bottom
+                            ) {
+                                repeat(days) { day ->
+                                    val sent = dailySent.getOrElse(day) { 0 }.coerceAtLeast(0)
+                                    val received = dailyReceived.getOrElse(day) { 0 }.coerceAtLeast(0)
+                                    Column(
+                                        modifier = Modifier.width(20.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.height(72.dp),
+                                            verticalAlignment = Alignment.Bottom,
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            Box(
+                                                Modifier.width(8.dp).height(if (sent == 0) 2.dp else (70f * sent / peak).dp)
+                                                    .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                                                    .background(if (sent == 0) StudioPalette.Line else sentColor)
+                                            )
+                                            Box(
+                                                Modifier.width(8.dp).height(if (received == 0) 2.dp else (70f * received / peak).dp)
+                                                    .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                                                    .background(if (received == 0) StudioPalette.Line else receivedColor)
+                                            )
+                                        }
+                                        Text(
+                                            if (day == 0 || (day + 1) % 5 == 0) (day + 1).toString() else "",
+                                            fontSize = 9.sp,
+                                            color = StudioPalette.Muted
+                                        )
+                                    }
+                                }
                             }
                         }
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("24 hours ago", color = StudioPalette.Muted, fontSize = 9.5.sp)
-                        Spacer(Modifier.weight(1f))
-                        Text("Now", color = StudioPalette.Muted, fontSize = 9.5.sp)
+                        Text(
+                            monthlyDataSince?.take(10)?.let { "Available stored records begin $it. Earlier WhatsApp history may be missing." }
+                                ?: "No stored WhatsApp message records are available yet.",
+                            color = StudioPalette.Muted,
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp
+                        )
                     }
                 }
             }

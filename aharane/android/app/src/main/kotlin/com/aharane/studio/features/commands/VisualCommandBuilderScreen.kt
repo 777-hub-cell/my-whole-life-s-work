@@ -541,7 +541,7 @@ fun VisualCommandBuilderScreen(
             Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("WORKSPACE", color = StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.weight(1f))
-                Text(workflow.nodes.size.toString() + " nodes · " + workflow.edges.size + " wires", color = StudioPalette.Muted, fontSize = 9.sp, modifier = Modifier.testTag("workflow-node-count"))
+                Text(workflow.nodes.size.toString() + " nodes · " + workflow.edges.size + " wires", color = StudioPalette.Muted, fontSize = 10.5.sp, modifier = Modifier.testTag("workflow-node-count"))
             }
             Box(Modifier.fillMaxSize().onSizeChanged { workspaceViewportSize = it }.clip(RoundedCornerShape(9.dp)).background(Color(0xFFF2F5F2))) {
                 Box(
@@ -658,7 +658,7 @@ fun VisualCommandBuilderScreen(
                 Text(
                     "Swipe sideways to pan · pinch to zoom · drag nodes",
                     color = StudioPalette.Muted,
-                    fontSize = 9.sp,
+                    fontSize = 10.5.sp,
                     modifier = Modifier.align(Alignment.BottomStart).padding(6.dp)
                         .clip(RoundedCornerShape(5.dp)).background(Color.White.copy(alpha = 0.92f)).padding(5.dp)
                 )
@@ -706,13 +706,13 @@ fun VisualCommandBuilderScreen(
             Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("NODE LIBRARY", color = StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.weight(1f))
-                Text(visibleNodes.size.toString() + " nodes", color = StudioPalette.Muted, fontSize = 9.sp)
+                Text(visibleNodes.size.toString() + " nodes", color = StudioPalette.Muted, fontSize = 10.5.sp)
             }
             BasicTextField(
                 value = search,
                 onValueChange = { search = it },
                 singleLine = true,
-                textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 11.sp),
+                textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 14.sp),
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(7.dp))
                     .background(StudioPalette.Surface).border(1.dp, StudioPalette.Line, RoundedCornerShape(7.dp))
                     .padding(horizontal = 9.dp, vertical = 7.dp),
@@ -762,7 +762,7 @@ fun VisualCommandBuilderScreen(
             Text(
                 notice,
                 color = if (notice.contains("error", true) || notice.contains("failed", true) || notice.contains("rejected", true)) StudioPalette.Bad else StudioPalette.Muted,
-                fontSize = 9.5.sp,
+                fontSize = 13.5.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth().padding(top = 3.dp)
@@ -816,7 +816,7 @@ fun VisualCommandBuilderScreen(
                     }.padding(vertical = 8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(item.name, color = StudioPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                            Text(if (item.enabled) "Active" else "Draft", color = if (item.enabled) StudioPalette.Accent else StudioPalette.Muted, fontSize = 9.sp)
+                            Text(if (item.enabled) "Active" else "Draft", color = if (item.enabled) StudioPalette.Accent else StudioPalette.Muted, fontSize = 10.5.sp)
                         }
                         Text(
                             item.nodes.firstOrNull { it.type == "trigger.command" }?.config?.get("command") ?: "Message event",
@@ -869,7 +869,7 @@ private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) 
             .border(1.dp, if (selected) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(7.dp))
             .clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 5.dp)
     ) {
-        Text(label, color = if (selected) Color.White else StudioPalette.Ink, fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, color = if (selected) Color.White else StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -882,8 +882,8 @@ private fun LibraryNodeRow(node: VisualNodeDefinition, enabled: Boolean, onAdd: 
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(node.name, color = StudioPalette.Ink, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
-            Text(node.description, color = StudioPalette.Muted, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(node.name, color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+            Text(node.description, color = StudioPalette.Muted, fontSize = 10.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.width(6.dp))
         StudioActionButton("Add", modifier = Modifier.testTag("add-node-" + node.type), compact = true, enabled = enabled, onClick = onAdd)
@@ -917,7 +917,7 @@ private fun NodeCard(
         label = "workflow-node-outline"
     )
     Column(
-        Modifier.offset(nodeOffset.x.dp, nodeOffset.y.dp).width(206.dp)
+        Modifier.offset(nodeOffset.x.dp, nodeOffset.y.dp).width(236.dp)
             .onSizeChanged(onMeasured).testTag("node-card-" + node.type)
             .clip(RoundedCornerShape(8.dp)).background(Color.White)
             .border(if (selected || error != null) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(8.dp))
@@ -935,11 +935,11 @@ private fun NodeCard(
         ) {
             Box(Modifier.size(7.dp).clip(CircleShape).background(if (error != null) StudioPalette.Bad else StudioPalette.Accent))
             Spacer(Modifier.width(6.dp))
-            Text(definition.name, color = StudioPalette.Ink, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(definition.name, color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.weight(1f))
             if (error != null) Text("!", color = StudioPalette.Bad, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
-        Text(nodeSummary(node), color = StudioPalette.Muted, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        Text(nodeSummary(node), color = StudioPalette.Muted, fontSize = 10.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp))
         if (definition.inputs.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 5.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -1076,7 +1076,7 @@ private fun NodeConfigurationDialog(
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(StudioPalette.Surface).padding(13.dp)) {
             Text(definition?.name ?: node.type, color = StudioPalette.Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
-            Text(definition?.description.orEmpty(), color = StudioPalette.Muted, fontSize = 10.5.sp)
+            Text(definition?.description.orEmpty(), color = StudioPalette.Muted, fontSize = 12.5.sp)
             Spacer(Modifier.height(8.dp))
             fields.forEach { (key, label) ->
                 Text(label, color = StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
@@ -1084,7 +1084,7 @@ private fun NodeConfigurationDialog(
                     value = config[key].orEmpty(),
                     onValueChange = { config = config + (key to it) },
                     singleLine = key !in setOf("text", "options", "buttons", "participants", "description"),
-                    textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 11.sp),
+                    textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 14.sp),
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)
                         .clip(RoundedCornerShape(6.dp)).background(StudioPalette.Background)
                         .border(1.dp, StudioPalette.Line, RoundedCornerShape(6.dp)).padding(8.dp)
@@ -1105,14 +1105,14 @@ private fun NodeConfigurationDialog(
                                     config = config + ("chatScope" to value)
                                 }.padding(horizontal = 8.dp, vertical = 5.dp)
                         ) {
-                            Text(label, color = if (active) Color.White else StudioPalette.Ink, fontSize = 9.5.sp)
+                            Text(label, color = if (active) Color.White else StudioPalette.Ink, fontSize = 13.5.sp)
                         }
                     }
                 }
                 if (!allowGroupScope) {
-                    Text("Private account commands stay in the owner self-chat.", color = StudioPalette.Muted, fontSize = 9.sp)
+                    Text("Private account commands stay in the owner self-chat.", color = StudioPalette.Muted, fontSize = 10.5.sp)
                 } else {
-                    Text("Group runs still require the sender to be on the Public allow-list.", color = StudioPalette.Muted, fontSize = 9.sp)
+                    Text("Group commands run only when enabled for Public groups.", color = StudioPalette.Muted, fontSize = 10.5.sp)
                 }
             }
             if (node.type == "trigger.command") {
@@ -1132,14 +1132,14 @@ private fun NodeConfigurationDialog(
             }
             if (node.type == "message.sendText" || node.type == "message.replyText") {
                 Text("Templates: {{message.text}}, {{sender}}, {{args}}, {{arg1}}, {{var:name}}, {{counter:name}}",
-                    color = StudioPalette.Muted, fontSize = 9.sp)
+                    color = StudioPalette.Muted, fontSize = 10.5.sp)
             }
             if (issues.isNotEmpty()) {
                 Spacer(Modifier.height(7.dp))
                 Text("Validation", color = StudioPalette.Bad, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 issues.forEach {
-                    Text(it.message, color = StudioPalette.Bad, fontSize = 9.5.sp)
-                    Text("Fix: " + it.fix, color = StudioPalette.Muted, fontSize = 9.sp)
+                    Text(it.message, color = StudioPalette.Bad, fontSize = 13.5.sp)
+                    Text("Fix: " + it.fix, color = StudioPalette.Muted, fontSize = 10.5.sp)
                 }
             }
             Spacer(Modifier.height(9.dp))
@@ -1165,7 +1165,7 @@ private fun SafeTestResultDialog(result: JSONObject, onDismiss: () -> Unit) {
                 if (result.optBoolean("ok")) "Passed · no live WhatsApp actions were performed"
                 else result.optString("error", "The workflow needs attention."),
                 color = if (result.optBoolean("ok")) StudioPalette.Accent else StudioPalette.Bad,
-                fontSize = 10.5.sp
+                fontSize = 12.5.sp
             )
             Spacer(Modifier.height(7.dp))
             LazyColumn(Modifier.heightIn(max = 300.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1174,7 +1174,7 @@ private fun SafeTestResultDialog(result: JSONObject, onDismiss: () -> Unit) {
                     val status = item.optString("status")
                     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(StudioPalette.Background).padding(7.dp)) {
                         Text(item.optString("type") + " · " + status, color = if (status == "error") StudioPalette.Bad else StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                        Text(item.optString("message"), color = StudioPalette.Muted, fontSize = 9.5.sp)
+                        Text(item.optString("message"), color = StudioPalette.Muted, fontSize = 13.5.sp)
                     }
                 }
             }

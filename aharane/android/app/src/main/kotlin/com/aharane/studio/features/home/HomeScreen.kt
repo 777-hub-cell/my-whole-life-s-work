@@ -3,6 +3,7 @@ package com.aharane.studio.features.home
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -144,14 +145,22 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
                         verticalAlignment = Alignment.Bottom
                     ) {
-                        samples.forEach { count ->
+                        samples.forEachIndexed { index, count ->
                             val fraction = if (count == 0) 0.045f else (count.toFloat() / peak).coerceIn(0.08f, 1f)
+                            val animatedFraction by animateFloatAsState(
+                                targetValue = fraction,
+                                animationSpec = tween(
+                                    durationMillis = if (LocalStudioMotionEnabled.current) 420 else 0,
+                                    delayMillis = if (LocalStudioMotionEnabled.current) index * 14 else 0
+                                ),
+                                label = "home-hourly-bar"
+                            )
                             Box(
                                 Modifier.weight(1f).fillMaxHeight(),
                                 contentAlignment = Alignment.BottomCenter
                             ) {
                                 Box(
-                                    Modifier.fillMaxWidth().fillMaxHeight(fraction)
+                                    Modifier.fillMaxWidth().fillMaxHeight(animatedFraction)
                                         .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
                                         .background(if (count == 0) StudioPalette.Line else StudioPalette.Accent)
                                 )

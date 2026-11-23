@@ -957,7 +957,16 @@ async function handleMessages(sessionId, currentSocket, event) {
     if (!message?.message || !message.key?.id) continue
 
     const remoteJid = String(message.key?.remoteJid || '')
-    const senderJid = String(message.key?.participant || remoteJid)
+    const rawSenderJid = String(message.key?.participant || remoteJid)
+    const senderAlternateJid = String(remoteJid.endsWith('@g.us')
+      ? (message.key?.participantAlt || '')
+      : (message.key?.remoteJidAlt || ''))
+    // Prefer the phone-number identity paired by Baileys when WhatsApp uses
+    // LIDs. This is used for allow-list, owner and rate-limit checks only;
+    // outgoing replies continue to use the original remoteJid.
+    const senderJid = senderNumberFromJid(rawSenderJid)
+      ? rawSenderJid
+      : (senderNumberFromJid(senderAlternateJid) ? senderAlternateJid : rawSenderJid)
     const shouldPersist =
       (sessionId === 'private' && isPrivateVisibleChatJid(remoteJid)) ||
       (sessionId === 'public' && message.key.fromMe !== true && isPrivateVisibleChatJid(remoteJid))
@@ -1006,12 +1015,15 @@ async function handleMessages(sessionId, currentSocket, event) {
       // configured public sender allow-list.
       const allowedToUseCommands = isAllowedInbound({
         remoteJid,
+        remoteJidAlt: message.key?.remoteJidAlt,
         fromMe: false,
         allowedSenders,
       })
       const allowedVisualSender = isAllowedInbound({
         remoteJid,
-        participantJid: senderJid,
+        remoteJidAlt: message.key?.remoteJidAlt,
+        participantJid: rawSenderJid,
+        participantAltJid: senderAlternateJid,
         allowGroups: true,
         fromMe: false,
         allowedSenders,

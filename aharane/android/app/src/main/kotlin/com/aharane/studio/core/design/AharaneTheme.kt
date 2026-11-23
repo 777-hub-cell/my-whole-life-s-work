@@ -3,7 +3,6 @@ package com.aharane.studio.core.design
 import android.animation.ValueAnimator
 import android.os.Build
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
@@ -145,25 +144,25 @@ fun AharaneTheme(
     // Respect Android's system-wide animation setting, including Battery Saver.
     val motionEnabled = Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ValueAnimator.areAnimatorsEnabled()
     val colorTarget = if (dark) darkScheme else lightScheme
-    val colorDuration = StudioFoundationContract.Motion.durationMillis(
+    val themeColorSpec = StudioFoundationContract.Motion.stateChangeSpec<Color>(
         enabled = motionEnabled,
         targetMillis = StudioFoundationContract.Motion.ThemeTransitionMillis
     )
     // Theme changes transition as one coherent palette rather than repainting
     // each surface and label in a single frame.
     val animatedScheme = colorTarget.copy(
-        primary = animateColorAsState(colorTarget.primary, tween(colorDuration), label = "theme-primary").value,
-        onPrimary = animateColorAsState(colorTarget.onPrimary, tween(colorDuration), label = "theme-on-primary").value,
-        primaryContainer = animateColorAsState(colorTarget.primaryContainer, tween(colorDuration), label = "theme-primary-container").value,
-        onPrimaryContainer = animateColorAsState(colorTarget.onPrimaryContainer, tween(colorDuration), label = "theme-on-primary-container").value,
-        background = animateColorAsState(colorTarget.background, tween(colorDuration), label = "theme-background").value,
-        onBackground = animateColorAsState(colorTarget.onBackground, tween(colorDuration), label = "theme-on-background").value,
-        surface = animateColorAsState(colorTarget.surface, tween(colorDuration), label = "theme-surface").value,
-        onSurface = animateColorAsState(colorTarget.onSurface, tween(colorDuration), label = "theme-on-surface").value,
-        surfaceVariant = animateColorAsState(colorTarget.surfaceVariant, tween(colorDuration), label = "theme-surface-variant").value,
-        onSurfaceVariant = animateColorAsState(colorTarget.onSurfaceVariant, tween(colorDuration), label = "theme-on-surface-variant").value,
-        outline = animateColorAsState(colorTarget.outline, tween(colorDuration), label = "theme-outline").value,
-        error = animateColorAsState(colorTarget.error, tween(colorDuration), label = "theme-error").value
+        primary = animateColorAsState(colorTarget.primary, themeColorSpec, label = "theme-primary").value,
+        onPrimary = animateColorAsState(colorTarget.onPrimary, themeColorSpec, label = "theme-on-primary").value,
+        primaryContainer = animateColorAsState(colorTarget.primaryContainer, themeColorSpec, label = "theme-primary-container").value,
+        onPrimaryContainer = animateColorAsState(colorTarget.onPrimaryContainer, themeColorSpec, label = "theme-on-primary-container").value,
+        background = animateColorAsState(colorTarget.background, themeColorSpec, label = "theme-background").value,
+        onBackground = animateColorAsState(colorTarget.onBackground, themeColorSpec, label = "theme-on-background").value,
+        surface = animateColorAsState(colorTarget.surface, themeColorSpec, label = "theme-surface").value,
+        onSurface = animateColorAsState(colorTarget.onSurface, themeColorSpec, label = "theme-on-surface").value,
+        surfaceVariant = animateColorAsState(colorTarget.surfaceVariant, themeColorSpec, label = "theme-surface-variant").value,
+        onSurfaceVariant = animateColorAsState(colorTarget.onSurfaceVariant, themeColorSpec, label = "theme-on-surface-variant").value,
+        outline = animateColorAsState(colorTarget.outline, themeColorSpec, label = "theme-outline").value,
+        error = animateColorAsState(colorTarget.error, themeColorSpec, label = "theme-error").value
     )
     val baseDensity = LocalDensity.current
     val scaledDensity = Density(

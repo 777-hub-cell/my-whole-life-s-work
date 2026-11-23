@@ -195,7 +195,7 @@ fun HomeScreen(
                     icon = Icons.Outlined.Tune,
                     trailing = "›",
                     onClick = onOpenConfiguration,
-                    subtitleMaxLines = 1
+                    subtitleMaxLines = 2
                 )
                 StudioDivider()
                 StudioRow(

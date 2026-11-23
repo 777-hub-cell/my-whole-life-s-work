@@ -132,9 +132,9 @@ def tap_label(
         )
     return False
 
-def assert_visible_texts(labels):
-    """Fail the screenshot run if the native popup drifts from the web actions."""
-    deadline = time.time() + 8
+def assert_visible_texts(labels, timeout_seconds: float = 8):
+    """Wait for expected native UI text, failing with the missing labels."""
+    deadline = time.time() + timeout_seconds
     while time.time() < deadline:
         visible = {node.attrib.get("text", "") for node in nodes()}
         missing = [
@@ -200,7 +200,9 @@ def main():
         "adb", "shell", "am", "start", "-n", "com.aharane.studio/.MainActivity",
         "--ez", "aharane_preview_mode", "true"
     )
-    capture("01-home.png", 5)
+    # Wait for the actual Home page instead of capturing the launch splash.
+    assert_visible_texts(["Welcome back", "WhatsApp accounts"], timeout_seconds=25)
+    capture("01-home.png")
     # The header's Preview status badge is not interactive. Open the Private
     # account's Preview action (the second visible Preview label).
     tap_label("Preview", occurrence=1)

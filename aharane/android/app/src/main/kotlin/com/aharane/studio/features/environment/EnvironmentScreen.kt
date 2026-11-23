@@ -1,5 +1,11 @@
 package com.aharane.studio.features.environment
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -180,7 +186,13 @@ fun EnvironmentScreen(
                     )
                 }
             }
-            if (saveMessage.isNotBlank()) {
+            AnimatedVisibility(
+                visible = saveMessage.isNotBlank(),
+                enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 140 else 0)) +
+                    expandVertically(tween(if (LocalStudioMotionEnabled.current) 170 else 0)),
+                exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
+                    shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 130 else 0))
+            ) {
                 Text(
                     saveMessage,
                     color = if (saveSucceeded) StudioPalette.Accent else StudioPalette.Bad,

@@ -96,7 +96,7 @@ fun ConfigurationScreen(
             PreviewConfiguration(
                 botName = serverValues[prefix + "BOT_NAME"].orEmpty(),
                 prefix = serverValues[prefix + "COMMAND_PREFIX"].orEmpty(),
-                ownerNumber = if (profile == "Private") serverValues["PRIVATE_OWNER_NUMBER"] ?: ownerNumberValue else serverValues["PUBLIC_BOT_NUMBER"] ?: ownerNumberValue,
+                ownerNumber = if (profile == "Private") serverValues["PRIVATE_OWNER_NUMBER"] ?: ownerNumberValue else serverValues["PUBLIC_OWNER_NUMBER"] ?: ownerNumberValue,
                 autoRead = serverValues[prefix + "AUTO_READ"].equals("true", true),
                 showTyping = serverValues[prefix + "SHOW_TYPING"].equals("true", true),
                 rejectCalls = serverValues[prefix + "REJECT_CALLS"].equals("true", true),
@@ -215,8 +215,8 @@ fun ConfigurationScreen(
                 ConfigField("Command prefix", "PREFIX", prefix, editable, onValueChange = { prefix = it; dirty = true }, singleLine = true)
                 StudioDivider()
                 ConfigField(
-                    if (profile == "Public") "Public bot WhatsApp number" else "Owner number",
-                    if (profile == "Public") "PUBLIC_NUMBER" else "OWNER_NUMBER",
+                    if (profile == "Public") "Public owner WhatsApp number" else "Private owner WhatsApp number",
+                    if (profile == "Public") "PUBLIC_OWNER_NUMBER" else "PRIVATE_OWNER_NUMBER",
                     ownerNumber,
                     editable,
                     onValueChange = { ownerNumber = it; dirty = true },
@@ -354,7 +354,7 @@ fun ConfigurationScreen(
                                 prefixKey + "ALWAYS_ONLINE" to alwaysOnline.toString(),
                                 prefixKey + "COMMAND_COOLDOWN" to cooldown,
                                 prefixKey + "WELCOME_MESSAGE" to welcomeMessage,
-                                (if (profile == "Private") "PRIVATE_OWNER_NUMBER" else "PUBLIC_BOT_NUMBER") to ownerNumber
+                                (if (profile == "Private") "PRIVATE_OWNER_NUMBER" else "PUBLIC_OWNER_NUMBER") to ownerNumber
                             )
                             if (previewMode) {
                                 Toast.makeText(context, "Preview settings are local only.", Toast.LENGTH_SHORT).show()

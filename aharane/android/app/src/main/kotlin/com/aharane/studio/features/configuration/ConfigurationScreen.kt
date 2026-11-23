@@ -2,6 +2,8 @@ package com.aharane.studio.features.configuration
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateColorAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -457,14 +459,27 @@ private fun ConfigToggle(
                 if (!enabled) StudioTag("Not loaded")
             }
         }
-        val track = if (checked) StudioPalette.Accent else StudioPalette.Line
+        val motionEnabled = LocalStudioMotionEnabled.current
+        val trackTarget = if (enabled && checked) StudioPalette.Accent else StudioPalette.Line
+        val track by animateColorAsState(
+            trackTarget,
+            animationSpec = tween(if (motionEnabled) 160 else 0),
+            label = "configuration-toggle-track"
+        )
+        val thumbX by animateDpAsState(
+            if (checked) 19.dp else 3.dp,
+            animationSpec = tween(if (motionEnabled) 180 else 0),
+            label = "configuration-toggle-thumb"
+        )
         Box(
             Modifier.size(width = 38.dp, height = 22.dp).clip(RoundedCornerShape(99.dp))
-                .background(if (enabled) track else StudioPalette.Line)
+                .background(track)
                 .clickable(enabled = enabled) { onCheckedChange(!checked) },
-            contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
+            contentAlignment = Alignment.CenterStart
         ) {
-            Box(Modifier.padding(horizontal = 3.dp).size(16.dp).clip(CircleShape).background(StudioPalette.Surface))
+            Box(
+                Modifier.offset(x = thumbX).size(16.dp).clip(CircleShape).background(StudioPalette.Surface)
+            )
         }
     }
 }

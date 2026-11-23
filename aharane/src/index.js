@@ -25,6 +25,8 @@ import { createWhatsAppDiscovery } from './whatsapp-discovery.js'
 import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_ARCHIVE_BYTES, normalizeUpdatePath } from './update-manager.js'
 import { createChatStore } from './chat-store.js'
 import { createEngineStore } from './engine-store.js'
+import { createSchedulerStore } from './scheduler-store.js'
+import { createSchedulerRunner } from './scheduler-runner.js'
 import { executeCustomEngine } from './engine-runtime.js'
 import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, normalizeChatVisibility, normalizeChatAppearance, isChatVisible, envView } from './studio-settings.js'
 import { createActivityStore } from './activity-store.js'
@@ -93,7 +95,8 @@ const chatStore = createChatStore({ dataDir: DATA_DIR, logger })
 const activityStore = createActivityStore({ dataDir: DATA_DIR })
 const visualCommandStore = createVisualCommandStore(join(DATA_DIR, 'visual-commands.json'))
 const engineStore = createEngineStore({ dataDir: DATA_DIR })
-await Promise.all([chatStore.init(), activityStore.init(), visualCommandStore.init(), engineStore.init()])
+const schedulerStore = createSchedulerStore(join(DATA_DIR, 'scheduled-workflows.json'))
+await Promise.all([chatStore.init(), activityStore.init(), visualCommandStore.init(), engineStore.init(), schedulerStore.init()])
 for (const engine of await engineStore.list()) registerEngineNode(engine)
 
 async function runStoredEngine(engineId, inputs) {

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "feature/vistora-kotlin-native-android-20261122"
+      - "feature/vistora-html-pwa-20261123"
     paths:
       - "vistora/**"
       - ".github/workflows/vistora-web.yml"

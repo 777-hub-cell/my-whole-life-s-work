@@ -91,7 +91,7 @@ class VisualCommandBuilderScreenTest {
 
         trigger.performTouchInput {
             down(center)
-            moveTo(center + Offset(0f, 120f), durationMillis = 350)
+            moveTo(center + Offset(0f, 120f), delayMillis = 350)
             up()
         }
         compose.waitForIdle()
@@ -101,10 +101,12 @@ class VisualCommandBuilderScreenTest {
         assertTrue("Dragged node should move down", triggerAfter.top > triggerBefore.top + 45f)
         assertEquals("Other node must keep its vertical position", replyBefore.top, replyAfter.top, 2f)
 
+        val workspaceBounds = compose.onNodeWithTag("workflow-workspace")
+            .fetchSemanticsNode().boundsInRoot
         compose.onNodeWithTag("workflow-workspace").performTouchInput {
             val x = 14f
-            down(Offset(x, size.height * 0.88f))
-            moveTo(Offset(x, size.height * 0.18f), durationMillis = 400)
+            down(Offset(x, workspaceBounds.height * 0.88f))
+            moveTo(Offset(x, workspaceBounds.height * 0.18f), delayMillis = 400)
             up()
         }
         compose.waitForIdle()

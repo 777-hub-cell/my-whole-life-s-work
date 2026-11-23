@@ -1273,7 +1273,7 @@ function bindProductionP(){
 function homeViewP(){
  const accounts=['private','public'].map(id=>{
   const a=P.runtime?.accounts?.[id]||{},name=id==='private'?'Private WhatsApp':'Public WhatsApp';
-  const state=a.connected?'Connected':a.state==='needs-pairing'?'Needs re-pairing':a.registered?'Paired · offline':a.state==='not-paired'?'Not paired':a.state||'Starting';
+  const state=a.connected?'Connected':['needs-pairing','reconnect-exhausted'].includes(a.state)?'Needs re-pairing':a.registered?'Paired · offline':'Not paired';
   const tone=a.connected?'':(a.state==='needs-pairing'?'off':'warn');
   let action='';
   if(a.connected)action='<button class="btn sm" data-pair-account="'+id+'">Manage</button><button class="btn sm" data-account="'+id+'" data-action="stop">Stop</button>';

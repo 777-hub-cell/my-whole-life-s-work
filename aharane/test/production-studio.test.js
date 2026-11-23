@@ -159,6 +159,8 @@ test('ENV and Home display useful empty states instead of blank panels', async (
  assert.ok(env.includes("const save=P.env.length?"))
  assert.ok(env.includes("P.env.length?'':'"))
  assert.ok(home.includes('No recent activity yet.'))
+ assert.ok(home.includes("a.registered?'Paired · offline':'Not paired'"))
+ assert.ok(home.includes("['needs-pairing','reconnect-exhausted'].includes(a.state)?'Needs re-pairing'"))
  assert.ok(home.includes('white-space:normal'))
  const more=bridge.slice(bridge.indexOf('function moreViewP(){'),bridge.indexOf('function changePasswordP(){'))
  assert.ok(more.includes('Manage both sessions with one shared Owner identity'))

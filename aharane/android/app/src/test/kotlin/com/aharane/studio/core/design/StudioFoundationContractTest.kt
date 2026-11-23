@@ -47,6 +47,7 @@ class StudioFoundationContractTest {
         assertEquals(30.sp, StudioFoundationContract.TypeScale.DisplayTitle)
         assertEquals(17.sp, StudioFoundationContract.TypeScale.SectionTitle)
         assertEquals(15.sp, StudioFoundationContract.TypeScale.Body)
+        assertEquals(12.5.sp, StudioFoundationContract.TypeScale.Supporting)
         assertEquals(11.5.sp, StudioFoundationContract.TypeScale.BottomNavigationLabel)
     }
 
@@ -56,11 +57,15 @@ class StudioFoundationContractTest {
         val reducedStateChange = StudioFoundationContract.Motion.stateChangeSpec<Float>(enabled = false)
         val enter = StudioFoundationContract.Motion.enterSpec<Float>(enabled = true)
         val exit = StudioFoundationContract.Motion.exitSpec<Float>(enabled = true)
+        val reducedEnter = StudioFoundationContract.Motion.enterSpec<Float>(enabled = false)
+        val reducedExit = StudioFoundationContract.Motion.exitSpec<Float>(enabled = false)
 
         assertEquals(StudioFoundationContract.Motion.StateChangeMillis, stateChange.durationMillis)
         assertEquals(0, reducedStateChange.durationMillis)
         assertEquals(StudioFoundationContract.Motion.ScreenTransitionMillis, enter.durationMillis)
         assertEquals(StudioFoundationContract.Motion.ScreenTransitionMillis, exit.durationMillis)
+        assertEquals(0, reducedEnter.durationMillis)
+        assertEquals(0, reducedExit.durationMillis)
     }
 
     @Test

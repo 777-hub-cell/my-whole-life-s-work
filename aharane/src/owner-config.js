@@ -10,8 +10,8 @@ import { normalizePhone } from './policy.js'
  * The Public Owner may legitimately be the Public session's own number.
  */
 export function normalizeOwnerConfig(value = {}) {
-  const privateOwnerNumber = normalizePhone(value.privateOwnerNumber || value.ownerNumber)
-  const publicOwnerNumber = normalizePhone(value.publicOwnerNumber || value.ownerNumber)
+  const privateOwnerNumber = normalizePhone(value.privateOwnerNumber ?? value.ownerNumber)
+  const publicOwnerNumber = normalizePhone(value.publicOwnerNumber ?? value.ownerNumber)
   const publicBotNumber = normalizePhone(value.publicBotNumber)
   return {
     version: 4,
@@ -38,8 +38,8 @@ export async function loadOwnerConfig(file, legacy = {}) {
     throw new Error('Aharane owner configuration could not be read; refusing to guess owner identities.')
   }
   return normalizeOwnerConfig({
-    privateOwnerNumber: raw?.privateOwnerNumber || raw?.ownerNumber || fallback.privateOwnerNumber,
-    publicOwnerNumber: raw?.publicOwnerNumber || raw?.ownerNumber || fallback.publicOwnerNumber,
+    privateOwnerNumber: raw?.privateOwnerNumber ?? raw?.ownerNumber ?? fallback.privateOwnerNumber,
+    publicOwnerNumber: raw?.publicOwnerNumber ?? raw?.ownerNumber ?? fallback.publicOwnerNumber,
     publicBotNumber: raw?.publicBotNumber ?? fallback.publicBotNumber,
     updatedAt: raw?.updatedAt,
   })

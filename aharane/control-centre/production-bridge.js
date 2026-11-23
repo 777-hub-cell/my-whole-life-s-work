@@ -650,8 +650,9 @@ function accountViewP(){
    :a.registered?'<button class="btn sm" data-account="'+id+'" data-action="reconnect">Reconnect</button>':'';
   return '<div class="row"><span class="av">'+(id==='private'?'P':'A')+'<i class="st av-dot '+(a.connected?'':'off')+'"></i></span><span class="grow"><div class="t">'+(id==='private'?'Private account':'Public account')+'</div><div class="d">'+escP(state)+' · '+(a.registered?'Paired':'Not paired')+'</div></span>'+pairButton+'</div>'+(actions?'<div class="row" style="padding-left:64px;flex-wrap:wrap">'+actions+'</div>':'');
  }).join('');
- const owner=P.owners.ownerNumber||P.owners.privateOwnerNumber||P.owners.publicOwnerNumber||'';
- return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Accounts</h1><p class="sub">Two independent WhatsApp sessions with separate connection status.</p><div class="card list">'+rows+'</div><h2>Owner</h2><p class="sub">One Owner number controls owner privileges on both sessions. The Public bot is open to WhatsApp users; owner-only actions remain protected. The Public bot number belongs to its separate WhatsApp account.</p><div class="card list" style="padding:14px"><label class="d" for="owner-number">Owner phone number</label><input class="field" id="owner-number" value="'+escP(owner)+'" inputmode="numeric"><div class="env"><label class="d" for="owner-public-bot">Public bot WhatsApp number</label><input class="field" id="owner-public-bot" value="'+escP(P.owners.publicBotNumber||'')+'" disabled><p class="d" style="white-space:normal;margin-top:6px">Change this under Configuration → Public account.</p></div><div class="btns"><button class="btn p" id="save-owners">Save owner settings</button></div></div>';
+ const privateOwner=P.owners.privateOwnerNumber||P.owners.ownerNumber||'';
+ const publicOwner=P.owners.publicOwnerNumber||'';
+ return '<button class="btn sm" onclick="S.sub=null;render()">Back to Home</button><h1 style="margin-top:14px">Accounts</h1><p class="sub">Two independent WhatsApp sessions with separate connection status.</p><div class="card list">'+rows+'</div><h2>Owners</h2><p class="sub">Private and Public Owner numbers are independent. The Public Owner may equal its own paired WhatsApp number. Ordinary Public users do not need an allow-list.</p><div class="card list" style="padding:14px"><label class="d" for="owner-private">Private Owner phone number</label><input class="field" id="owner-private" value="'+escP(privateOwner)+'" inputmode="numeric"><div class="env"><label class="d" for="owner-public">Public Owner phone number</label><input class="field" id="owner-public" value="'+escP(publicOwner)+'" inputmode="numeric"></div><div class="env"><label class="d" for="owner-public-bot">Public bot WhatsApp number</label><input class="field" id="owner-public-bot" value="'+escP(P.owners.publicBotNumber||'')+'" disabled><p class="d" style="white-space:normal;margin-top:6px">Change this under Configuration → Public account.</p></div><div class="btns"><button class="btn p" id="save-owners">Save owner settings</button></div></div>';
 }
 
 function pairStatusLabelP(a){
@@ -772,7 +773,8 @@ async function reconnectPairP(){
 async function saveOwnersP(){
  try{
   const r=await apiP('owners',{method:'PUT',body:pack({
-   ownerNumber:Q('#owner-number').value,
+   privateOwnerNumber:Q('#owner-private').value,
+   publicOwnerNumber:Q('#owner-public').value,
    publicBotNumber:P.owners.publicBotNumber||''
   })});
   P.owners=r.owners;
@@ -796,7 +798,8 @@ async function saveConfigP(){
   const ownerValue=clean(C.owner);
   if(ownerValue&&!/^\d{7,15}$/.test(ownerValue))throw new Error((profile==='private'?'Owner number':'Public bot WhatsApp number')+' must contain 7–15 digits, including the country code.');
   const owners={
-   ownerNumber:profile==='private'?ownerValue:(P.owners.ownerNumber||P.owners.privateOwnerNumber||''),
+   privateOwnerNumber:profile==='private'?ownerValue:(P.owners.privateOwnerNumber||''),
+   publicOwnerNumber:P.owners.publicOwnerNumber||'',
    publicBotNumber:profile==='public'?ownerValue:(P.owners.publicBotNumber||'')
   };
   const ownerResult=await apiP('owners',{method:'PUT',body:pack(owners)});

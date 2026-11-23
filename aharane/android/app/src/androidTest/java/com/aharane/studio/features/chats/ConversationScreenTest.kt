@@ -9,6 +9,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -139,6 +140,44 @@ class ConversationScreenTest {
             assertEquals("This is the selected incoming message.", suppliedMessage)
             assertEquals("", suppliedQuote)
         }
+    }
+
+    @Test
+    fun bubbleSwipeRightOpensReplyWithoutSendingAutomatically() {
+        val selected = testIncomingMessage()
+        var sends = 0
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = listOf(selected),
+                    connected = true,
+                    onBack = {},
+                    onSend = { _, _ -> sends++ }
+                )
+            }
+        }
+        compose.onNodeWithTag("message-bubble-selected-message").performTouchInput { swipeRight() }
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Cancel reply").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(0, sends) }
+    }
+
+    @Test
+    fun tappingBubbleDoesNotTriggerAccidentalReply() {
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = listOf(testIncomingMessage()),
+                    connected = true,
+                    onBack = {},
+                    onSend = { _, _ -> }
+                )
+            }
+        }
+        compose.onNodeWithTag("message-bubble-selected-message").performClick()
+        compose.onAllNodesWithContentDescription("Cancel reply").assertCountEquals(0)
     }
 
     @Test

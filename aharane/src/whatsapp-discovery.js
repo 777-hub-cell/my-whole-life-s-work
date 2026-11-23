@@ -21,6 +21,7 @@ function visibleContent(payload) {
 }
 export function createWhatsAppDiscovery({ now = () => Date.now() } = {}) {
   const statuses = new Map([['private', new Map()], ['public', new Map()]])
+  const statusSources = new Map([['private', new Map()], ['public', new Map()]])
   function recordStatus(sessionId, message) {
     if (!statuses.has(sessionId) || message?.key?.remoteJid !== 'status@broadcast' ||
         !message?.key?.id || !message?.message) return false
@@ -31,12 +32,29 @@ export function createWhatsAppDiscovery({ now = () => Date.now() } = {}) {
     const item = { id: String(message.key.id).slice(0, 256), senderJid: originJid,
       timestampMillis: timestamp, ...visibleContent(message.message) }
     const store = statuses.get(sessionId)
-    store.set(originJid + ':' + item.id, item)
-    for (const [key, entry] of store) {
-      if (entry.timestampMillis <= now() - 86_400_000) store.delete(key)
+    const key = originJid + ':' + item.id
+    store.set(key, item)
+    statusSources.get(sessionId).set(key, message)
+    for (const [entryKey, entry] of store) {
+      if (entry.timestampMillis <= now() - 86_400_000) {
+        store.delete(entryKey)
+        statusSources.get(sessionId).delete(entryKey)
+      }
     }
-    while (store.size > 250) store.delete(store.keys().next().value)
+    while (store.size > 250) {
+      const oldest = store.keys().next().value
+      store.delete(oldest)
+      statusSources.get(sessionId).delete(oldest)
+    }
     return true
+  }
+  function getStatusMedia(sessionId, senderJid, messageId) {
+    const account = statuses.get(sessionId)
+    if (!account) throw new Error('Unknown WhatsApp session.')
+    const key = String(senderJid) + ':' + String(messageId)
+    const item = account.get(key)
+    if (!item || item.timestampMillis <= now() - 86_400_000 || item.mediaKind === 'text') return null
+    return { kind: item.mediaKind, message: statusSources.get(sessionId).get(key) || null }
   }
   function listStatuses(sessionId) {
     const store = statuses.get(sessionId)
@@ -86,5 +104,5 @@ export function createWhatsAppDiscovery({ now = () => Date.now() } = {}) {
       }),
     }
   }
-  return { recordStatus, listStatuses, listChannels, channelUpdates }
+  return { recordStatus, listStatuses, getStatusMedia, listChannels, channelUpdates }
 }

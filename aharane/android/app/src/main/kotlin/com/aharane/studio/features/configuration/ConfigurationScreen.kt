@@ -1,6 +1,12 @@
 package com.aharane.studio.features.configuration
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -280,7 +286,13 @@ fun ConfigurationScreen(
                         lineHeight = 18.sp,
                         modifier = Modifier.weight(1f)
                     )
-                    if (dirty) {
+                    AnimatedVisibility(
+                        visible = dirty,
+                        enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 130 else 0)) +
+                            expandVertically(tween(if (LocalStudioMotionEnabled.current) 160 else 0)),
+                        exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 90 else 0)) +
+                            shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 120 else 0))
+                    ) {
                         StudioActionButton("Discard", compact = true, onClick = ::resetDraft)
                     }
                 }
@@ -307,10 +319,17 @@ fun ConfigurationScreen(
                     StudioTag("Not connected")
                 }
                 Spacer(Modifier.height(9.dp))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                AnimatedVisibility(
+                    visible = dirty || saving,
+                    enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 140 else 0)) +
+                        expandVertically(tween(if (LocalStudioMotionEnabled.current) 180 else 0)),
+                    exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
+                        shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 140 else 0))
                 ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                     StudioActionButton(
                         "Discard",
                         modifier = Modifier.weight(1f),
@@ -349,6 +368,7 @@ fun ConfigurationScreen(
                             }
                         }
                     )
+                    }
                 }
             }
         }

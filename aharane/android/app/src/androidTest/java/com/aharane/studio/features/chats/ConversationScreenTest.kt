@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
@@ -95,7 +96,7 @@ class ConversationScreenTest {
             compose.onAllNodesWithTag("ai-reply-draft").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("ai-reply-draft").assertTextEquals("Thanks for explaining. I can do that.")
-        compose.onNodeWithText("Send reply").performClick()
+        compose.onNodeWithText("Send reply").performScrollTo().performClick()
         compose.runOnIdle {
             assertEquals("This is the selected incoming message.", suppliedMessage)
             assertEquals("This is the older message being quoted.", suppliedQuote)

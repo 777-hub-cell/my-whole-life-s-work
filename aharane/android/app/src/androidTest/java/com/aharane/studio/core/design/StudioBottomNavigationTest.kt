@@ -39,7 +39,7 @@ class StudioBottomNavigationTest {
         compose.onNodeWithText("More").assertIsDisplayed()
         compose.onNodeWithTag("studio-bottom-navigation-home").assertIsSelected()
 
-        compose.onNodeWithTag("studio-bottom-navigation-environmentironment").performClick()
+        compose.onNodeWithTag("studio-bottom-navigation-environment").performClick()
         compose.runOnIdle {
             assertEquals(MainDestination.ENVIRONMENT, selected.value)
         }

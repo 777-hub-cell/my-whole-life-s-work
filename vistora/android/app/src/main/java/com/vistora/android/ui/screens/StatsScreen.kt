@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.util.Locale
 import com.vistora.android.domain.LibraryStatus
 import com.vistora.android.domain.MediaItem
 import com.vistora.android.domain.MediaType
@@ -30,6 +31,12 @@ fun StatsScreen(items:List<MediaItem>){
     val average=if(ratings.isEmpty())"—" else String.format("%.1f",ratings.average())
     val statusCounts=LibraryStatus.entries.map{it to items.count{s->s.status==it}}
     val typeCounts=MediaType.entries.map{it to items.count{s->s.type==it}}
+    val genres=items.flatMap{item->item.genres.map{it.trim()}}.filter{it.isNotBlank()}
+    val genreLabels=genres.distinctBy{it.lowercase(Locale.ROOT)}.associateBy{it.lowercase(Locale.ROOT)}
+    val topGenres=genres.groupingBy{it.lowercase(Locale.ROOT)}.eachCount().entries
+        .sortedWith(compareByDescending<Map.Entry<String,Int>>{it.value}.thenBy{it.key})
+        .take(5)
+        .map{(key,count)->(genreLabels[key]?:key) to count}
 
     Column(Modifier.fillMaxSize().background(VistoraPalette.Ink).verticalScroll(rememberScrollState()).padding(horizontal=20.dp).padding(top=18.dp).padding(bottom=20.dp),verticalArrangement=Arrangement.spacedBy(20.dp)){
         Text("Your Stats",color=VistoraPalette.Text,style=androidx.compose.material3.MaterialTheme.typography.headlineLarge)
@@ -64,6 +71,15 @@ fun StatsScreen(items:List<MediaItem>){
             Column(verticalArrangement=Arrangement.spacedBy(12.dp)){
                 typeCounts.forEach{(type,count)->
                     if(count>0) DistributionRow(type.category,count,items.size,VistoraPalette.Rose)
+                }
+            }
+            if(topGenres.isNotEmpty()){
+                SectionHeading("Top genres")
+                val maxGenreCount=topGenres.maxOf{it.second}
+                Column(verticalArrangement=Arrangement.spacedBy(12.dp)){
+                    topGenres.forEach{(genre,count)->
+                        DistributionRow(genre,count,maxGenreCount,VistoraPalette.Rose)
+                    }
                 }
             }
             if(ratings.isNotEmpty()){

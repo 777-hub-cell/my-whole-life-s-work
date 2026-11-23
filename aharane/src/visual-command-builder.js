@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { validateCustomNodeDefinition, runCustomNode } from './custom-node-engine.js'
+import { validateEngineManifest } from './engine-contract.js'
 
 const MAX_NODES = 100
 const MAX_EDGES = 300
@@ -46,6 +47,8 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
     { type: 'group.settingUpdate', name: 'Change group settings', description: 'Set who can send messages or edit group information (Public Owner only).', ports: ports([execIn], [execOut]) },
   ] },
   { category: 'Media and attachments', nodes: [
+    { type: 'media.sendImage', name: 'Send image', description: 'Send an Engine-produced image to the triggering WhatsApp chat.', ports: ports([execIn, { id: 'image', label: 'Image', type: 'image' }, { id: 'caption', label: 'Caption', type: 'string' }], [execOut, { id: 'sent', label: 'Sent image', type: 'message' }]) },
+    { type: 'media.sendImages', name: 'Send image results', description: 'Send a bounded number of Engine-produced images to the triggering WhatsApp chat.', ports: ports([execIn, { id: 'images', label: 'Images', type: 'list' }, { id: 'caption', label: 'Caption', type: 'string' }], [execOut, { id: 'sent', label: 'Sent messages', type: 'list' }]) },
     { type: 'media.forwardOriginal', name: 'Forward original message', description: 'Forward the triggering message with its original supported media payload.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Forwarded message', type: 'message' }]) },
   ] },
   { category: 'Interactive messages', nodes: [
@@ -98,6 +101,31 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
 
 const definitions = new Map(VISUAL_NODE_LIBRARY.flatMap(group => group.nodes.map(node => [node.type, node])))
 const customDefinitions = new Map()
+const engineDefinitions = new Map()
+const enginePortType = type => type === 'text' ? 'string' : type
+
+export function registerEngineNode(input) {
+  const manifest = validateEngineManifest(input)
+  const type = 'engine.' + manifest.id
+  const definition = {
+    type, name: manifest.name, description: 'Run the custom ' + manifest.name + ' Engine.',
+    category: 'Engine', version: manifest.version, engineId: manifest.id,
+    ports: ports(
+      [execIn, ...manifest.inputs.map(port => ({ id: port.id, label: port.id, type: enginePortType(port.type), required: port.required }))],
+      [execOut, ...manifest.outputs.map(port => ({ id: port.id, label: port.id, type: enginePortType(port.type) }))]
+    ),
+  }
+  engineDefinitions.set(type, manifest)
+  definitions.set(type, definition)
+  return structuredClone(definition)
+}
+
+export function unregisterEngineNode(id) {
+  const type = String(id).startsWith('engine.') ? String(id) : 'engine.' + String(id)
+  engineDefinitions.delete(type)
+  definitions.delete(type)
+}
+
 export function registerCustomNode(input) {
   const item = validateCustomNodeDefinition(input)
   const definition = {
@@ -116,8 +144,11 @@ export function unregisterCustomNode(type) {
 }
 export function currentVisualNodeLibrary() {
   const categories = VISUAL_NODE_LIBRARY.map(group => ({
-    category: group.category, nodes: [...group.nodes],
+    category: group.category, nodes: group.nodes.map(node => ({ ...node, category: group.category })),
   }))
+  const engineGroup = { category: 'Engine', nodes: [] }
+  for (const [type, manifest] of engineDefinitions) engineGroup.nodes.push({ ...definitions.get(type), version: manifest.version })
+  categories.push(engineGroup)
   for (const [type, definition] of customDefinitions) {
     let group = categories.find(item => item.category === 'Custom nodes')
     if (!group) { group = { category: 'Custom nodes', nodes: [] }; categories.push(group) }
@@ -347,6 +378,29 @@ export function validateWorkflow(input) {
       else if (node.config.nodeVersion != null && Number(node.config.nodeVersion) !== definition.version) {
         issue(node.id, 'error', 'Custom node version does not match.', 'Update or restore the required node definition version.')
       }
+    }
+    if (node.type.startsWith('engine.')) {
+      const manifest = engineDefinitions.get(node.type)
+      if (!manifest) issue(node.id, 'error', 'Engine definition is missing.', 'Restore the Engine or replace this node.')
+      else {
+        if (node.config.engineVersion != null && Number(node.config.engineVersion) !== manifest.version) {
+          issue(node.id, 'error', 'Engine version does not match.', 'Update the node and re-check its connected ports.')
+        }
+        for (const port of manifest.inputs) {
+          const configured = Object.prototype.hasOwnProperty.call(node.config, port.id) && node.config[port.id] !== ''
+          if (port.required && !configured && !inputEdge(workflow, node.id, port.id)) {
+            issue(node.id, 'error', 'Engine input "' + port.id + '" is missing.', 'Enter a value or connect a compatible node output.')
+          }
+        }
+      }
+    }
+    if (node.type === 'media.sendImage' && !inputEdge(workflow, node.id, 'image')) {
+      issue(node.id, 'error', 'Image input is not connected.', 'Connect an image output from an Engine.')
+    }
+    if (node.type === 'media.sendImages') {
+      if (!inputEdge(workflow, node.id, 'images')) issue(node.id, 'error', 'Images input is not connected.', 'Connect a list output from an Engine.')
+      const limit = Number(config.limit == null ? 10 : config.limit)
+      if (!Number.isInteger(limit) || limit < 1 || limit > 20) issue(node.id, 'error', 'Image/message limit must be from 1 to 20.', 'Choose a safe per-run limit.')
     }
     if (node.type === 'flow.delay') {
       const ms = Number(config.milliseconds == null ? 1000 : config.milliseconds)
@@ -835,6 +889,60 @@ export async function executeVisualWorkflow(input, options = {}) {
           counters[key] = value
           outputs.set(node.id, { value })
           trace.push({ nodeId: node.id, type: node.type, status: dryRun ? 'simulated' : 'success', message: key + ': ' + value })
+        } else if (node.type === 'media.sendImage' || node.type === 'media.sendImages') {
+          const key = node.type === 'media.sendImage' ? 'image' : 'images'
+          const raw = readInput(workflow, node, key, key, state)
+          const items = node.type === 'media.sendImage' ? [raw] : raw
+          if (!Array.isArray(items) || !items.length) throw new Error('The Engine did not provide any images.')
+          const limit = node.type === 'media.sendImage' ? 1 : Number(node.config.limit == null ? 10 : node.config.limit)
+          if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error('Image/message limit must be between 1 and 20.')
+          const selected = items.slice(0, limit)
+          const images = selected.map(item => {
+            if (!item || typeof item !== 'object' ||
+                !/^image\/(?:jpeg|png|webp|gif)$/.test(String(item.mimeType || '')) ||
+                typeof item.base64 !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(item.base64) ||
+                item.base64.length > 700000) {
+              throw new Error('Engine image must contain a supported mimeType and bounded base64 data.')
+            }
+            const data = Buffer.from(item.base64, 'base64')
+            if (!data.length || data.length > 512 * 1024) throw new Error('Engine image exceeds the 512 KiB send limit.')
+            return data
+          })
+          if (dryRun) {
+            trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would send ' + images.length + ' image(s).' })
+          } else {
+            if (typeof event.socket?.sendMessage !== 'function') throw new Error('WhatsApp media sending is unavailable.')
+            const sent = []
+            for (const image of images) {
+              const response = await event.socket.sendMessage(event.remoteJid, { image, caption: textValue(node.config.caption, 1000) })
+              if (!response?.key?.id) throw new Error('WhatsApp did not confirm an image message.')
+              sent.push(response)
+            }
+            outputs.set(node.id, node.type === 'media.sendImage' ? { sent: sent[0] } : { sent })
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted ' + sent.length + ' image message(s).' })
+          }
+        } else if (node.type.startsWith('engine.')) {
+          const manifest = engineDefinitions.get(node.type)
+          if (!manifest) throw new Error('Engine definition is not registered.')
+          if (dryRun) {
+            trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would execute Engine ' + manifest.name + '.' })
+          } else {
+            if (typeof options.runEngine !== 'function') throw new Error('The custom Engine runtime is unavailable.')
+            const values = {}
+            for (const port of manifest.inputs) {
+              const value = readInput(workflow, node, port.id, port.id, state)
+              if (value == null && !port.required) continue
+              if (port.type === 'number') values[port.id] = Number(value)
+              else if (port.type === 'boolean') values[port.id] = value === true || value === 'true'
+              else if (port.type === 'json') values[port.id] = typeof value === 'string' ? JSON.parse(value) : value
+              else if (port.type === 'list') values[port.id] = Array.isArray(value) ? value : String(value ?? '').split(/[,\n]+/).filter(Boolean)
+              else values[port.id] = String(value ?? '')
+            }
+            const result = await options.runEngine(manifest.id, values)
+            outputs.set(node.id, result.outputs || result)
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'Engine ' + manifest.name + ' completed in ' + Number(result.durationMs || 0) + ' ms.' })
+          }
+          next = firstEdge(node, 'next')
         } else if (node.type.startsWith('custom.')) {
           const definition = customDefinitions.get(node.type)
           if (!definition) throw new Error('Custom node definition is not registered.')

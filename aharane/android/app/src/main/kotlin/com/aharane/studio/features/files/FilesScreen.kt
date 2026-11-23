@@ -2,6 +2,12 @@ package com.aharane.studio.features.files
 
 import android.widget.Toast
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -243,27 +249,32 @@ fun FilesScreen(
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                if (selectedEntries.isNotEmpty()) {
-                    Text(
-                        "${selectedEntries.size} selected",
-                        color = StudioPalette.Muted,
-                        fontSize = 11.5.sp,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                    StudioActionButton(
-                        "Move", compact = true,
-                        onClick = { serverAction("move files", { onBulkAction(selectedEntries, "move") }) }
-                    )
-                    Spacer(Modifier.width(5.dp))
-                    StudioActionButton(
-                        "ZIP", compact = true,
-                        onClick = { serverAction("export selected files", { onBulkAction(selectedEntries, "zip") }) }
-                    )
-                    Spacer(Modifier.width(5.dp))
-                    StudioActionButton(
-                        "Delete", compact = true, destructive = true,
-                        onClick = { serverAction("delete files", { onBulkAction(selectedEntries, "delete") }) }
-                    )
+                AnimatedVisibility(
+                    visible = selectedEntries.isNotEmpty(),
+                    enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 130 else 0)) +
+                        expandHorizontally(tween(if (LocalStudioMotionEnabled.current) 180 else 0), expandFrom = Alignment.End),
+                    exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 90 else 0)) +
+                        shrinkHorizontally(tween(if (LocalStudioMotionEnabled.current) 130 else 0), shrinkTowards = Alignment.End)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(
+                            "${selectedEntries.size} selected",
+                            color = StudioPalette.Muted,
+                            fontSize = 11.sp
+                        )
+                        StudioActionButton(
+                            "Move", compact = true,
+                            onClick = { serverAction("move files", { onBulkAction(selectedEntries, "move") }) }
+                        )
+                        StudioActionButton(
+                            "ZIP", compact = true,
+                            onClick = { serverAction("export selected files", { onBulkAction(selectedEntries, "zip") }) }
+                        )
+                        StudioActionButton(
+                            "Delete", compact = true, destructive = true,
+                            onClick = { serverAction("delete files", { onBulkAction(selectedEntries, "delete") }) }
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(4.dp))

@@ -125,7 +125,11 @@ function applyRuntimeP(){
  accts.splice(0,accts.length,
   {n:'Private account',d:'Private Owner self-chat',on:a.private?.connected?1:0,slot:'private'},
   {n:'Public account',d:'Public WhatsApp bot',on:a.public?.connected?1:0,slot:'public'});
- S.run=Boolean(a.private?.connected||a.public?.connected);
+ const connectedCount=Number(Boolean(a.private?.connected))+Number(Boolean(a.public?.connected));
+ S.connectedAccountCount=connectedCount;
+ S.run=connectedCount>0;
+ S.botStatusLabel=connectedCount===2?'2 accounts online':connectedCount===1?'1 account online':'Bots offline';
+ if(typeof pill==='function')pill();
  S.t0=Date.now()-Number(P.snapshot?.uptimeSeconds||0)*1000;
  logs=P.activity.slice(0,8).map(x=>[x.message,new Date(x.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})]);
  const series=P.metrics?.hourlyMessages||[];bars=series.length?series.map(n=>Math.max(6,Math.min(100,Number(n)*12+6))):Array(24).fill(6);

@@ -3754,10 +3754,27 @@ await Promise.all(['private', 'public'].map(async accountId => {
   }
 }))
 
+const schedulerRunner = createSchedulerRunner({
+  store: schedulerStore,
+  execute: executeScheduledWorkflow,
+  logger,
+  onResult: ({ schedule, ok, summary, error }) => {
+    publishStudioEvent(ok ? 'scheduler.completed' : 'scheduler.failed', {
+      scheduleId: schedule.id,
+      workflowId: schedule.workflowId,
+      account: schedule.account,
+      summary: summary || '',
+      error: error || '',
+    })
+  },
+})
+
+
 async function shutdown(signal) {
   if (shuttingDown) return
   shuttingDown = true
   for (const client of studioClients) client.close(1001, 'Aharane is shutting down')
+  await schedulerRunner.close()
   await accountRuntime.shutdown()
   await new Promise(resolveClose => server.close(() => resolveClose()))
   logger.info({ event: 'process.stopped', signal })

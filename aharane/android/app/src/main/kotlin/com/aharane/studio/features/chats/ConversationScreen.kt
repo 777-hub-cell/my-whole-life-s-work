@@ -230,9 +230,18 @@ fun ConversationScreen(
         )
     }
 
-    LaunchedEffect(messages, searchResults, search, conversation.key) {
+    // Only follow incoming messages while already at the latest message.
+    // Reading older history must not be interrupted by a background sync.
+    var initialPositionApplied by remember(conversation.key) { mutableStateOf(false) }
+    LaunchedEffect(visible.lastOrNull()?.messageId, search, selectedSearchDay, conversation.key) {
         if (visible.isNotEmpty()) {
-            listState.animateScrollToItem(visible.lastIndex)
+            val lastPreviouslyVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+            val atBottom = lastPreviouslyVisible == null ||
+                lastPreviouslyVisible >= listState.layoutInfo.totalItemsCount - 2
+            if (!initialPositionApplied || atBottom || search.isNotBlank() || selectedSearchDay != null) {
+                listState.animateScrollToItem(visible.lastIndex)
+            }
+            initialPositionApplied = true
         }
     }
     BackHandler {

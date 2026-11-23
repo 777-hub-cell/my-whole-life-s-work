@@ -2442,6 +2442,7 @@ fun AharaneApp(
                         page = morePage,
                         onPageChange = { morePage = it },
                         notesStore = remember(context) { EncryptedNotesStore(context.applicationContext) },
+                        updatesRepository = if (previewMode) null else repository,
                         onOpenEnvironment = { destinationName = MainDestination.ENVIRONMENT.name; morePage = "more" },
                         connected = connected,
                         privateAccountStatus = runtime?.privateAccount?.let(::accountStateLabel) ?: "Status not loaded",

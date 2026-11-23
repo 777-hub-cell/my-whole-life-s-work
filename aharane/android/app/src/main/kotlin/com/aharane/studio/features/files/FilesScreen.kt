@@ -213,35 +213,34 @@ fun FilesScreen(
                 Modifier.fillMaxWidth().heightIn(min = 40.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    Modifier.clickable {
-                        if (visibleEntries.isNotEmpty()) {
+                if (visibleEntries.isNotEmpty()) {
+                    Row(
+                        Modifier.clickable {
                             if (selectedPaths.containsAll(visibleEntries.map { it.path })) {
                                 selectedPaths.removeAll(visibleEntries.map { it.path }.toSet())
                             } else {
                                 visibleEntries.forEach { if (it.path !in selectedPaths) selectedPaths.add(it.path) }
                             }
-                        }
-                    },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val allSelected = visibleEntries.isNotEmpty() &&
-                        selectedPaths.containsAll(visibleEntries.map { it.path })
-                    Box(
-                        Modifier.size(19.dp).clip(RoundedCornerShape(5.dp))
-                            .background(if (allSelected) StudioPalette.Accent else StudioPalette.Surface)
-                            .border(1.dp, if (allSelected) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(5.dp)),
-                        contentAlignment = Alignment.Center
+                        },
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (allSelected) Text("✓", color = androidx.compose.ui.graphics.Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        val allSelected = selectedPaths.containsAll(visibleEntries.map { it.path })
+                        Box(
+                            Modifier.size(19.dp).clip(RoundedCornerShape(5.dp))
+                                .background(if (allSelected) StudioPalette.Accent else StudioPalette.Surface)
+                                .border(1.dp, if (allSelected) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(5.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (allSelected) Text("✓", color = androidx.compose.ui.graphics.Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Text(
+                            "Select all",
+                            color = StudioPalette.Ink,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
                     }
-                    Text(
-                        "Select all",
-                        color = StudioPalette.Ink,
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
                 }
                 Spacer(Modifier.weight(1f))
                 if (selectedEntries.isNotEmpty()) {
@@ -272,40 +271,68 @@ fun FilesScreen(
         item {
             StudioCard(modifier = Modifier.animateItem()) {
                 if (visibleEntries.isEmpty()) {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    Column(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(9.dp)
+                    ) {
+                        Box(
+                            Modifier.size(48.dp).clip(CircleShape).background(StudioPalette.Soft),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Outlined.FolderOpen,
+                                contentDescription = null,
+                                tint = StudioPalette.Accent,
+                                modifier = Modifier.size(23.dp)
+                            )
+                        }
                         Text(
-                            if (query.isBlank()) "This folder is empty. Create a file to start."
-                            else "No match for “$query”.",
-                            color = StudioPalette.Muted,
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth().padding(top = 3.dp, bottom = 32.dp)
+                            if (query.isBlank()) "This folder is empty"
+                            else "No files found",
+                            color = StudioPalette.Ink,
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center
                         )
+                        Text(
+                            if (query.isBlank()) "Create a file or folder, or upload your existing bot source."
+                            else "Try a different name or clear your search.",
+                            color = StudioPalette.Muted,
+                            fontSize = 12.5.sp,
+                            lineHeight = 18.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        if (query.isBlank()) {
+                            StudioActionButton("Create file", compact = true, primary = true, onClick = onCreateFile)
+                        } else {
+                            StudioActionButton("Clear search", compact = true, onClick = { query = "" })
+                        }
                         Text(
                             "Folders A–Z first, then files A–Z.",
                             color = StudioPalette.Muted,
-                            fontSize = 12.5.sp,
-                            lineHeight = 17.sp
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
                         )
-                        Row(
-                            Modifier.fillMaxWidth().padding(top = 30.dp, bottom = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "Code editor",
-                                color = StudioPalette.Ink,
-                                fontSize = 17.sp,
-                                lineHeight = 22.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(Modifier.weight(1f))
-                            StudioActionButton(
-                                "Open editor",
-                                compact = true,
-                                onClick = { onEditorVisibility(true) }
-                            )
-                        }
+                    }
+                    StudioDivider()
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Code editor",
+                            color = StudioPalette.Ink,
+                            fontSize = 15.sp,
+                            lineHeight = 20.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.weight(1f))
+                        StudioActionButton(
+                            "Open editor",
+                            compact = true,
+                            onClick = { onEditorVisibility(true) }
+                        )
                     }
                 } else {
                     visibleEntries.forEachIndexed { index, entry ->

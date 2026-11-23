@@ -1,6 +1,10 @@
 package com.aharane.studio.core.design
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -385,9 +389,23 @@ fun StudioActionButton(
             .padding(horizontal = if (compact) 11.dp else 14.dp, vertical = if (compact) 6.dp else 10.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(label, color = fg.copy(alpha = if (enabled) 1f else .38f),
-            fontSize = if (compact) 13.sp else 14.sp, lineHeight = 18.sp,
-            fontWeight = FontWeight.SemiBold, maxLines = 1)
+        AnimatedContent(
+            targetState = label,
+            transitionSpec = {
+                if (motionEnabled) fadeIn(tween(120)) togetherWith fadeOut(tween(90))
+                else fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+            },
+            label = "action-button-label"
+        ) { currentLabel ->
+            Text(
+                currentLabel,
+                color = fg.copy(alpha = if (enabled) 1f else .38f),
+                fontSize = if (compact) 13.sp else 14.sp,
+                lineHeight = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+        }
     }
 }
 

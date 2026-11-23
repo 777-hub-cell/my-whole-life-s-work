@@ -294,42 +294,44 @@ fun CodeEditorScreen(
                         )
                     }
                 }
-                AnimatedVisibility(
-                    visible = explorerOpen,
-                    modifier = Modifier.align(Alignment.CenterStart),
-                    enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 150 else 0)) +
-                        slideInHorizontally(tween(if (LocalStudioMotionEnabled.current) 210 else 0)) { -it / 3 },
-                    exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 110 else 0)) +
-                        slideOutHorizontally(tween(if (LocalStudioMotionEnabled.current) 160 else 0)) { -it / 3 }
-                ) {
-                    ExplorerDrawer(
-                        files = availableFiles,
-                        activePath = activeDocumentPath,
-                        onOpen = { path -> explorerOpen = false; onOpenFile(path) },
-                        onClose = { explorerOpen = false }
-                    )
+                Column(Modifier.align(Alignment.CenterStart)) {
+                    AnimatedVisibility(
+                        visible = explorerOpen,
+                        enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 150 else 0)) +
+                            slideInHorizontally(tween(if (LocalStudioMotionEnabled.current) 210 else 0)) { -it / 3 },
+                        exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 110 else 0)) +
+                            slideOutHorizontally(tween(if (LocalStudioMotionEnabled.current) 160 else 0)) { -it / 3 }
+                    ) {
+                        ExplorerDrawer(
+                            files = availableFiles,
+                            activePath = activeDocumentPath,
+                            onOpen = { path -> explorerOpen = false; onOpenFile(path) },
+                            onClose = { explorerOpen = false }
+                        )
+                    }
                 }
-                AnimatedVisibility(
-                    visible = panelOpen,
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                    enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 140 else 0)) +
-                        slideInVertically(tween(if (LocalStudioMotionEnabled.current) 210 else 0)) { it / 2 },
-                    exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 110 else 0)) +
-                        slideOutVertically(tween(if (LocalStudioMotionEnabled.current) 170 else 0)) { it / 2 }
-                ) {
-                    EditorBottomPanel(
-                        tab = panelTab,
-                        onTabSelected = { panelTab = it },
-                        onClose = { panelOpen = false },
-                        connected = connected,
-                        diagnostics = diagnostics,
-                        diagnosticsState = diagnosticsState,
-                        consoleEntries = consoleEntries,
-                        onRunDiagnostics = { activeDocument?.let { onRunDiagnostics(it.path, editorValue.text) } },
-                        onRefreshConsole = onRefreshConsole,
-                        onClearConsole = onClearConsole,
-                        onNavigateToLine = ::navigateToLine
-                    )
+                Column(Modifier.align(Alignment.BottomCenter)) {
+                    AnimatedVisibility(
+                        visible = panelOpen,
+                        enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 140 else 0)) +
+                            slideInVertically(tween(if (LocalStudioMotionEnabled.current) 210 else 0)) { it / 2 },
+                        exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 110 else 0)) +
+                            slideOutVertically(tween(if (LocalStudioMotionEnabled.current) 170 else 0)) { it / 2 }
+                    ) {
+                        EditorBottomPanel(
+                            tab = panelTab,
+                            onTabSelected = { panelTab = it },
+                            onClose = { panelOpen = false },
+                            connected = connected,
+                            diagnostics = diagnostics,
+                            diagnosticsState = diagnosticsState,
+                            consoleEntries = consoleEntries,
+                            onRunDiagnostics = { activeDocument?.let { onRunDiagnostics(it.path, editorValue.text) } },
+                            onRefreshConsole = onRefreshConsole,
+                            onClearConsole = onClearConsole,
+                            onNavigateToLine = ::navigateToLine
+                        )
+                    }
                 }
             }
         } else {

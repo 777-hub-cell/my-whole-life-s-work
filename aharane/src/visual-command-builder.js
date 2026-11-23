@@ -911,7 +911,9 @@ export async function executeVisualWorkflow(input, options = {}) {
           if (!Array.isArray(items) || !items.length) throw new Error('The Engine did not provide any images.')
           const limit = node.type === 'media.sendImage' ? 1 : Number(node.config.limit == null ? 10 : node.config.limit)
           if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error('Image/message limit must be between 1 and 20.')
-          const selected = items.slice(0, limit)
+          const remaining = Math.max(0, perRunMessageLimit - sentMessageCount)
+          const selected = items.slice(0, Math.min(limit, remaining))
+          if (!selected.length) throw new Error('This command has reached its per-run WhatsApp message limit.')
           const images = selected.map(item => {
             if (!item || typeof item !== 'object' ||
                 !/^image\/(?:jpeg|png|webp|gif)$/.test(String(item.mimeType || '')) ||

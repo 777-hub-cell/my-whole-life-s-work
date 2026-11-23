@@ -319,7 +319,7 @@ def main():
     capture("05-more.png")
     assert_absent_texts([
         "Development", "Studio source", "Visual command builder",
-        "Status & Channels", "WhatsApp Status", "No currently received statuses"
+        "Status", "Status & Channels", "WhatsApp Status", "No currently received statuses"
     ])
     tap_label("Configuration", scroll_to_find=True)
     capture("05a-configuration-from-more.png")

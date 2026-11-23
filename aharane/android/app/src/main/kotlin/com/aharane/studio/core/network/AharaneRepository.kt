@@ -197,6 +197,23 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
     override suspend fun deleteCustomNode(id: String): JSONObject =
         api.delete("custom-nodes/" + encodePath(id), JSONObject().put("confirm", true))
 
+    suspend fun engineLibrary(): JSONObject = api.get("engines")
+
+    suspend fun readEngine(id: String): JSONObject =
+        api.get("engines/" + encodePath(id)).optJSONObject("engine") ?: JSONObject()
+
+    suspend fun createEngine(manifest: JSONObject, code: String): JSONObject =
+        api.post("engines", JSONObject().put("manifest", manifest).put("code", code))
+
+    suspend fun updateEngine(id: String, manifest: JSONObject, code: String, expectedVersion: Int): JSONObject =
+        api.put(
+            "engines/" + encodePath(id),
+            JSONObject().put("manifest", manifest).put("code", code).put("expectedVersion", expectedVersion)
+        )
+
+    suspend fun deleteEngine(id: String): JSONObject =
+        api.delete("engines/" + encodePath(id), JSONObject().put("confirm", true))
+
     suspend fun runtimeSnapshot(): ServerRuntimeSnapshot {
         val payload = api.get("studio/snapshot")
         val runtime = payload.optJSONObject("runtime") ?: JSONObject()

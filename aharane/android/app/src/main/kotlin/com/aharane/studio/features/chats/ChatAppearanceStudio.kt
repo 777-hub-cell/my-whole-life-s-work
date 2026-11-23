@@ -770,16 +770,35 @@ private fun SegmentRow(options: List<String>, selected: String, onSelected: (Str
 @Composable
 private fun ColorPalette(selected: String, onSelected: (String) -> Unit) {
     val colors = listOf("#FFFFFF", "#DCEFE5", "#E7EAF5", "#F3E6D9", "#E9E1F1", "#26332F", "#304B43", "#202A34")
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        colors.forEach { color ->
-            val chosen = selected.equals(color, true)
-            Box(
-                Modifier.size(if (chosen) 34.dp else 30.dp).clip(RoundedCornerShape(50))
-                    .background(parseColor(color))
-                    .border(if (chosen) 2.dp else 1.dp, if (chosen) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(50))
-                    .clickable { onSelected(color) }
-            )
+    var showCustom by rememberSaveable { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            colors.forEach { color ->
+                val chosen = selected.equals(color, true)
+                Box(
+                    Modifier.size(if (chosen) 34.dp else 30.dp).clip(CircleShape)
+                        .background(parseColor(color))
+                        .border(if (chosen) 2.dp else 1.dp, if (chosen) StudioPalette.Accent else StudioPalette.Line, CircleShape)
+                        .clickable { onSelected(color) }
+                )
+            }
         }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(22.dp).clip(CircleShape)
+                    .background(parseColor(selected))
+                    .border(1.dp, StudioPalette.Line, CircleShape)
+            )
+            Spacer(Modifier.width(10.dp))
+            TextButton(onClick = { showCustom = !showCustom }) {
+                Text(if (showCustom) "Close colour wheel" else "Choose custom colour")
+            }
+        }
+        if (showCustom) ChatColorWheel(selectedHex = selected, onColorSelected = onSelected)
     }
 }
 

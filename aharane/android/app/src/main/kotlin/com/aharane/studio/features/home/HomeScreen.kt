@@ -4,6 +4,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -147,14 +148,14 @@ fun HomeScreen(
                     ) {
                         samples.forEachIndexed { index, count ->
                             val fraction = if (count == 0) 0.045f else (count.toFloat() / peak).coerceIn(0.08f, 1f)
-                            val animatedFraction by animateFloatAsState(
+                            val animatedFraction = animateFloatAsState(
                                 targetValue = fraction,
                                 animationSpec = tween(
                                     durationMillis = if (LocalStudioMotionEnabled.current) 420 else 0,
                                     delayMillis = if (LocalStudioMotionEnabled.current) index * 14 else 0
                                 ),
                                 label = "home-hourly-bar"
-                            )
+                            ).value
                             Box(
                                 Modifier.weight(1f).fillMaxHeight(),
                                 contentAlignment = Alignment.BottomCenter

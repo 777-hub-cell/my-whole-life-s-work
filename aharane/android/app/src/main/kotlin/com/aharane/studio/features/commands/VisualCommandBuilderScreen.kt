@@ -102,6 +102,8 @@ fun VisualCommandBuilderScreen(
     var notice by remember { mutableStateOf("") }
     var result by remember { mutableStateOf<JSONObject?>(null) }
     var showLoad by remember { mutableStateOf(false) }
+    var showCustomManager by remember { mutableStateOf(false) }
+    var customNodes by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var showDelete by remember { mutableStateOf(false) }
     var undo by remember { mutableStateOf<List<VisualWorkflow>>(emptyList()) }
     var redo by remember { mutableStateOf<List<VisualWorkflow>>(emptyList()) }
@@ -186,6 +188,8 @@ fun VisualCommandBuilderScreen(
             val response = repository.visualCommands(account)
             val warning = response.optString("storageWarning")
             if (warning.isNotBlank() && warning != "null") notice = warning
+            val customRows = response.optJSONArray("customNodes") ?: JSONArray()
+            customNodes = (0 until customRows.length()).mapNotNull { customRows.optJSONObject(it) }
             val categories = response.optJSONArray("library") ?: JSONArray()
             library = buildList {
                 for (index in 0 until categories.length()) {
@@ -343,7 +347,9 @@ fun VisualCommandBuilderScreen(
             "variable.get", "counter.increment" -> mapOf("key" to "count")
             "flow.delay" -> mapOf("milliseconds" to "1000")
             "flow.repeat" -> mapOf("count" to "2")
-            else -> emptyMap()
+            else -> if (definition.type.startsWith("custom.")) {
+                mapOf("nodeVersion" to definition.version.toString())
+            } else emptyMap()
         }
         val newNode = VisualNode(
             type = definition.type,
@@ -707,6 +713,14 @@ fun VisualCommandBuilderScreen(
                 Text("NODE LIBRARY", color = StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.weight(1f))
                 Text(visibleNodes.size.toString() + " nodes", color = StudioPalette.Muted, fontSize = 10.5.sp)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "My nodes",
+                    modifier = Modifier.testTag("custom-node-manager").clickable(enabled = connected) { showCustomManager = true }
+                        .padding(horizontal = 6.dp, vertical = 5.dp),
+                    color = if (connected) StudioPalette.Accent else StudioPalette.Muted,
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold
+                )
             }
             BasicTextField(
                 value = search,
@@ -793,6 +807,36 @@ fun VisualCommandBuilderScreen(
                 edit { current -> current.copy(edges = current.edges.filterNot { it.from == configuredNode.id || it.to == configuredNode.id }) }
                 pendingSocket = null
                 configNodeId = null
+            }
+        )
+    }
+
+    if (showCustomManager) {
+        CustomNodeManagerDialog(
+            nodes = customNodes,
+            onDismiss = { showCustomManager = false },
+            onCreate = { node ->
+                scope.launch {
+                    try {
+                        repository.createCustomNode(node)
+                        refresh()
+                        notice = "Custom node added to your library."
+                        showCustomManager = false
+                    } catch (error: Exception) {
+                        notice = error.message ?: "Could not create custom node."
+                    }
+                }
+            },
+            onDelete = { id ->
+                scope.launch {
+                    try {
+                        repository.deleteCustomNode(id)
+                        refresh()
+                        notice = "Custom node removed."
+                    } catch (error: Exception) {
+                        notice = error.message ?: "Custom node could not be removed."
+                    }
+                }
             }
         )
     }
@@ -1070,7 +1114,9 @@ private fun NodeConfigurationDialog(
         "variable.get", "counter.increment" -> listOf("key" to "Variable or counter name")
         "flow.delay" -> listOf("milliseconds" to "Wait duration (0–10000 ms)")
         "flow.repeat" -> listOf("count" to "Repeat count (1–10)")
-        else -> emptyList()
+        else -> if (node.type.startsWith("custom.")) definition?.inputs
+            ?.filter { it.type != "exec" }?.map { it.id to (it.label + " (" + it.type + ")") }.orEmpty()
+        else emptyList()
     }
     Dialog(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(StudioPalette.Surface).padding(13.dp)) {

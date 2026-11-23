@@ -11,6 +11,8 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.onAllNodes
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -177,7 +179,7 @@ class ConversationScreenTest {
             }
         }
         compose.onNodeWithTag("message-bubble-selected-message").performClick()
-        compose.onAllNodesWithContentDescription("Cancel reply").assertCountEquals(0)
+        compose.onAllNodes(hasContentDescription("Cancel reply")).assertCountEquals(0)
     }
 
     @Test

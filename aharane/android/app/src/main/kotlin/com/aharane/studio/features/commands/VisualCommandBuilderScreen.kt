@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,7 +21,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -50,8 +47,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.aharane.studio.core.design.StudioActionButton
 import com.aharane.studio.core.design.StudioPalette
-import com.aharane.studio.core.design.StudioTag
-import com.aharane.studio.core.design.StudioTextInput
 import com.aharane.studio.core.network.VisualCommandDataSource
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -59,6 +54,10 @@ import org.json.JSONObject
 import java.util.UUID
 
 private data class ActiveSocket(val nodeId: String, val socketId: String, val type: String)
+
+internal const val WORKSPACE_CANVAS_PADDING_DP = 48f
+internal fun workspaceNodeOffset(node: VisualNode): Offset =
+    Offset(node.x + WORKSPACE_CANVAS_PADDING_DP, node.y + WORKSPACE_CANVAS_PADDING_DP)
 
 @Composable
 fun VisualCommandBuilderScreen(
@@ -137,7 +136,7 @@ fun VisualCommandBuilderScreen(
         if (nodes.isNotEmpty() && workspaceViewportSize.width > 0 && workspaceViewportSize.height > 0) {
             val left = nodes.minOf { it.x }
             val top = nodes.minOf { it.y }
-            val right = nodes.maxOf { it.x + 236f }
+            val right = nodes.maxOf { it.x + 206f }
             val bottom = nodes.maxOf { node ->
                 node.y + (measuredNodeSizes[node.id]?.height?.let { with(density) { it.toDp().value } } ?: 132f)
             }
@@ -145,9 +144,9 @@ fun VisualCommandBuilderScreen(
             val graphHeightPx = with(density) { (bottom - top + 96f).coerceAtLeast(180f).dp.toPx() }
             val availableWidth = (workspaceViewportSize.width - with(density) { 32.dp.toPx() }).coerceAtLeast(1f)
             val availableHeight = (workspaceViewportSize.height - with(density) { 32.dp.toPx() }).coerceAtLeast(1f)
-            zoom = minOf(availableWidth / graphWidthPx, availableHeight / graphHeightPx).coerceIn(0.65f, 1.8f)
+            zoom = minOf(availableWidth / graphWidthPx, availableHeight / graphHeightPx).coerceIn(0.35f, 1.8f)
         } else {
-            zoom = 0.86f
+            zoom = 0.78f
         }
         scope.launch { workspaceScroll.scrollTo(0); workspaceVerticalScroll.scrollTo(0) }
     }
@@ -399,8 +398,12 @@ fun VisualCommandBuilderScreen(
 
     fun moveNode(id: String, delta: Offset) {
         workflow = workflow.copy(nodes = workflow.nodes.map { node ->
-            if (node.id == id) node.copy(x = (node.x + delta.x).coerceIn(0f, 10000f), y = (node.y + delta.y).coerceIn(0f, 10000f))
-            else node
+            if (node.id == id) {
+                node.copy(
+                    x = (node.x + delta.x).coerceIn(0f, 10_000f),
+                    y = (node.y + delta.y).coerceIn(0f, 10_000f)
+                )
+            } else node
         })
         dirty = true
     }
@@ -438,29 +441,23 @@ fun VisualCommandBuilderScreen(
         Modifier.fillMaxSize().background(StudioPalette.Background).padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Visual command builder", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text(
-                    when {
-                        saving -> "Saving to your Aharane server…"
-                        dirty -> "Unsaved changes"
-                        workflow.enabled -> "Active command"
-                        saved -> "Saved draft"
-                        else -> "New command draft"
-                    },
-                    color = if (dirty) StudioPalette.Accent else StudioPalette.Muted,
-                    fontSize = 11.5.sp
-                )
-            }
-            StudioActionButton("Load", modifier = Modifier.testTag("workflow-load"), enabled = connected && !loading && savedWorkflows.isNotEmpty(), onClick = { showLoad = true })
-            Spacer(Modifier.width(5.dp))
-            StudioActionButton(
-                if (saving) "Saving…" else "Save",
-                modifier = Modifier.testTag("workflow-save"),
-                primary = true,
-                enabled = connected && !saving && !testing,
-                onClick = { scope.launch { saveDraft() } }
+            Text(
+                "‹  More",
+                color = StudioPalette.Accent,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable(onClick = onBack).padding(vertical = 6.dp)
             )
+            Spacer(Modifier.width(9.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Visual command builder", color = StudioPalette.Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(if (dirty) "Unsaved changes" else if (workflow.enabled) "Active command" else "Workflow draft", color = StudioPalette.Muted, fontSize = 10.sp)
+            }
+            StudioActionButton("Load", modifier = Modifier.testTag("workflow-load"), compact = true, enabled = connected && savedWorkflows.isNotEmpty(), onClick = { showLoad = true })
+            Spacer(Modifier.width(5.dp))
+            StudioActionButton("Save", modifier = Modifier.testTag("workflow-save"), compact = true, primary = true, enabled = connected && !saving && (!saved || dirty), onClick = {
+                scope.launch { saveDraft() }
+            })
         }
 
         Row(
@@ -482,11 +479,12 @@ fun VisualCommandBuilderScreen(
                 Text("↕", color = StudioPalette.Muted, fontSize = 12.sp)
             }
             Spacer(Modifier.width(2.dp))
-            StudioActionButton(if (testing) "Testing…" else "Test safely", enabled = connected && !testing && !saving, onClick = {
+            StudioActionButton(if (testing) "Testing…" else "Test safely", compact = true, enabled = connected && !testing && !saving, onClick = {
                 scope.launch { safeTest() }
             })
             StudioActionButton(
-                if (workflow.enabled) "Deactivate command" else "Activate command",
+                if (workflow.enabled) "Deactivate" else "Activate",
+                compact = true,
                 primary = !workflow.enabled,
                 enabled = connected && !saving && !testing,
                 onClick = {
@@ -506,17 +504,8 @@ fun VisualCommandBuilderScreen(
                     }
                 }
             )
-            StudioActionButton("Delete", destructive = true, enabled = saved && connected && !saving, onClick = { showDelete = true })
+            StudioActionButton("Delete", compact = true, destructive = true, enabled = saved && connected, onClick = { showDelete = true })
         }
-
-        Text(
-            if (workflow.enabled) "This command is live. Deactivate it to keep editing without running it."
-            else "Save stores this workflow as a draft. Activate command enables it for incoming WhatsApp events.",
-            color = StudioPalette.Muted,
-            fontSize = 11.sp,
-            lineHeight = 15.sp,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
-        )
 
         if (validation.errors.isNotEmpty() || validation.warnings.isNotEmpty()) {
             val hasErrors = validation.errors.isNotEmpty()
@@ -533,16 +522,15 @@ fun VisualCommandBuilderScreen(
             )
         }
 
-        Column(Modifier.fillMaxWidth().weight(workspaceFraction).testTag("workflow-workspace-panel")) {
+        Column(Modifier.fillMaxWidth().weight(workspaceFraction)) {
             Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("WORKSPACE", color = StudioPalette.Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text("WORKSPACE", color = StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.weight(1f))
-                Text(workflow.nodes.size.toString() + " nodes · " + workflow.edges.size + " wires", color = StudioPalette.Muted, fontSize = 10.5.sp, modifier = Modifier.testTag("workflow-node-count"))
+                Text(workflow.nodes.size.toString() + " nodes · " + workflow.edges.size + " wires", color = StudioPalette.Muted, fontSize = 9.sp, modifier = Modifier.testTag("workflow-node-count"))
             }
-            val workspaceGridColor = StudioPalette.Line.copy(alpha = 0.72f)
-            Box(Modifier.fillMaxSize().onSizeChanged { workspaceViewportSize = it }.clip(RoundedCornerShape(9.dp)).background(StudioPalette.Background)) {
+            Box(Modifier.fillMaxSize().onSizeChanged { workspaceViewportSize = it }.clip(RoundedCornerShape(9.dp)).background(Color(0xFFF2F5F2))) {
                 Box(
-                    Modifier.fillMaxSize().horizontalScroll(workspaceScroll).verticalScroll(workspaceVerticalScroll).pointerInput(Unit) {
+                    Modifier.horizontalScroll(workspaceScroll).verticalScroll(workspaceVerticalScroll).testTag("workflow-workspace").pointerInput(Unit) {
                         awaitEachGesture {
                             awaitFirstDown(requireUnconsumed = false)
                             var lastDistance = 0f
@@ -563,17 +551,16 @@ fun VisualCommandBuilderScreen(
                         }
                     }
                 ) {
-                    // The coordinate origin must not change as a node moves; doing so
-                    // rebases the whole graph and makes the other nodes appear to jump.
-                    val canvasOriginX = 48f
-                    val canvasOriginY = 48f
-                    val maxNodeRight = workflow.nodes.maxOfOrNull { it.x + 224f } ?: 206f
+                    // A stable origin prevents dragging one node from shifting every other node.
+                    val canvasOriginX = WORKSPACE_CANVAS_PADDING_DP
+                    val canvasOriginY = WORKSPACE_CANVAS_PADDING_DP
+                    val maxNodeRight = workflow.nodes.maxOfOrNull { it.x + 206f } ?: 206f
                     val maxNodeBottom = workflow.nodes.maxOfOrNull { node ->
                         node.y + (measuredNodeSizes[node.id]?.height?.let { with(density) { it.toDp().value } } ?: 132f)
                     } ?: 180f
-                    val viewportWidth = with(density) { workspaceViewportSize.width.toDp() }
-                    val canvasWidth = maxOf(viewportWidth, (canvasOriginX + maxNodeRight + 48f).dp)
-                    val canvasHeight = maxOf(430.dp, (canvasOriginY + maxNodeBottom + 48f).dp)
+                    // Extra blank canvas makes one-finger panning useful on a phone.
+                    val canvasWidth = maxOf(1600.dp, (canvasOriginX + maxNodeRight + 48f).dp)
+                    val canvasHeight = maxOf(1200.dp, (canvasOriginY + maxNodeBottom + 48f).dp)
                     // Outer box owns scaled scroll dimensions; inner box preserves
                     // unscaled coordinates for socket measurements.
                     Box(Modifier.width(canvasWidth * zoom).height(canvasHeight * zoom)) {
@@ -584,27 +571,17 @@ fun VisualCommandBuilderScreen(
                             transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
                         }.onGloballyPositioned { workspaceCoordinates = it }
                     ) {
-                        Canvas(
-                            Modifier.fillMaxSize().testTag("workflow-canvas-background").pointerInput(zoom) {
-                                detectDragGestures { change, drag ->
-                                    change.consume()
-                                    scope.launch {
-                                        workspaceScroll.scrollBy(-drag.x)
-                                        workspaceVerticalScroll.scrollBy(-drag.y)
-                                    }
-                                }
-                            }
-                        ) {
+                        Canvas(Modifier.fillMaxSize()) {
                             val density = this.density
                             val gridStep = 28.dp.toPx()
                             var x = 0f
                             while (x < size.width) {
-                                drawLine(workspaceGridColor, Offset(x, 0f), Offset(x, size.height), 0.6.dp.toPx())
+                                drawLine(Color(0xFFE3E9E4), Offset(x, 0f), Offset(x, size.height), 0.6.dp.toPx())
                                 x += gridStep
                             }
                             var y = 0f
                             while (y < size.height) {
-                                drawLine(workspaceGridColor, Offset(0f, y), Offset(size.width, y), 0.6.dp.toPx())
+                                drawLine(Color(0xFFE3E9E4), Offset(0f, y), Offset(size.width, y), 0.6.dp.toPx())
                                 y += gridStep
                             }
                             workflow.edges.forEach { edge ->
@@ -645,35 +622,36 @@ fun VisualCommandBuilderScreen(
                                 onMeasured = { size -> if (measuredNodeSizes[node.id] != size) measuredNodeSizes[node.id] = size },
                                 onSocketPosition = { socket, output, coordinates ->
                                     val canvas = workspaceCoordinates
-                                    if (canvas?.isAttached == true && coordinates.isAttached) {
+                                    if (canvas != null && canvas.isAttached && coordinates.isAttached) {
                                         val center = runCatching {
-                                            canvas.localPositionOf(coordinates, Offset(coordinates.size.width / 2f, coordinates.size.height / 2f))
+                                            canvas.localPositionOf(
+                                                coordinates,
+                                                Offset(coordinates.size.width / 2f, coordinates.size.height / 2f)
+                                            )
                                         }.getOrNull()
-                                        if (center != null && center.x.isFinite() && center.y.isFinite()) {
+                                        if (center != null) {
                                             val key = socketPositionKey(node.id, socket.id, output)
                                             if (measuredSocketPositions[key] != center) measuredSocketPositions[key] = center
                                         }
                                     }
                                 },
-                                canvasOriginX = canvasOriginX,
-                                canvasOriginY = canvasOriginY
                             )
                         }
                     }
                 }
                 }
                 Text(
-                    "Drag empty space to pan · pinch to zoom · drag nodes",
+                    "Swipe sideways to pan · pinch to zoom · drag nodes",
                     color = StudioPalette.Muted,
                     fontSize = 9.sp,
                     modifier = Modifier.align(Alignment.BottomStart).padding(6.dp)
-                        .clip(RoundedCornerShape(5.dp)).background(StudioPalette.Surface.copy(alpha = 0.94f)).border(1.dp, StudioPalette.Line, RoundedCornerShape(5.dp)).padding(5.dp)
+                        .clip(RoundedCornerShape(5.dp)).background(Color.White.copy(alpha = 0.92f)).padding(5.dp)
                 )
                 Row(
                     Modifier.align(Alignment.TopEnd).padding(6.dp)
                         .clip(RoundedCornerShape(9.dp))
-                        .background(StudioPalette.Surface)
-                        .border(1.dp, StudioPalette.Line, RoundedCornerShape(9.dp))
+                        .background(Color.White.copy(alpha = 0.96f))
+                        .border(1.dp, Color(0xFFDCE3DE), RoundedCornerShape(9.dp))
                         .padding(3.dp),
                     horizontalArrangement = Arrangement.spacedBy(3.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -711,33 +689,29 @@ fun VisualCommandBuilderScreen(
 
         Column(Modifier.fillMaxWidth().weight(1f - workspaceFraction)) {
             Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("NODE LIBRARY", color = StudioPalette.Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text("NODE LIBRARY", color = StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.weight(1f))
-                Text(visibleNodes.size.toString() + " nodes", color = StudioPalette.Muted, fontSize = 10.5.sp)
+                Text(visibleNodes.size.toString() + " nodes", color = StudioPalette.Muted, fontSize = 9.sp)
             }
             BasicTextField(
                 value = search,
                 onValueChange = { search = it },
                 singleLine = true,
-                textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 12.5.sp),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 42.dp).clip(RoundedCornerShape(9.dp))
-                    .background(StudioPalette.Surface).border(1.dp, StudioPalette.Line, RoundedCornerShape(9.dp))
-                    .padding(horizontal = 11.dp, vertical = 9.dp),
+                textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 11.sp),
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(7.dp))
+                    .background(StudioPalette.Surface).border(1.dp, StudioPalette.Line, RoundedCornerShape(7.dp))
+                    .padding(horizontal = 9.dp, vertical = 7.dp),
                 decorationBox = { inner ->
                     Box {
-                        if (search.isBlank()) Text("Search WhatsApp nodes", color = StudioPalette.Muted, fontSize = 12.sp)
+                        if (search.isBlank()) Text("Search WhatsApp nodes", color = StudioPalette.Muted, fontSize = 11.sp)
                         inner()
                     }
                 }
             )
             Spacer(Modifier.height(5.dp))
-            LazyRow(
-                modifier = Modifier.fillMaxWidth().testTag("workflow-categories"),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(start = 2.dp, end = 10.dp, bottom = 8.dp)
-            ) {
-                item(key = "category-all") { CategoryChip("All", category == "All") { category = "All" } }
-                itemsIndexed(library, key = { index, group -> "${index}:${group.name}" }) { _, group ->
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(5.dp), contentPadding = PaddingValues(bottom = 5.dp)) {
+                item { CategoryChip("All", category == "All") { category = "All" } }
+                items(library) { group ->
                     CategoryChip(group.name, category == group.name) { category = group.name }
                 }
             }
@@ -750,13 +724,11 @@ fun VisualCommandBuilderScreen(
                 )
             } else {
                 LazyColumn(
-                    Modifier.fillMaxSize().testTag("workflow-node-list"),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                     contentPadding = PaddingValues(bottom = 8.dp)
                 ) {
-                    // A node type can legitimately be repeated in distinct library categories.
-                    // Index-derived lazy keys prevent duplicate-key crashes while scrolling.
-                    itemsIndexed(visibleNodes, key = { index, node -> "${index}:${node.type}" }) { _, definition ->
+                    items(visibleNodes, key = { it.type }) { definition ->
                         LibraryNodeRow(definition, connected) { addNode(definition) }
                     }
                 }
@@ -767,7 +739,7 @@ fun VisualCommandBuilderScreen(
             Text(
                 notice,
                 color = if (notice.contains("error", true) || notice.contains("failed", true) || notice.contains("rejected", true)) StudioPalette.Bad else StudioPalette.Muted,
-                fontSize = 11.sp,
+                fontSize = 9.5.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth().padding(top = 3.dp)
@@ -869,41 +841,29 @@ fun VisualCommandBuilderScreen(
 @Composable
 private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
-        Modifier.clip(RoundedCornerShape(10.dp))
-            .background(if (selected) StudioPalette.Soft else StudioPalette.Surface)
-            .border(1.dp, if (selected) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick).heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 10.dp)
+        Modifier.clip(RoundedCornerShape(7.dp))
+            .background(if (selected) StudioPalette.Accent else StudioPalette.Surface)
+            .border(1.dp, if (selected) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(7.dp))
+            .clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 5.dp)
     ) {
-        Text(
-            label,
-            color = if (selected) StudioPalette.Accent else StudioPalette.Ink,
-            fontSize = 13.5.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1
-        )
+        Text(label, color = if (selected) Color.White else StudioPalette.Ink, fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
 @Composable
 private fun LibraryNodeRow(node: VisualNodeDefinition, enabled: Boolean, onAdd: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(RoundedCornerShape(9.dp))
-            .background(StudioPalette.Surface).border(1.dp, StudioPalette.Line, RoundedCornerShape(9.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(7.dp))
+            .background(StudioPalette.Surface).border(1.dp, StudioPalette.Line, RoundedCornerShape(7.dp))
+            .padding(horizontal = 8.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(node.name, color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(node.description, color = StudioPalette.Muted, fontSize = 10.5.sp, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(node.name, color = StudioPalette.Ink, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold)
+            Text(node.description, color = StudioPalette.Muted, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.width(6.dp))
-        StudioActionButton(
-            "Add",
-            modifier = Modifier.heightIn(min = 48.dp).testTag("add-node-" + node.type),
-            compact = false,
-            enabled = enabled,
-            onClick = onAdd
-        )
+        StudioActionButton("Add", modifier = Modifier.testTag("add-node-" + node.type), compact = true, enabled = enabled, onClick = onAdd)
     }
 }
 
@@ -918,55 +878,41 @@ private fun NodeCard(
     onMove: (Offset) -> Unit,
     onSocket: (VisualSocket, Boolean) -> Unit,
     onMeasured: (IntSize) -> Unit,
-    onSocketPosition: (VisualSocket, Boolean, LayoutCoordinates) -> Unit,
-    canvasOriginX: Float,
-    canvasOriginY: Float
+    onSocketPosition: (VisualSocket, Boolean, LayoutCoordinates) -> Unit
 ) {
+    val currentOnMove by rememberUpdatedState(onMove)
+    val currentOnDragStart by rememberUpdatedState(onDragStart)
+    val nodeOffset = workspaceNodeOffset(node)
     val borderColor = when {
         error != null -> StudioPalette.Bad
         selected -> StudioPalette.Accent
-        else -> StudioPalette.Line
+        else -> Color(0xFFD9E2DC)
     }
-    val nodeCategory = nodeCategoryLabel(node.type)
     Column(
-        Modifier.offset((node.x + canvasOriginX).dp, (node.y + canvasOriginY).dp).width(236.dp)
+        Modifier.offset(nodeOffset.x.dp, nodeOffset.y.dp).width(206.dp)
             .onSizeChanged(onMeasured).testTag("node-card-" + node.type)
-            .clip(RoundedCornerShape(10.dp)).background(StudioPalette.Surface)
-            .border(if (selected || error != null) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(8.dp)).background(Color.White)
+            .border(if (selected || error != null) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(8.dp))
             .pointerInput(node.id) {
-                detectDragGestures(onDragStart = { onDragStart() }) { change, amount ->
+                detectDragGestures(onDragStart = { currentOnDragStart() }) { change, amount ->
                     change.consume()
-                    onMove(Offset(amount.x / density, amount.y / density))
+                    currentOnMove(Offset(amount.x / density, amount.y / density))
                 }
             }
             .clickable(onClick = onSelect)
     ) {
         Row(
-            Modifier.fillMaxWidth().background(StudioPalette.SurfaceVariant).padding(horizontal = 9.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            Modifier.fillMaxWidth().background(Color(0xFFF5F8F5)).padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Box(Modifier.size(7.dp).clip(CircleShape).background(if (error != null) StudioPalette.Bad else StudioPalette.Accent))
-            Text(
-                nodeCategory,
-                color = StudioPalette.Accent,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1
-            )
-            Text(
-                definition.name,
-                color = StudioPalette.Ink,
-                fontSize = 12.5.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
+            Spacer(Modifier.width(6.dp))
+            Text(definition.name, color = StudioPalette.Ink, fontSize = 10.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.weight(1f))
             if (error != null) Text("!", color = StudioPalette.Bad, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
-        Text(nodeSummary(node), color = StudioPalette.Muted, fontSize = 10.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp))
+        Text(nodeSummary(node), color = StudioPalette.Muted, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp))
         if (definition.inputs.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 5.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                 definition.inputs.forEach { socket ->
@@ -984,22 +930,6 @@ private fun NodeCard(
             }
         }
     }
-}
-
-private fun nodeCategoryLabel(type: String): String = when {
-    type.startsWith("trigger.") -> "TRIGGER"
-    type == "message.sendText" || type == "message.replyText" -> "TEXT"
-    type.startsWith("message.") -> "MESSAGE"
-    type.startsWith("media.") -> "MEDIA"
-    type.startsWith("contact.") -> "CONTACT"
-    type.startsWith("group.") -> "GROUP"
-    type.startsWith("moderation.") -> "MODERATION"
-    type.startsWith("profile.") -> "PROFILE"
-    type.startsWith("newsletter.") -> "NEWSLETTER"
-    type.startsWith("condition.") -> "CONDITION"
-    type.startsWith("variable.") || type.startsWith("counter.") || type.startsWith("value.") -> "DATA"
-    type.startsWith("flow.") -> "FLOW"
-    else -> "ACTION"
 }
 
 private fun socketPositionKey(nodeId: String, socketId: String, output: Boolean): String =
@@ -1066,16 +996,14 @@ private fun SocketAction(
         horizontalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         if (!output) SocketDot(color, onPosition)
-        if (!( !output && socket.label.equals("In", ignoreCase = true) )) {
-            Text(socket.label, color = color, fontSize = 9.5.sp, maxLines = 1)
-        }
+        Text(socket.label, color = color, fontSize = 8.sp, maxLines = 1)
         if (output) SocketDot(color, onPosition)
     }
 }
 
 @Composable
 private fun SocketDot(color: Color, onPosition: (LayoutCoordinates) -> Unit) {
-    Box(Modifier.size(11.dp).onGloballyPositioned(onPosition).clip(CircleShape).background(StudioPalette.Surface).border(1.6.dp, color, CircleShape))
+    Box(Modifier.size(11.dp).onGloballyPositioned(onPosition).clip(CircleShape).background(Color.White).border(1.6.dp, color, CircleShape))
 }
 
 @Composable
@@ -1117,48 +1045,22 @@ private fun NodeConfigurationDialog(
         else -> emptyList()
     }
     Dialog(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().heightIn(max = 680.dp)
-                .clip(RoundedCornerShape(18.dp)).background(StudioPalette.Surface)
-                .verticalScroll(rememberScrollState()).padding(18.dp)
-        ) {
-            StudioTag(nodeCategoryLabel(node.type).lowercase().replaceFirstChar { it.uppercase() }, accent = true)
-            Spacer(Modifier.height(9.dp))
-            Text(definition?.name ?: node.type, color = StudioPalette.Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(5.dp))
-            Text(definition?.description.orEmpty(), color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 18.sp)
-            Spacer(Modifier.height(15.dp))
-            if (fields.isEmpty() && node.type !in setOf("trigger.command", "trigger.message")) {
-                Column(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                        .background(StudioPalette.SurfaceVariant)
-                        .border(1.dp, StudioPalette.Line, RoundedCornerShape(12.dp))
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    Text("No settings to enter", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "This node uses the values coming from its connected inputs. Connect its sockets in the workspace to decide when it runs and what data it receives.",
-                        color = StudioPalette.Muted,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp
-                    )
-                }
-                Spacer(Modifier.height(13.dp))
-            }
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(StudioPalette.Surface).padding(13.dp)) {
+            Text(definition?.name ?: node.type, color = StudioPalette.Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Text(definition?.description.orEmpty(), color = StudioPalette.Muted, fontSize = 10.5.sp)
+            Spacer(Modifier.height(8.dp))
             fields.forEach { (key, label) ->
-                Text(label, color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(6.dp))
-                StudioTextInput(
+                Text(label, color = StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                BasicTextField(
                     value = config[key].orEmpty(),
                     onValueChange = { config = config + (key to it) },
-                    placeholder = label,
                     singleLine = key !in setOf("text", "options", "buttons", "participants", "description"),
-                    minLines = if (key in setOf("text", "options", "buttons", "participants", "description")) 3 else 1,
-                    minHeight = if (key in setOf("text", "options", "buttons", "participants", "description")) 104.dp else 48.dp,
-                    textSize = 14.sp,
-                    modifier = Modifier.padding(bottom = 13.dp),
-                    tag = "node-config-field-" + key
+                    textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 11.sp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)
+                        .clip(RoundedCornerShape(6.dp)).background(StudioPalette.Background)
+                        .border(1.dp, StudioPalette.Line, RoundedCornerShape(6.dp)).padding(8.dp)
+                        .testTag("node-config-field-" + key)
                 )
             }
             if (node.type == "trigger.command" || node.type == "trigger.message") {
@@ -1175,7 +1077,7 @@ private fun NodeConfigurationDialog(
                                     config = config + ("chatScope" to value)
                                 }.padding(horizontal = 8.dp, vertical = 5.dp)
                         ) {
-                            Text(label, color = if (active) MaterialTheme.colorScheme.onPrimary else StudioPalette.Ink, fontSize = 11.sp)
+                            Text(label, color = if (active) Color.White else StudioPalette.Ink, fontSize = 9.5.sp)
                         }
                     }
                 }
@@ -1213,20 +1115,12 @@ private fun NodeConfigurationDialog(
                 }
             }
             Spacer(Modifier.height(9.dp))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                StudioActionButton("Remove node", destructive = true, onClick = onDelete)
-                StudioActionButton("Disconnect", onClick = onDisconnect)
-            }
-            Spacer(Modifier.height(9.dp))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                StudioActionButton("Cancel", modifier = Modifier.weight(1f), onClick = onDismiss)
-                StudioActionButton("Apply", modifier = Modifier.weight(1f), primary = true, onClick = { onApply(config) })
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                StudioActionButton("Delete", compact = true, destructive = true, onClick = onDelete)
+                StudioActionButton("Disconnect", compact = true, onClick = onDisconnect)
+                Spacer(Modifier.weight(1f))
+                StudioActionButton("Cancel", compact = true, onClick = onDismiss)
+                StudioActionButton("Apply", compact = true, primary = true, onClick = { onApply(config) })
             }
         }
     }
@@ -1270,9 +1164,9 @@ private fun WorkspaceToolButton(
     content: @Composable () -> Unit
 ) {
     Box(
-        Modifier.size(38.dp).clip(RoundedCornerShape(8.dp))
-            .background(if (enabled) StudioPalette.Background else StudioPalette.SurfaceVariant.copy(alpha = 0.6f))
-            .border(1.dp, StudioPalette.Line, RoundedCornerShape(7.dp))
+        Modifier.size(32.dp).clip(RoundedCornerShape(7.dp))
+            .background(if (enabled) Color(0xFFF5F7F5) else Color(0xFFECEFEC))
+            .border(1.dp, Color(0xFFE0E5E1), RoundedCornerShape(7.dp))
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {

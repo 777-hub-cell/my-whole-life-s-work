@@ -7,7 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Animatable as ComposeAnimatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -1149,7 +1149,7 @@ private fun MessageBubble(
     onOpenLocation: () -> Unit
 ) {
     val outgoing = message.direction == MessageDirection.OUTGOING
-    val swipeOffset = remember(message.messageId) { Animatable(0f) }
+    val swipeOffset = remember(message.messageId) { ComposeAnimatable(0f) }
     val swipeScope = rememberCoroutineScope()
     val swipeThreshold = with(LocalDensity.current) { 64.dp.toPx() }
     val swipeLimit = with(LocalDensity.current) { 98.dp.toPx() }

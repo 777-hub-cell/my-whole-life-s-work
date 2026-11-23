@@ -1427,7 +1427,7 @@ app.get('/api/engines/:id', requireAdmin, async (req, res) => {
   try {
     const engine = await engineStore.get(req.params.id)
     if (!engine) return res.status(404).json({ ok: false, error: 'Engine not found.' })
-    res.json({ ok: true, engine, executionAvailable: false })
+    res.json({ ok: true, engine, executionAvailable: true })
   } catch (error) {
     res.status(400).json({ ok: false, error: String(error?.message || error) })
   }
@@ -1437,7 +1437,7 @@ app.post('/api/engines', requireAdmin, async (req, res) => {
     const existing = await engineStore.get(req.body?.manifest?.id)
     if (existing) return res.status(409).json({ ok: false, error: 'Engine already exists. Use the edit endpoint.' })
     const engine = await engineStore.save(req.body?.manifest, req.body?.code)
-    res.status(201).json({ ok: true, engine, executionAvailable: false })
+    res.status(201).json({ ok: true, engine, executionAvailable: true })
   } catch (error) {
     res.status(400).json({ ok: false, error: String(error?.message || error) })
   }
@@ -1448,7 +1448,7 @@ app.put('/api/engines/:id', requireAdmin, async (req, res) => {
     const current = await engineStore.get(req.params.id)
     if (!current) return res.status(404).json({ ok: false, error: 'Engine not found.' })
     const engine = await engineStore.save(req.body.manifest, req.body.code, req.body.expectedVersion)
-    res.json({ ok: true, engine, executionAvailable: false })
+    res.json({ ok: true, engine, executionAvailable: true })
   } catch (error) {
     res.status(409).json({ ok: false, error: String(error?.message || error) })
   }

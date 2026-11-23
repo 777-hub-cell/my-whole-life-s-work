@@ -197,6 +197,12 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
     override suspend fun deleteCustomNode(id: String): JSONObject =
         api.delete("custom-nodes/" + encodePath(id), JSONObject().put("confirm", true))
 
+    suspend fun subscribedChannels(account: ChatAccount): JSONObject =
+        api.get("whatsapp/${account.apiValue}/channels")
+
+    suspend fun channelUpdates(account: ChatAccount, jid: String): JSONObject =
+        api.get("whatsapp/${account.apiValue}/channels/${encodePath(jid)}/updates")
+
     suspend fun engineLibrary(): JSONObject = api.get("engines")
 
     suspend fun readEngine(id: String): JSONObject =

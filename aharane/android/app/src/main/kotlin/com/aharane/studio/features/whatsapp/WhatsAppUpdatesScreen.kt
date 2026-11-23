@@ -94,7 +94,7 @@ fun WhatsAppUpdatesScreen(
             )
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ChatAccount.entries.forEach { account ->
                 OutlinedButton(onClick = { onAccountSelected(account) }) {
                     Text(if (selectedAccount == account) "✓ " + account.label else account.label)
@@ -109,7 +109,7 @@ fun WhatsAppUpdatesScreen(
             )
         }
 
-        if (explanation.isNotBlank()) {
+        if (explanation.isNotBlank() && (chosenChannel.isNotBlank() || channelRows.isNotEmpty())) {
             Text(explanation, color = StudioPalette.Muted, fontSize = 12.sp)
         }
 

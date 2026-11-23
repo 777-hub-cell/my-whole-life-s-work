@@ -41,6 +41,23 @@ const { chromium } = require('playwright');
         await page.locator('#layer .sheet').waitFor({ state: 'detached', timeout: 5000 });
       }
     }
+
+    // Create a disposable sample item only in this fresh Playwright browser
+    // context, then capture the real Title Details screen without touching
+    // the user's installed app or stored library.
+    await page.locator('#nav button[data-to="library"]').click();
+    await page.locator('#fab').click();
+    await page.locator('#f-title').fill('VISTORA QA Sample');
+    await page.locator('#f-year').fill('2024');
+    await page.locator('#f-genres').fill('Drama, Mystery');
+    await page.locator('#f-syn').fill('Temporary sample entry for checking the title details layout.');
+    await page.locator('#addForm button[type="submit"]').click();
+    await page.locator('#grid .card').first().waitFor({ state: 'visible', timeout: 5000 });
+    await page.locator('#grid .card').first().click();
+    await page.locator('#screen .dhd').waitFor({ state: 'visible', timeout: 5000 });
+    await page.waitForTimeout(350);
+    await page.screenshot({ path: path.join(out, '07-title-details.png') });
+
     if (errors.length) {
       console.error('Browser runtime errors:', errors.join('\n'));
       process.exitCode = 1;
@@ -48,8 +65,8 @@ const { chromium } = require('playwright');
   } finally {
     await browser.close();
   }
-  console.log('Captured Home, Library, Add Title, Discover, Stats and Settings at 390 × 844.');
+  console.log('Captured Home, Library, Add Title, Discover, Stats, Settings and Title Details at 390 × 844.');
 })().catch((error) => {
   console.error(error);
   process.exit(1);
-});
+})();

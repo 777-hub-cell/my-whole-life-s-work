@@ -3368,9 +3368,6 @@ async function shutdown(signal) {
 process.once('SIGTERM', () => { void shutdown('SIGTERM') })
 process.once('SIGINT', () => { void shutdown('SIGINT') })
 
-if (publicAllowedSenders().size === 0) {
-  logger.warn({ event: 'security.inbound-deny-all', reason: 'No public WhatsApp sender allowlist is configured' })
-}
 if (!ownerConfig.privateOwnerNumber) {
   logger.warn({ event: 'security.private-owner-unconfigured', reason: 'Private self-chat commands remain disabled until the Private Owner number is configured' })
 }

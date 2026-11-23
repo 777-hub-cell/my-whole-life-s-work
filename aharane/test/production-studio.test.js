@@ -138,6 +138,18 @@ test('Home exposes service health and separate Private/Public WhatsApp status', 
  assert.ok(!home.includes("svc('stop')"))
 })
 
+test('Base Studio Files and Chats render contextual empty states without dead selection controls', async () => {
+ const app=await read('../control-centre/app.js')
+ assert.ok(app.includes("if(!ks.length&&!n)return ''"))
+ assert.ok(app.includes('This folder is empty'))
+ assert.ok(app.includes('Create file'))
+ assert.ok(app.includes('No conversations yet'))
+ assert.ok(app.includes('No chats match your search'))
+ assert.ok(app.includes('Clear search'))
+ const css=await read('../control-centre/styles.css')
+ assert.ok(css.includes('.files-empty,.chats-empty'))
+})
+ 
 test('ENV and Home display useful empty states instead of blank panels', async () => {
  const bridge=await read('../control-centre/production-bridge.js')
  const env=bridge.slice(bridge.indexOf('function envViewP(){'),bridge.indexOf('async function saveEnvP(){'))

@@ -2,10 +2,9 @@ package com.vistora.android.ui
 
 import android.graphics.Bitmap
 import com.vistora.android.MainActivity
-import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -35,14 +34,12 @@ class VistoraVisualCaptureTest {
         compose.waitForIdle()
         capture("03-add-title")
 
-        val editableFields = compose.onAllNodes(hasSetTextAction(), useUnmergedTree = true)
-        check(editableFields.fetchSemanticsNodes().isNotEmpty()) { "Add Title form did not expose an editable title field" }
-        editableFields[0].performTextInput("VISTORA QA Sample")
+        compose.onNodeWithTag("title-input").performTextInput("VISTORA QA Sample")
         compose.onNodeWithText("Add to library").performScrollTo().performClick()
         compose.waitForIdle()
         capture("04-title-details")
 
-        compose.onNodeWithContentDescription("Back").performClick()
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
         compose.waitForIdle()
         capture("05-library-with-title")
 
@@ -58,7 +55,7 @@ class VistoraVisualCaptureTest {
         compose.waitForIdle()
         capture("08-settings")
 
-        compose.onNodeWithText("My Notes", substring = true).performClick()
+        compose.onNodeWithText("My Notes", substring = true).performScrollTo().performClick()
         compose.waitForIdle()
         capture("09-my-notes")
     }

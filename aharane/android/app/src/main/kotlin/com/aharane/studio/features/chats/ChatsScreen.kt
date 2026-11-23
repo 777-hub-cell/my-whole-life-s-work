@@ -218,7 +218,7 @@ fun ChatsScreen(
     ) {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { StudioPageTitle("Chats") }
+                Column(Modifier.weight(1f)) { StudioPageTitle("Chat", compact = true) }
                 ChatHeaderButton(
                     icon = switchIcon,
                     description = if (account == ChatAccount.PRIVATE) "Switch to Public WhatsApp" else "Switch to Private WhatsApp"

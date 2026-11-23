@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatMessage
 import com.aharane.studio.core.model.ChatSummary
@@ -165,6 +166,8 @@ interface VisualCommandDataSource {
 }
 
 class AharaneRepository(private val connection: AharaneConnectionManager) : VisualCommandDataSource {
+    private data class AvatarCacheEntry(val expiresAt: Long, val bytes: ByteArray?)
+    private val avatarCache = ConcurrentHashMap<String, AvatarCacheEntry>()
     private val api: AharaneApiClient
         get() = connection.api ?: throw IllegalStateException("Connect to your Aharane server first.")
     override suspend fun visualCommands(account: String): JSONObject =
@@ -294,6 +297,31 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
         return result.optString("reply").trim().also {
             require(it.isNotBlank()) { "The AI provider returned an empty reply. Try again." }
         }
+    }
+
+    /**
+     * Load real, account-scoped WhatsApp profile pictures on demand.
+     * The backend returns the authenticated WhatsApp session identity, so a
+     * re-paired account cannot accidentally reuse another session's avatar.
+     * Privacy-restricted pictures gracefully return null.
+     */
+    suspend fun whatsappAvatarBytes(chat: ChatSummary): ByteArray? {
+        val meta = api.get(
+            "chats/${chat.key.account.apiValue}/${encodePath(chat.key.jid)}/avatar"
+        )
+        val session = meta.optString("sourceSession")
+        if (session.isBlank()) return null
+        val cacheKey = "${chat.key.account.apiValue}:$session:${chat.key.jid}"
+        val now = System.currentTimeMillis()
+        avatarCache[cacheKey]?.takeIf { it.expiresAt > now }?.let { return it.bytes }
+        val sourceUrl = meta.optString("pictureUrl")
+        val bytes = if (sourceUrl.isBlank()) null else downloadWhatsappAvatar(sourceUrl)
+        avatarCache[cacheKey] = AvatarCacheEntry(now + if (bytes == null) 60_000L else 600_000L, bytes)
+        if (avatarCache.size > 350) {
+            avatarCache.entries.removeIf { it.value.expiresAt <= now }
+            if (avatarCache.size > 350) avatarCache.clear()
+        }
+        return bytes
     }
 
     suspend fun chats(account: ChatAccount, query: String = "", limit: Int = 200): List<ChatSummary> {

@@ -65,6 +65,24 @@ class StudioBottomNavigationTest {
     }
 
     @Test
+    fun sharedErrorStateRunsOnlyItsProvidedRetryAction() {
+        val retryCount = mutableStateOf(0)
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                StudioErrorState(
+                    title = "Could not load Channels",
+                    description = "Check the connection and try again.",
+                    onRetry = { retryCount.value += 1 }
+                )
+            }
+        }
+
+        compose.onNodeWithText("Could not load Channels").assertIsDisplayed()
+        compose.onNodeWithText("Retry").performClick()
+        compose.runOnIdle { assertEquals(1, retryCount.value) }
+    }
+
+    @Test
     fun bottomNavigationUsesTheApprovedFiveItemSequence() {
         assertEquals(
             listOf("Home", "Files", "ENV", "Chats", "More"),

@@ -1,6 +1,8 @@
 package com.aharane.studio.features.environment
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateColorAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -239,14 +241,25 @@ fun EnvironmentScreen(
 
 @Composable
 private fun NativeToggle(checked: Boolean, enabled: Boolean) {
+    val motionEnabled = LocalStudioMotionEnabled.current
+    val track by animateColorAsState(
+        if (enabled && checked) StudioPalette.Accent else StudioPalette.Line,
+        animationSpec = tween(if (motionEnabled) 160 else 0),
+        label = "environment-toggle-track"
+    )
+    val thumbX by animateDpAsState(
+        if (checked) 18.dp else 0.dp,
+        animationSpec = tween(if (motionEnabled) 180 else 0),
+        label = "environment-toggle-thumb"
+    )
     Box(
         Modifier.width(42.dp).height(24.dp).clip(CircleShape)
-            .background(if (checked) StudioPalette.Accent else StudioPalette.Line)
+            .background(track)
             .padding(3.dp),
-        contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
+        contentAlignment = Alignment.CenterStart
     ) {
         Box(
-            Modifier.size(18.dp).clip(CircleShape)
+            Modifier.offset(x = thumbX).size(18.dp).clip(CircleShape)
                 .background(if (enabled) Color.White else StudioPalette.Surface)
         )
     }

@@ -155,28 +155,30 @@ fun EnvironmentScreen(
         }
 
         item {
-            Row(
-                Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                StudioActionButton(
-                    if (saving) "Saving…" else "Save changes",
-                    primary = true,
-                    enabled = (connected || previewMode) && !saving,
-                    onClick = {
-                        scope.launch {
-                            saving = true
-                            val result = runCatching { onSave(drafts.toList()) }
-                            saveSucceeded = result.getOrDefault(false)
-                            saveMessage = when {
-                                saveSucceeded -> "Changes saved."
-                                result.exceptionOrNull()?.message?.isNotBlank() == true -> result.exceptionOrNull()?.message.orEmpty()
-                                else -> "Changes could not be saved. Check the connection and try again."
+            if (drafts.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    StudioActionButton(
+                        if (saving) "Saving…" else "Save changes",
+                        primary = true,
+                        enabled = (connected || previewMode) && !saving,
+                        onClick = {
+                            scope.launch {
+                                saving = true
+                                val result = runCatching { onSave(drafts.toList()) }
+                                saveSucceeded = result.getOrDefault(false)
+                                saveMessage = when {
+                                    saveSucceeded -> "Changes saved."
+                                    result.exceptionOrNull()?.message?.isNotBlank() == true -> result.exceptionOrNull()?.message.orEmpty()
+                                    else -> "Changes could not be saved. Check the connection and try again."
+                                }
+                                saving = false
                             }
-                            saving = false
                         }
-                    }
-                )
+                    )
+                }
             }
             if (saveMessage.isNotBlank()) {
                 Text(

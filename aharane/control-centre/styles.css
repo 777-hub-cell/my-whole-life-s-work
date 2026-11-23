@@ -297,3 +297,22 @@ body.aharane-booting .app,body.aharane-booting .nav{visibility:hidden}
 .chat-gallery-item small{width:100%;font-size:10px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;text-align:left;color:var(--mut)}
 .appearance-sheet .btns{position:sticky;bottom:-18px;padding:12px 0 2px;background:var(--surf)}
 @media(max-width:380px){.chat-row-actions{width:224px}.chat-row-wrap.swiped>.row{transform:translateX(-224px)}.chat-row-actions button{font-size:10px}}
+
+/* Aharane motion language: quiet, quick feedback that reinforces hierarchy. */
+:root{--motion-fast:140ms;--motion-standard:210ms;--motion-ease:cubic-bezier(.2,.75,.25,1)}
+.btn,.row,.tabs button,.nav button,.crumbs button,.more,.appearance-choice,.field,.card{transition:background-color var(--motion-fast) var(--motion-ease),border-color var(--motion-fast) var(--motion-ease),color var(--motion-fast) var(--motion-ease),box-shadow var(--motion-standard) var(--motion-ease),transform var(--motion-fast) var(--motion-ease)}
+.row:active,.crumbs button:active,.more:active,.nav button:active{transform:scale(.99)}
+.btn:active{transform:scale(.975)}
+.btn:disabled{transform:none}
+.nav button svg{transition:transform var(--motion-standard) var(--motion-ease)}
+.nav button.on svg{transform:translateY(-1px) scale(1.06)}
+.tabs button.on,.appearance-choice.on{transition:background-color var(--motion-standard) var(--motion-ease),border-color var(--motion-standard) var(--motion-ease),color var(--motion-standard) var(--motion-ease)}
+.field:focus{transition:box-shadow var(--motion-fast) var(--motion-ease),border-color var(--motion-fast) var(--motion-ease)}
+.bars i{transition:height 440ms var(--motion-ease),background-color var(--motion-standard) var(--motion-ease)}
+.chat.open{animation:chat-enter var(--motion-standard) var(--motion-ease) both}
+.scrim.open{animation:scrim-enter 160ms ease-out both}
+@keyframes chat-enter{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes scrim-enter{from{opacity:0}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){
+ *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;transition-delay:0ms!important}
+}

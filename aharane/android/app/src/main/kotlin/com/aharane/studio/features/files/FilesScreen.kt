@@ -292,7 +292,7 @@ fun FilesScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                Icons.Outlined.FolderOpen,
+                                Icons.Outlined.Folder,
                                 contentDescription = null,
                                 tint = StudioPalette.Accent,
                                 modifier = Modifier.size(23.dp)

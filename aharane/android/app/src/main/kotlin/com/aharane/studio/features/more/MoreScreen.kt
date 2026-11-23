@@ -77,10 +77,8 @@ fun MoreScreen(
     connected: Boolean = false,
     privateAccountStatus: String = "Status not loaded",
     publicAccountStatus: String = "Status not loaded",
-    privateOwnerNumber: String = "",
-    publicOwnerNumber: String = "",
+    ownerNumber: String = "",
     publicBotNumber: String = "",
-    allowedPublicSenders: String = "",
     activityEntries: List<String> = emptyList(),
     storageSummary: String = "—",
     storageTotalSummary: String = "—",
@@ -90,7 +88,7 @@ fun MoreScreen(
     largestFiles: List<String> = emptyList(),
     folderSummaries: List<String> = emptyList(),
     onAccountAction: (String) -> Unit = {},
-    onSaveOwnerSettings: (String, String, String, String) -> Unit = { _, _, _, _ -> },
+    onSaveOwnerSettings: (String, String) -> Unit = { _, _ -> },
     onClearActivity: () -> Unit = {},
     onRefreshActivity: () -> Unit = {},
     onCopyActivity: () -> Unit = {},
@@ -137,18 +135,14 @@ fun MoreScreen(
             }
         }
     }
-    var privateOwnerDraft by rememberSaveable { mutableStateOf(privateOwnerNumber) }
-    var publicOwnerDraft by rememberSaveable { mutableStateOf(publicOwnerNumber) }
+    var ownerDraft by rememberSaveable { mutableStateOf(ownerNumber) }
     var publicBotDraft by rememberSaveable { mutableStateOf(publicBotNumber) }
-    var allowedSendersDraft by rememberSaveable { mutableStateOf(allowedPublicSenders) }
     var currentPassword by rememberSaveable { mutableStateOf("") }
     var newPassword by rememberSaveable { mutableStateOf("") }
 
-    LaunchedEffect(privateOwnerNumber, publicOwnerNumber, publicBotNumber, allowedPublicSenders) {
-        privateOwnerDraft = privateOwnerNumber
-        publicOwnerDraft = publicOwnerNumber
+    LaunchedEffect(ownerNumber, publicBotNumber) {
+        ownerDraft = ownerNumber
         publicBotDraft = publicBotNumber
-        allowedSendersDraft = allowedPublicSenders
     }
     val context = LocalContext.current
 
@@ -561,7 +555,7 @@ fun MoreScreen(
         ) {
             item {
                 Spacer(Modifier.height(12.dp))
-                StudioPageTitle("Accounts", "Two independent WhatsApp sessions. Pairing numbers are saved in Configuration.")
+                StudioPageTitle("Accounts & owners", "Two independent WhatsApp sessions, one shared Owner identity.")
                 Spacer(Modifier.height(14.dp))
             }
             item {
@@ -593,25 +587,28 @@ fun MoreScreen(
                     )
                 }
             }
-            item { StudioSectionHeading("Owner identities") }
+            item { StudioSectionHeading("Owner") }
             item {
                 StudioCard(padding = PaddingValues(14.dp)) {
-                    OwnerNumberField("Private Owner number", privateOwnerDraft, connected) { privateOwnerDraft = it }
-                    Spacer(Modifier.height(12.dp))
-                    OwnerNumberField("Public Owner number", publicOwnerDraft, connected) { publicOwnerDraft = it }
+                    Text(
+                        "The same Owner number controls owner permissions on both WhatsApp sessions. The Public bot number identifies the separate bot account.",
+                        color = StudioPalette.Muted,
+                        fontSize = 12.5.sp,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(Modifier.height(13.dp))
+                    OwnerNumberField("Owner phone number", ownerDraft, connected) { ownerDraft = it }
                     Spacer(Modifier.height(12.dp))
                     OwnerNumberField("Public bot WhatsApp number", publicBotDraft, connected) { publicBotDraft = it }
-                    Spacer(Modifier.height(12.dp))
-                    OwnerNumberField("Allowed public senders (comma separated)", allowedSendersDraft, connected) { allowedSendersDraft = it }
                     Spacer(Modifier.height(14.dp))
                     StudioActionButton(
                         "Save owner settings",
                         primary = true,
                         enabled = connected,
-                        onClick = { onSaveOwnerSettings(privateOwnerDraft, publicOwnerDraft, publicBotDraft, allowedSendersDraft) }
+                        onClick = { onSaveOwnerSettings(ownerDraft, publicBotDraft) }
                     )
                     if (!connected) Text(
-                        "Connect to your Aharane server to load or save owner identities.",
+                        "Connect to your Aharane server to load or save these settings.",
                         color = StudioPalette.Muted,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 8.dp)
@@ -789,7 +786,7 @@ fun MoreScreen(
                 StudioCard {
                     StudioRow(
                         "Accounts & owners",
-                        "Pair the two WhatsApp sessions and set their separate Owner identities",
+                        "Manage both sessions with one shared Owner identity",
                         icon = null,
                         trailing = "›",
                         onClick = { onPageChange("accounts") }

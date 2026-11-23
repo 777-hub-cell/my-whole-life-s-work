@@ -84,6 +84,7 @@ ksp {
 
 dependencies {
     implementation(libs.androidx.activity.compose)
+    implementation("androidx.core:core-splashscreen:1.2.0")
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)

@@ -12,6 +12,8 @@ Read `aharane/docs/MASTER_PROJECT_CONTEXT.md` and `aharane/docs/AUTONOMOUS_EXECU
 
 Own conversation list, filters, conversation screen, composer, reply gestures, media viewer, stickers, voice notes, polls, receipts, contact identity, archive/pin/mute and offline chat behavior. Coordinate backend event/data contracts with Agent 03, UI foundations with Agent 01 and notifications with Agent 09.
 
+Read `aharane/docs/WHATSAPP_ANDROID_FEATURE_RESEARCH_2026-11-23.md` in full before implementation. It defines the research baseline, capability audit matrix, WhatsApp-style interactions and motion references. **Channels are included; Status is explicitly excluded everywhere.** Stickers are a required first-class feature. Verify each capability against the actual installed library and backend; do not assume official WhatsApp app features are automatically available through Aharane's integration.
+
 ## Acceptance criteria
 
 Acceptance: intended filters and gestures work; send/receive and media interactions work; receipts reflect actual sent/delivered/read events; offline/reconnect states behave correctly; mock status is never presented as real.

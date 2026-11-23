@@ -2134,6 +2134,40 @@ app.get('/api/whatsapp/:accountId/statuses', requireAdmin, (req, res) => {
     res.status(400).json({ ok: false, error: String(error?.message || error) })
   }
 })
+app.get('/api/whatsapp/:accountId/statuses/:sender/:messageId/media', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const sender = decodeURIComponent(String(req.params.sender || ''))
+    const messageId = String(req.params.messageId || '')
+    if (!/^[0-9]{5,30}@(s\\.whatsapp\\.net|lid)$/.test(sender) ||
+        !/^[A-Za-z0-9_-]{1,256}$/.test(messageId)) {
+      return res.status(400).json({ ok: false, error: 'Invalid Status reference.' })
+    }
+    const session = accountRuntime.get(accountId)
+    if (session.state !== 'connected' || !session.socket) {
+      return res.status(503).json({ ok: false, error: 'Account is offline.' })
+    }
+    const source = whatsappDiscovery.getStatusMedia(accountId, sender, messageId)
+    if (!source?.message || !['image', 'video', 'audio', 'sticker'].includes(source.kind)) {
+      return res.status(404).json({ ok: false, error: 'Status media was not received or has expired.' })
+    }
+    const buffer = await downloadMediaMessage(source.message, 'buffer', {}, {
+      logger, reuploadRequest: session.socket.updateMediaMessage
+    })
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0 || buffer.length > 25 * 1024 * 1024) {
+      return res.status(413).json({ ok: false, error: 'Status media is unavailable or exceeds 25 MB.' })
+    }
+    const mime = source.kind === 'image' ? 'image/jpeg' : source.kind === 'video' ? 'video/mp4'
+      : source.kind === 'audio' ? 'audio/ogg' : 'image/webp'
+    res.set('Content-Type', mime)
+    res.set('Content-Disposition', 'inline')
+    res.set('Cache-Control', 'private, no-store')
+    res.set('X-Content-Type-Options', 'nosniff')
+    res.send(buffer)
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || 'Status media could not be downloaded.') })
+  }
+})
 app.get('/api/whatsapp/:accountId/channels', requireAdmin, async (req, res) => {
   try {
     const accountId = chatAccount(req.params.accountId)

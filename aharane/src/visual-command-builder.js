@@ -599,7 +599,7 @@ export async function executeVisualWorkflow(input, options = {}) {
     return sent
   }
   if (!safeChat(event, trigger)) return { ok: false, dryRun, validation, trace, error: 'This workflow is not enabled for the current chat type.' }
-  if (trigger.type === 'trigger.command') {
+  if (trigger.type === 'trigger.command' && event.scheduledExecution !== true) {
     const prefix = workflow.account === 'private' ? '.' : '!'
     const raw = textValue(event.messageText).trim()
     if (!raw.startsWith(prefix)) return { ok: false, dryRun, validation, trace, error: 'The test message does not match the command trigger.' }

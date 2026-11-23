@@ -965,7 +965,38 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         hourlyMessages[bucket] += 1
       }
     }
-    return { messagesLast24h, totalMessages, hourlyMessages }
+    // All counts are based only on persisted chat messages. Historical gaps
+    // cannot be inferred from a newly paired WhatsApp session.
+    const monthStart = new Date(Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), 1))
+    const dayCount = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0)).getUTCDate()
+    const dailySent = Array(dayCount).fill(0)
+    const dailyReceived = Array(dayCount).fill(0)
+    const unique = new Set()
+    let availableSince = null
+    for (const id of ACCOUNTS) {
+      for (const row of await readRows(id)) {
+        const ts = Number(row.timestamp)
+        const key = id + '|' + String(row.jid || '') + '|' + String(row.id || '')
+        if (!row.id || !Number.isFinite(ts) || ts <= 0 || ts > now || unique.has(key)) continue
+        unique.add(key)
+        if (availableSince === null || ts < availableSince) availableSince = ts
+        if (ts < monthStart.getTime()) continue
+        const day = new Date(ts).getUTCDate() - 1
+        if (row.fromMe === true) dailySent[day] += 1
+        else dailyReceived[day] += 1
+      }
+    }
+    return {
+      messagesLast24h, totalMessages, hourlyMessages,
+      thisMonth: {
+        timeZone: 'UTC',
+        month: monthStart.toISOString().slice(0, 7),
+        availableSince: availableSince == null ? null : new Date(availableSince).toISOString(),
+        dailySent, dailyReceived,
+        sent: dailySent.reduce((a, n) => a + n, 0),
+        received: dailyReceived.reduce((a, n) => a + n, 0),
+      },
+    }
   }
 
   async function mediaUsage() {

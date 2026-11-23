@@ -1,6 +1,5 @@
 package com.aharane.studio.features.environment
 
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -44,6 +43,8 @@ fun EnvironmentScreen(
     val scope = rememberCoroutineScope()
     val drafts = remember(values) { mutableStateListOf<EnvironmentValue>().apply { addAll(values) } }
     var saving by remember { mutableStateOf(false) }
+    var saveMessage by remember { mutableStateOf("") }
+    var saveSucceeded by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -161,15 +162,25 @@ fun EnvironmentScreen(
                     onClick = {
                         scope.launch {
                             saving = true
-                            val saved = runCatching { onSave(drafts.toList()) }.getOrDefault(false)
-                            Toast.makeText(
-                                context,
-                                if (saved) "ENV values saved." else "ENV values could not be saved.",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            val result = runCatching { onSave(drafts.toList()) }
+                            saveSucceeded = result.getOrDefault(false)
+                            saveMessage = when {
+                                saveSucceeded -> "Changes saved."
+                                result.exceptionOrNull()?.message?.isNotBlank() == true -> result.exceptionOrNull()?.message.orEmpty()
+                                else -> "Changes could not be saved. Check the connection and try again."
+                            }
                             saving = false
                         }
                     }
+                )
+            }
+            if (saveMessage.isNotBlank()) {
+                Text(
+                    saveMessage,
+                    color = if (saveSucceeded) StudioPalette.Accent else StudioPalette.Bad,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
                 )
             }
             if (!connected && !previewMode) {

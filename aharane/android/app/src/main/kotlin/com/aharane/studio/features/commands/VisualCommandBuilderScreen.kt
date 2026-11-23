@@ -1247,3 +1247,119 @@ private fun WorkspaceToolButton(
         content()
     }
 }
+
+
+/**
+ * User-defined nodes use a declarative, typed operator contract. Unrestricted
+ * scripts are deliberately excluded from the WhatsApp bot runtime.
+ */
+@Composable
+private fun CustomNodeManagerDialog(
+    nodes: List<JSONObject>,
+    onDismiss: () -> Unit,
+    onCreate: (JSONObject) -> Unit,
+    onDelete: (String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var identifier by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var operation by remember { mutableStateOf("uppercase") }
+    var confirmDelete by remember { mutableStateOf<String?>(null) }
+    val operations = listOf(
+        "uppercase" to "Uppercase",
+        "concat" to "Combine text",
+        "contains" to "Contains text",
+        "add" to "Add numbers",
+        "and" to "Boolean AND",
+        "split" to "Split into list",
+        "join" to "Join list"
+    )
+    fun typedInput(id: String, type: String): JSONObject =
+        JSONObject().put("id", id).put("label", id.replaceFirstChar { it.uppercase() }).put("type", type)
+
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().heightIn(max = 620.dp)
+                .clip(RoundedCornerShape(15.dp))
+                .background(StudioPalette.Surface)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            Text("My custom nodes", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "Build reusable, executable logic from safe typed operations. Saved nodes are available in the canvas.",
+                color = StudioPalette.Muted, fontSize = 12.sp
+            )
+            nodes.forEach { node ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(node.optString("name"), color = StudioPalette.Ink, fontSize = 13.sp)
+                        Text(
+                            node.optString("operator") + " · v" + node.optInt("version", 1),
+                            color = StudioPalette.Muted, fontSize = 11.sp
+                        )
+                    }
+                    val id = node.optString("id")
+                    Text(
+                        if (confirmDelete == id) "Confirm remove" else "Remove",
+                        color = StudioPalette.Bad, fontSize = 12.sp,
+                        modifier = Modifier.clickable {
+                            if (confirmDelete == id) {
+                                confirmDelete = null
+                                onDelete(id)
+                            } else confirmDelete = id
+                        }.padding(8.dp)
+                    )
+                }
+            }
+            Text("Create node", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            listOf(
+                Triple("Node name", name, { value: String -> name = value }),
+                Triple("Node ID (lowercase, hyphenated)", identifier, { value: String -> identifier = value }),
+                Triple("Description", description, { value: String -> description = value })
+            ).forEach { (label, value, update) ->
+                Text(label, color = StudioPalette.Ink, fontSize = 12.sp)
+                BasicTextField(
+                    value = value,
+                    onValueChange = update,
+                    textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 14.sp),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(7.dp)).background(StudioPalette.Background)
+                        .border(1.dp, StudioPalette.Line, RoundedCornerShape(7.dp))
+                        .padding(10.dp)
+                )
+            }
+            Text("Operation", color = StudioPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            operations.forEach { (id, label) ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { operation = id }.padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.material3.RadioButton(selected = operation == id, onClick = { operation = id })
+                    Text(label, color = StudioPalette.Ink, fontSize = 13.sp)
+                }
+            }
+            val valid = Regex("^[a-z][a-z0-9_-]{0,47}$").matches(identifier) && name.isNotBlank()
+            StudioActionButton("Create executable node", modifier = Modifier.fillMaxWidth(), enabled = valid, onClick = {
+                val (inputs, outputType) = when (operation) {
+                    "uppercase" -> listOf(typedInput("value", "string")) to "string"
+                    "concat" -> listOf(typedInput("value", "string"), typedInput("other", "string")) to "string"
+                    "contains" -> listOf(typedInput("value", "string"), typedInput("other", "string")) to "boolean"
+                    "add" -> listOf(typedInput("value", "number"), typedInput("other", "number")) to "number"
+                    "and" -> listOf(typedInput("value", "boolean"), typedInput("other", "boolean")) to "boolean"
+                    "split" -> listOf(typedInput("value", "string"), typedInput("other", "string")) to "list"
+                    else -> listOf(typedInput("value", "list"), typedInput("other", "string")) to "string"
+                }
+                onCreate(
+                    JSONObject().put("id", identifier).put("name", name)
+                        .put("description", description).put("category", "My nodes")
+                        .put("version", 1).put("operator", operation)
+                        .put("inputs", JSONArray(inputs)).put("outputType", outputType)
+                )
+            })
+            StudioActionButton("Close", modifier = Modifier.fillMaxWidth(), primary = false, onClick = onDismiss)
+        }
+    }
+}

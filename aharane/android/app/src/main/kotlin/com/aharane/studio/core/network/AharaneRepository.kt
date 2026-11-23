@@ -102,7 +102,13 @@ data class ServerStorageSnapshot(
 data class ServerMessageMetrics(
     val messagesLast24h: Int,
     val totalMessages: Int,
-    val hourlyMessages: List<Int>
+    val hourlyMessages: List<Int>,
+    val monthUtc: String = "",
+    val availableSince: String? = null,
+    val dailySent: List<Int> = emptyList(),
+    val dailyReceived: List<Int> = emptyList(),
+    val sentThisMonth: Int = 0,
+    val receivedThisMonth: Int = 0
 )
 
 
@@ -1064,12 +1070,23 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
     suspend fun metrics(): ServerMessageMetrics {
         val response = api.get("metrics")
         val hourly = response.optJSONArray("hourlyMessages") ?: JSONArray()
+        val month = response.optJSONObject("thisMonth") ?: JSONObject()
+        fun counts(name: String): List<Int> {
+            val values = month.optJSONArray(name) ?: JSONArray()
+            return List(values.length()) { index -> values.optInt(index).coerceAtLeast(0) }
+        }
         return ServerMessageMetrics(
             messagesLast24h = response.optInt("messagesLast24h"),
             totalMessages = response.optInt("totalMessages"),
             hourlyMessages = buildList {
                 for (index in 0 until hourly.length()) add(hourly.optInt(index))
-            }
+            },
+            monthUtc = month.optString("month"),
+            availableSince = month.optString("availableSince").takeIf { it.isNotBlank() && it != "null" },
+            dailySent = counts("dailySent"),
+            dailyReceived = counts("dailyReceived"),
+            sentThisMonth = month.optInt("sent"),
+            receivedThisMonth = month.optInt("received")
         )
     }
 

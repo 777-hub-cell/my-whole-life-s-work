@@ -28,7 +28,7 @@ test('claims due jobs once, runs them sequentially and records their outcomes', 
   })
   const result = await runner.tick()
   assert.deepEqual(started, ['a', 'b'])
-  assert.equal(result.claimed, 0) // the first tick may have been consumed by eager startup
+  assert.equal(result.claimed, 2) // eager startup and the manual tick share one in-flight claim
   await runner.close()
   assert.deepEqual(finished.map(item => item.id), ['a', 'b'])
   assert.ok(finished.every(item => item.outcome.ok))
@@ -56,9 +56,10 @@ test('does not overlap a second tick while a schedule is executing', async () =>
     },
   })
   while (!release) await new Promise(resolve => setImmediate(resolve))
-  const second = await runner.tick()
-  assert.deepEqual(second, { skipped: true, reason: 'closed' }) // tick shares the same in-flight job or shutdown state is observable
+  const secondTick = runner.tick()
   release()
+  const [first, second] = await Promise.all([runner.tick(), secondTick])
+  assert.deepEqual(first, second)
   await runner.close()
   assert.equal(executions, 1)
 })

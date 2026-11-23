@@ -113,7 +113,10 @@ jobs:
           script: |
             bash vistora/android/gradlew :app:connectedDebugAndroidTest
             mkdir -p "$RUNNER_TEMP/vistora-native-qa"
-            adb pull /sdcard/Android/data/com.vistora.android/files/vistora-visual-qa "$RUNNER_TEMP/vistora-native-qa"
+            for image in 01-home 02-library-empty 03-add-title 04-title-details 05-library-with-title 06-discover 07-stats 08-settings 09-my-notes; do
+              adb exec-out run-as com.vistora.android cat "files/vistora-visual-qa/${image}.png" > "$RUNNER_TEMP/vistora-native-qa/${image}.png"
+            done
+            test "$(find "$RUNNER_TEMP/vistora-native-qa" -maxdepth 1 -name '*.png' | wc -l)" -eq 9
 
       - name: Upload native VISTORA phone screenshots
         if: always()

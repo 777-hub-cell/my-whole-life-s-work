@@ -1,6 +1,8 @@
 package com.aharane.studio.features.commands
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -729,7 +731,9 @@ fun VisualCommandBuilderScreen(
                     contentPadding = PaddingValues(bottom = 8.dp)
                 ) {
                     items(visibleNodes, key = { it.type }) { definition ->
-                        LibraryNodeRow(definition, connected) { addNode(definition) }
+                        Box(Modifier.animateItem()) {
+                            LibraryNodeRow(definition, connected) { addNode(definition) }
+                        }
                     }
                 }
             }
@@ -883,11 +887,16 @@ private fun NodeCard(
     val currentOnMove by rememberUpdatedState(onMove)
     val currentOnDragStart by rememberUpdatedState(onDragStart)
     val nodeOffset = workspaceNodeOffset(node)
-    val borderColor = when {
+    val borderTarget = when {
         error != null -> StudioPalette.Bad
         selected -> StudioPalette.Accent
         else -> Color(0xFFD9E2DC)
     }
+    val borderColor by animateColorAsState(
+        borderTarget,
+        animationSpec = tween(if (LocalStudioMotionEnabled.current) 150 else 0),
+        label = "workflow-node-outline"
+    )
     Column(
         Modifier.offset(nodeOffset.x.dp, nodeOffset.y.dp).width(206.dp)
             .onSizeChanged(onMeasured).testTag("node-card-" + node.type)

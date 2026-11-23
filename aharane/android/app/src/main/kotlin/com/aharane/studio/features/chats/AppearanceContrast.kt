@@ -26,9 +26,15 @@ internal fun chatReadableForeground(background: Color): Color {
     val white = Color.White
     val darkRatio = chatContrastRatio(dark, background)
     val whiteRatio = chatContrastRatio(white, background)
-    return if (darkRatio >= 4.5 && darkRatio >= whiteRatio) dark
-        else if (whiteRatio >= 4.5) white
-        else if (darkRatio >= whiteRatio) dark else white
+    // Near-black can miss 4.5:1 for certain mid-tone wallpapers.
+    // Pure black/white always provide at least 4.5:1 for opaque sRGB backgrounds.
+    return when {
+        darkRatio >= 4.5 && darkRatio >= whiteRatio -> dark
+        whiteRatio >= 4.5 -> white
+        darkRatio >= 4.5 -> dark
+        chatContrastRatio(Color.Black, background) >= 4.5 -> Color.Black
+        else -> Color.White
+    }
 }
 
 /**

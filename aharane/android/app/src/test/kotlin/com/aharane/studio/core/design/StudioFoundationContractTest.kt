@@ -8,6 +8,11 @@ import org.junit.Test
 
 class StudioFoundationContractTest {
     @Test
+    fun contractVersionTracksThePublishedSharedApi() {
+        assertEquals(2, StudioFoundationContract.VERSION)
+    }
+
+    @Test
     fun primaryNavigationMatchesTheWebStudioOrderAndLabels() {
         assertEquals(
             listOf(
@@ -43,6 +48,19 @@ class StudioFoundationContractTest {
         assertEquals(17.sp, StudioFoundationContract.TypeScale.SectionTitle)
         assertEquals(15.sp, StudioFoundationContract.TypeScale.Body)
         assertEquals(11.5.sp, StudioFoundationContract.TypeScale.BottomNavigationLabel)
+    }
+
+    @Test
+    fun sharedMotionSpecsUseCentralDurationsAndRespectReducedMotion() {
+        val stateChange = StudioFoundationContract.Motion.stateChangeSpec<Float>(enabled = true)
+        val reducedStateChange = StudioFoundationContract.Motion.stateChangeSpec<Float>(enabled = false)
+        val enter = StudioFoundationContract.Motion.enterSpec<Float>(enabled = true)
+        val exit = StudioFoundationContract.Motion.exitSpec<Float>(enabled = true)
+
+        assertEquals(StudioFoundationContract.Motion.StateChangeMillis, stateChange.durationMillis)
+        assertEquals(0, reducedStateChange.durationMillis)
+        assertEquals(StudioFoundationContract.Motion.ScreenTransitionMillis, enter.durationMillis)
+        assertEquals(StudioFoundationContract.Motion.ScreenTransitionMillis, exit.durationMillis)
     }
 
     @Test

@@ -108,6 +108,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -124,6 +125,7 @@ fun ConversationScreen(
     conversation: ChatSummary,
     messages: List<ChatMessage>,
     connected: Boolean,
+    onLoadAvatar: suspend (ChatSummary) -> ByteArray? = { null },
     aiReplyAvailable: Boolean = false,
     onGenerateAiReply: suspend (String, String, String, String) -> String = { _, _, _, _ -> "" },
     mediaRequestsAvailable: Boolean = connected,
@@ -205,6 +207,26 @@ fun ConversationScreen(
         }
     }
 
+    // The conversation header displays the real account-scoped WhatsApp
+    // picture when available. For private/unavailable pictures, show initials.
+    val contactAvatar by produceState<ImageBitmap?>(
+        initialValue = null, conversation.key, connected
+    ) {
+        if (connected) {
+            val bytes = try {
+                onLoadAvatar(conversation)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            value = bytes?.let { data ->
+                withContext(Dispatchers.Default) {
+                    BitmapFactory.decodeByteArray(data, 0, data.size)?.asImageBitmap()
+                }
+            }
+        }
+    }
     val listState = rememberLazyListState()
     val visible = remember(messages, searchResults, search, conversation.key) {
         val source = if ((search.isNotBlank() || selectedSearchDay != null) && searchResults != null) searchResults else messages
@@ -274,12 +296,21 @@ fun ConversationScreen(
                     .clip(CircleShape).background(StudioPalette.Soft),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    conversation.title.trim().take(1).uppercase(),
-                    color = StudioPalette.Accent,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                if (contactAvatar != null) {
+                    Image(
+                        bitmap = contactAvatar!!,
+                        contentDescription = "WhatsApp profile picture of " + conversation.title,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Text(
+                        conversation.title.trim().take(1).uppercase(),
+                        color = StudioPalette.Accent,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(

@@ -1,5 +1,7 @@
 package com.aharane.studio.core.design
 
+import android.animation.ValueAnimator
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
@@ -8,6 +10,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
@@ -30,6 +33,8 @@ private val BricolageGrotesque = FontFamily(
     Font(R.font.bricolage_grotesque, FontWeight.SemiBold),
     Font(R.font.bricolage_grotesque, FontWeight.Bold)
 )
+
+val LocalStudioMotionEnabled = staticCompositionLocalOf { true }
 
 private val Light = lightColorScheme(
     primary = Color(0xFF0E7A5C),
@@ -135,6 +140,8 @@ fun AharaneTheme(
         surfaceVariant = if (amoled) Color(0xFF101614) else Dark.surfaceVariant,
         outline = if (amoled) Color(0xFF202725) else Dark.outline
     )
+    // Respect Android's system-wide animation setting, including Battery Saver.
+    val motionEnabled = Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ValueAnimator.areAnimatorsEnabled()
     val baseDensity = LocalDensity.current
     val scaledDensity = Density(
         density = baseDensity.density * interfaceScale.coerceIn(.88f, 1.12f),
@@ -143,6 +150,7 @@ fun AharaneTheme(
 
     CompositionLocalProvider(
         LocalDensity provides scaledDensity,
+        LocalStudioMotionEnabled provides motionEnabled,
         LocalStudioCornerScale provides cornerScale.coerceIn(.65f, 1.3f),
         LocalStudioRowScale provides rowScale.coerceIn(.85f, 1.2f)
     ) {

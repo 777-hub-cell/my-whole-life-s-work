@@ -1637,6 +1637,9 @@ fun AharaneApp(
                     conversation = activeConversation!!,
                     messages = if (previewMode) previewMessages.filter { it.key == activeConversation!!.key } else activeMessages,
                     connected = if (previewMode) true else currentAccountState?.connected == true,
+                    onLoadAvatar = { chat ->
+                        if (previewMode || !connected) null else repository.whatsappAvatarBytes(chat)
+                    },
                     aiReplyAvailable = !previewMode && aiReplyAvailable,
                     onGenerateAiReply = { message, quotedMessage, tone, instruction ->
                         repository.generateAiReply(message, quotedMessage, tone, instruction)
@@ -2191,6 +2194,9 @@ fun AharaneApp(
                             }
                         },
                         onConversationSelected = { activeConversation = it },
+                        onLoadAvatar = { chat ->
+                            if (previewMode || !connected) null else repository.whatsappAvatarBytes(chat)
+                        },
                         onChatAction = { chat, action ->
                             if (previewMode) return@ChatsScreen
                             connectionScope.launch {

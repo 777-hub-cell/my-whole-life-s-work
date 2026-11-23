@@ -1,6 +1,12 @@
 package com.aharane.studio.features.chats
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -68,6 +74,7 @@ import com.aharane.studio.core.design.StudioPalette
 import com.aharane.studio.core.design.StudioActionButton
 import com.aharane.studio.core.design.StudioTag
 import com.aharane.studio.core.design.StudioTextInput
+import com.aharane.studio.core.design.LocalStudioMotionEnabled
 import com.aharane.studio.core.model.ChatMessage
 import com.aharane.studio.core.model.ChatSummary
 import com.aharane.studio.core.model.MessageDirection
@@ -300,7 +307,14 @@ fun ConversationScreen(
             }
         }
 
-        if (searchOpen) {
+        AnimatedVisibility(
+            visible = searchOpen,
+            enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 130 else 0)) +
+                expandVertically(tween(if (LocalStudioMotionEnabled.current) 190 else 0)),
+            exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
+                shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 150 else 0))
+        ) {
+            Column(Modifier.fillMaxWidth()) {
             Row(
                 Modifier.fillMaxWidth().background(StudioPalette.Surface)
                     .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -357,6 +371,7 @@ fun ConversationScreen(
                 }
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(StudioPalette.Line))
+            }
         }
 
         if (mediaGalleryOpen) {
@@ -577,8 +592,14 @@ fun ConversationScreen(
             }
         }
 
-        if (replyTo != null) {
-            Row(
+        AnimatedVisibility(
+            visible = replyTo != null,
+            enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 130 else 0)) +
+                expandVertically(tween(if (LocalStudioMotionEnabled.current) 180 else 0)),
+            exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
+                shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 140 else 0))
+        ) {
+            if (replyTo != null) Row(
                 Modifier.fillMaxWidth().background(StudioPalette.Surface)
                     .padding(start = 12.dp, end = 8.dp, top = 7.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically

@@ -206,6 +206,7 @@ def back():
 
 
 def main():
+    global CURRENT_THEME
     OUT.mkdir(parents=True, exist_ok=True)
     DEVICE_INFO.update({
         "model": run("adb", "shell", "getprop", "ro.product.model", capture_output=True).stdout.strip(),
@@ -320,9 +321,9 @@ def main():
         "Development", "Studio source", "Visual command builder",
         "Status & Channels", "WhatsApp Status", "No currently received statuses"
     ])
-    tap_label("Accounts & owners")
-    capture("05a-accounts-owners.png")
-    back()
+    tap_label("Configuration", scroll_to_find=True)
+    capture("05a-configuration-from-more.png")
+    tap_label("‹  Back to Home")
 
     tap_label("Activity and logs", scroll_to_find=True)
     capture("05b-activity-and-logs.png")

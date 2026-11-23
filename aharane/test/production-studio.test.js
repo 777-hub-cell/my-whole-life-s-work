@@ -117,7 +117,7 @@ test('pairing uses saved Private and Public numbers and is always user-requested
  assert.ok(bind.includes('reconnectPairP'))
  assert.ok(code.includes('startPairMonitorP()'), 'Pairing code requests monitor the candidate lifecycle.')
  assert.ok(qrRequest.includes('startQrP()'), 'QR polling starts only after the explicit QR request.')
- assert.ok(bridge.includes("C.owner=profile==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'')"))
+ assert.ok(bridge.includes("C.owner=profile==='private'?(P.owners.ownerNumber||P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'')"))
 })
 
 test('Configuration drafts are not redrawn by background status polling', async () => {

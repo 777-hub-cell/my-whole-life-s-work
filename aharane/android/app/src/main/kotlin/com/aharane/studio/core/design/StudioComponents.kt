@@ -205,19 +205,24 @@ fun StudioBottomNavigation(
 }
 
 @Composable
-fun StudioPageTitle(title: String, subtitle: String? = null) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+fun StudioPageTitle(title: String, subtitle: String? = null, compact: Boolean = false) {
+    Column(verticalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 6.dp)) {
         Text(
             title,
             color = StudioPalette.Ink,
             fontFamily = MaterialTheme.typography.headlineLarge.fontFamily,
-            fontSize = 30.sp,
-            lineHeight = 33.sp,
+            fontSize = if (compact) 22.sp else 30.sp,
+            lineHeight = if (compact) 27.sp else 33.sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = (-0.75).sp
+            letterSpacing = if (compact) (-0.35).sp else (-0.75).sp
         )
         if (subtitle != null) {
-            Text(subtitle, color = StudioPalette.Muted, fontSize = 15.sp, lineHeight = 21.sp)
+            Text(
+                subtitle,
+                color = StudioPalette.Muted,
+                fontSize = if (compact) 12.sp else 15.sp,
+                lineHeight = if (compact) 17.sp else 21.sp
+            )
         }
     }
 }

@@ -44,7 +44,7 @@ const clock=()=>new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit
 function sorted(o){return Object.keys(o).sort((a,b)=>(typeof o[b]==='object')-(typeof o[a]==='object')||a.localeCompare(b))}
 function filesV(){const d=node(S.path),q=S.q.toLowerCase(),ks=sorted(d).filter(k=>k.toLowerCase().includes(q));
 const empty= q
- ? `<div class="files-empty"><span class="files-empty-mark">${ico('search')}</span><strong>No files found</strong><p>Try a different name or clear your search.</p><button class="btn sm" id="clear-file-search">Clear search</button></div>`
+ ? `<div class="files-empty"><span class="files-empty-mark">${ico('files')}</span><strong>No files found</strong><p>Try a different name or clear your search.</p><button class="btn sm" id="clear-file-search">Clear search</button></div>`
  : `<div class="files-empty"><span class="files-empty-mark">${ico('files')}</span><strong>This folder is empty</strong><p>Create a file or folder, or upload your existing bot source.</p><button class="btn p sm" onclick="mk('file')">Create file</button></div><div class="editor-quick"><span><b>Code editor</b><small>Open your source editor</small></span><button class="btn sm" onclick="S.ed=true;render()">Open editor</button></div>`;
 return`<h1>Files</h1><p class="sub">Browse and edit Aharane source files.</p><input class="field" id="fq" placeholder="Search files and folders" aria-label="Search files" value="${esc(S.q)}">
 <div class="btns" style="margin:12px 0 0;flex-wrap:wrap"><button class="btn sm" onclick="mk('file')">New file</button><button class="btn sm" onclick="$('#upl').click()">Upload</button><button class="btn sm" onclick="mk('dir')">New folder</button><button class="btn sm" id="export-bot-source">Export Bot Source</button></div>
@@ -413,7 +413,9 @@ q('[data-s]',b=>b.onclick=()=>{show[b.dataset.s]=!show[b.dataset.s];render()});
 q('[data-e]',i=>i.oninput=()=>{envs[i.dataset.e].v=i.value;if(!envDirty){envDirty=true;const s=$('#se');s.disabled=false;s.style.opacity=1}});
 const se=$('#se');if(se)se.onclick=()=>{envDirty=false;toast('Changes saved');render()};
 const fq=$('#fq');if(fq)fq.oninput=()=>{S.q=fq.value;const p=fq.selectionStart;render();const n=$('#fq');n.focus();n.setSelectionRange(p,p)};
+const clearFileSearch=$('#clear-file-search');if(clearFileSearch)clearFileSearch.onclick=()=>{S.q='';render()};
 const cq=$('#cq');if(cq)cq.oninput=()=>{S.cq=cq.value;const p=cq.selectionStart;render();const n=$('#cq');n.focus();n.setSelectionRange(p,p)};
+const clearChatSearch=$('#clear-chat-search');if(clearChatSearch)clearChatSearch.onclick=()=>{S.cq='';render()};
 const ed=$('#ed');if(ed)ed.oninput=()=>{const[d,n]=getFile(S.cur);d[n]=ed.value;$('#ec').textContent=ed.value.split('\n').length+' lines';$('#es').textContent='Saved'};
 }
 setInterval(()=>{const u=$('#up');if(u&&S.run)u.textContent=up()},1000);

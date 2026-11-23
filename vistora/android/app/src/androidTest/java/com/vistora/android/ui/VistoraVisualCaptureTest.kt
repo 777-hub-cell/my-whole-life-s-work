@@ -64,7 +64,7 @@ class VistoraVisualCaptureTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val bitmap = instrumentation.uiAutomation.takeScreenshot()
         val directory = File(
-            instrumentation.targetContext.getExternalFilesDir(null),
+            instrumentation.targetContext.filesDir,
             "vistora-visual-qa"
         ).apply { mkdirs() }
         FileOutputStream(File(directory, "$name.png")).use { output ->

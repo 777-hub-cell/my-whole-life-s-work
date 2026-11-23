@@ -2,6 +2,8 @@ pluginManagement {
     repositories {
         google()
         maven { url = uri("https://repo1.maven.org/maven2") }
+        // Mirror before canonical Central, to withstand HTTP 429 throttling.
+        maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
         mavenCentral()
         gradlePluginPortal()
     }
@@ -18,6 +20,8 @@ dependencyResolutionManagement {
                 includeGroup("org.hamcrest")
             }
         }
+        // Mirror before canonical Central, to withstand HTTP 429 throttling.
+        maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
         mavenCentral()
     }
 }

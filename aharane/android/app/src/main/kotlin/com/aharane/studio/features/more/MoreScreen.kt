@@ -80,6 +80,7 @@ fun MoreScreen(
     page: String,
     onPageChange: (String) -> Unit,
     onOpenEnvironment: () -> Unit = {},
+    onOpenConfiguration: () -> Unit = {},
     connected: Boolean = false,
     privateAccountStatus: String = "Status not loaded",
     publicAccountStatus: String = "Status not loaded",
@@ -812,11 +813,11 @@ fun MoreScreen(
                 Spacer(Modifier.height(18.dp))
                 StudioCard {
                     StudioRow(
-                        "Accounts & owners",
-                        "Set separate Private and Public Owner identities",
+                        "Configuration",
+                        "Private and Public Owner settings, commands and account preferences",
                         icon = null,
                         trailing = "›",
-                        onClick = { onPageChange("accounts") }
+                        onClick = onOpenConfiguration
                     )
                 }
             }

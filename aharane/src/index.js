@@ -951,50 +951,22 @@ function markMessageSeen(id) {
   return false
 }
 
-async function resolvePrivateSelfChat(currentSocket, message) {
-  const key = message?.key || {}
-  const remoteJid = String(key.remoteJid || '')
-  let remoteJidAlt = String(key.remoteJidAlt || '')
-  const ownJid = String(currentSocket?.user?.id || '')
-  const ownLid = String(currentSocket?.user?.lid || '')
-
-  // Baileys normally provides remoteJidAlt. If WhatsApp omits it for a LID
-  // self-chat, use the already-cached local LID→PN mapping as a fallback.
-  // This lookup is local to Baileys' signal store; it does not query contacts
-  // or broaden authorization to an unknown identity.
-  if (!remoteJidAlt && remoteJid.endsWith('@lid')) {
-    try {
-      const mapping = currentSocket?.signalRepository?.lidMapping
-      if (typeof mapping?.getPNForLID === 'function') {
-        remoteJidAlt = String(await mapping.getPNForLID(remoteJid) || '')
-      }
-    } catch {
-      // Missing mappings must fail closed in isPrivateSelfChat below.
-    }
-  }
-
-  return {
-    remoteJidAlt,
-    ownJid,
-    ownLid,
-    matches: isPrivateSelfChat({
-      sessionId: 'private',
-      remoteJid,
-      remoteJidAlt,
-      ownJid,
-      ownLid,
-      privateOwnerNumber: ownerConfig.privateOwnerNumber,
-    }),
-  }
-}
-
 async function handleMessages(sessionId, currentSocket, event) {
   if (!isSafeMessageUpsert(event)) return
   for (const message of event.messages) {
     if (!message?.message || !message.key?.id) continue
 
     const remoteJid = String(message.key?.remoteJid || '')
-    const senderJid = String(message.key?.participant || remoteJid)
+    const rawSenderJid = String(message.key?.participant || remoteJid)
+    const senderAlternateJid = String(remoteJid.endsWith('@g.us')
+      ? (message.key?.participantAlt || '')
+      : (message.key?.remoteJidAlt || ''))
+    // Prefer the phone-number identity paired by Baileys when WhatsApp uses
+    // LIDs. This is used for allow-list, owner and rate-limit checks only;
+    // outgoing replies continue to use the original remoteJid.
+    const senderJid = senderNumberFromJid(rawSenderJid)
+      ? rawSenderJid
+      : (senderNumberFromJid(senderAlternateJid) ? senderAlternateJid : rawSenderJid)
     const shouldPersist =
       (sessionId === 'private' && isPrivateVisibleChatJid(remoteJid)) ||
       (sessionId === 'public' && message.key.fromMe !== true && isPrivateVisibleChatJid(remoteJid))
@@ -1009,9 +981,12 @@ async function handleMessages(sessionId, currentSocket, event) {
 
     if (sessionId === 'private') {
       if (!isPrivateVisibleChatJid(remoteJid)) continue
-      const privateIdentity = await resolvePrivateSelfChat(currentSocket, message)
+      const privateSelfChat = isPrivateSelfChat({
+        sessionId, remoteJid, ownJid: currentSocket.user?.id || '',
+        privateOwnerNumber: ownerConfig.privateOwnerNumber,
+      })
       await chatStore.recordMessage({ sessionId, message, socket: currentSocket })
-      if (message.key.fromMe !== true || !privateIdentity.matches) continue
+      if (message.key.fromMe !== true || !privateSelfChat) continue
       const visualCommandNames = new Set(visualCommandStore.list('private')
         .filter(workflow => workflow.enabled)
         .flatMap(workflow => {
@@ -1022,9 +997,7 @@ async function handleMessages(sessionId, currentSocket, event) {
         sessionId,
         message,
         remoteJid,
-        remoteJidAlt: privateIdentity.remoteJidAlt,
-        ownJid: privateIdentity.ownJid,
-        ownLid: privateIdentity.ownLid,
+        ownJid: currentSocket.user?.id || '',
         privateOwnerNumber: ownerConfig.privateOwnerNumber,
         text: messageText,
         privateRegistry: privateCommandRegistry,
@@ -1042,12 +1015,15 @@ async function handleMessages(sessionId, currentSocket, event) {
       // configured public sender allow-list.
       const allowedToUseCommands = isAllowedInbound({
         remoteJid,
+        remoteJidAlt: message.key?.remoteJidAlt,
         fromMe: false,
         allowedSenders,
       })
       const allowedVisualSender = isAllowedInbound({
         remoteJid,
-        participantJid: senderJid,
+        remoteJidAlt: message.key?.remoteJidAlt,
+        participantJid: rawSenderJid,
+        participantAltJid: senderAlternateJid,
         allowGroups: true,
         fromMe: false,
         allowedSenders,

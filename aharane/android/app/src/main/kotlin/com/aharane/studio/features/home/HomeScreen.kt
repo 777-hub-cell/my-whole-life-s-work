@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -239,7 +240,7 @@ fun HomeScreen(
                 StudioRow(
                     title = "Visual command builder",
                     subtitle = "Create WhatsApp commands with connected workflow nodes",
-                    icon = null,
+                    icon = Icons.Outlined.AccountTree,
                     trailing = "›",
                     onClick = onOpenCommandBuilder,
                     subtitleMaxLines = 1

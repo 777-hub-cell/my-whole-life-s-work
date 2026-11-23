@@ -83,43 +83,12 @@ fun HomeScreen(
                             lineHeight = 17.sp
                         )
                     }
-                    Row(
-                        Modifier.clip(RoundedCornerShape(99.dp))
-                            .background(
-                                when {
-                                    previewMode -> StudioPalette.Accent.copy(alpha = 0.12f)
-                                    !serviceConnected -> StudioPalette.Bad.copy(alpha = 0.12f)
-                                    serviceDegraded -> Color(0xFFB87928).copy(alpha = 0.16f)
-                                    else -> StudioPalette.Accent.copy(alpha = 0.12f)
-                                }
-                            )
-                            .padding(horizontal = 11.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(7.dp)
-                    ) {
-                        HomeConnectionIndicator(
-                            connected = serviceConnected,
-                            degraded = serviceDegraded,
-                            preview = previewMode,
-                            size = 20.dp
-                        )
-                        Text(
-                            when {
-                                previewMode -> "Preview"
-                                !serviceConnected -> "Offline"
-                                serviceDegraded -> "Partial"
-                                else -> "Online"
-                            },
-                            color = when {
-                                previewMode -> StudioPalette.Accent
-                                !serviceConnected -> StudioPalette.Bad
-                                serviceDegraded -> Color(0xFFB87928)
-                                else -> StudioPalette.Accent
-                            },
-                            fontSize = 12.5.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
+                    Box(
+                        modifier = Modifier.size(9.dp)
+                            .clip(CircleShape)
+                            .background(if (serviceConnected) Color(0xFF668A73) else Color(0xFFB57979))
+                    )
+
                 }
                 Text(
                     "Private and Public are independent WhatsApp sessions.",
@@ -210,7 +179,7 @@ fun HomeScreen(
             StudioCard {
                 StudioRow(
                     title = "Configuration",
-                    subtitle = "One shared Owner · Public bot number",
+                    subtitle = "Independent Private and Public Owners",
                     icon = Icons.Outlined.Tune,
                     trailing = "›",
                     onClick = onOpenConfiguration,

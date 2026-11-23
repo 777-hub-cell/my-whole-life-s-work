@@ -9,6 +9,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import com.aharane.studio.core.design.AharaneTheme
@@ -37,11 +38,15 @@ class VisualCommandBuilderScreenTest {
         compose.onNodeWithTag("node-card-trigger.command").performClick()
         compose.onNodeWithTag("node-config-field-command").performTextClearance()
         compose.onNodeWithTag("node-config-field-command").performTextInput("welcome")
+        closeSoftKeyboard()
+        compose.waitForIdle()
         compose.onNodeWithText("Apply").performClick()
 
         compose.onNodeWithTag("add-node-message.sendText").performClick()
         compose.onNodeWithTag("node-config-field-text").performTextClearance()
         compose.onNodeWithTag("node-config-field-text").performTextInput("Hello from the builder")
+        closeSoftKeyboard()
+        compose.waitForIdle()
         compose.onNodeWithText("Apply").performClick()
 
         compose.onNodeWithTag("socket-message.replyText-out-next").performClick()
@@ -56,6 +61,8 @@ class VisualCommandBuilderScreenTest {
         compose.onNodeWithTag("node-card-trigger.command").performClick()
         compose.onNodeWithTag("node-config-field-command").performTextClearance()
         compose.onNodeWithTag("node-config-field-command").performTextInput("unsaved-local")
+        closeSoftKeyboard()
+        compose.waitForIdle()
         compose.onNodeWithText("Apply").performClick()
         compose.onNodeWithTag("workflow-load").performClick()
         compose.onNodeWithText("welcome").performClick()

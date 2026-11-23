@@ -87,6 +87,7 @@ import com.aharane.studio.features.environment.EnvironmentScreen
 import com.aharane.studio.features.environment.EnvironmentValue
 import com.aharane.studio.features.files.CodeEditorScreen
 import com.aharane.studio.features.files.FilesScreen
+import com.aharane.studio.features.files.EngineLibraryScreen
 import com.aharane.studio.features.files.StudioEditorDocument
 import com.aharane.studio.features.files.StudioFileEntry
 import com.aharane.studio.features.home.HomeScreen
@@ -340,6 +341,7 @@ fun AharaneApp(
     var editorFromConfiguration by rememberSaveable { mutableStateOf(false) }
     var configurationOpen by rememberSaveable { mutableStateOf(false) }
     var commandBuilderOpen by rememberSaveable { mutableStateOf(false) }
+    var engineLibraryOpen by rememberSaveable { mutableStateOf(false) }
     var morePage by rememberSaveable { mutableStateOf("more") }
     var activeConversation by remember { mutableStateOf<ChatSummary?>(null) }
     var activeEditorPath by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1467,7 +1469,7 @@ fun AharaneApp(
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
-        if (!editorOpen && activeConversation == null && !commandBuilderOpen) {
+        if (!editorOpen && activeConversation == null && !commandBuilderOpen && !engineLibraryOpen) {
             StudioHeader(connected = connected, preview = previewMode)
         }
 
@@ -1494,6 +1496,11 @@ fun AharaneApp(
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
+                engineLibraryOpen -> EngineLibraryScreen(
+                    repository = repository,
+                    connected = connected,
+                    onBack = { engineLibraryOpen = false }
+                )
                 commandBuilderOpen -> VisualCommandBuilderScreen(
                     repository = repository,
                     connected = connected,
@@ -2283,6 +2290,7 @@ fun AharaneApp(
                         }
                     )
                     MainDestination.FILES -> FilesScreen(
+                        onOpenEngines = { engineLibraryOpen = true },
                         entries = studioFileEntries,
                         connected = connected,
                         initialPath = fileDirectory,

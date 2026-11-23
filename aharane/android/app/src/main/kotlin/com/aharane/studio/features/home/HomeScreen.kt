@@ -327,6 +327,7 @@ private fun AccountRow(
     val isPrivate = account == ChatAccount.PRIVATE
     Row(
         Modifier.fillMaxWidth().defaultMinSize(minHeight = 65.dp)
+            .animateContentSize()
             .padding(horizontal = 13.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(11.dp)

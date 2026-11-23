@@ -1470,6 +1470,107 @@ app.delete('/api/engines/:id', requireAdmin, async (req, res) => {
   }
 })
 
+function scheduledDestinationError(workflow, destinationJid) {
+  const jid = String(destinationJid || '').trim()
+  const trigger = workflow?.nodes?.find(node => node.type === 'trigger.command')
+  if (!workflow?.enabled || !trigger) return 'Schedules require an enabled saved command workflow.'
+  if (trigger.config?.requireQuoted === true || trigger.config?.requireQuoted === 'true' ||
+      trigger.config?.requireReply === true || trigger.config?.requireReply === 'true') {
+    return 'A scheduled command cannot require a quoted or replied-to incoming message.'
+  }
+  const scope = String(trigger.config?.chatScope || 'direct')
+  const direct = /^\\d{7,15}@s\\.whatsapp\\.net$/.test(jid) || /^\\d{5,25}@lid$/.test(jid)
+  const group = /^\\d{5,25}-\\d{7,20}@g\\.us$/.test(jid)
+  if (workflow.account === 'private') {
+    const owner = String(ownerConfig.privateOwnerNumber || '').replace(/\\D/g, '')
+    if (!owner) return 'Configure the Private Owner before scheduling Private commands.'
+    if (jid !== owner + '@s.whatsapp.net') return 'Private scheduled commands can only send to the configured Private Owner self-chat.'
+    return ''
+  }
+  if (workflow.account !== 'public') return 'The selected workflow account is invalid.'
+  if (direct && (scope === 'direct' || scope === 'both')) return ''
+  if (group && (scope === 'groups' || scope === 'both')) return ''
+  return group
+    ? 'This command is not configured to run in groups.'
+    : 'Choose a valid WhatsApp direct-chat or permitted group destination.'
+}
+
+app.get('/api/schedules', requireAdmin, async (req, res) => {
+  try {
+    const account = String(req.query.account || '')
+    if (account && !['private', 'public'].includes(account)) return res.status(400).json({ ok: false, error: 'Account must be private or public.' })
+    const rows = await schedulerStore.list()
+    res.json({ ok: true, schedules: account ? rows.filter(item => item.account === account) : rows })
+  } catch (error) {
+    res.status(500).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+
+app.post('/api/schedules', requireAdmin, async (req, res) => {
+  try {
+    const workflowId = String(req.body?.workflowId || '')
+    const workflow = visualCommandStore.get(workflowId)
+    if (!workflow) return res.status(404).json({ ok: false, error: 'Saved command workflow not found.' })
+    const destinationJid = String(req.body?.destinationJid || '')
+    const destinationError = scheduledDestinationError(workflow, destinationJid)
+    if (destinationError) return res.status(400).json({ ok: false, error: destinationError })
+    const schedule = await schedulerStore.create({
+      ...req.body,
+      workflowId,
+      account: workflow.account,
+      destinationJid,
+    })
+    publishStudioEvent('scheduler.created', { scheduleId: schedule.id, workflowId, account: workflow.account })
+    res.status(201).json({ ok: true, schedule })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+
+app.put('/api/schedules/:id', requireAdmin, async (req, res) => {
+  try {
+    const current = await schedulerStore.get(req.params.id)
+    if (!current) return res.status(404).json({ ok: false, error: 'Schedule not found.' })
+    const workflow = visualCommandStore.get(current.workflowId)
+    if (!workflow) return res.status(409).json({ ok: false, error: 'The scheduled command no longer exists.' })
+    const destinationJid = String(req.body?.destinationJid ?? current.destinationJid)
+    const destinationError = scheduledDestinationError(workflow, destinationJid)
+    if (destinationError) return res.status(400).json({ ok: false, error: destinationError })
+    const updated = await schedulerStore.update(req.params.id, { ...req.body, destinationJid })
+    res.json({ ok: true, schedule: updated })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+
+app.post('/api/schedules/:id/enabled', requireAdmin, async (req, res) => {
+  try {
+    if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({ ok: false, error: 'enabled must be true or false.' })
+    const current = await schedulerStore.get(req.params.id)
+    if (!current) return res.status(404).json({ ok: false, error: 'Schedule not found.' })
+    const workflow = visualCommandStore.get(current.workflowId)
+    if (req.body.enabled) {
+      const destinationError = scheduledDestinationError(workflow, current.destinationJid)
+      if (destinationError) return res.status(400).json({ ok: false, error: destinationError })
+    }
+    const updated = await schedulerStore.setEnabled(req.params.id, req.body.enabled)
+    res.json({ ok: true, schedule: updated })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+
+app.delete('/api/schedules/:id', requireAdmin, async (req, res) => {
+  try {
+    const removed = await schedulerStore.remove(req.params.id)
+    if (!removed) return res.status(404).json({ ok: false, error: 'Schedule not found.' })
+    publishStudioEvent('scheduler.deleted', { scheduleId: req.params.id })
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(409).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+
 app.get('/api/visual-commands', requireAdmin, (req, res) => {
   const account = String(req.query.account || '')
   if (account && !['private', 'public'].includes(account)) {

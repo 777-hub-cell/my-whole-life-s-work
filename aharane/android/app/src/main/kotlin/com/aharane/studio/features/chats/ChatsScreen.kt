@@ -139,6 +139,8 @@ fun ChatsScreen(
                     ChatFilter.ALL -> !chat.isArchived
                     ChatFilter.UNREAD -> chat.unreadCount > 0 && !chat.isArchived
                     ChatFilter.GROUPS -> chat.isGroup && !chat.isArchived
+                    // Newsletter JIDs are not ingested by the current ChatStore; do not present ordinary chats as Channels.
+                    ChatFilter.CHANNELS -> false
                     ChatFilter.ARCHIVED -> chat.isArchived
                 }
             }
@@ -322,6 +324,7 @@ fun ChatsScreen(
                                 query.isNotBlank() -> "No chats match your search."
                                 filter == ChatFilter.UNREAD -> "No unread chats."
                                 filter == ChatFilter.GROUPS -> "No groups yet."
+                                filter == ChatFilter.CHANNELS -> "No supported Channels are available in this session."
                                 filter == ChatFilter.ARCHIVED -> "No archived chats."
                                 accountConversations.isEmpty() -> "No conversations yet."
                                 else -> "No chats match these filters."
@@ -339,6 +342,7 @@ fun ChatsScreen(
                                 query.isNotBlank() -> "Try a different search or clear the current query."
                                 filter == ChatFilter.UNREAD -> "Unread conversations will appear here."
                                 filter == ChatFilter.GROUPS -> "Group conversations will appear here."
+                                filter == ChatFilter.CHANNELS -> "Channel conversations are not yet available through Aharane’s Chat service."
                                 filter == ChatFilter.ARCHIVED -> "Archived conversations will appear here."
                                 accountConversations.isEmpty() -> "New conversations will appear here when this account receives messages."
                                 else -> "Try another filter to find the conversation you need."

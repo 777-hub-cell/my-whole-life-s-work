@@ -294,3 +294,44 @@ Record evidence and decisions, not unanswered questions. Status values: RESOLVED
 - Performance/accessibility evidence:
 - Remaining limitations:
 - Ready for integration:
+
+## 13. Independent work packages
+
+| Package | Scope and deliverable | Parallel readiness | Integration gate |
+|---|---|---|---|
+| 1A — Visual audit and tokens | Compare current Studio HTML/CSS/JS with Compose screen-by-screen; create measured parity matrix and discrepancy register. | Fully independent. | Every screen/control is mapped to a current source reference. |
+| 1B — Shared design system | Implement one source for typography, light/dark colours, spacing, shapes, component metrics and motion tokens. | Independent; publish early API. | Token contract is consumed without feature-specific forks. |
+| 1C — App shell and routing | Own root shell, five destinations, global insets, nested routes and full-screen chrome rules. | Can proceed with route stubs while features build. | Feature route registration contract accepted. |
+| 1D — Shared components | Buttons, fields, menus, popovers, sheets, dialogs, list rows, progress, empty/error/offline patterns and accessibility semantics. | Fully independent. | Stable APIs, previews and semantics tests. |
+| 1E — Gesture and window conventions | Define nested scroll priorities, keyboard/system insets, back behaviour, adaptive width and focus. | Fully independent initially; verify with feature owners. | Gesture matrix agreed by Agents 02/05/07/08/09. |
+| 1F — Shared motion/performance | Compose motion primitives, reduced-motion support, recomposition/list profiling and lower-end performance. | Shared primitives can progress independently. | Feature agents adopt tokens; API 26 and 36 checks pass. |
+| 1G — Integrated visual acceptance | Inspect all unique screens/states against approved HTML; return defects to feature owners. | Inventory can start immediately; final pass depends on feature builds. | Every actual screenshot is reviewed; no blank/missing content. |
+
+### Parallel rule and hand-off
+After 1A/1B, publish a versioned UI Foundation Contract covering token names, typography styles, component APIs, insets, navigation registration and accessibility conventions. Agents 02, 05, 06, 07, 08 and 09 build against that contract while Agent 01 finishes 1C–1G. No feature agent may fork the global theme to avoid waiting.
+
+## 14. File ownership
+
+Own shared Compose theme/design-system packages, root shell/navigation, global window/inset/back conventions, reusable primitives, shared motion implementation and the integrated visual QA index.
+
+Do not own Chat screens/actions (02), WhatsApp transport/server APIs (03), command/owner policy (04), Builder canvas/editor (05), Engine execution (06), Scheduler feature behaviour (07), Files/ENV/Notes/editor/storage logic (08), or analytics/notifications/Channels management/updates (09).
+
+Protected shared files include root navigation, app theme, typography, MainActivity, app-level NavHost, common Scaffold/window handling and shared component packages. Agent 01 owns implementation here, but must publish migration notes before breaking API changes. Feature owners register routes through the agreed interface and must not concurrently edit root navigation.
+
+## 15. Required hand-offs and acceptance gates
+
+- To Android feature owners: token/component APIs, typography/spacing, route registration, keyboard/inset rules, loading/error patterns and accessibility conventions.
+- From Agent 02: chat gesture and motion needs; Agent 01 supplies primitives, Agent 02 implements message-specific behaviour.
+- From Agent 05: canvas pan/zoom/drag priorities; global swipe navigation must not steal canvas gestures.
+- To Agent 10: screenshot inventory, device matrix, visual checklist and exact build/device/theme metadata.
+
+A hand-off is a versioned interface or written decision, not a verbal assumption. Record each consumer and the first commit using it.
+
+- [ ] 1A maps every current screen/control to an approved source reference.
+- [ ] 1B provides one global token implementation.
+- [ ] 1C matches the approved five destinations and full-screen chrome rules.
+- [ ] 1D controls have stable APIs and accessibility semantics; no dead/duplicate actions.
+- [ ] 1E chat reply, media swipe, Builder gestures and navigation do not steal each other's input.
+- [ ] 1F respects system animation scale/reduced motion and stays responsive.
+- [ ] 1G screenshots cover all implemented screens/states and are individually inspected.
+- [ ] Agent 10 reruns API 26/API 36/device checks.

@@ -2,7 +2,6 @@ package com.aharane.studio.features.more
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -176,7 +175,10 @@ fun MoreScreen(
 
     Crossfade(
         targetState = page,
-        animationSpec = tween(if (LocalStudioMotionEnabled.current) 210 else 0),
+        animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Float>(
+            enabled = LocalStudioMotionEnabled.current,
+            targetMillis = StudioFoundationContract.Motion.ScreenTransitionMillis
+        ),
         label = "more-page-transition"
     ) { targetPage ->
     if (targetPage == "whatsapp-updates" && updatesRepository != null) {

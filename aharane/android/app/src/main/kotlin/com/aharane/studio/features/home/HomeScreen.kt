@@ -110,6 +110,13 @@ fun HomeScreen(
                         )
                     }
                 }
+                Text(
+                    "Private and Public are independent WhatsApp sessions.",
+                    color = StudioPalette.Muted,
+                    fontSize = 11.5.sp,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.padding(top = 7.dp)
+                )
                 StudioDivider()
                 Column(
                     Modifier.fillMaxWidth().padding(top = 11.dp),

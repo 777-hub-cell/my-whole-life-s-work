@@ -3,31 +3,33 @@ package com.vistora.android.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vistora.android.domain.LibraryStatus
 import com.vistora.android.domain.MediaItem
 import com.vistora.android.domain.MediaType
-import com.vistora.android.ui.components.PosterTile
+import com.vistora.android.ui.components.PosterArt
 import com.vistora.android.ui.components.SectionHeading
-import com.vistora.android.ui.components.VistoraAction
 import com.vistora.android.ui.components.VistoraIcon
 import com.vistora.android.ui.theme.VistoraPalette
 
@@ -37,90 +39,206 @@ fun HomeScreen(
     onSearch: () -> Unit,
     onNotifications: () -> Unit,
     onOpenTitle: (Long) -> Unit,
-    onOpenWatchlist: () -> Unit,
-    onOpenCategory: (MediaType) -> Unit
+    onDiscover: () -> Unit,
+    onOpenCategory: (MediaType) -> Unit,
+    onOpenStatus: (LibraryStatus) -> Unit
 ) {
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=20.dp),
-        verticalArrangement=Arrangement.spacedBy(24.dp)
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(top=9.dp),
-            verticalAlignment=Alignment.CenterVertically,
-            horizontalArrangement=Arrangement.SpaceBetween
+            modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(top = 4.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                Box(Modifier.size(38.dp).background(VistoraPalette.Burgundy,RoundedCornerShape(10.dp)),contentAlignment=Alignment.Center) {
-                    Text("V",color=VistoraPalette.OnAccent,style=TextStyle(fontFamily=FontFamily.Serif,fontSize=28.sp,fontStyle=androidx.compose.ui.text.font.FontStyle.Italic))
-                }
-                Text("VISTORA",color=VistoraPalette.Text,fontSize=21.sp,fontWeight=FontWeight.Medium,letterSpacing=3.sp)
-            }
-            Row(verticalAlignment=Alignment.CenterVertically) {
-                IconButton("search","Search",onSearch)
-                IconButton("bell","Notifications",onNotifications)
-            }
-        }
-        Column(verticalArrangement=Arrangement.spacedBy(6.dp)) {
-            Text("Your entertainment,",style=TextStyle(fontFamily=FontFamily.Serif,fontSize=29.sp,lineHeight=34.sp,fontWeight=FontWeight.Medium,letterSpacing=(-.5).sp),color=VistoraPalette.Text)
-            Text("all in one place.",style=TextStyle(fontFamily=FontFamily.Serif,fontSize=30.sp,lineHeight=35.sp,fontStyle=androidx.compose.ui.text.font.FontStyle.Italic),color=VistoraPalette.Rose)
-            Text("A little home for everything you've watched and loved.",color=VistoraPalette.Muted,fontSize=14.sp,lineHeight=21.sp)
-        }
-
-        SectionHeading("Browse categories")
-        Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
-            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                CategoryTile("Movies","clap",Modifier.weight(1f)){onOpenCategory(MediaType.MOVIE)}
-                CategoryTile("K-Dramas","heart",Modifier.weight(1f)){onOpenCategory(MediaType.K_DRAMA)}
-            }
-            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                CategoryTile("Anime","torii",Modifier.weight(1f)){onOpenCategory(MediaType.ANIME)}
-                CategoryTile("TV Series","tv",Modifier.weight(1f)){onOpenCategory(MediaType.TV_SERIES)}
+            Text(
+                "VISTORA",
+                color = VistoraPalette.Text,
+                style = TextStyle(
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 4.2.sp
+                )
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                HeaderIcon("search", "Search", onSearch)
+                HeaderIcon("bell", "Notifications", onNotifications)
             }
         }
 
-        val watchlist=items.filter { it.isWatchlisted }.sortedByDescending { it.updatedAt }
-        TitleShelf("My Watchlist",watchlist,onOpenTitle,onOpenWatchlist)
-        Spacer(Modifier.height(10.dp))
-    }
-}
-
-@Composable
-private fun IconButton(name:String,description:String,onClick:()->Unit){
-    Box(Modifier.size(48.dp).semantics { contentDescription = description; role = Role.Button }.clickable(role=Role.Button,onClick=onClick),contentAlignment=Alignment.Center){
-        VistoraIcon(name,Modifier.size(21.dp),VistoraPalette.Text)
-    }
-}
-
-@Composable
-private fun CategoryTile(label:String,icon:String,modifier:Modifier=Modifier,onClick:()->Unit){
-    Row(
-        modifier=modifier.height(82.dp).background(VistoraPalette.Surface,RoundedCornerShape(16.dp))
-            .clickable(onClick=onClick).padding(horizontal=15.dp),
-        verticalAlignment=Alignment.CenterVertically,
-        horizontalArrangement=Arrangement.spacedBy(14.dp)
-    ){
-        Box(Modifier.size(43.dp).background(VistoraPalette.Rose.copy(alpha=.12f),RoundedCornerShape(13.dp)),contentAlignment=Alignment.Center){
-            VistoraIcon(icon,Modifier.size(23.dp),VistoraPalette.Rose)
+        Column(modifier = Modifier.padding(bottom = 25.dp)) {
+            Text(
+                "What you’ve watched,",
+                color = VistoraPalette.Text,
+                style = TextStyle(
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 27.sp,
+                    lineHeight = 31.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = (-.35).sp
+                )
+            )
+            Text(
+                "and what’s next.",
+                color = VistoraPalette.Rose,
+                style = TextStyle(
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 27.sp,
+                    lineHeight = 32.sp,
+                    fontStyle = FontStyle.Italic,
+                    fontWeight = FontWeight.Normal,
+                    letterSpacing = (-.4).sp
+                )
+            )
         }
-        Text(label,color=VistoraPalette.Text,style=TextStyle(fontFamily=FontFamily.Serif,fontSize=20.sp,fontWeight=FontWeight.Medium),maxLines=1,overflow=TextOverflow.Ellipsis)
-    }
-}
 
-@Composable
-private fun TitleShelf(
-    title:String,
-    list:List<MediaItem>,
-    onOpenTitle:(Long)->Unit,
-    onSeeAll:()->Unit
-){
-    Column(verticalArrangement=Arrangement.spacedBy(12.dp)){
-        SectionHeading(title,if(list.isNotEmpty()) "See all" else null,{onSeeAll()})
-        if(list.isEmpty()){
-            Text("Your titles will appear here as you add them.",color=VistoraPalette.Muted,fontSize=13.sp)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "Find something to watch",
+                color = VistoraPalette.Text,
+                style = TextStyle(fontFamily = FontFamily.Serif, fontSize = 24.sp, fontWeight = FontWeight.Medium)
+            )
+            Text(
+                "Open Discover",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(role = Role.Button, onClick = onDiscover)
+                    .padding(start = 8.dp, top = 7.dp, bottom = 7.dp),
+                color = VistoraPalette.Muted,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                CategoryTile("Movies", "clap", Modifier.weight(1f)) { onOpenCategory(MediaType.MOVIE) }
+                CategoryTile("K-Dramas", "heart", Modifier.weight(1f)) { onOpenCategory(MediaType.K_DRAMA) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                CategoryTile("Anime", "torii", Modifier.weight(1f)) { onOpenCategory(MediaType.ANIME) }
+                CategoryTile("TV Series", "tv", Modifier.weight(1f)) { onOpenCategory(MediaType.TV_SERIES) }
+            }
+        }
+
+        StatusShelf("Currently watching", LibraryStatus.WATCHING, items, onOpenTitle, onOpenStatus)
+        StatusShelf("Plan to watch", LibraryStatus.PLAN_TO_WATCH, items, onOpenTitle, onOpenStatus)
+        StatusShelf("On hold", LibraryStatus.ON_HOLD, items, onOpenTitle, onOpenStatus)
+        StatusShelf("Recently finished", LibraryStatus.COMPLETED, items, onOpenTitle, onOpenStatus)
+
+        if (items.isEmpty()) {
+            Column(
+                Modifier.fillMaxWidth().padding(top = 26.dp, bottom = 24.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(VistoraPalette.Surface)
+                    .padding(horizontal = 20.dp, vertical = 22.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Nothing here yet", color = VistoraPalette.Text,
+                    style = TextStyle(fontFamily = FontFamily.Serif, fontSize = 23.sp, fontWeight = FontWeight.Medium))
+                Text(
+                    "Pick a category above, or add a title from your library.",
+                    color = VistoraPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
         } else {
-            LazyRow(horizontalArrangement=Arrangement.spacedBy(12.dp)){
-                items(list.take(12),key={it.id}){item->
-                    PosterTile(item,{onOpenTitle(item.id)},Modifier.width(116.dp))
+            Spacer(Modifier.height(18.dp))
+        }
+    }
+}
+
+@Composable
+private fun HeaderIcon(name: String, description: String, onClick: () -> Unit) {
+    Box(
+        Modifier.size(44.dp)
+            .semantics { contentDescription = description; role = Role.Button }
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        VistoraIcon(name, Modifier.size(22.dp), VistoraPalette.Text)
+    }
+}
+
+@Composable
+private fun CategoryTile(label: String, icon: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Column(
+        modifier = modifier
+            .heightIn(min = 112.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(VistoraPalette.Surface)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
+        horizontalAlignment = Alignment.Start
+    ) {
+        Box(
+            Modifier.size(44.dp).clip(RoundedCornerShape(14.dp))
+                .background(VistoraPalette.Rose.copy(alpha = .13f)),
+            contentAlignment = Alignment.Center
+        ) {
+            VistoraIcon(icon, Modifier.size(22.dp), VistoraPalette.Rose)
+        }
+        Column(modifier = Modifier.padding(top = 16.dp)) {
+            Text(
+                label,
+                color = VistoraPalette.Text,
+                style = TextStyle(fontFamily = FontFamily.Serif, fontSize = 21.sp, lineHeight = 23.sp, fontWeight = FontWeight.Medium),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text("Explore new", color = VistoraPalette.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+        }
+    }
+}
+
+@Composable
+private fun StatusShelf(
+    title: String,
+    status: LibraryStatus,
+    items: List<MediaItem>,
+    onOpenTitle: (Long) -> Unit,
+    onSeeAll: (LibraryStatus) -> Unit
+) {
+    val shelf = items.asSequence().filter { it.status == status }
+        .sortedByDescending { it.updatedAt }.take(12).toList()
+    if (shelf.isEmpty()) return
+
+    Column(modifier = Modifier.padding(top = 28.dp)) {
+        SectionHeading(title, "View all") { onSeeAll(status) }
+        LazyRow(
+            modifier = Modifier.padding(top = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(end = 4.dp)
+        ) {
+            items(shelf, key = { it.id }) { item ->
+                Column(
+                    Modifier.width(112.dp).clickable(role = Role.Button) { onOpenTitle(item.id) }
+                ) {
+                    PosterArt(item.title, item.type.category, item.posterPath, Modifier.fillMaxWidth())
+                    Text(
+                        item.title,
+                        modifier = Modifier.padding(top = 8.dp),
+                        color = VistoraPalette.Text,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    val detail = when {
+                        item.isEpisodic && item.watchedEpisodes > 0 -> "${item.type.label} · Ep ${item.watchedEpisodes}"
+                        item.releaseYear != null -> "${item.type.label} · ${item.releaseYear}"
+                        else -> item.type.label
+                    }
+                    Text(detail, color = VistoraPalette.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }

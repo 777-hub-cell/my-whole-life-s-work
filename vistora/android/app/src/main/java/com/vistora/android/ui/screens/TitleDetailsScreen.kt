@@ -78,6 +78,9 @@ fun TitleDetailsScreen(
         mutableStateOf(episodeNotes.firstOrNull{it.episodeNumber==selectedEpisode}?.body.orEmpty())
     }
     var overallDraft by remember(item.id,item.overallThoughts) { mutableStateOf(item.overallThoughts) }
+    var noteTab by remember(item.id,initialEpisode) {
+        mutableStateOf(if (initialEpisode != null) "episode" else "overall")
+    }
 
     LaunchedEffect(item.id,selectedEpisode,episodeNotes) {
         episodeDraft=episodeNotes.firstOrNull{it.episodeNumber==selectedEpisode}?.body.orEmpty()
@@ -109,7 +112,7 @@ fun TitleDetailsScreen(
             verticalAlignment=Alignment.CenterVertically,
             horizontalArrangement=Arrangement.spacedBy(18.dp)
         ) {
-            PosterArt(item.title,item.type.category,item.posterPath,Modifier.width(126.dp))
+            PosterArt(item.title,item.type.category,item.posterPath,Modifier.width(116.dp))
             Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(8.dp)){
                 Text(item.title,color=VistoraPalette.Text,style=TextStyle(fontFamily=FontFamily.Serif,fontWeight=FontWeight.Medium,fontSize=29.sp,lineHeight=31.sp))
                 val meta=buildList {
@@ -118,7 +121,7 @@ fun TitleDetailsScreen(
                     if(item.totalEpisodes>0) add("${item.totalEpisodes} Episodes")
                     else if(item.releaseYear!=null) add(item.releaseYear.toString())
                 }.joinToString(" · ")
-                Text(meta,color=VistoraPalette.Secondary,fontSize=12.sp,lineHeight=18.sp)
+                Text(meta,color=VistoraPalette.Secondary,fontSize=13.sp,lineHeight=19.sp)
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(2.dp)){
                     (1..5).forEach { star ->
                         Box(Modifier.size(38.dp).semantics { contentDescription = "Rate $star out of 5 stars"; role = Role.Button }.clip(RoundedCornerShape(7.dp)).clickable(role=Role.Button){onRatingChange(star)},contentAlignment=Alignment.Center){
@@ -155,8 +158,31 @@ fun TitleDetailsScreen(
         }
 
         Spacer(Modifier.height(22.dp))
-        StatusLabel(status=item.status,modifier=Modifier.fillMaxWidth().semantics { contentDescription = "Change library status. Current status: ${item.status.label}"; role = Role.Button }.clickable(role=Role.Button){showStatus=true},compact=false)
-        Box(Modifier.fillMaxWidth().padding(top=7.dp).height(1.dp).background(VistoraPalette.Line))
+        Row(
+            Modifier.fillMaxWidth().padding(top=22.dp),
+            verticalAlignment=Alignment.CenterVertically,
+            horizontalArrangement=Arrangement.spacedBy(9.dp)
+        ) {
+            StatusLabel(
+                status=item.status,
+                modifier=Modifier.semantics {
+                    contentDescription = "Change library status. Current status: ${item.status.label}"
+                    role = Role.Button
+                }.clickable(role=Role.Button) { showStatus=true },
+                compact=true
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                "Change",
+                modifier=Modifier.clickable(role=Role.Button) { showStatus=true }.padding(vertical=7.dp,horizontal=4.dp),
+                color=VistoraPalette.Muted,fontSize=12.sp,fontWeight=FontWeight.Medium
+            )
+            Box(
+                Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).clickable(role=Role.Button) { showStatus=true },
+                contentAlignment=Alignment.Center
+            ) { VistoraIcon("more",Modifier.size(19.dp),VistoraPalette.Secondary) }
+        }
+        Box(Modifier.fillMaxWidth().padding(top=13.dp).height(1.dp).background(VistoraPalette.Line))
 
         if(item.isEpisodic){
             Spacer(Modifier.height(23.dp))
@@ -193,17 +219,36 @@ fun TitleDetailsScreen(
         }
 
         Spacer(Modifier.height(26.dp))
-        SectionHeading("Episode Notes")
-        Text("Your thoughts, episode by episode. Choose an episode to write, read or revisit a note.",modifier=Modifier.padding(top=5.dp),
-            color=VistoraPalette.Muted,fontSize=13.sp,lineHeight=19.sp)
-
+        SectionHeading("Notes")
         if(item.isEpisodic) {
-            Row(Modifier.fillMaxWidth().padding(top=15.dp),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically){
+            Row(
+                Modifier.fillMaxWidth().padding(top=14.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(VistoraPalette.Field)
+                    .border(1.dp,VistoraPalette.Line,RoundedCornerShape(999.dp))
+                    .padding(4.dp),
+                horizontalArrangement=Arrangement.spacedBy(4.dp)
+            ) {
+                NoteTab("Overall Thoughts",noteTab=="overall",Modifier.weight(1f)){ noteTab="overall" }
+                NoteTab("Episode Notes",noteTab=="episode",Modifier.weight(1f)){ noteTab="episode" }
+            }
+        }
+
+        if(noteTab=="episode" && item.isEpisodic) {
+            Text(
+                "Your thoughts, episode by episode. Choose an episode to write, read or revisit a note.",
+                modifier=Modifier.padding(top=12.dp),
+                color=VistoraPalette.Muted,fontSize=13.sp,lineHeight=19.sp
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(top=14.dp),
+                horizontalArrangement=Arrangement.spacedBy(8.dp),
+                verticalAlignment=Alignment.CenterVertically
+            ) {
                 Text("Episode",color=VistoraPalette.Secondary,fontSize=14.sp)
                 EpisodeSelector(selectedEpisode,item.totalEpisodes){selectedEpisode=it}
                 Spacer(Modifier.weight(1f))
-                val noteCount=episodeNotes.size
-                Text("$noteCount saved",color=VistoraPalette.Muted,fontSize=12.sp)
+                Text("${episodeNotes.size} saved",color=VistoraPalette.Muted,fontSize=12.sp)
             }
             VistoraTextField(
                 value=episodeDraft,
@@ -215,57 +260,63 @@ fun TitleDetailsScreen(
                 singleLine=false,
                 modifier=Modifier.fillMaxWidth().padding(top=12.dp)
             )
-            Row(Modifier.fillMaxWidth().padding(top=11.dp),horizontalArrangement=Arrangement.End,verticalAlignment=Alignment.CenterVertically){
+            Row(
+                Modifier.fillMaxWidth().padding(top=11.dp),
+                horizontalArrangement=Arrangement.End,
+                verticalAlignment=Alignment.CenterVertically
+            ) {
                 if(episodeNotes.any{it.episodeNumber==selectedEpisode}) {
-                    Text("Delete note",modifier=Modifier.clickable{onDeleteEpisodeNote(selectedEpisode);episodeDraft=""}.padding(horizontal=12.dp,vertical=12.dp),
-                        color=VistoraPalette.DroppedText,fontSize=13.sp,fontWeight=FontWeight.SemiBold)
+                    Text(
+                        "Delete note",
+                        modifier=Modifier.clickable{onDeleteEpisodeNote(selectedEpisode);episodeDraft=""}.padding(horizontal=12.dp,vertical=12.dp),
+                        color=VistoraPalette.DroppedText,fontSize=13.sp,fontWeight=FontWeight.SemiBold
+                    )
                 }
-                VistoraAction("Save episode note",onClick={onSaveEpisodeNote(selectedEpisode,episodeDraft)},leading="check")
+                VistoraAction("Save note",onClick={onSaveEpisodeNote(selectedEpisode,episodeDraft)},leading="check")
             }
 
-            if(episodeNotes.isNotEmpty()){
-                Spacer(Modifier.height(22.dp))
+            if(episodeNotes.isNotEmpty()) {
+                Spacer(Modifier.height(20.dp))
                 SectionHeading("Saved episode notes")
-                Column(Modifier.padding(top=6.dp),verticalArrangement=Arrangement.spacedBy(9.dp)){
-                    episodeNotes.sortedByDescending{it.episodeNumber}.forEach { note->
+                Column(Modifier.padding(top=7.dp),verticalArrangement=Arrangement.spacedBy(9.dp)) {
+                    episodeNotes.sortedByDescending{it.episodeNumber}.forEach { note ->
                         val active=note.episodeNumber==selectedEpisode
                         Column(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp))
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
                                 .background(if(active)VistoraPalette.Raised else VistoraPalette.Surface)
-                                .border(1.dp,if(active)VistoraPalette.Rose.copy(alpha=.55f) else VistoraPalette.Line,RoundedCornerShape(15.dp))
+                                .border(1.dp,if(active)VistoraPalette.Rose.copy(alpha=.55f) else VistoraPalette.Line,RoundedCornerShape(14.dp))
                                 .clickable{selectedEpisode=note.episodeNumber}
                                 .padding(14.dp)
-                        ){
-                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
+                        ) {
+                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                                 Text("Episode ${note.episodeNumber}",color=VistoraPalette.Text,fontWeight=FontWeight.SemiBold,fontSize=14.sp)
                                 Text(dateLabel(note.updatedAt),color=VistoraPalette.Muted,fontSize=11.sp)
                             }
                             Text(note.body,color=VistoraPalette.Secondary,fontSize=13.sp,lineHeight=19.sp,maxLines=3,modifier=Modifier.padding(top=7.dp))
-                            Text(if(active)"Selected for reading / editing" else "Tap to read or edit",color=VistoraPalette.Rose,fontSize=11.sp,modifier=Modifier.padding(top=7.dp))
                         }
                     }
                 }
             }
         } else {
-            Text("This is a film, so episode notes are not used. Add your reflection under Overall Thoughts below.",
-                color=VistoraPalette.Muted,fontSize=13.sp,lineHeight=19.sp,modifier=Modifier.padding(top=11.dp))
+            Text(
+                "Your overall opinion, favourite characters, reminders or final thoughts.",
+                modifier=Modifier.padding(top=12.dp),
+                color=VistoraPalette.Muted,fontSize=13.sp,lineHeight=19.sp
+            )
+            VistoraTextField(
+                value=overallDraft,
+                onValueChange={overallDraft=it},
+                placeholder="What did you think of this title as a whole?",
+                minLines=5,
+                maxLines=10,
+                singleLine=false,
+                modifier=Modifier.fillMaxWidth().padding(top=12.dp)
+            )
+            Row(Modifier.fillMaxWidth().padding(top=10.dp),horizontalArrangement=Arrangement.End) {
+                VistoraAction("Save note",onClick={onSaveOverallThoughts(overallDraft)},leading="check",quiet=true)
+            }
         }
 
-        Spacer(Modifier.height(26.dp))
-        SectionHeading("Overall Thoughts")
-        Text("A note for the whole title, separate from individual episode entries.",modifier=Modifier.padding(top=5.dp),color=VistoraPalette.Muted,fontSize=13.sp)
-        VistoraTextField(
-            value=overallDraft,
-            onValueChange={overallDraft=it},
-            placeholder="Your overall opinion, favourite characters, reminders or final thoughts…",
-            minLines=5,
-            maxLines=10,
-            singleLine=false,
-            modifier=Modifier.fillMaxWidth().padding(top=12.dp)
-        )
-        Row(Modifier.fillMaxWidth().padding(top=10.dp),horizontalArrangement=Arrangement.End){
-            VistoraAction("Save overall thoughts",onClick={onSaveOverallThoughts(overallDraft)},leading="check",quiet=true)
-        }
         Spacer(Modifier.height(30.dp))
     }
 
@@ -335,6 +386,20 @@ fun TitleDetailsScreen(
 
 }
 
+
+
+@Composable
+private fun NoteTab(label:String,selected:Boolean,modifier:Modifier=Modifier,onClick:()->Unit) {
+    Box(
+        modifier.heightIn(min=42.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .background(if(selected)VistoraPalette.Raised else Color.Transparent)
+            .clickable(role=Role.Tab,onClick=onClick),
+        contentAlignment=Alignment.Center
+    ) {
+        Text(label,color=if(selected)VistoraPalette.Text else VistoraPalette.Muted,fontSize=13.sp,fontWeight=if(selected)FontWeight.SemiBold else FontWeight.Medium)
+    }
+}
 
 @Composable
 private fun DateCard(label:String,value:Long?,modifier:Modifier=Modifier,onClick:()->Unit) {

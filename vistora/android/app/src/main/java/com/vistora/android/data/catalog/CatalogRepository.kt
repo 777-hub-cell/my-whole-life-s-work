@@ -33,8 +33,10 @@ class CatalogRepository {
                     anime
                 } else {
                     val movies = searchTmdb(cleanQuery, MediaType.MOVIE, credential)
+                    val kDramas = searchTmdb(cleanQuery, MediaType.K_DRAMA, credential)
                     val series = searchTmdb(cleanQuery, MediaType.TV_SERIES, credential)
-                    (movies + series + anime).sortedByDescending { it.releaseYear ?: 0 }
+                    (movies + kDramas + series + anime).distinctBy { it.providerId }
+                        .sortedByDescending { it.releaseYear ?: 0 }
                 }
             }
         }
@@ -79,22 +81,34 @@ class CatalogRepository {
             return (0 until rows.length()).mapNotNull { index ->
                 val item = rows.optJSONObject(index) ?: return@mapNotNull null
                 val originalLanguage = item.optString("original_language")
+                // The HTML prototype treats Korean-language TV productions as K-Dramas.
+                // Exclude them from TV Series as well, so a result is never duplicated or
+                // mislabeled in the two separate categories.
                 if (type == MediaType.K_DRAMA && originalLanguage != "ko") return@mapNotNull null
+                if (type == MediaType.TV_SERIES && originalLanguage == "ko") return@mapNotNull null
                 val titleKey = if (endpoint == "movie") "title" else "name"
                 val dateKey = if (endpoint == "movie") "release_date" else "first_air_date"
                 val title = item.optString(titleKey).trim()
                 if (title.isBlank()) return@mapNotNull null
                 val year = item.optString(dateKey).take(4).toIntOrNull()
                 val posterPath = item.optString("poster_path").takeIf { it.startsWith("/") }
+                val totalEpisodes = if (endpoint == "tv") item.optInt("number_of_episodes", 0).coerceAtLeast(0) else 0
+                val seriesState = if (endpoint != "tv") SeriesState.UNKNOWN else when (item.optString("status")) {
+                    "Returning Series", "In Production" -> SeriesState.ONGOING
+                    "Ended", "Canceled" -> SeriesState.COMPLETED
+                    "Planned" -> SeriesState.UPCOMING
+                    else -> SeriesState.UNKNOWN
+                }
+                val genreNames = tmdbGenres(item.optJSONArray("genre_ids"))
                 CatalogResult(
                     providerId = "tmdb:${item.optLong("id")}",
                     title = title,
                     type = type,
                     releaseYear = year,
-                    totalEpisodes = 0,
-                    seriesState = SeriesState.UNKNOWN,
+                    totalEpisodes = totalEpisodes,
+                    seriesState = seriesState,
                     synopsis = item.optString("overview").take(600),
-                    genres = emptyList(),
+                    genres = genreNames,
                     posterUrl = posterPath?.let { "https://image.tmdb.org/t/p/w500$it" },
                     source = "TMDB"
                 )
@@ -102,6 +116,20 @@ class CatalogRepository {
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun tmdbGenres(ids: org.json.JSONArray?): List<String> {
+        if (ids == null) return emptyList()
+        val labels = mapOf(
+            28 to "Action", 12 to "Adventure", 16 to "Animation", 35 to "Comedy",
+            80 to "Crime", 99 to "Documentary", 18 to "Drama", 10751 to "Family",
+            14 to "Fantasy", 36 to "History", 27 to "Horror", 10402 to "Music",
+            9648 to "Mystery", 10749 to "Romance", 878 to "Science Fiction",
+            10770 to "TV Movie", 53 to "Thriller", 10752 to "War", 37 to "Western",
+            10759 to "Action & Adventure", 10765 to "Sci-Fi & Fantasy",
+            10768 to "War & Politics", 10764 to "Reality", 10766 to "Soap"
+        )
+        return (0 until ids.length()).mapNotNull { labels[ids.optInt(it)] }.distinct().take(8)
     }
 
     private fun searchAniList(query: String): List<CatalogResult> {

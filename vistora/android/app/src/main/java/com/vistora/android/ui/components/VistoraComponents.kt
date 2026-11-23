@@ -294,28 +294,41 @@ fun PosterArt(
 ) {
     val context = LocalContext.current
     val image by produceState<ImageBitmap?>(initialValue = null, key1 = posterPath) {
-        value = if (posterPath.isNullOrBlank()) null else withContext(Dispatchers.IO) {
-            runCatching {
-                val localPath = if (posterPath.startsWith("https://")) {
-                    PosterDownloader.cache(context, posterPath)
-                } else {
-                    posterPath
+        value = null
+        if (!posterPath.isNullOrBlank()) {
+            value = withContext(Dispatchers.IO) {
+                suspend fun loadOnce(): ImageBitmap? = runCatching {
+                    val localPath = if (posterPath.startsWith("https://")) {
+                        PosterDownloader.cache(context, posterPath)
+                    } else {
+                        posterPath.removePrefix("file://")
+                    }
+                    if (localPath.isNullOrBlank()) null
+                    else BitmapFactory.decodeFile(localPath)?.asImageBitmap()
+                }.getOrNull()
+
+                loadOnce() ?: run {
+                    // A transient network/cache failure should not permanently leave a blank cover.
+                    kotlinx.coroutines.delay(450)
+                    loadOnce()
                 }
-                localPath?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() }
-            }.getOrNull()
+            }
         }
+    }
+
+    val categoryIcon = when {
+        type.contains("movie",ignoreCase=true) -> "clap"
+        type.contains("drama",ignoreCase=true) -> "heart"
+        type.contains("anime",ignoreCase=true) -> "torii"
+        else -> "tv"
     }
     Box(
         modifier = modifier
             .aspectRatio(2f / 3f)
-            .clip(RoundedCornerShape(13.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(
                 Brush.linearGradient(
-                    listOf(
-                        Color(0xFF3A242A),
-                        Color(0xFF24252C),
-                        Color(0xFF17191F)
-                    )
+                    listOf(Color(0xFF3A242A), Color(0xFF24252C), Color(0xFF17191F))
                 )
             )
     ) {
@@ -326,24 +339,40 @@ fun PosterArt(
                 modifier = Modifier.fillMaxSize(),
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop
             )
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha=.42f)))))
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent, Color.Black.copy(alpha = .44f)))
+                )
+            )
         } else {
             Canvas(Modifier.fillMaxSize()) {
-                drawCircle(Color(0xFF89545E).copy(alpha=.22f), radius=size.width*.52f, center=Offset(size.width*.78f,size.height*.30f))
-                drawCircle(Color(0xFF303F50).copy(alpha=.35f), radius=size.width*.55f, center=Offset(size.width*.1f,size.height*.85f))
-                drawRect(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha=.62f))))
+                drawCircle(Color(0xFF89545E).copy(alpha = .18f), radius = size.width * .52f, center = Offset(size.width * .78f, size.height * .30f))
+                drawCircle(Color(0xFF303F50).copy(alpha = .30f), radius = size.width * .55f, center = Offset(size.width * .1f, size.height * .85f))
+                drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .04f), Color.Transparent, Color.Black.copy(alpha = .68f))))
             }
-            Text(type.uppercase(), modifier=Modifier.align(Alignment.TopStart).padding(10.dp), color=VistoraPalette.Secondary.copy(alpha=.86f), fontSize=9.sp, fontWeight=FontWeight.Bold, letterSpacing=1.1.sp)
             Text(
                 title,
-                modifier = Modifier.align(Alignment.BottomStart).padding(11.dp),
+                modifier = Modifier.align(Alignment.TopStart).fillMaxWidth(.82f).padding(10.dp),
                 color = Color.White,
-                style = TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Serif, fontWeight = FontWeight.Medium, fontSize = 17.sp, lineHeight = 19.sp),
+                style = TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Serif, fontWeight = FontWeight.Medium, fontSize = 15.sp, lineHeight = 17.sp),
                 maxLines = 4,
                 overflow = TextOverflow.Ellipsis
             )
         }
-        if (status != null) StatusLabel(status, Modifier.align(Alignment.BottomStart).padding(6.dp), compact = true)
+        Box(
+            Modifier.align(Alignment.TopEnd).padding(7.dp).size(24.dp)
+                .clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha=.36f)),
+            contentAlignment=Alignment.Center
+        ) {
+            VistoraIcon(categoryIcon,Modifier.size(14.dp),Color.White.copy(alpha=.94f))
+        }
+        if (status != null) {
+            StatusLabel(
+                status,
+                Modifier.align(Alignment.BottomStart).padding(6.dp),
+                compact = true
+            )
+        }
     }
 }
 
@@ -352,14 +381,27 @@ fun PosterTile(
     item: MediaItem,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    showStatus: Boolean = true
+    showStatus: Boolean = true,
+    compact: Boolean = false
 ) {
-    Column(modifier = modifier.clickable(onClick = onClick)) {
+    Column(modifier = modifier.clickable(role = Role.Button, onClick = onClick)) {
         PosterArt(item.title, item.type.category, item.posterPath, Modifier.fillMaxWidth(), if (showStatus) item.status else null)
-        Text(item.title, modifier = Modifier.padding(top = 8.dp), color = VistoraPalette.Text,
-            style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(item.releaseYear?.toString() ?: item.type.label, color = VistoraPalette.Muted,
-            style = TextStyle(fontSize = 12.sp), maxLines = 1)
+        Text(
+            item.title,
+            modifier = Modifier.padding(top = if (compact) 6.dp else 8.dp),
+            color = VistoraPalette.Text,
+            style = TextStyle(fontSize = if (compact) 12.sp else 14.sp, fontWeight = FontWeight.Medium),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (!compact) {
+            Text(
+                listOfNotNull(item.type.label,item.releaseYear?.toString()).joinToString(" · "),
+                color = VistoraPalette.Muted,
+                style = TextStyle(fontSize = 12.sp),
+                maxLines = 1
+            )
+        }
     }
 }
 
@@ -375,7 +417,7 @@ fun VistoraBottomBar(
         Triple("Library","library","Library"),
         Triple("Discover","discover","Discover"),
         Triple("Stats","stats","Stats"),
-        Triple("Settings","settings","Settings")
+        Triple("More","settings","Settings")
     )
     Row(
         modifier = modifier

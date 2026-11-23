@@ -140,21 +140,23 @@ fun VistoraApp(viewModel: VistoraViewModel) {
     VistoraTheme(accent = preferences.accent) {
     VistoraBackdrop {
         Column(
-            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
+            Modifier.align(Alignment.Center).widthIn(max=520.dp).fillMaxWidth()
+                .fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
         ) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (route) {
                     "Home" -> HomeScreen(
                         items = uiState.items,
                         onSearch = { route = "Library" },
+                        onDiscover = { route = "Discover" },
                         onNotifications = { notificationsVisible = true },
                         onOpenTitle = { detailReturnRoute = "Home"; episodeToOpen = null; selectedId = it; route = "Title Details" },
-                        onOpenWatchlist = {
-                            filters = LibraryFilters(watchlistOnly = true)
-                            route = "Library"
-                        },
                         onOpenCategory = { type ->
                             filters = LibraryFilters(types = setOf(type))
+                            route = "Library"
+                        },
+                        onOpenStatus = { status ->
+                            filters = LibraryFilters(statuses = setOf(status))
                             route = "Library"
                         }
                     )
@@ -167,7 +169,11 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                         onOpenTitle = { detailReturnRoute = "Library"; episodeToOpen = null; selectedId = it; route = "Title Details" },
                         onAdd = { detailReturnRoute = "Library"; editorInitial = null; editorVisible = true },
                         onFilters = { filtersVisible = true },
-                        onGridColumns = { gridVisible = true }
+                        onGridColumns = { gridVisible = true },
+                        onQuickStatusChange = { status ->
+                            filters = filters.copy(statuses = if (status == null) emptySet() else setOf(status))
+                        },
+                        onFiltersChange = { filters = it }
                     )
                     "Discover" -> DiscoverScreen(
                         library = uiState.items,
@@ -180,7 +186,7 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                             episodeToOpen = null
                             scope.launch {
                                 val localPoster = result.posterUrl?.let { PosterDownloader.cache(context, it) }
-                                editorInitial = result.toDraft().copy(posterPath = localPoster)
+                                editorInitial = result.toDraft().copy(posterPath = localPoster ?: result.posterUrl)
                                 editorVisible = true
                             }
                         }
@@ -199,6 +205,7 @@ fun VistoraApp(viewModel: VistoraViewModel) {
                     )
                     "Settings" -> SettingsScreen(
                         preferences = preferences,
+                        titleCount = uiState.items.size,
                         tmdbConfigured = tmdbConfigured,
                         notesCount = uiState.allEpisodeNotes.size + uiState.items.count { it.overallThoughts.isNotBlank() },
                         onOpenNotes = { route = "My Notes" },

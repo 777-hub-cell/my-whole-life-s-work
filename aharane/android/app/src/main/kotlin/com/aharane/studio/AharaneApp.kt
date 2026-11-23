@@ -25,6 +25,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -2125,7 +2127,12 @@ fun AharaneApp(
                         }
                     }
                 )
-                else -> when (currentDestination) {
+                else -> Crossfade(
+                    targetState = currentDestination,
+                    animationSpec = tween(if (LocalStudioMotionEnabled.current) 210 else 0),
+                    label = "studio-tab-transition"
+                ) { destination ->
+                    when (destination) {
                     MainDestination.HOME -> HomeScreen(
                         onOpenChats = { destinationName = MainDestination.CHATS.name },
                         onOpenMore = { destinationName = MainDestination.MORE.name; morePage = "more" },
@@ -2641,6 +2648,7 @@ fun AharaneApp(
                             chatAppearance = chatAppearanceStore.resolve(selectedAccount).toJson()
                         }
                     )
+                    }
                 }
             }
         }

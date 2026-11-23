@@ -92,7 +92,7 @@ fun StudioHeader(connected: Boolean = false, preview: Boolean = false) {
     }
     Row(
         modifier = Modifier.fillMaxWidth().background(StudioPalette.Background)
-            .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 18.dp)
+            .padding(start = StudioFoundationContract.Layout.HorizontalGutter, end = StudioFoundationContract.Layout.HorizontalGutter, top = 6.dp, bottom = 18.dp)
             .height(30.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -100,7 +100,7 @@ fun StudioHeader(connected: Boolean = false, preview: Boolean = false) {
             Image(
                 painter = painterResource(R.drawable.ic_aharane_brand),
                 contentDescription = null,
-                modifier = Modifier.size(26.dp)
+                modifier = Modifier.size(StudioFoundationContract.Layout.BrandMarkSize)
             )
             Text(
                 "Aharane",
@@ -364,14 +364,24 @@ fun StudioActionButton(
     }
     val animatedBackground by animateColorAsState(
         bg,
-        animationSpec = tween(if (motionEnabled) 150 else 0),
+        animationSpec = tween(
+            StudioFoundationContract.Motion.durationMillis(
+                motionEnabled,
+                StudioFoundationContract.Motion.StateChangeMillis
+            )
+        ),
         label = "action-button-background"
     )
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
         if (motionEnabled && enabled && pressed) .975f else 1f,
-        animationSpec = tween(if (motionEnabled) 110 else 0),
+        animationSpec = tween(
+            StudioFoundationContract.Motion.durationMillis(
+                motionEnabled,
+                StudioFoundationContract.Motion.PressFeedbackMillis
+            )
+        ),
         label = "action-button-press"
     )
     val shape = RoundedCornerShape(StudioFoundationContract.Layout.ControlRadius * LocalStudioCornerScale.current)
@@ -399,7 +409,7 @@ fun StudioActionButton(
         AnimatedContent(
             targetState = label,
             transitionSpec = {
-                if (motionEnabled) fadeIn(tween(120)) togetherWith fadeOut(tween(90))
+                if (motionEnabled) fadeIn(tween(StudioFoundationContract.Motion.PressFeedbackMillis)) togetherWith fadeOut(tween(90))
                 else fadeIn(tween(0)) togetherWith fadeOut(tween(0))
             },
             label = "action-button-label"
@@ -629,17 +639,32 @@ fun StudioSegmented(options: List<String>, selected: String, onSelect: (String) 
             val shape = RoundedCornerShape(9.dp * LocalStudioCornerScale.current)
             val fill by animateColorAsState(
                 if (active) StudioPalette.Soft else Color.Transparent,
-                animationSpec = tween(if (motionEnabled) 180 else 0),
+                animationSpec = tween(
+                    StudioFoundationContract.Motion.durationMillis(
+                        motionEnabled,
+                        StudioFoundationContract.Motion.StateChangeMillis
+                    )
+                ),
                 label = "segmented-fill"
             )
             val outline by animateColorAsState(
                 if (active) StudioPalette.Accent else Color.Transparent,
-                animationSpec = tween(if (motionEnabled) 180 else 0),
+                animationSpec = tween(
+                    StudioFoundationContract.Motion.durationMillis(
+                        motionEnabled,
+                        StudioFoundationContract.Motion.StateChangeMillis
+                    )
+                ),
                 label = "segmented-outline"
             )
             val tint by animateColorAsState(
                 if (active) StudioPalette.Accent else StudioPalette.Muted,
-                animationSpec = tween(if (motionEnabled) 180 else 0),
+                animationSpec = tween(
+                    StudioFoundationContract.Motion.durationMillis(
+                        motionEnabled,
+                        StudioFoundationContract.Motion.StateChangeMillis
+                    )
+                ),
                 label = "segmented-tint"
             )
             Box(

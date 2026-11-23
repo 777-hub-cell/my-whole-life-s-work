@@ -40,11 +40,16 @@ export function validateEngineManifest(value) {
   if (!Array.isArray(value.permissions)) throw new Error('Engine permissions must be an explicit list.')
   const permissions = [...new Set(value.permissions)]
   if (permissions.some(p => !PERMISSIONS.has(p))) throw new Error('Engine requested an unsupported permission.')
+  const allowedHosts = Array.isArray(value.allowedHosts) ? [...new Set(value.allowedHosts.map(host => String(host).trim().toLowerCase()))] : []
+  if (allowedHosts.length > 20 || allowedHosts.some(host => !validPublicHostname(host))) {
+    throw new Error('Engine allowedHosts must contain up to 20 exact public DNS hostnames; wildcards, ports and IP addresses are forbidden.')
+  }
+  if (allowedHosts.length && !permissions.includes('network.fetch')) throw new Error('Allowed hosts require the network.fetch permission.')
   const timeoutMs = value.timeoutMs ?? 10000
   const maxResults = value.maxResults ?? 10
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000) throw new Error('Engine timeout must be 100–30000 ms.')
   if (!Number.isSafeInteger(maxResults) || maxResults < 1 || maxResults > MAX_MESSAGE_OUTPUT) throw new Error('Engine result limit must be 1–20.')
-  return Object.freeze({ id, name, version, entryPoint, inputs, outputs, permissions, timeoutMs, maxResults })
+  return Object.freeze({ id, name, version, entryPoint, inputs, outputs, permissions, allowedHosts, timeoutMs, maxResults })
 }
 
 export function validateEngineInputs(manifest, values) {
@@ -62,6 +67,15 @@ export function validateEngineInputs(manifest, values) {
   return structuredClone(values)
 }
 
+function validPublicHostname(host) {
+  if (!host || host.length > 253 || host.includes('*') || host.includes(':')) return false
+  const labels = host.split('.')
+  if (labels.length < 2 || !/^[a-z]{2,63}$/.test(labels[labels.length - 1])) return false
+  return labels.every(label => label.length >= 1 && label.length <= 63 &&
+    /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label)) &&
+    !labels.every(label => /^[0-9]+$/.test(label))
+}
+
 function validValue(value, type) {
   if (type === 'number') return typeof value === 'number' && Number.isFinite(value)
   if (type === 'boolean') return typeof value === 'boolean'
@@ -73,7 +87,8 @@ function validValue(value, type) {
   if (type === 'image' || type === 'media') {
     return value !== null && typeof value === 'object' && !Array.isArray(value) &&
       typeof value.mimeType === 'string' && value.mimeType.length <= 100 &&
-      typeof value.uri === 'string' && value.uri.length <= 2048
+      ((typeof value.uri === 'string' && value.uri.length <= 2048) ||
+       (typeof value.base64 === 'string' && value.base64.length <= 700000))
   }
   return typeof value === 'string' && value.length <= 8192
 }

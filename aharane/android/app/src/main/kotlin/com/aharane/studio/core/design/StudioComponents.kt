@@ -7,7 +7,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -30,6 +29,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -57,6 +57,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selectableGroup
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,7 +82,11 @@ val LocalStudioCornerScale = staticCompositionLocalOf { 1f }
 val LocalStudioRowScale = staticCompositionLocalOf { 1f }
 
 @Composable
-fun StudioHeader(connected: Boolean = false, preview: Boolean = false) {
+fun StudioHeader(
+    connected: Boolean = false,
+    preview: Boolean = false,
+    showBrand: Boolean = true
+) {
     val statusLabel = when {
         preview -> "Preview"
         connected -> "Online"
@@ -96,21 +103,23 @@ fun StudioHeader(connected: Boolean = false, preview: Boolean = false) {
             .height(30.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-            Image(
-                painter = painterResource(R.drawable.ic_aharane_brand),
-                contentDescription = null,
-                modifier = Modifier.size(StudioFoundationContract.Layout.BrandMarkSize)
-            )
-            Text(
-                "Aharane",
-                color = StudioPalette.Ink,
-                fontFamily = MaterialTheme.typography.titleLarge.fontFamily,
-                fontSize = 21.sp,
-                lineHeight = 25.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.42).sp
-            )
+        if (showBrand) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                Image(
+                    painter = painterResource(R.drawable.ic_aharane_brand),
+                    contentDescription = null,
+                    modifier = Modifier.size(StudioFoundationContract.Layout.BrandMarkSize)
+                )
+                Text(
+                    "Aharane",
+                    color = StudioPalette.Ink,
+                    fontFamily = MaterialTheme.typography.titleLarge.fontFamily,
+                    fontSize = 21.sp,
+                    lineHeight = 25.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.42).sp
+                )
+            }
         }
         Spacer(Modifier.weight(1f))
         Row(
@@ -139,14 +148,12 @@ fun StudioBottomNavigation(
     onNavigate: (MainDestination) -> Unit
 ) {
     val motionEnabled = LocalStudioMotionEnabled.current
-    val navDuration = StudioFoundationContract.Motion.durationMillis(
-        enabled = motionEnabled,
-        targetMillis = StudioFoundationContract.Motion.StateChangeMillis
-    )
     Column(Modifier.fillMaxWidth().background(StudioPalette.Surface).navigationBarsPadding()) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(StudioPalette.Line))
         Row(
-            Modifier.fillMaxWidth().height(StudioFoundationContract.Layout.BottomNavigationHeight),
+            Modifier.fillMaxWidth()
+                .height(StudioFoundationContract.Layout.BottomNavigationHeight)
+                .selectableGroup(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             MainDestination.entries.forEach { destination ->
@@ -154,12 +161,12 @@ fun StudioBottomNavigation(
                 val tintTarget = if (active) StudioPalette.Accent else StudioPalette.Muted
                 val tint by animateColorAsState(
                     tintTarget,
-                    animationSpec = tween(navDuration),
+                    animationSpec = StudioFoundationContract.Motion.stateChangeSpec(motionEnabled),
                     label = "bottom-nav-tint"
                 )
                 val scale by animateFloatAsState(
                     if (active && motionEnabled) 1.06f else 1f,
-                    animationSpec = tween(navDuration),
+                    animationSpec = StudioFoundationContract.Motion.stateChangeSpec(motionEnabled),
                     label = "bottom-nav-scale"
                 )
                 val icon = when (destination) {
@@ -364,11 +371,9 @@ fun StudioActionButton(
     }
     val animatedBackground by animateColorAsState(
         bg,
-        animationSpec = tween(
-            StudioFoundationContract.Motion.durationMillis(
-                motionEnabled,
-                StudioFoundationContract.Motion.StateChangeMillis
-            )
+        animationSpec = StudioFoundationContract.Motion.stateChangeSpec(
+            motionEnabled,
+            StudioFoundationContract.Motion.StateChangeMillis
         ),
         label = "action-button-background"
     )
@@ -376,11 +381,9 @@ fun StudioActionButton(
     val pressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
         if (motionEnabled && enabled && pressed) .975f else 1f,
-        animationSpec = tween(
-            StudioFoundationContract.Motion.durationMillis(
-                motionEnabled,
-                StudioFoundationContract.Motion.PressFeedbackMillis
-            )
+        animationSpec = StudioFoundationContract.Motion.stateChangeSpec(
+            motionEnabled,
+            StudioFoundationContract.Motion.PressFeedbackMillis
         ),
         label = "action-button-press"
     )
@@ -409,8 +412,14 @@ fun StudioActionButton(
         AnimatedContent(
             targetState = label,
             transitionSpec = {
-                if (motionEnabled) fadeIn(tween(StudioFoundationContract.Motion.PressFeedbackMillis)) togetherWith fadeOut(tween(90))
-                else fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                fadeIn(
+                    StudioFoundationContract.Motion.enterSpec(
+                        motionEnabled,
+                        StudioFoundationContract.Motion.PressFeedbackMillis
+                    )
+                ) togetherWith fadeOut(
+                    StudioFoundationContract.Motion.exitSpec(motionEnabled, 90)
+                )
             },
             label = "action-button-label"
         ) { currentLabel ->
@@ -639,31 +648,25 @@ fun StudioSegmented(options: List<String>, selected: String, onSelect: (String) 
             val shape = RoundedCornerShape(9.dp * LocalStudioCornerScale.current)
             val fill by animateColorAsState(
                 if (active) StudioPalette.Soft else Color.Transparent,
-                animationSpec = tween(
-                    StudioFoundationContract.Motion.durationMillis(
-                        motionEnabled,
-                        StudioFoundationContract.Motion.StateChangeMillis
-                    )
+                animationSpec = StudioFoundationContract.Motion.stateChangeSpec(
+                    motionEnabled,
+                    StudioFoundationContract.Motion.StateChangeMillis
                 ),
                 label = "segmented-fill"
             )
             val outline by animateColorAsState(
                 if (active) StudioPalette.Accent else Color.Transparent,
-                animationSpec = tween(
-                    StudioFoundationContract.Motion.durationMillis(
-                        motionEnabled,
-                        StudioFoundationContract.Motion.StateChangeMillis
-                    )
+                animationSpec = StudioFoundationContract.Motion.stateChangeSpec(
+                    motionEnabled,
+                    StudioFoundationContract.Motion.StateChangeMillis
                 ),
                 label = "segmented-outline"
             )
             val tint by animateColorAsState(
                 if (active) StudioPalette.Accent else StudioPalette.Muted,
-                animationSpec = tween(
-                    StudioFoundationContract.Motion.durationMillis(
-                        motionEnabled,
-                        StudioFoundationContract.Motion.StateChangeMillis
-                    )
+                animationSpec = StudioFoundationContract.Motion.stateChangeSpec(
+                    motionEnabled,
+                    StudioFoundationContract.Motion.StateChangeMillis
                 ),
                 label = "segmented-tint"
             )
@@ -679,6 +682,132 @@ fun StudioSegmented(options: List<String>, selected: String, onSelect: (String) 
                     fontSize = 13.sp, lineHeight = 17.sp,
                     fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
             }
+        }
+    }
+}
+
+@Composable
+fun StudioLoadingState(
+    message: String = "Loading…",
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
+) {
+    Row(
+        modifier = modifier.fillMaxWidth().padding(vertical = if (compact) 12.dp else 22.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(if (compact) 18.dp else 22.dp),
+            color = StudioPalette.Accent,
+            strokeWidth = 2.dp
+        )
+        Spacer(Modifier.width(9.dp))
+        Text(
+            message,
+            color = StudioPalette.Muted,
+            fontSize = StudioFoundationContract.TypeScale.Supporting,
+            lineHeight = 17.sp
+        )
+    }
+}
+
+@Composable
+fun StudioProgressBar(
+    progress: Float,
+    modifier: Modifier = Modifier
+) {
+    val safeProgress = progress.coerceIn(0f, 1f)
+    val track = StudioPalette.Line
+    val fill = StudioPalette.Accent
+    Canvas(
+        modifier = modifier.fillMaxWidth().height(4.dp).semantics {
+            progressBarRangeInfo = ProgressBarRangeInfo(safeProgress, 0f..1f)
+        }
+    ) {
+        val corner = androidx.compose.ui.geometry.CornerRadius(size.height / 2f)
+        drawRoundRect(color = track, cornerRadius = corner)
+        if (safeProgress > 0f) {
+            drawRoundRect(
+                color = fill,
+                size = androidx.compose.ui.geometry.Size(size.width * safeProgress, size.height),
+                cornerRadius = corner
+            )
+        }
+    }
+}
+
+@Composable
+fun StudioTransferProgress(
+    label: String,
+    progress: Float,
+    detail: String? = null,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                label,
+                color = StudioPalette.Ink,
+                fontSize = StudioFoundationContract.TypeScale.Supporting,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!detail.isNullOrBlank()) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    detail,
+                    color = StudioPalette.Muted,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        StudioProgressBar(progress = progress)
+    }
+}
+
+@Composable
+fun StudioErrorState(
+    title: String,
+    description: String? = null,
+    retryLabel: String = "Retry",
+    onRetry: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            title,
+            color = StudioPalette.Ink,
+            fontSize = StudioFoundationContract.TypeScale.Body,
+            lineHeight = 21.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
+        )
+        if (!description.isNullOrBlank()) {
+            Text(
+                description,
+                color = StudioPalette.Muted,
+                fontSize = StudioFoundationContract.TypeScale.Supporting,
+                lineHeight = 17.sp,
+                textAlign = TextAlign.Center
+            )
+        }
+        if (onRetry != null) {
+            StudioActionButton(
+                label = retryLabel,
+                compact = true,
+                onClick = onRetry
+            )
         }
     }
 }

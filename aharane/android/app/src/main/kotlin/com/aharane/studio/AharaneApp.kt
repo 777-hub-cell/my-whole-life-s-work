@@ -1493,9 +1493,12 @@ fun AharaneApp(
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
-        if (!editorOpen && activeConversation == null && !commandBuilderOpen && !engineLibraryOpen &&
-            !configurationOpen) {
-            StudioHeader(connected = connected, preview = previewMode)
+        if (!editorOpen && activeConversation == null && !commandBuilderOpen && !engineLibraryOpen) {
+            StudioHeader(
+                connected = connected,
+                preview = previewMode,
+                showBrand = currentDestination == MainDestination.HOME
+            )
         }
 
         if (previewMode) {

@@ -1483,8 +1483,13 @@ fun AharaneApp(
         EnvironmentValue(it.key, it.value, it.readOnly, it.type, it.secret)
     }
 
+    Box(
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.TopCenter
+    ) {
     Column(
-        Modifier.fillMaxSize()
+        Modifier.widthIn(max = StudioFoundationContract.Layout.ContentMaxWidth)
+            .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
@@ -2735,6 +2740,7 @@ fun AharaneApp(
                 }
             )
         }
+    }
     }
 
     if (accountControlTarget != null) {

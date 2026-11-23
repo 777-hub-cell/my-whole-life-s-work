@@ -160,7 +160,7 @@ def assert_absent_texts(labels):
         raise RuntimeError(f"Unexpected UI entries are visible: {found!r}")
 
 
-def scroll_until_label_visible(label: str, max_swipes: int = 6):
+def scroll_until_label_visible(label: str, max_swipes: int = 14):
     """Scroll a screen until a label is visible without activating it."""
     for _ in range(max_swipes + 1):
         visible = [
@@ -174,7 +174,7 @@ def scroll_until_label_visible(label: str, max_swipes: int = 6):
     raise RuntimeError(f"Could not scroll to visible UI label: {label!r}")
 
 
-def scroll_back_until_label_visible(label: str, max_swipes: int = 6):
+def scroll_back_until_label_visible(label: str, max_swipes: int = 14):
     """Scroll toward the top of a LazyColumn until an earlier section is visible."""
     for _ in range(max_swipes + 1):
         visible = [

@@ -155,7 +155,10 @@ class ConversationScreenTest {
             }
         }
         compose.onNodeWithTag("conversation-composer").performTextInput("Hello from the chat test")
-        compose.onNodeWithContentDescription("Send message").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("conversation-composer").assertTextEquals("Hello from the chat test")
+        compose.onNodeWithTag("conversation-send").assertIsDisplayed().assertIsEnabled().performClick()
+        compose.waitForIdle()
         compose.runOnIdle { assertEquals(listOf("Hello from the chat test"), sent) }
         compose.onNodeWithTag("conversation-composer").performTextInput("Second draft")
         compose.onNodeWithTag("conversation-composer").assertTextEquals("Second draft")

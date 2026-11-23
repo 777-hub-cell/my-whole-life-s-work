@@ -52,6 +52,8 @@ import com.aharane.studio.features.chats.ChatAppearanceStudioScreen
 import com.aharane.studio.core.storage.EncryptedMediaCache
 import com.aharane.studio.features.notes.EncryptedNotesStore
 import com.aharane.studio.features.notes.NotesScreen
+import com.aharane.studio.features.whatsapp.WhatsAppUpdatesScreen
+import com.aharane.studio.core.network.AharaneRepository
 
 private val AccentChoices = listOf(
     "#0E7A5C", "#3867D6", "#8752C7", "#B34D76", "#B56C22", "#4D7779"
@@ -117,6 +119,7 @@ fun MoreScreen(
     onChatMessageSizeChanged: (Int) -> Unit = {},
     appearanceStore: ChatAppearanceStore? = null,
     notesStore: EncryptedNotesStore? = null,
+    updatesRepository: AharaneRepository? = null,
     appearanceRevision: Int = 0,
     cachedConversations: List<ChatSummary> = emptyList(),
     mediaCache: EncryptedMediaCache? = null,
@@ -174,7 +177,14 @@ fun MoreScreen(
         animationSpec = tween(if (LocalStudioMotionEnabled.current) 210 else 0),
         label = "more-page-transition"
     ) { targetPage ->
-    if (targetPage == "notes" && notesStore != null) {
+    if (targetPage == "whatsapp-updates" && updatesRepository != null) {
+        WhatsAppUpdatesScreen(
+            repository = updatesRepository,
+            selectedAccount = selectedChatAccount,
+            onAccountSelected = onChatAccountSelected,
+            onBack = { onPageChange("more") }
+        )
+    } else if (targetPage == "notes" && notesStore != null) {
         NotesScreen(store = notesStore, onBack = { onPageChange("more") })
     } else if (targetPage == "appearance") {
         LazyColumn(
@@ -820,6 +830,14 @@ fun MoreScreen(
                         icon = null,
                         trailing = "›",
                         onClick = { onPageChange("notes") }
+                    )
+                    StudioDivider()
+                    StudioRow(
+                        "Status & Channels",
+                        "Browse updates available to each linked WhatsApp account",
+                        icon = null,
+                        trailing = "›",
+                        onClick = { onPageChange("whatsapp-updates") }
                     )
                     StudioDivider()
                     StudioRow(

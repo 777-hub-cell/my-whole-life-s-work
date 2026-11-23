@@ -58,7 +58,7 @@ async function approvedFetch(manifest, urlValue, options = {}) {
     throw new Error('Network request rejected: hostname did not resolve exclusively to public IPv4 addresses.')
   }
   const address = resolved[0].address
-  const timeout = Math.max(1000, Math.min(15000, Number(options.timeoutMs) || 10000))
+  const timeout = Math.max(100, Math.min(15000, Number(options.timeoutMs) || 10000))
 
   return new Promise((resolve, reject) => {
     let finished = false
@@ -159,6 +159,8 @@ export async function executeCustomEngine(engine, inputValues, options = {}) {
       const fetchHandle = context.newAsyncifiedFunction('fetch', async (urlHandle, optionsHandle) => {
         const url = context.getString(urlHandle)
         const requestOptions = optionsHandle ? context.dump(optionsHandle) : {}
+        requestOptions.timeoutMs = Math.min(Number(requestOptions.timeoutMs) || deadline - Date.now(), deadline - Date.now())
+        if (requestOptions.timeoutMs <= 0) throw new Error('Engine execution time limit reached.')
         const response = options.networkFetch
           ? await options.networkFetch(manifest, url, requestOptions)
           : await approvedFetch(manifest, url, requestOptions)
@@ -181,7 +183,7 @@ export async function executeCustomEngine(engine, inputValues, options = {}) {
     // restricted host capability has completed.
     const evaluated = await context.evalCodeAsync(
       source + '\n;run(__aharaneInputs, __aharaneContext)',
-      { filename: 'aharane-engine.js' }
+      'aharane-engine.js'
     )
     const promiseHandle = context.unwrapResult(evaluated)
     try {

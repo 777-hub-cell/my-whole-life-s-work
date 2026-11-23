@@ -837,10 +837,4 @@ private fun PreviewBubble(text: String, outgoing: Boolean, appearance: ChatAppea
 private fun parseColor(value: String): Color =
     runCatching { Color(android.graphics.Color.parseColor(value)) }.getOrDefault(Color(0xFFE9EFEB))
 
-private fun readableForeground(background: Color): Color {
-    fun linear(channel: Float): Float = if (channel <= .04045f) channel / 12.92f else Math.pow(((channel + .055f) / 1.055f).toDouble(), 2.4).toFloat()
-    val luminance = .2126f * linear(background.red) + .7152f * linear(background.green) + .0722f * linear(background.blue)
-    val whiteContrast = 1.05f / (luminance + .05f)
-    val blackContrast = (luminance + .05f) / .05f
-    return if (blackContrast >= whiteContrast) Color(0xFF101713) else Color.White
-}
+private fun readableForeground(background: Color): Color = chatReadableForeground(background)

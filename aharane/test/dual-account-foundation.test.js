@@ -24,15 +24,19 @@ test('Aharane uses two scoped command registries and independent WhatsApp auth s
   assert.ok(!runtime.includes('let socket = null'), 'The old single-socket runtime must be removed')
 })
 
-test('Private Owner and Public Owner are separate, persisted identities', async () => {
+test('Private and Public sessions share one persisted Owner identity', async () => {
   const runtime = await read('../src/index.js')
   const config = await read('../src/owner-config.js')
   assert.ok(config.includes('publicBotNumber'))
+  assert.ok(config.includes('ownerNumber'))
+  assert.ok(config.includes('privateOwnerNumber: ownerNumber'))
+  assert.ok(config.includes('publicOwnerNumber: ownerNumber'))
+  assert.ok(config.includes('allowedPublicSenders: []'))
   const auth = await read('../src/authorization.js')
   assert.ok(runtime.includes("OWNER_CONFIG_FILE = join(DATA_DIR, 'owner-config.json')"))
   assert.ok(runtime.includes("app.get('/api/owners'"))
   assert.ok(runtime.includes("app.put('/api/owners'"))
-  assert.ok(config.includes('Private Owner, Public Owner, and Public bot WhatsApp numbers must be different.'))
+  assert.ok(config.includes('The Owner number and Public bot WhatsApp number must be different.'))
   assert.ok(auth.includes('Private Owner never inherits this role.'))
   assert.ok(runtime.includes('isPublicOwnerSender'))
   assert.ok(runtime.includes('isPrivateSelfCommand'))
@@ -43,14 +47,19 @@ test('private and public account management is wired into the supplied Studio pr
   const bridge = await read('../control-centre/production-bridge.js')
   assert.ok(html.includes('<title>Aharane Local Studio</title>'))
   for (const marker of [
-    'id="owner-private"',
-    'id="owner-public"',
+    'id="owner-number"',
+    'id="owner-public-bot"',
+    'ownerNumber:Q(\'#owner-number\').value',
+    'Public bot is open to WhatsApp users',
     'data-pair-account',
     'data-account',
     'data-action="reconnect"',
     'id="prod-cancel-pairing"',
     'id="prod-pair-back"',
   ]) assert.ok(bridge.includes(marker), 'Missing production account control: ' + marker)
+  assert.ok(!bridge.includes('id="owner-allow"'))
+  assert.ok(!bridge.includes('Allowed public senders'))
+  assert.ok(!bridge.includes('id="owner-public"'))
   for (const marker of [
     "apiP('owners'",
     "apiP('accounts/'+id+'/pair-code'",

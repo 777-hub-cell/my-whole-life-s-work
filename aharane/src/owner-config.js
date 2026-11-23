@@ -1,39 +1,41 @@
 import { readFile, mkdir, open, rename, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { normalizePhone, parseAllowedSenders } from './policy.js'
+import { normalizePhone } from './policy.js'
 
-function allowedList(value) {
-  if (Array.isArray(value)) return [...parseAllowedSenders(value.join(','))].sort()
-  return [...parseAllowedSenders(value)].sort()
-}
-
+/**
+ * Private and Public sessions are separate WhatsApp connections, but they
+ * share one human Owner identity. The Public bot's own WhatsApp number is
+ * separate because it identifies the bot account, not its owner.
+ *
+ * Older v2 files are migrated deterministically: prefer the old Private
+ * Owner field, then the old Public Owner field. The legacy sender allow-list
+ * is intentionally discarded; Public commands are open to valid senders.
+ */
 export function normalizeOwnerConfig(value = {}) {
-  const privateOwnerNumber = normalizePhone(value.privateOwnerNumber)
-  const publicOwnerNumber = normalizePhone(value.publicOwnerNumber)
+  const ownerNumber = normalizePhone(value.ownerNumber)
+    || normalizePhone(value.privateOwnerNumber)
+    || normalizePhone(value.publicOwnerNumber)
   const publicBotNumber = normalizePhone(value.publicBotNumber)
-  const configuredNumbers = [privateOwnerNumber, publicOwnerNumber, publicBotNumber].filter(Boolean)
-  if (new Set(configuredNumbers).size !== configuredNumbers.length) {
-    throw new Error('Private Owner, Public Owner, and Public bot WhatsApp numbers must be different.')
+  if (ownerNumber && publicBotNumber && ownerNumber === publicBotNumber) {
+    throw new Error('The Owner number and Public bot WhatsApp number must be different.')
   }
-  const allowedPublicSenders = new Set(allowedList(value.allowedPublicSenders))
-  if (publicOwnerNumber) allowedPublicSenders.add(publicOwnerNumber)
   return {
-    version: 2,
-    privateOwnerNumber,
-    publicOwnerNumber,
+    version: 3,
+    ownerNumber,
+    // Keep mirrored keys for older clients while maintaining one identity.
+    privateOwnerNumber: ownerNumber,
+    publicOwnerNumber: ownerNumber,
     publicBotNumber,
-    allowedPublicSenders: [...allowedPublicSenders].sort(),
+    allowedPublicSenders: [],
     updatedAt: String(value.updatedAt || ''),
   }
 }
 
 export async function loadOwnerConfig(file, legacy = {}) {
   const fallback = normalizeOwnerConfig({
-    privateOwnerNumber: legacy.privateOwnerNumber || '',
-    publicOwnerNumber: legacy.publicOwnerNumber || '',
+    ownerNumber: legacy.ownerNumber || legacy.privateOwnerNumber || legacy.publicOwnerNumber || '',
     publicBotNumber: legacy.publicBotNumber || '',
-    allowedPublicSenders: legacy.allowedPublicSenders || '',
   })
   let raw
   try {
@@ -43,10 +45,8 @@ export async function loadOwnerConfig(file, legacy = {}) {
     throw new Error('Aharane owner configuration could not be read; refusing to guess owner identities.')
   }
   return normalizeOwnerConfig({
-    privateOwnerNumber: raw?.privateOwnerNumber ?? fallback.privateOwnerNumber,
-    publicOwnerNumber: raw?.publicOwnerNumber ?? fallback.publicOwnerNumber,
+    ownerNumber: raw?.ownerNumber || raw?.privateOwnerNumber || raw?.publicOwnerNumber || fallback.ownerNumber,
     publicBotNumber: raw?.publicBotNumber ?? fallback.publicBotNumber,
-    allowedPublicSenders: raw?.allowedPublicSenders ?? fallback.allowedPublicSenders,
     updatedAt: raw?.updatedAt,
   })
 }

@@ -41,6 +41,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,7 +65,17 @@ val LocalStudioCornerScale = staticCompositionLocalOf { 1f }
 val LocalStudioRowScale = staticCompositionLocalOf { 1f }
 
 @Composable
-fun StudioHeader() {
+fun StudioHeader(connected: Boolean = false, preview: Boolean = false) {
+    val statusLabel = when {
+        preview -> "Preview"
+        connected -> "Online"
+        else -> "Offline"
+    }
+    val statusColor = when {
+        preview -> StudioPalette.Accent
+        connected -> StudioPalette.Accent
+        else -> StudioPalette.Muted
+    }
     Row(
         modifier = Modifier.fillMaxWidth().background(StudioPalette.Background)
             .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 18.dp)
@@ -87,6 +99,23 @@ fun StudioHeader() {
             )
         }
         Spacer(Modifier.weight(1f))
+        Row(
+            Modifier.clip(RoundedCornerShape(99.dp))
+                .background(StudioPalette.Surface)
+                .border(1.dp, StudioPalette.Line, RoundedCornerShape(99.dp))
+                .padding(horizontal = 9.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Box(Modifier.size(7.dp).clip(CircleShape).background(statusColor))
+            Text(
+                statusLabel,
+                color = statusColor,
+                fontSize = 11.sp,
+                lineHeight = 13.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
     }
 }
 
@@ -103,6 +132,7 @@ fun StudioBottomNavigation(
                 val tint = if (active) StudioPalette.Accent else StudioPalette.Muted
                 Column(
                     modifier = Modifier.weight(1f).fillMaxHeight()
+                        .semantics { selected = active }
                         .clickable { onNavigate(destination) }
                         .padding(top = 7.dp, bottom = 5.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,

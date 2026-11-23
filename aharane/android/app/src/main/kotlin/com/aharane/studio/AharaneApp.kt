@@ -2125,9 +2125,9 @@ fun AharaneApp(
                     connected = connected,
                     serverValues = environmentRows.associate { it.key to it.value } + mapOf(
                         "PRIVATE_OWNER_NUMBER" to owners.privateOwnerNumber,
-                        "PUBLIC_BOT_NUMBER" to owners.publicBotNumber
+                        "PUBLIC_OWNER_NUMBER" to owners.publicOwnerNumber
                     ),
-                    ownerNumberValue = if (accountName == ChatAccount.PRIVATE.name) owners.privateOwnerNumber else owners.publicBotNumber,
+                    ownerNumberValue = if (accountName == ChatAccount.PRIVATE.name) owners.privateOwnerNumber else owners.publicOwnerNumber,
                     onBack = { configurationOpen = false },
                     onEditConfig = {
                         editorFromConfiguration = true
@@ -2143,7 +2143,7 @@ fun AharaneApp(
                         val updatedOwners = if (profile == "Private") {
                             owners.copy(privateOwnerNumber = values["PRIVATE_OWNER_NUMBER"] ?: owners.privateOwnerNumber)
                         } else {
-                            owners.copy(publicBotNumber = values["PUBLIC_BOT_NUMBER"] ?: owners.publicBotNumber)
+                            owners.copy(publicOwnerNumber = values["PUBLIC_OWNER_NUMBER"] ?: owners.publicOwnerNumber)
                         }
                         repository.saveOwnerSettings(updatedOwners)
                         val nextEnvironment = environmentRows.map { row ->

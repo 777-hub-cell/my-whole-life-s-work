@@ -144,8 +144,13 @@ test('ENV and Home display useful empty states instead of blank panels', async (
  const home=bridge.slice(bridge.indexOf('function homeViewP(){'),bridge.indexOf('function installFileSaveLifecycleP(){'))
  assert.ok(env.includes('No environment values are available yet.'))
  assert.ok(env.includes('id="prod-save-env"'))
+ assert.ok(env.includes("const save=P.env.length?"))
  assert.ok(env.includes("P.env.length?'':'"))
  assert.ok(home.includes('No recent activity yet.'))
+ assert.ok(home.includes('white-space:normal'))
+ const more=bridge.slice(bridge.indexOf('function moreViewP(){'),bridge.indexOf('function changePasswordP(){'))
+ assert.ok(more.includes('Manage both sessions with one shared Owner identity'))
+ assert.ok(!more.includes('separate Owner identities'))
 })
  
 test('Chats search updates in place and preserves message reading position', async () => {

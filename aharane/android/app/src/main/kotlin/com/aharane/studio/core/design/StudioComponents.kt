@@ -208,7 +208,7 @@ fun StudioPageTitle(title: String, subtitle: String? = null, compact: Boolean = 
             title,
             color = StudioPalette.Ink,
             fontFamily = MaterialTheme.typography.headlineLarge.fontFamily,
-            fontSize = if (compact) 22.sp else 30.sp,
+            fontSize = if (compact) 22.sp else StudioFoundationContract.TypeScale.DisplayTitle,
             lineHeight = if (compact) 27.sp else 33.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = if (compact) (-0.35).sp else (-0.75).sp
@@ -217,7 +217,7 @@ fun StudioPageTitle(title: String, subtitle: String? = null, compact: Boolean = 
             Text(
                 subtitle,
                 color = StudioPalette.Muted,
-                fontSize = if (compact) 12.sp else 15.sp,
+                fontSize = if (compact) 12.sp else StudioFoundationContract.TypeScale.Body,
                 lineHeight = if (compact) 17.sp else 21.sp
             )
         }
@@ -234,7 +234,7 @@ fun StudioSectionHeading(title: String, action: String? = null, onAction: (() ->
             title,
             color = StudioPalette.Ink,
             fontFamily = MaterialTheme.typography.titleLarge.fontFamily,
-            fontSize = 17.sp,
+            fontSize = StudioFoundationContract.TypeScale.SectionTitle,
             lineHeight = 22.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = (-0.15).sp
@@ -262,7 +262,7 @@ fun StudioCard(
             .then(if (motionEnabled) Modifier.animateContentSize() else Modifier)
             .fillMaxWidth(),
         color = StudioPalette.Surface,
-        shape = RoundedCornerShape(18.dp * LocalStudioCornerScale.current),
+        shape = RoundedCornerShape(StudioFoundationContract.Layout.CardRadius * LocalStudioCornerScale.current),
         border = BorderStroke(1.dp, StudioPalette.Line),
         shadowElevation = 1.dp
     ) {
@@ -317,7 +317,7 @@ fun StudioRow(
     ) {
         if (icon != null) {
             Box(
-                Modifier.size(38.dp).clip(RoundedCornerShape(11.dp * LocalStudioCornerScale.current)).background(StudioPalette.Background),
+                Modifier.size(StudioFoundationContract.Layout.IconTileSize).clip(RoundedCornerShape(11.dp * LocalStudioCornerScale.current)).background(StudioPalette.Background),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(icon, contentDescription = null, tint = StudioPalette.Muted, modifier = Modifier.size(20.dp))

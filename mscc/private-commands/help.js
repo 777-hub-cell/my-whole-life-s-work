@@ -31,7 +31,7 @@ export default {
       '',
       ...rows,
       '',
-      'These commands only work in the authorized Account A control DM.',
+      "These commands only work in Account A\u2019s verified WhatsApp self-chat.",
       'Owner-only normal bot commands remain public commands.',
     ].join('\n'))
   },

@@ -77,6 +77,7 @@ import com.aharane.studio.core.network.ServerStorageSnapshot
 import com.aharane.studio.core.network.ServerMessageMetrics
 import com.aharane.studio.core.navigation.MainDestination
 import com.aharane.studio.features.chats.ChatsScreen
+import com.aharane.studio.features.notes.EncryptedNotesStore
 import com.aharane.studio.features.chats.ConversationScreen
 import com.aharane.studio.features.commands.VisualCommandBuilderScreen
 import com.aharane.studio.features.configuration.ConfigurationScreen
@@ -2440,6 +2441,7 @@ fun AharaneApp(
                         onEditorLineNumbersChanged = onEditorLineNumbersChanged,
                         page = morePage,
                         onPageChange = { morePage = it },
+                        notesStore = remember(context) { EncryptedNotesStore(context.applicationContext) },
                         onOpenEnvironment = { destinationName = MainDestination.ENVIRONMENT.name; morePage = "more" },
                         connected = connected,
                         privateAccountStatus = runtime?.privateAccount?.let(::accountStateLabel) ?: "Status not loaded",

@@ -15,7 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -39,7 +38,6 @@ fun EnvironmentScreen(
     onSave: suspend (List<EnvironmentValue>) -> Boolean = { false },
     previewMode: Boolean = false
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val drafts = remember(values) { mutableStateListOf<EnvironmentValue>().apply { addAll(values) } }
     var saving by remember { mutableStateOf(false) }

@@ -288,7 +288,7 @@ fun StudioTag(text: String, accent: Boolean = false) {
     Text(
         text,
         color = if (accent) StudioPalette.Accent else StudioPalette.Muted,
-        fontSize = 12.5.sp,
+        fontSize = StudioFoundationContract.TypeScale.Supporting,
         lineHeight = 16.sp,
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier.clip(RoundedCornerShape(99.dp))
@@ -373,9 +373,12 @@ fun StudioActionButton(
         animationSpec = tween(if (motionEnabled) 110 else 0),
         label = "action-button-press"
     )
-    val shape = RoundedCornerShape(12.dp * LocalStudioCornerScale.current)
+    val shape = RoundedCornerShape(StudioFoundationContract.Layout.ControlRadius * LocalStudioCornerScale.current)
     Box(
-        modifier = modifier.defaultMinSize(minHeight = if (compact) 40.dp else 48.dp)
+        modifier = modifier.defaultMinSize(
+            minHeight = if (compact) StudioFoundationContract.Layout.CompactButtonHeight
+            else StudioFoundationContract.Layout.StandardButtonHeight
+        )
             .graphicsLayer {
                 scaleX = pressScale
                 scaleY = pressScale
@@ -422,8 +425,8 @@ fun StudioSearchField(
     showIcon: Boolean = false
 ) {
     Surface(
-        modifier = modifier.fillMaxWidth().heightIn(min = 48.dp),
-        shape = RoundedCornerShape(12.dp * LocalStudioCornerScale.current),
+        modifier = modifier.fillMaxWidth().heightIn(min = StudioFoundationContract.Layout.SearchFieldHeight),
+        shape = RoundedCornerShape(StudioFoundationContract.Layout.ControlRadius * LocalStudioCornerScale.current),
         color = StudioPalette.Surface,
         border = BorderStroke(1.dp, StudioPalette.Line)
     ) {
@@ -462,11 +465,11 @@ fun StudioTextInput(
     modifier: Modifier = Modifier,
     singleLine: Boolean = true,
     minLines: Int = 1,
-    minHeight: androidx.compose.ui.unit.Dp = 48.dp,
+    minHeight: androidx.compose.ui.unit.Dp = StudioFoundationContract.Layout.SearchFieldHeight,
     textSize: androidx.compose.ui.unit.TextUnit = 14.sp,
     tag: String? = null
 ) {
-    val shape = RoundedCornerShape(12.dp * LocalStudioCornerScale.current)
+    val shape = RoundedCornerShape(StudioFoundationContract.Layout.ControlRadius * LocalStudioCornerScale.current)
     Surface(
         modifier = modifier.fillMaxWidth().heightIn(min = minHeight),
         color = StudioPalette.Surface,

@@ -819,11 +819,22 @@ fun StudioEmpty(title: String, description: String? = null, modifier: Modifier =
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(title, color = StudioPalette.Muted, fontSize = 14.sp, lineHeight = 19.sp,
-            fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+        Text(
+            title,
+            color = StudioPalette.Muted,
+            fontSize = StudioFoundationContract.TypeScale.Body,
+            lineHeight = 21.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
+        )
         if (description != null) {
-            Text(description, color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 18.sp,
-                textAlign = TextAlign.Center)
+            Text(
+                description,
+                color = StudioPalette.Muted,
+                fontSize = StudioFoundationContract.TypeScale.Supporting,
+                lineHeight = 18.sp,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }

@@ -1496,16 +1496,35 @@ fun AharaneApp(
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
-                engineLibraryOpen -> EngineLibraryScreen(
+                engineLibraryOpen && !commandBuilderOpen -> EngineLibraryScreen(
                     repository = repository,
                     connected = connected,
                     onBack = { engineLibraryOpen = false }
                 )
-                commandBuilderOpen -> VisualCommandBuilderScreen(
-                    repository = repository,
-                    connected = connected,
-                    onBack = { commandBuilderOpen = false }
-                )
+                commandBuilderOpen -> {
+                    // Keep the builder composed while the Engine library is open;
+                    // unsaved graphs and socket positions must survive code editing.
+                    VisualCommandBuilderScreen(
+                        repository = repository,
+                        connected = connected,
+                        onBack = { commandBuilderOpen = false; engineLibraryOpen = false },
+                        onManageEngines = { engineLibraryOpen = true }
+                    )
+                    if (engineLibraryOpen) {
+                        Dialog(
+                            onDismissRequest = { engineLibraryOpen = false },
+                            properties = DialogProperties(usePlatformDefaultWidth = false)
+                        ) {
+                            Box(Modifier.fillMaxSize()) {
+                                EngineLibraryScreen(
+                                    repository = repository,
+                                    connected = connected,
+                                    onBack = { engineLibraryOpen = false }
+                                )
+                            }
+                        }
+                    }
+                }
                 editorOpen -> CodeEditorScreen(
                     modifier = Modifier.fillMaxSize(),
                     onClose = {

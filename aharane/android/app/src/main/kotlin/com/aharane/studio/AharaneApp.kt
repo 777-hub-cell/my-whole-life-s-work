@@ -2158,6 +2158,12 @@ fun AharaneApp(
                         metricsAvailable = messageMetrics != null && connected,
                         messagesLast24h = messageMetrics?.messagesLast24h ?: 0,
                         hourlyMessageCounts = messageMetrics?.hourlyMessages ?: emptyList(),
+                        monthUtc = messageMetrics?.monthUtc ?: "",
+                        monthlyDataSince = messageMetrics?.availableSince,
+                        dailySent = messageMetrics?.dailySent ?: emptyList(),
+                        dailyReceived = messageMetrics?.dailyReceived ?: emptyList(),
+                        sentThisMonth = messageMetrics?.sentThisMonth ?: 0,
+                        receivedThisMonth = messageMetrics?.receivedThisMonth ?: 0,
                         onAccountAction = { target ->
                             if (previewMode) {
                                 openPairingScreen(target)

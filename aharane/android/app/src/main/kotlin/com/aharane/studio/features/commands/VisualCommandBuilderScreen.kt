@@ -324,8 +324,8 @@ fun VisualCommandBuilderScreen(
 
     fun addNode(definition: VisualNodeDefinition) {
         val config = when (definition.type) {
-            "trigger.command" -> mapOf("command" to "hello", "aliases" to "", "requireQuoted" to "false", "requireReply" to "false", "chatScope" to "direct")
-            "trigger.message" -> mapOf("chatScope" to "direct")
+            "trigger.command" -> mapOf("command" to "hello", "aliases" to "", "requireQuoted" to "false", "requireReply" to "false", "chatScope" to "direct", "maxMessagesPerRun" to "10")
+            "trigger.message" -> mapOf("chatScope" to "direct", "maxMessagesPerRun" to "10")
             "message.sendText", "message.replyText" -> mapOf("text" to "Hello, {{sender}}!")
             "message.react" -> mapOf("emoji" to "👍")
             "message.sendPoll" -> mapOf("title" to "Quick question?", "options" to "Option A\nOption B", "selectableCount" to "1")
@@ -1098,7 +1098,8 @@ private fun NodeConfigurationDialog(
 ) {
     var config by remember(node.id) { mutableStateOf(node.config) }
     val fields = when (node.type) {
-        "trigger.command" -> listOf("command" to "Command name", "aliases" to "Aliases, comma-separated")
+        "trigger.command" -> listOf("command" to "Command name", "aliases" to "Aliases, comma-separated", "maxMessagesPerRun" to "Maximum messages per execution (1–20)")
+        "trigger.message" -> listOf("maxMessagesPerRun" to "Maximum messages per execution (1–20)")
         "group.updateSubject" -> listOf("subject" to "New group name")
         "group.updateDescription" -> listOf("description" to "New group description")
         "group.participantsUpdate" -> listOf("action" to "Action (add/remove/promote/demote)", "participants" to "Phone numbers, one per line")

@@ -42,11 +42,13 @@ data class ServerAiReplyAvailability(
 )
 
 data class ServerOwnerSettings(
-    val privateOwnerNumber: String = "",
-    val publicOwnerNumber: String = "",
-    val publicBotNumber: String = "",
-    val allowedPublicSenders: List<String> = emptyList()
-)
+    val ownerNumber: String = "",
+    val publicBotNumber: String = ""
+) {
+    // Compatibility accessors for the existing ENV/configuration view.
+    val privateOwnerNumber: String get() = ownerNumber
+    val publicOwnerNumber: String get() = ownerNumber
+}
 
 data class ServerEnvironmentValue(
     val key: String,
@@ -206,10 +208,9 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
     suspend fun ownerSettings(): ServerOwnerSettings {
         val result = api.get("owners").optJSONObject("owners") ?: JSONObject()
         return ServerOwnerSettings(
-            privateOwnerNumber = result.optString("privateOwnerNumber"),
-            publicOwnerNumber = result.optString("publicOwnerNumber"),
-            publicBotNumber = result.optString("publicBotNumber"),
-            allowedPublicSenders = result.optJSONArray("allowedPublicSenders").toStringList()
+            ownerNumber = result.optString("ownerNumber")
+                .ifBlank { result.optString("privateOwnerNumber").ifBlank { result.optString("publicOwnerNumber") } },
+            publicBotNumber = result.optString("publicBotNumber")
         )
     }
 
@@ -217,10 +218,8 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
         api.put(
             "owners",
             JSONObject()
-                .put("privateOwnerNumber", settings.privateOwnerNumber)
-                .put("publicOwnerNumber", settings.publicOwnerNumber)
+                .put("ownerNumber", settings.ownerNumber)
                 .put("publicBotNumber", settings.publicBotNumber)
-                .put("allowedPublicSenders", JSONArray(settings.allowedPublicSenders))
         )
     }
 

@@ -134,6 +134,7 @@ fun AharaneApp(
     appLockEnabled: Boolean = false
 ) {
     val context = LocalContext.current
+    val motionEnabled = LocalStudioMotionEnabled.current
     val connectionScope = rememberCoroutineScope()
     val repository = remember(connectionManager) { AharaneRepository(connectionManager) }
     val chatAppearanceStore = remember(context, previewMode) { ChatAppearanceStore(context.applicationContext, previewMode) }
@@ -1267,7 +1268,13 @@ fun AharaneApp(
     LaunchedEffect(currentDestination) {
         val index = MainDestination.entries.indexOf(currentDestination)
         if (index >= 0 && tabPagerState.settledPage != index) {
-            tabPagerState.animateScrollToPage(index)
+            tabPagerState.animateScrollToPage(
+                page = index,
+                animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Float>(
+                    enabled = motionEnabled,
+                    targetMillis = StudioFoundationContract.Motion.ScreenTransitionMillis
+                )
+            )
         }
     }
     LaunchedEffect(tabPagerState) {

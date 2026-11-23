@@ -191,7 +191,7 @@ fun HomeScreen(
             StudioCard {
                 StudioRow(
                     title = "Configuration",
-                    subtitle = "Private Owner · Public Owner · Public bot number",
+                    subtitle = "One shared Owner · Public bot number",
                     icon = Icons.Outlined.Tune,
                     trailing = "›",
                     onClick = onOpenConfiguration,

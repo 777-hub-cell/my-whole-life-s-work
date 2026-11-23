@@ -25,10 +25,11 @@ import { createWhatsAppDiscovery } from './whatsapp-discovery.js'
 import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_ARCHIVE_BYTES, normalizeUpdatePath } from './update-manager.js'
 import { createChatStore } from './chat-store.js'
 import { createEngineStore } from './engine-store.js'
+import { executeCustomEngine } from './engine-runtime.js'
 import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, normalizeChatVisibility, normalizeChatAppearance, isChatVisible, envView } from './studio-settings.js'
 import { createActivityStore } from './activity-store.js'
 import { createAiReplyService } from './ai-reply.js'
-import { createVisualCommandStore, normalizeWorkflow, validateWorkflow, executeVisualWorkflow, currentVisualNodeLibrary } from './visual-command-builder.js'
+import { createVisualCommandStore, normalizeWorkflow, validateWorkflow, executeVisualWorkflow, currentVisualNodeLibrary, registerEngineNode, unregisterEngineNode } from './visual-command-builder.js'
 
 const APP_NAME = 'Aharane'
 const PROCESS_STARTED_AT = Date.now()
@@ -93,6 +94,13 @@ const activityStore = createActivityStore({ dataDir: DATA_DIR })
 const visualCommandStore = createVisualCommandStore(join(DATA_DIR, 'visual-commands.json'))
 const engineStore = createEngineStore({ dataDir: DATA_DIR })
 await Promise.all([chatStore.init(), activityStore.init(), visualCommandStore.init(), engineStore.init()])
+for (const engine of await engineStore.list()) registerEngineNode(engine)
+
+async function runStoredEngine(engineId, inputs) {
+  const engine = await engineStore.get(engineId)
+  if (!engine) throw new Error('The referenced Engine no longer exists.')
+  return executeCustomEngine(engine, inputs)
+}
 const SETTINGS_FILE = join(DATA_DIR, 'studio-settings.json')
 const CHAT_WALLPAPER_FILE = join(DATA_DIR, 'chat-wallpaper')
 let studioSettings = await loadStudioSettings(SETTINGS_FILE)
@@ -1091,7 +1099,7 @@ async function handleMessages(sessionId, currentSocket, event) {
         allowCommand('visual-message:' + (senderJid || remoteJid))) {
       for (const workflow of visualCommandStore.findMessageTriggers(sessionId)) {
         try {
-          const result = await executeVisualWorkflow(workflow, { store: visualCommandStore, context: workflowContext })
+          const result = await executeVisualWorkflow(workflow, { store: visualCommandStore, context: workflowContext, runEngine: runStoredEngine })
           if (!result.ok) {
             logger.warn({ event: 'visual-workflow.failed', workflowId: workflow.id, account: sessionId, error: result.error })
             publishStudioEvent('visual-workflow.failed', { workflowId: workflow.id, account: sessionId, error: result.error })
@@ -1119,6 +1127,7 @@ async function handleMessages(sessionId, currentSocket, event) {
         try {
           const result = await executeVisualWorkflow(workflow, {
             store: visualCommandStore,
+            runEngine: runStoredEngine,
             context: {
               ...workflowContext,
               commandName: parsedCommand.name,
@@ -1405,11 +1414,11 @@ function visualWorkflowPayload(workflow) {
   return { ...workflow, validation: validateWorkflow(workflow) }
 }
 
-// Custom code Engines are stored as source, not executed by the privileged bot.
-// Execution remains gated until an independent sandbox and capability broker exist.
+// Custom Engine source is executed in a constrained QuickJS WASM context.
+// Only declared exact HTTPS host allowlists are exposed through the network capability.
 app.get('/api/engines', requireAdmin, async (_req, res) => {
   try {
-    res.json({ ok: true, engines: await engineStore.list(), executionAvailable: false })
+    res.json({ ok: true, engines: await engineStore.list(), executionAvailable: true })
   } catch (error) {
     res.status(500).json({ ok: false, error: String(error?.message || error) })
   }
@@ -1451,6 +1460,7 @@ app.delete('/api/engines/:id', requireAdmin, async (req, res) => {
     )
     const removed = await engineStore.remove(req.params.id, { confirm: req.body?.confirm, usedBy: references })
     if (!removed) return res.status(404).json({ ok: false, error: 'Engine not found.' })
+    unregisterEngineNode(req.params.id)
     res.json({ ok: true })
   } catch (error) {
     res.status(409).json({ ok: false, error: String(error?.message || error) })
@@ -1557,6 +1567,7 @@ app.post('/api/visual-commands/:id/test', requireAdmin, async (req, res) => {
     const result = await executeVisualWorkflow(workflow, {
       store: visualCommandStore,
       dryRun: true,
+      runEngine: runStoredEngine,
       context: {
         sessionId: workflow.account,
         privateControl: workflow.account === 'private',

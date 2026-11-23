@@ -1,6 +1,8 @@
 package com.aharane.studio.features.more
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -161,7 +163,12 @@ fun MoreScreen(
         onPageChange(if (page == "chat-appearance-studio") "chat-settings" else "more")
     }
 
-    if (page == "appearance") {
+    Crossfade(
+        targetState = page,
+        animationSpec = tween(if (LocalStudioMotionEnabled.current) 210 else 0),
+        label = "more-page-transition"
+    ) { targetPage ->
+    if (targetPage == "appearance") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -306,7 +313,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "chat-settings") {
+    } else if (targetPage == "chat-settings") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
@@ -499,7 +506,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "chat-appearance-studio") {
+    } else if (targetPage == "chat-appearance-studio") {
         if (appearanceStore != null) {
             ChatAppearanceStudioScreen(
                 account = selectedChatAccount,
@@ -515,7 +522,7 @@ fun MoreScreen(
                 Text("The local appearance store could not be opened.", color = StudioPalette.Muted, fontSize = 12.sp)
             }
         }
-    } else if (page == "starred") {
+    } else if (targetPage == "starred") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -548,7 +555,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "accounts") {
+    } else if (targetPage == "accounts") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -616,7 +623,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "activity") {    } else if (page == "activity") {
+    } else if (targetPage == "activity") {    } else if (targetPage == "activity") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -688,7 +695,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "storage") {
+    } else if (targetPage == "storage") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -884,6 +891,8 @@ fun MoreScreen(
         }
     }
 
+
+    }
     if (customColorOpen) {
         Dialog(onDismissRequest = { customColorOpen = false }) {
             Column(

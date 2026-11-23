@@ -1469,7 +1469,8 @@ fun AharaneApp(
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
-        if (!editorOpen && activeConversation == null && !commandBuilderOpen && !engineLibraryOpen) {
+        if (!editorOpen && activeConversation == null && !commandBuilderOpen && !engineLibraryOpen &&
+            !configurationOpen && currentDestination == MainDestination.HOME) {
             StudioHeader(connected = connected, preview = previewMode)
         }
 
@@ -2477,6 +2478,7 @@ fun AharaneApp(
                         notesStore = remember(context) { EncryptedNotesStore(context.applicationContext) },
                         updatesRepository = if (previewMode) null else repository,
                         onOpenEnvironment = { destinationName = MainDestination.ENVIRONMENT.name; morePage = "more" },
+                        onOpenConfiguration = { configurationOpen = true; morePage = "more" },
                         connected = connected,
                         privateAccountStatus = runtime?.privateAccount?.let(::accountStateLabel) ?: "Status not loaded",
                         publicAccountStatus = runtime?.publicAccount?.let(::accountStateLabel) ?: "Status not loaded",

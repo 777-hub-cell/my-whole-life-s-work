@@ -2,6 +2,7 @@ package com.aharane.studio.core.design
 
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasClickAction
@@ -45,6 +46,25 @@ class StudioBottomNavigationTest {
             assertEquals(MainDestination.ENVIRONMENT, selected.value)
         }
         compose.onNodeWithTag("studio-bottom-navigation-env").assertIsSelected()
+    }
+
+    @Test
+    fun sharedHeaderCanHideTheWordmarkOutsideHome() {
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                StudioHeader(connected = true, showBrand = false)
+            }
+        }
+
+        compose.onNodeWithText("Aharane").assertDoesNotExist()
+        compose.onNodeWithText("Online").assertIsDisplayed()
+
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                StudioHeader(connected = true, showBrand = true)
+            }
+        }
+        compose.onNodeWithText("Aharane").assertIsDisplayed()
     }
 
     @Test

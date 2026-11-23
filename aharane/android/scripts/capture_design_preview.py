@@ -201,7 +201,9 @@ def main():
         "--ez", "aharane_preview_mode", "true"
     )
     capture("01-home.png", 5)
-    tap_label("Preview", occurrence=0)
+    # The header's Preview status badge is not interactive. Open the Private
+    # account's Preview action (the second visible Preview label).
+    tap_label("Preview", occurrence=1)
     assert_visible_texts(["Pairing code", "QR code", "This is a preview", "Back to accounts"])
     capture("01a-whatsapp-pairing-code-choice.png")
     tap_label("QR code")

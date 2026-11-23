@@ -287,11 +287,15 @@ export function validateWorkflow(input) {
       if (config.requireReply != null && typeof config.requireReply !== 'boolean' && !['true', 'false'].includes(String(config.requireReply))) {
         issue(node.id, 'error', 'The reply requirement setting is invalid.', 'Use the toggle to enable or disable it.')
       }
+      const messageLimit = Number(config.maxMessagesPerRun == null ? 10 : config.maxMessagesPerRun)
+      if (!Number.isInteger(messageLimit) || messageLimit < 1 || messageLimit > 20) issue(node.id, 'error', 'The per-run message limit must be from 1 to 20.', 'Choose how many WhatsApp messages this command may send in one execution.')
       const chatScope = textValue(config.chatScope, 16) || 'direct'
       if (!['direct', 'groups', 'both'].includes(chatScope)) issue(node.id, 'error', 'The chat scope is invalid.', 'Choose direct chats, groups, or both.')
       if (workflow.account === 'private' && chatScope !== 'direct') issue(node.id, 'error', 'Private commands cannot run in groups.', 'Keep the Private account scope set to direct chats.')
     }
     if (node.type === 'trigger.message') {
+      const messageLimit = Number(config.maxMessagesPerRun == null ? 10 : config.maxMessagesPerRun)
+      if (!Number.isInteger(messageLimit) || messageLimit < 1 || messageLimit > 20) issue(node.id, 'error', 'The per-run message limit must be from 1 to 20.', 'Choose how many WhatsApp messages this workflow may send in one execution.')
       const chatScope = textValue(config.chatScope, 16) || 'direct'
       if (!['direct', 'groups', 'both'].includes(chatScope)) issue(node.id, 'error', 'The message-event chat scope is invalid.', 'Choose direct chats, groups, or both.')
     }
@@ -583,6 +587,17 @@ export async function executeVisualWorkflow(input, options = {}) {
     : event.sessionId === 'public' && event.allowedPublicSender === true
   if (!authorized) return { ok: false, dryRun, validation, trace, error: 'This WhatsApp account is not authorized to run the workflow.' }
   const trigger = workflow.nodes.find(node => triggerTypes.has(node.type))
+  const perRunMessageLimit = Number(trigger?.config?.maxMessagesPerRun == null ? 10 : trigger.config.maxMessagesPerRun)
+  let sentMessageCount = 0
+  const sendWhatsAppMessage = async (...args) => {
+    if (sentMessageCount >= perRunMessageLimit) {
+      throw new Error('This command reached its ' + perRunMessageLimit + ' message-per-run limit.')
+    }
+    if (typeof event.socket?.sendMessage !== 'function') throw new Error('WhatsApp sending is unavailable.')
+    const sent = await event.socket.sendMessage(...args)
+    if (sent?.key?.id) sentMessageCount += 1
+    return sent
+  }
   if (!safeChat(event, trigger)) return { ok: false, dryRun, validation, trace, error: 'This workflow is not enabled for the current chat type.' }
   if (trigger.type === 'trigger.command') {
     const prefix = workflow.account === 'private' ? '.' : '!'
@@ -644,7 +659,7 @@ export async function executeVisualWorkflow(input, options = {}) {
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would send: ' + value.slice(0, 160) })
             outputs.set(node.id, { sent: { simulated: true, text: value } })
           } else {
-            const sent = await event.socket.sendMessage(event.remoteJid, { text: value },
+            const sent = await sendWhatsAppMessage(event.remoteJid, { text: value },
               node.type === 'message.replyText' ? { quoted: event.message } : undefined)
             if (!sent?.key?.id) throw new Error('WhatsApp did not return a sent message.')
             outputs.set(node.id, { sent })
@@ -656,7 +671,7 @@ export async function executeVisualWorkflow(input, options = {}) {
           if (!emoji || !key?.id || !key?.remoteJid) throw new Error('A reaction requires an emoji and the original message key.')
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would react with ' + emoji + '.' })
           else {
-            const sent = await event.socket.sendMessage(event.remoteJid, { react: { text: emoji, key } })
+            const sent = await sendWhatsAppMessage(event.remoteJid, { react: { text: emoji, key } })
             if (!sent?.key?.id) throw new Error('WhatsApp did not return a reaction message result.')
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the reaction.' })
           }
@@ -670,7 +685,7 @@ export async function executeVisualWorkflow(input, options = {}) {
           if (dryRun) {
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would send location: ' + name })
           } else {
-            const sent = await event.socket.sendMessage(event.remoteJid, {
+            const sent = await sendWhatsAppMessage(event.remoteJid, {
               location: { degreesLatitude: latitude, degreesLongitude: longitude, name },
             })
             if (!sent?.key?.id) throw new Error('WhatsApp did not return a location message.')
@@ -686,7 +701,7 @@ export async function executeVisualWorkflow(input, options = {}) {
           if (dryRun) {
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would share contact: ' + name })
           } else {
-            const sent = await event.socket.sendMessage(event.remoteJid, {
+            const sent = await sendWhatsAppMessage(event.remoteJid, {
               contacts: { displayName: name, contacts: [{ vcard }] },
             })
             if (!sent?.key?.id) throw new Error('WhatsApp did not return a contact message.')
@@ -708,7 +723,7 @@ export async function executeVisualWorkflow(input, options = {}) {
           if (dryRun) {
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would send interactive buttons.' })
           } else {
-            const sent = await event.socket.sendMessage(event.remoteJid, { text: messageText, buttons })
+            const sent = await sendWhatsAppMessage(event.remoteJid, { text: messageText, buttons })
             if (!sent?.key?.id) throw new Error('WhatsApp did not return an interactive message.')
             outputs.set(node.id, { sent })
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the interactive message.' })
@@ -718,7 +733,7 @@ export async function executeVisualWorkflow(input, options = {}) {
           if (dryRun) {
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would forward the original message and its supported media.' })
           } else {
-            const sent = await event.socket.sendMessage(event.remoteJid, { forward: event.message })
+            const sent = await sendWhatsAppMessage(event.remoteJid, { forward: event.message })
             if (!sent?.key?.id) throw new Error('WhatsApp did not return the forwarded message.')
             outputs.set(node.id, { sent })
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the forwarded message.' })
@@ -737,7 +752,7 @@ export async function executeVisualWorkflow(input, options = {}) {
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would send poll: ' + title })
             outputs.set(node.id, { sent: { simulated: true, title, values } })
           } else {
-            const sent = await event.socket.sendMessage(event.remoteJid, {
+            const sent = await sendWhatsAppMessage(event.remoteJid, {
               poll: { name: title, values, selectableCount },
             })
             if (!sent?.key?.id) throw new Error('WhatsApp did not return a poll message.')
@@ -843,7 +858,7 @@ export async function executeVisualWorkflow(input, options = {}) {
           if (!/^\d{5,25}@newsletter$/.test(newsletterJid) || !text) throw new Error('Newsletter ID or post text is invalid.')
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would publish text to the newsletter.' })
           else {
-            const sent = await event.socket.sendMessage(newsletterJid, { text })
+            const sent = await sendWhatsAppMessage(newsletterJid, { text })
             if (!sent?.key?.id) throw new Error('WhatsApp did not return the newsletter post.')
             outputs.set(node.id, { sent })
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the newsletter post.' })
@@ -914,7 +929,7 @@ export async function executeVisualWorkflow(input, options = {}) {
             if (typeof event.socket?.sendMessage !== 'function') throw new Error('WhatsApp media sending is unavailable.')
             const sent = []
             for (const image of images) {
-              const response = await event.socket.sendMessage(event.remoteJid, { image, caption: textValue(node.config.caption, 1000) })
+              const response = await sendWhatsAppMessage(event.remoteJid, { image, caption: textValue(node.config.caption, 1000) })
               if (!response?.key?.id) throw new Error('WhatsApp did not confirm an image message.')
               sent.push(response)
             }

@@ -759,7 +759,7 @@ fun VisualCommandBuilderScreen(
                 )
             } else {
                 LazyColumn(
-                    Modifier.fillMaxSize(),
+                    Modifier.fillMaxSize().testTag("visual-command-node-library"),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     contentPadding = PaddingValues(bottom = 8.dp)
                 ) {

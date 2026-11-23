@@ -2109,6 +2109,53 @@ app.post('/api/chats/:accountId/:jid/mark-unread', requireAdmin, async (req, res
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not mark this chat unread.') })
   }
 })
+// Account-scoped, real WhatsApp profile pictures. A missing/private picture is
+// never substituted with a fabricated image. Short-lived caching prevents
+// repeated profile lookups while scrolling a long conversation list.
+const whatsappAvatarCache = new Map()
+app.get('/api/chats/:accountId/:jid/avatar', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = decodeURIComponent(String(req.params.jid || ''))
+    if (!authorizedChat(accountId, jid) ||
+        !isChatVisible(studioSettings[accountId], jid) ||
+        !await chatStore.hasConversation(accountId, jid)) {
+      return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    }
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected') {
+      return res.status(503).json({ ok: false, error: 'Connect this WhatsApp account to load its profile pictures.' })
+    }
+    if (typeof socket.profilePictureUrl !== 'function') {
+      return res.status(501).json({ ok: false, error: 'Profile-picture lookup is unavailable in this WhatsApp session.' })
+    }
+    const ownJid = String(socket.user?.id || session.auth?.state?.creds?.me?.id || '')
+    const key = accountId + ':' + ownJid + ':' + jid
+    const now = Date.now()
+    const cached = whatsappAvatarCache.get(key)
+    if (cached && cached.expiresAt > now && req.query.refresh !== '1') {
+      res.set('Cache-Control', 'private, max-age=300')
+      return res.json({ ok: true, jid, pictureUrl: cached.url, available: Boolean(cached.url) })
+    }
+    let pictureUrl = ''
+    try {
+      pictureUrl = String(await socket.profilePictureUrl(jid, 'preview') || '')
+    } catch {
+      // Privacy, no picture, or inaccessible picture are legitimate states.
+    }
+    whatsappAvatarCache.set(key, { url: pictureUrl, expiresAt: now + (pictureUrl ? 600_000 : 60_000) })
+    if (whatsappAvatarCache.size > 600) {
+      for (const [key, item] of whatsappAvatarCache) {
+        if (item.expiresAt <= now || whatsappAvatarCache.size > 500) whatsappAvatarCache.delete(key)
+      }
+    }
+    res.set('Cache-Control', 'private, max-age=300')
+    res.json({ ok: true, jid, pictureUrl, available: Boolean(pictureUrl) })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not read WhatsApp profile picture.') })
+  }
+})
+
 app.get('/api/chats/:accountId/:jid/info', requireAdmin, async (req, res) => {
   try {
     const accountId = chatAccount(req.params.accountId), jid = decodeURIComponent(String(req.params.jid || ''))

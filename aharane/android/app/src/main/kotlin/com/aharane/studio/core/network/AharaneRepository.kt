@@ -158,6 +158,10 @@ interface VisualCommandDataSource {
     suspend fun updateVisualCommand(id: String, workflow: JSONObject): JSONObject
     suspend fun deleteVisualCommand(id: String): JSONObject
     suspend fun testVisualCommand(id: String, messageText: String = ""): JSONObject
+    suspend fun createCustomNode(definition: JSONObject): JSONObject =
+        throw UnsupportedOperationException("Custom node management is unavailable.")
+    suspend fun deleteCustomNode(id: String): JSONObject =
+        throw UnsupportedOperationException("Custom node management is unavailable.")
 }
 
 class AharaneRepository(private val connection: AharaneConnectionManager) : VisualCommandDataSource {
@@ -177,6 +181,12 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
 
     override suspend fun testVisualCommand(id: String, messageText: String): JSONObject =
         api.post("visual-commands/" + encodePath(id) + "/test", JSONObject().put("messageText", messageText))
+
+    override suspend fun createCustomNode(definition: JSONObject): JSONObject =
+        api.post("custom-nodes", JSONObject().put("node", definition))
+
+    override suspend fun deleteCustomNode(id: String): JSONObject =
+        api.delete("custom-nodes/" + encodePath(id), JSONObject().put("confirm", true))
 
     suspend fun runtimeSnapshot(): ServerRuntimeSnapshot {
         val payload = api.get("studio/snapshot")

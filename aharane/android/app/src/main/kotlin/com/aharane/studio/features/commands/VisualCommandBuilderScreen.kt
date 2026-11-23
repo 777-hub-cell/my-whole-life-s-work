@@ -348,9 +348,13 @@ fun VisualCommandBuilderScreen(
             "variable.get", "counter.increment" -> mapOf("key" to "count")
             "flow.delay" -> mapOf("milliseconds" to "1000")
             "flow.repeat" -> mapOf("count" to "2")
-            else -> if (definition.type.startsWith("custom.")) {
-                mapOf("nodeVersion" to definition.version.toString())
-            } else emptyMap()
+            "media.sendImage" -> mapOf("caption" to "")
+            "media.sendImages" -> mapOf("caption" to "", "limit" to "10")
+            else -> when {
+                definition.type.startsWith("custom.") -> mapOf("nodeVersion" to definition.version.toString())
+                definition.type.startsWith("engine.") -> mapOf("engineVersion" to definition.version.toString())
+                else -> emptyMap()
+            }
         }
         val newNode = VisualNode(
             type = definition.type,
@@ -982,6 +986,7 @@ private fun NodeCard(
             Box(Modifier.size(7.dp).clip(CircleShape).background(if (error != null) StudioPalette.Bad else StudioPalette.Accent))
             Spacer(Modifier.width(6.dp))
             Text(definition.name, color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (definition.category.isNotBlank()) Text(definition.category, color = StudioPalette.Muted, fontSize = 9.sp, maxLines = 1)
             Spacer(Modifier.weight(1f))
             if (error != null) Text("!", color = StudioPalette.Bad, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
@@ -1116,7 +1121,9 @@ private fun NodeConfigurationDialog(
         "variable.get", "counter.increment" -> listOf("key" to "Variable or counter name")
         "flow.delay" -> listOf("milliseconds" to "Wait duration (0–10000 ms)")
         "flow.repeat" -> listOf("count" to "Repeat count (1–10)")
-        else -> if (node.type.startsWith("custom.")) definition?.inputs
+        "media.sendImage" -> listOf("caption" to "Image caption (optional)")
+        "media.sendImages" -> listOf("caption" to "Image caption (optional)", "limit" to "Maximum messages (1–20)")
+        else -> if (node.type.startsWith("custom.") || node.type.startsWith("engine.")) definition?.inputs
             ?.filter { it.type != "exec" }?.map { it.id to (it.label + " (" + it.type + ")") }.orEmpty()
         else emptyList()
     }

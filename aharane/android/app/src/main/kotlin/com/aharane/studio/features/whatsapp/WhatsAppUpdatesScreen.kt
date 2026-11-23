@@ -1,13 +1,25 @@
 package com.aharane.studio.features.whatsapp
 
+import android.content.Intent
+import android.graphics.BitmapFactory
+import androidx.core.content.FileProvider
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -29,6 +41,43 @@ fun WhatsAppUpdatesScreen(
     onBack: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var mediaImage by remember { mutableStateOf<ImageBitmap?>(null) }
+    var mediaError by remember { mutableStateOf("") }
+    var mediaLoading by remember { mutableStateOf(false) }
+    fun openStatusMedia(row: JSONObject) {
+        val kind = row.optString("mediaKind")
+        if (kind == "text") return
+        scope.launch {
+            mediaLoading = true
+            mediaError = ""
+            try {
+                val bytes = repository.whatsappStatusMedia(
+                    selectedAccount, row.optString("senderJid"), row.optString("id")
+                )
+                if (kind == "image" || kind == "sticker") {
+                    mediaImage = withContext(Dispatchers.Default) {
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                    } ?: throw IllegalStateException("The WhatsApp picture is damaged.")
+                } else {
+                    val extension = when (kind) { "video" -> "mp4"; else -> "ogg" }
+                    val file = withContext(Dispatchers.IO) {
+                        java.io.File(context.cacheDir, "shared-media").apply { mkdirs() }
+                            .resolve("status-preview.$extension").also { it.writeBytes(bytes) }
+                    }
+                    val uri = FileProvider.getUriForFile(context,
+                        context.packageName + ".files", file)
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, if (kind == "video") "video/mp4" else "audio/ogg")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(intent)
+                }
+            } catch (e: Exception) {
+                mediaError = e.message ?: "This WhatsApp Status media is unavailable."
+            } finally { mediaLoading = false }
+        }
+    }
     var page by remember { mutableStateOf("Status") }
     var statusRows by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var channelRows by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
@@ -92,6 +141,8 @@ fun WhatsAppUpdatesScreen(
             }
         }
         if (error.isNotBlank()) Text(error, color = StudioPalette.Bad)
+        if (mediaError.isNotBlank()) Text(mediaError, color = StudioPalette.Bad)
+        if (mediaLoading) Text("Loading received WhatsApp media…", color = StudioPalette.Muted)
         if (explanation.isNotBlank()) Text(explanation, color = StudioPalette.Muted, fontSize = 12.sp)
         if (page == "Status") {
             if (statusRows.isEmpty() && !loading) {
@@ -99,10 +150,16 @@ fun WhatsAppUpdatesScreen(
             }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(statusRows, key = { it.optString("senderJid") + ":" + it.optString("id") }) { row ->
-                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .clickable(enabled = row.optString("mediaKind") != "text") {
+                                openStatusMedia(row)
+                            },
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
                         Text(row.optString("senderJid").substringBefore('@'), fontWeight = FontWeight.SemiBold, color = StudioPalette.Ink)
                         Text(row.optString("text").ifBlank {
-                            row.optString("mediaKind").replaceFirstChar { it.uppercase() } + " status — preview unavailable through this session"
+                            row.optString("mediaKind").replaceFirstChar { it.uppercase() } + " status · Tap to view"
                         }, color = StudioPalette.Muted)
                         Text(DateFormat.getDateTimeInstance().format(Date(row.optLong("timestampMillis"))),
                             color = StudioPalette.Muted, fontSize = 11.sp)
@@ -157,4 +214,16 @@ fun WhatsAppUpdatesScreen(
             }
         }
     }
+    if (mediaImage != null) {
+        Dialog(onDismissRequest = { mediaImage = null }) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Image(
+                    bitmap = mediaImage!!, contentDescription = "Received WhatsApp Status picture",
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 440.dp), contentScale = ContentScale.Fit
+                )
+                OutlinedButton(onClick = { mediaImage = null }) { Text("Close") }
+            }
+        }
+    }
+
 }

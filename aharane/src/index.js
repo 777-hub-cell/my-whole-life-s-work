@@ -104,6 +104,92 @@ async function runStoredEngine(engineId, inputs) {
   if (!engine) throw new Error('The referenced Engine no longer exists.')
   return executeCustomEngine(engine, inputs)
 }
+
+async function executeScheduledWorkflow(schedule) {
+  const workflow = visualCommandStore.get(schedule.workflowId)
+  if (!workflow || !workflow.enabled) throw new Error('The scheduled command is missing or disabled.')
+  const trigger = workflow.nodes.find(node => node.type === 'trigger.command')
+  if (!trigger) throw new Error('Only saved command-trigger workflows can be scheduled.')
+  const destinationError = scheduledDestinationError(workflow, schedule.destinationJid)
+  if (destinationError) throw new Error(destinationError)
+
+  const session = accountRuntime?.get(schedule.account)
+  if (!session || session.state !== 'connected' || !session.socket) {
+    throw new Error('The ' + schedule.account + ' WhatsApp session is not connected. This occurrence was recorded as failed and will not be replayed.')
+  }
+  const currentSocket = session.socket
+  const destinationJid = schedule.destinationJid
+  const ownerNumber = schedule.account === 'private'
+    ? ownerConfig.privateOwnerNumber
+    : ownerConfig.publicOwnerNumber
+  const senderJid = String(ownerNumber || '').replace(/\\D/g, '') + '@s.whatsapp.net'
+  const visualWorkflowSocket = {
+    sendMessage: async (...args) => {
+      const sent = await currentSocket.sendMessage(...args)
+      if (sent?.key?.id) await chatStore.recordMessage({ sessionId: schedule.account, message: sent, socket: currentSocket })
+      return sent
+    },
+  }
+  for (const method of [
+    'groupMetadata',
+    'groupUpdateSubject',
+    'groupUpdateDescription',
+    'groupParticipantsUpdate',
+    'groupSettingUpdate',
+    'updateBlockStatus',
+    'updateProfileName',
+    'updateProfileStatus',
+    'newsletterCreate',
+    'newsletterFollow',
+    'newsletterUnfollow',
+  ]) {
+    if (typeof currentSocket[method] === 'function') {
+      visualWorkflowSocket[method] = (...args) => currentSocket[method](...args)
+    }
+  }
+
+  const prefix = schedule.account === 'private' ? PRIVATE_COMMAND_PREFIX : PUBLIC_COMMAND_PREFIX
+  const commandName = String(trigger.config.command || '')
+  const messageText = prefix + commandName + ' scheduled'
+  const message = {
+    key: {
+      id: 'aharane-scheduled-' + String(schedule.claimedRunId).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 120),
+      remoteJid: destinationJid,
+      fromMe: true,
+      ...(destinationJid.endsWith('@g.us') ? { participant: currentSocket.user?.id || senderJid } : {}),
+    },
+    message: { conversation: messageText },
+  }
+  const result = await executeVisualWorkflow(workflow, {
+    store: visualCommandStore,
+    runEngine: runStoredEngine,
+    context: {
+      sessionId: schedule.account,
+      privateControl: schedule.account === 'private',
+      isPublicOwner: schedule.account === 'public',
+      allowedPublicSender: schedule.account === 'public',
+      socket: visualWorkflowSocket,
+      message,
+      messageText,
+      sender: senderJid,
+      senderJid,
+      isGroupChat: destinationJid.endsWith('@g.us'),
+      remoteJid: destinationJid,
+      commandName,
+      rawArgs: '',
+      args: [],
+      scheduledExecution: true,
+      scheduleId: schedule.id,
+      scheduleRunId: schedule.claimedRunId,
+    },
+  })
+  if (!result.ok) throw new Error(result.error || 'Scheduled workflow failed.')
+  return {
+    ok: true,
+    summary: 'Scheduled command .' .replace('.', prefix) + commandName + ' completed.',
+    trace: result.trace,
+  }
+}
 const SETTINGS_FILE = join(DATA_DIR, 'studio-settings.json')
 const CHAT_WALLPAPER_FILE = join(DATA_DIR, 'chat-wallpaper')
 let studioSettings = await loadStudioSettings(SETTINGS_FILE)

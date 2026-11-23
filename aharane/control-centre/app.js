@@ -20,7 +20,15 @@ function ask(title,val,cta,cb){sheet(`<h3>${title}</h3><form id="af"><input clas
 const node=p=>p.reduce((o,k)=>o[k],fs);
 function getFile(p){const a=p.split('/'),n=a.pop();return[node(a),n]}
 function up(){const s=Math.floor((Date.now()-S.t0)/1e3),d=Math.floor(s/86400),h=String(Math.floor(s%86400/3600)).padStart(2,'0'),m=String(Math.floor(s%3600/60)).padStart(2,'0'),x=String(s%60).padStart(2,'0');return`${d}d ${h}:${m}:${x}`}
-function pill(){const p=$('#pill');p.className='stbtn';p.setAttribute('aria-label',S.run?'Bot running':'Bot stopped');p.innerHTML=`<i class="st ${S.run?'live':'off'}"></i>`;p.onclick=()=>go('home')}
+function pill(){
+ const p=$('#pill');
+ const label=S.botStatusLabel||(S.run?'At least one bot online':'Bots offline');
+ p.className='stbtn '+(S.run?'running':'offline');
+ p.setAttribute('aria-label',label);
+ p.title=label;
+ p.innerHTML='<i class="st '+(S.run?'live':'off')+'"></i><span>'+label+'</span>';
+ p.onclick=()=>go('home');
+}
 function go(t){S.tab=t;S.ed=false;S.sub=null;NK='tab';render();scrollTo(0,0)}
 function nav(){$('#nav').innerHTML=Object.keys(T).map(k=>`<button class="${S.tab===k?'on':''}" onclick="go('${k}')" ${S.tab===k?'aria-current="page"':''}>${ico(k)}${T[k]}</button>`).join('')}
 function render(){nav();pill();const v=$('#view');v.className='pg';v.innerHTML=({home:()=>S.sub==='cfg'?cfgV():S.sub==='acc'?accV():S.sub==='pair'?pairV():home(),files:filesV,env:envV,chats:chatsV,more:()=>S.sub==='ap'?apV():S.sub==='act'?actV():S.sub==='stor'?storV():moreV()})[S.tab]();bind();wsDraw();syncNav()}

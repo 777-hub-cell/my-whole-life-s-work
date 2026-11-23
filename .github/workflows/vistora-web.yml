@@ -1,0 +1,72 @@
+name: VISTORA HTML
+
+on:
+  push:
+    branches:
+      - "feature/vistora-kotlin-native-android-20261122"
+    paths:
+      - "vistora/**"
+      - ".github/workflows/vistora-web.yml"
+  pull_request:
+    paths:
+      - "vistora/**"
+      - ".github/workflows/vistora-web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vistora-html-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-qa:
+    name: Validate HTML and capture mobile screens
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Validate HTML, manifest and JavaScript
+        run: node vistora/scripts/validate-html.mjs
+
+      - name: Install Playwright for browser QA
+        run: npm install --prefix "${RUNNER_TEMP}/vistora-qa" --no-save playwright
+
+      - name: Install Chromium
+        run: "${RUNNER_TEMP}/vistora-qa/node_modules/.bin/playwright install --with-deps chromium"
+
+      - name: Capture phone-sized VISTORA screens
+        env:
+          NODE_PATH: ${{ runner.temp }}/vistora-qa/node_modules
+          VISTORA_SCREENSHOT_DIR: ${{ runner.temp }}/vistora-web-qa
+        run: node vistora/scripts/capture-web-qa.cjs
+
+      - name: Upload VISTORA HTML app
+        uses: actions/upload-artifact@v6
+        with:
+          name: vistora-html-pwa
+          path: |
+            vistora/index.html
+            vistora/manifest.webmanifest
+            vistora/sw.js
+            vistora/vistora-icon.svg
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload mobile screenshots
+        uses: actions/upload-artifact@v6
+        with:
+          name: vistora-html-screenshots
+          path: ${{ runner.temp }}/vistora-web-qa/*.png
+          if-no-files-found: error
+          retention-days: 14

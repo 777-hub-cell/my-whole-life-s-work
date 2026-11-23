@@ -21,6 +21,7 @@ import { createAccountRuntime } from './account-runtime.js'
 import { loadCommandRegistry, dispatchCommand, parseCommand } from './command-registry.js'
 import { isPrivateSelfChat, isPrivateSelfCommand, isPublicOwnerSender } from './authorization.js'
 import { loadOwnerConfig, normalizeOwnerConfig, saveOwnerConfig } from './owner-config.js'
+import { createWhatsAppDiscovery } from './whatsapp-discovery.js'
 import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_ARCHIVE_BYTES, normalizeUpdatePath } from './update-manager.js'
 import { createChatStore } from './chat-store.js'
 import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, normalizeChatVisibility, normalizeChatAppearance, isChatVisible, envView } from './studio-settings.js'
@@ -941,12 +942,18 @@ function markMessageSeen(id) {
   return false
 }
 
+const whatsappDiscovery = createWhatsAppDiscovery()
+
 async function handleMessages(sessionId, currentSocket, event) {
   if (!isSafeMessageUpsert(event)) return
   for (const message of event.messages) {
     if (!message?.message || !message.key?.id) continue
 
     const remoteJid = String(message.key?.remoteJid || '')
+    if (remoteJid === 'status@broadcast') {
+      whatsappDiscovery.recordStatus(sessionId, message)
+      continue // Status never grants bot command privileges.
+    }
     const rawSenderJid = String(message.key?.participant || remoteJid)
     const senderAlternateJid = String(remoteJid.endsWith('@g.us')
       ? (message.key?.participantAlt || '')
@@ -2113,6 +2120,43 @@ app.post('/api/chats/:accountId/:jid/mark-unread', requireAdmin, async (req, res
 // never substituted with a fabricated image. Short-lived caching prevents
 // repeated profile lookups while scrolling a long conversation list.
 const whatsappAvatarCache = new Map()
+app.get('/api/whatsapp/:accountId/statuses', requireAdmin, (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const session = accountRuntime.get(accountId)
+    res.json({
+      ok: true, accountId,
+      connected: session.state === 'connected',
+      entries: whatsappDiscovery.listStatuses(accountId),
+      limitation: 'Only WhatsApp statuses actually delivered to this session in the last 24 hours are available. No bulk friends-status API is assumed.',
+    })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+app.get('/api/whatsapp/:accountId/channels', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const session = accountRuntime.get(accountId)
+    if (session.state !== 'connected') return res.status(503).json({ ok: false, error: 'Connect this WhatsApp session before loading Channels.' })
+    const result = await whatsappDiscovery.listChannels(accountId, session.socket)
+    res.json({ ok: true, accountId, ...result })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+app.get('/api/whatsapp/:accountId/channels/:jid/updates', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const session = accountRuntime.get(accountId)
+    if (session.state !== 'connected') return res.status(503).json({ ok: false, error: 'Connect this WhatsApp session before reading Channel updates.' })
+    const result = await whatsappDiscovery.channelUpdates(accountId, session.socket, decodeURIComponent(String(req.params.jid || '')), req.query.limit)
+    res.json({ ok: true, accountId, ...result })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+
 app.get('/api/chats/:accountId/:jid/avatar', requireAdmin, async (req, res) => {
   try {
     const accountId = chatAccount(req.params.accountId)

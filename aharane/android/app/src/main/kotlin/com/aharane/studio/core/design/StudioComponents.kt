@@ -337,11 +337,24 @@ fun StudioRow(
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(title, color = StudioPalette.Ink, fontSize = 14.sp, lineHeight = 18.sp,
-                fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                title,
+                color = StudioPalette.Ink,
+                fontSize = StudioFoundationContract.TypeScale.Body,
+                lineHeight = 21.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
             if (subtitle != null) {
-                Text(subtitle, color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 17.sp,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    subtitle,
+                    color = StudioPalette.Muted,
+                    fontSize = StudioFoundationContract.TypeScale.Supporting,
+                    lineHeight = 18.sp,
+                    maxLines = subtitleMaxLines,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
         if (trailingContent != null) trailingContent()

@@ -110,3 +110,21 @@ Previous reviews flagged possible Android scheduler/API gaps, mocked rather than
 ## Definition of integrated completion
 
 Aharane is ready only when Android and backend contracts agree, session identity and authorization are correct, important features work end-to-end, data survives expected lifecycle events, security boundaries are tested, the UI is visually inspected on target devices, and all release gates pass. Individually passing feature tests are not sufficient if integration fails.
+
+## Workstream dependency and contract map
+
+Read `aharane/docs/WORKSTREAM_DEPENDENCY_AND_CONTRACT_MAP.md` in full before implementation. It defines parallel packages, contract producers/consumers, critical dependency chains, protected shared files, one-editor ownership and the no-idle blocker rule. It is an execution map, not permission to alter another agent's files.
+
+### Recommended contract readiness
+- Agent 01 publishes UI foundation tokens/components/routes for Android feature teams.
+- Agent 03 publishes session, pairing, transport event and real capability contracts.
+- Agent 04 publishes owner schema and canonical authorization evaluator.
+- Agent 05 publishes versioned workflow definition and validation contract.
+- Agent 06 publishes Engine invocation and sandbox capability contract.
+- Agent 07 publishes schedule/time/idempotency/outcome contract.
+- Agent 08 publishes encrypted storage, migrations, cache/sync and queue contracts.
+- Agent 09 publishes metrics, notification, Channel-management and update contracts.
+- Agent 02 consumes chat/transport/storage contracts and owns the Chat client experience.
+- Agent 10 prepares tests from the beginning and independently verifies all integration.
+
+This ordering determines when integration interfaces are ready; it does not prevent any agent from implementing independent packages concurrently.

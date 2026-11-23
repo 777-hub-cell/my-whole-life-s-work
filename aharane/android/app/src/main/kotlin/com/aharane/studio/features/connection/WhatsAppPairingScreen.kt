@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aharane.studio.R
 import com.aharane.studio.core.design.StudioActionButton
+import com.aharane.studio.core.design.LocalStudioMotionEnabled
 import com.aharane.studio.core.design.StudioPalette
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType

@@ -120,6 +120,6 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: vistora-native-screenshots
-          path: ${{ runner.temp }}/vistora-native-qa/*.png
+          path: ${{ runner.temp }}/vistora-native-qa/**/*.png
           if-no-files-found: warn
           retention-days: 14

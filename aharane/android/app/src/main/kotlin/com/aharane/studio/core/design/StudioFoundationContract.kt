@@ -16,6 +16,7 @@ object StudioFoundationContract {
         val ContentMaxWidth = 640.dp
         val HorizontalGutter = 16.dp
         val BottomNavigationHeight = 58.dp
+        val BrandMarkSize = 26.dp
         val NavigationIconSize = 20.dp
         val CardRadius = 18.dp
         val ControlRadius = 12.dp
@@ -36,6 +37,7 @@ object StudioFoundationContract {
 
     object Motion {
         const val PressFeedbackMillis = 120
+        const val ThemeTransitionMillis = 260
         const val StateChangeMillis = 180
         const val MenuMillis = 180
         const val BottomSheetMillis = 240

@@ -24,6 +24,7 @@ import { loadOwnerConfig, normalizeOwnerConfig, saveOwnerConfig } from './owner-
 import { createWhatsAppDiscovery } from './whatsapp-discovery.js'
 import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_ARCHIVE_BYTES, normalizeUpdatePath } from './update-manager.js'
 import { createChatStore } from './chat-store.js'
+import { createEngineStore } from './engine-store.js'
 import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, normalizeChatVisibility, normalizeChatAppearance, isChatVisible, envView } from './studio-settings.js'
 import { createActivityStore } from './activity-store.js'
 import { createAiReplyService } from './ai-reply.js'
@@ -90,7 +91,8 @@ let ownerConfig = await loadOwnerConfig(OWNER_CONFIG_FILE, {
 const chatStore = createChatStore({ dataDir: DATA_DIR, logger })
 const activityStore = createActivityStore({ dataDir: DATA_DIR })
 const visualCommandStore = createVisualCommandStore(join(DATA_DIR, 'visual-commands.json'))
-await Promise.all([chatStore.init(), activityStore.init(), visualCommandStore.init()])
+const engineStore = createEngineStore({ dataDir: DATA_DIR })
+await Promise.all([chatStore.init(), activityStore.init(), visualCommandStore.init(), engineStore.init()])
 const SETTINGS_FILE = join(DATA_DIR, 'studio-settings.json')
 const CHAT_WALLPAPER_FILE = join(DATA_DIR, 'chat-wallpaper')
 let studioSettings = await loadStudioSettings(SETTINGS_FILE)
@@ -1402,6 +1404,58 @@ function visualWorkflowCommandConflict(workflow) {
 function visualWorkflowPayload(workflow) {
   return { ...workflow, validation: validateWorkflow(workflow) }
 }
+
+// Custom code Engines are stored as source, not executed by the privileged bot.
+// Execution remains gated until an independent sandbox and capability broker exist.
+app.get('/api/engines', requireAdmin, async (_req, res) => {
+  try {
+    res.json({ ok: true, engines: await engineStore.list(), executionAvailable: false })
+  } catch (error) {
+    res.status(500).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+app.get('/api/engines/:id', requireAdmin, async (req, res) => {
+  try {
+    const engine = await engineStore.get(req.params.id)
+    if (!engine) return res.status(404).json({ ok: false, error: 'Engine not found.' })
+    res.json({ ok: true, engine, executionAvailable: false })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+app.post('/api/engines', requireAdmin, async (req, res) => {
+  try {
+    const existing = await engineStore.get(req.body?.manifest?.id)
+    if (existing) return res.status(409).json({ ok: false, error: 'Engine already exists. Use the edit endpoint.' })
+    const engine = await engineStore.save(req.body?.manifest, req.body?.code)
+    res.status(201).json({ ok: true, engine, executionAvailable: false })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+app.put('/api/engines/:id', requireAdmin, async (req, res) => {
+  try {
+    if (req.body?.manifest?.id !== req.params.id) throw new Error('Engine ID cannot change. Create a new Engine for a new ID.')
+    const current = await engineStore.get(req.params.id)
+    if (!current) return res.status(404).json({ ok: false, error: 'Engine not found.' })
+    const engine = await engineStore.save(req.body.manifest, req.body.code, req.body.expectedVersion)
+    res.json({ ok: true, engine, executionAvailable: false })
+  } catch (error) {
+    res.status(409).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+app.delete('/api/engines/:id', requireAdmin, async (req, res) => {
+  try {
+    const references = visualCommandStore.list().filter(workflow =>
+      workflow.nodes.some(node => node.type === 'engine.' + req.params.id || node.config?.engineId === req.params.id)
+    )
+    const removed = await engineStore.remove(req.params.id, { confirm: req.body?.confirm, usedBy: references })
+    if (!removed) return res.status(404).json({ ok: false, error: 'Engine not found.' })
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(409).json({ ok: false, error: String(error?.message || error) })
+  }
+})
 
 app.get('/api/visual-commands', requireAdmin, (req, res) => {
   const account = String(req.query.account || '')

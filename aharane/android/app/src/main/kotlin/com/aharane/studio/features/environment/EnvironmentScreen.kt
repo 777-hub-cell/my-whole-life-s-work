@@ -14,7 +14,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -147,15 +150,34 @@ fun EnvironmentScreen(
             }
         } else {
             item {
-                StudioCard(padding = PaddingValues(horizontal = 15.dp, vertical = 18.dp)) {
-                    Text(
-                        if (connected || previewMode) "No environment values are available yet."
-                        else "Connect to your Aharane server to load its managed environment values.",
-                        color = StudioPalette.Muted,
-                        fontSize = 13.sp,
-                        lineHeight = 19.sp,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                StudioCard(padding = PaddingValues(horizontal = 16.dp, vertical = 22.dp)) {
+                    Column(
+                        Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(9.dp)
+                    ) {
+                        Box(
+                            Modifier.size(46.dp).clip(CircleShape).background(StudioPalette.Soft),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Outlined.Terminal, contentDescription = null, tint = StudioPalette.Accent, modifier = Modifier.size(22.dp))
+                        }
+                        Text(
+                            if (connected || previewMode) "No environment values yet"
+                            else "Connect to Aharane",
+                            color = StudioPalette.Ink,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            if (connected || previewMode) "Managed values will appear here when this server exposes them. Command prefixes remain fixed by Aharane."
+                            else "Connect your server to view and manage its environment values.",
+                            color = StudioPalette.Muted,
+                            fontSize = 12.5.sp,
+                            lineHeight = 18.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
         }

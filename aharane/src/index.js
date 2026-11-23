@@ -15,7 +15,6 @@ import {
   isPrivateVisibleChatJid,
   isSafeMessageUpsert,
   normalizePhone,
-  parseAllowedSenders,
   senderNumberFromJid,
 } from './policy.js'
 import { createAccountRuntime } from './account-runtime.js'
@@ -48,7 +47,6 @@ const ADMIN_TOKEN = String(process.env.AHARANE_ADMIN_TOKEN || '')
 const LEGACY_PRIVATE_OWNER_NUMBER = String(process.env.AHARANE_PRIVATE_OWNER_NUMBER || '')
 const LEGACY_PUBLIC_OWNER_NUMBER = String(process.env.AHARANE_PUBLIC_OWNER_NUMBER || process.env.AHARANE_OWNER_NUMBER || '')
 const LEGACY_PUBLIC_BOT_NUMBER = String(process.env.AHARANE_PUBLIC_BOT_NUMBER || '')
-const LEGACY_PUBLIC_ALLOWED_SENDERS = String(process.env.AHARANE_ALLOWED_PUBLIC_SENDERS || process.env.AHARANE_ALLOWED_SENDERS || '')
 const APP_BASE = resolve('/opt/aharane')
 const CURRENT_RELEASE = join(APP_BASE, 'current')
 const RELEASES_DIR = join(APP_BASE, 'releases')
@@ -84,10 +82,8 @@ await mkdir(UPDATE_DIR, { recursive: true, mode: 0o700 })
 await mkdir(UPLOADS_DIR, { recursive: true, mode: 0o700 })
 
 let ownerConfig = await loadOwnerConfig(OWNER_CONFIG_FILE, {
-  privateOwnerNumber: LEGACY_PRIVATE_OWNER_NUMBER,
-  publicOwnerNumber: LEGACY_PUBLIC_OWNER_NUMBER,
+  ownerNumber: LEGACY_PRIVATE_OWNER_NUMBER || LEGACY_PUBLIC_OWNER_NUMBER,
   publicBotNumber: LEGACY_PUBLIC_BOT_NUMBER,
-  allowedPublicSenders: LEGACY_PUBLIC_ALLOWED_SENDERS,
 })
 const chatStore = createChatStore({ dataDir: DATA_DIR, logger })
 const activityStore = createActivityStore({ dataDir: DATA_DIR })
@@ -108,13 +104,6 @@ const commandTimes = new Map()
 const studioClients = new Set()
 let studioEventSequence = 0
 
-function publicAllowedSenders() {
-  return parseAllowedSenders([
-    ...(ownerConfig?.allowedPublicSenders || []),
-    ownerConfig?.publicOwnerNumber || '',
-  ].filter(Boolean).join(','))
-}
-
 function studioRuntimeSnapshot() {
   const runtime = accountRuntime?.snapshot() || {
     state: 'starting',
@@ -126,11 +115,11 @@ function studioRuntimeSnapshot() {
   }
   return {
     ...runtime,
-    allowlistedSenderCount: publicAllowedSenders().size,
     groupsEnabled: false,
     ownerIdentities: {
-      privateOwnerConfigured: Boolean(ownerConfig?.privateOwnerNumber),
-      publicOwnerConfigured: Boolean(ownerConfig?.publicOwnerNumber),
+      ownerConfigured: Boolean(ownerConfig?.ownerNumber || ownerConfig?.privateOwnerNumber),
+      privateOwnerConfigured: Boolean(ownerConfig?.ownerNumber || ownerConfig?.privateOwnerNumber),
+      publicOwnerConfigured: Boolean(ownerConfig?.ownerNumber || ownerConfig?.publicOwnerNumber),
     },
   }
 }
@@ -1009,15 +998,13 @@ async function handleMessages(sessionId, currentSocket, event) {
       registry = privateCommandRegistry
     } else if (sessionId === 'public') {
       if (message.key.fromMe === true || !isPrivateVisibleChatJid(remoteJid)) continue
-      const allowedSenders = publicAllowedSenders()
-      // Existing public commands remain direct-chat-only. Visual workflows may
-      // opt into groups, but the triggering participant must still be in the
-      // configured public sender allow-list.
+      // Public direct messages are open to valid WhatsApp senders. Ordinary
+      // commands remain direct-chat-only; visual workflows can opt into groups
+      // individually through their configured chat scope.
       const allowedToUseCommands = isAllowedInbound({
         remoteJid,
         remoteJidAlt: message.key?.remoteJidAlt,
         fromMe: false,
-        allowedSenders,
       })
       const allowedVisualSender = isAllowedInbound({
         remoteJid,
@@ -1026,7 +1013,6 @@ async function handleMessages(sessionId, currentSocket, event) {
         participantAltJid: senderAlternateJid,
         allowGroups: true,
         fromMe: false,
-        allowedSenders,
       })
       const firstConversationMessage = allowedToUseCommands && !await chatStore.hasConversation(sessionId, remoteJid)
       if (studioSettings.public.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
@@ -1092,7 +1078,7 @@ async function handleMessages(sessionId, currentSocket, event) {
     // Message Received workflows run only after the same account-specific
     // authorization gates used by the existing command dispatcher.
     if (allowedForAutomation && sessionId === 'public' &&
-        allowCommand('visual-message:' + senderNumberFromJid(senderJid))) {
+        allowCommand('visual-message:' + (senderJid || remoteJid))) {
       for (const workflow of visualCommandStore.findMessageTriggers(sessionId)) {
         try {
           const result = await executeVisualWorkflow(workflow, { store: visualCommandStore, context: workflowContext })
@@ -1551,13 +1537,11 @@ app.get('/api/owners', requireAdmin, (_req, res) => {
 app.put('/api/owners', requireAdmin, async (req, res) => {
   try {
     const next = normalizeOwnerConfig({
-      privateOwnerNumber: req.body?.privateOwnerNumber,
-      publicOwnerNumber: req.body?.publicOwnerNumber,
+      ownerNumber: req.body?.ownerNumber || req.body?.privateOwnerNumber || req.body?.publicOwnerNumber,
       publicBotNumber: req.body?.publicBotNumber,
-      allowedPublicSenders: req.body?.allowedPublicSenders,
     })
-    // A configured private owner must match the WhatsApp identity paired to
-    // the private session. Never silently change either role during pairing.
+    // One shared Owner number identifies the same person across both sessions.
+    // The Private session is paired to that owner's WhatsApp identity.
     const privateSession = accountRuntime.get('private')
     const publicSession = accountRuntime.get('public')
     const privateOwnNumber = senderNumberFromJid(
@@ -1566,19 +1550,20 @@ app.put('/api/owners', requireAdmin, async (req, res) => {
     const publicBotNumber = senderNumberFromJid(
       publicSession.socket?.user?.id || publicSession.auth?.state?.creds?.me?.id || ''
     )
-    if (next.privateOwnerNumber && privateOwnNumber && next.privateOwnerNumber !== privateOwnNumber) {
-      return res.status(409).json({ ok: false, error: 'Private Owner must match the phone number paired to the private WhatsApp session.' })
+    if (next.ownerNumber && privateOwnNumber && next.ownerNumber !== privateOwnNumber) {
+      return res.status(409).json({ ok: false, error: 'Owner number must match the phone number paired to the Private WhatsApp session.' })
     }
-    if (next.publicOwnerNumber && publicBotNumber && next.publicOwnerNumber === publicBotNumber) {
-      return res.status(409).json({ ok: false, error: 'Public Owner must be the sender number you use to message the public bot, not the public bot account itself.' })
+    if (next.ownerNumber && publicBotNumber && next.ownerNumber === publicBotNumber) {
+      return res.status(409).json({ ok: false, error: 'The Owner number must be different from the Public bot WhatsApp number.' })
     }
     if (next.publicBotNumber && publicBotNumber && next.publicBotNumber !== publicBotNumber) {
       return res.status(409).json({ ok: false, error: 'Public bot WhatsApp number must match the number already paired to the Public session.' })
     }
     ownerConfig = await saveOwnerConfig(OWNER_CONFIG_FILE, next)
     publishStudioEvent('owners.updated', {
-      privateOwnerConfigured: Boolean(ownerConfig.privateOwnerNumber),
-      publicOwnerConfigured: Boolean(ownerConfig.publicOwnerNumber),
+      ownerConfigured: Boolean(ownerConfig.ownerNumber),
+      privateOwnerConfigured: Boolean(ownerConfig.ownerNumber),
+      publicOwnerConfigured: Boolean(ownerConfig.ownerNumber),
     })
     res.json({ ok: true, owners: ownerConfig })
   } catch (error) {

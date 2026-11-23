@@ -207,7 +207,7 @@ fun ConfigurationScreen(
                 ConfigField("Command prefix", "PREFIX", prefix, editable, onValueChange = { prefix = it; dirty = true }, singleLine = true)
                 StudioDivider()
                 ConfigField(
-                    if (profile == "Public") "Account number" else "Owner number",
+                    if (profile == "Public") "Public bot WhatsApp number" else "Owner number",
                     if (profile == "Public") "PUBLIC_NUMBER" else "OWNER_NUMBER",
                     ownerNumber,
                     editable,

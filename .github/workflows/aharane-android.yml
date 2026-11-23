@@ -110,7 +110,19 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
       - name: Build production release APK without any signing key
         working-directory: aharane/android
-        run: ./gradlew --no-daemon clean assembleRelease -PaharaneVersionCode=${GITHUB_RUN_NUMBER}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if ./gradlew --no-daemon clean assembleRelease -PaharaneVersionCode=${GITHUB_RUN_NUMBER}; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Gradle build/dependency resolution failed on attempt $attempt; retrying."
+              ./gradlew --stop || true
+              sleep $((attempt * 15))
+            fi
+          done
+          exit 1
       - name: Verify release build is installable and not debuggable
         working-directory: aharane/android
         run: |

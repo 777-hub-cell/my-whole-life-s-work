@@ -100,7 +100,7 @@ fun StudioHeader(
     Row(
         modifier = Modifier.fillMaxWidth().background(StudioPalette.Background)
             .padding(start = StudioFoundationContract.Layout.HorizontalGutter, end = StudioFoundationContract.Layout.HorizontalGutter, top = 6.dp, bottom = 18.dp)
-            .height(30.dp),
+            .height(36.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (showBrand) {
@@ -123,14 +123,15 @@ fun StudioHeader(
         }
         Spacer(Modifier.weight(1f))
         Row(
-            Modifier.clip(RoundedCornerShape(99.dp))
+            Modifier.heightIn(min = 36.dp)
+                .clip(RoundedCornerShape(99.dp))
                 .background(StudioPalette.Surface)
                 .border(1.dp, StudioPalette.Line, RoundedCornerShape(99.dp))
-                .padding(horizontal = 9.dp, vertical = 5.dp),
+                .padding(horizontal = 11.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
         ) {
-            Box(Modifier.size(7.dp).clip(CircleShape).background(statusColor))
+            Box(Modifier.size(8.dp).clip(CircleShape).background(statusColor))
             Text(
                 statusLabel,
                 color = statusColor,

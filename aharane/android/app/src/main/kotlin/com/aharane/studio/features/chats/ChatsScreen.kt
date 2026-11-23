@@ -55,6 +55,7 @@ import java.util.Calendar
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import org.json.JSONObject
 
 @Composable
 fun ChatsScreen(
@@ -78,6 +79,8 @@ fun ChatsScreen(
     messageSearchResults: List<ChatMessage> = emptyList(),
     onInboxSearchChanged: (String, Long, Long) -> Unit = { _, _, _ -> },
     onInboxMessageSelected: (ChatMessage) -> Unit = {},
+    onLoadChannels: suspend (ChatAccount) -> JSONObject = { JSONObject().put("supported", false) },
+    onLoadChannelUpdates: suspend (ChatAccount, String) -> JSONObject = { _, _ -> JSONObject().put("supported", false) },
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var fromMillis by rememberSaveable { mutableLongStateOf(0L) }
@@ -92,6 +95,62 @@ fun ChatsScreen(
             onInboxSearchChanged("", 0L, 0L)
         }
     }
+    var channelRows by remember { mutableStateOf<List<Triple<String, String, String>>>(emptyList()) }
+    var selectedChannel by remember { mutableStateOf<String?>(null) }
+    var channelUpdates by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var channelsSupported by remember { mutableStateOf(false) }
+    var channelError by remember { mutableStateOf("") }
+    var channelsLoading by remember { mutableStateOf(false) }
+    var updatesLoading by remember { mutableStateOf(false) }
+    LaunchedEffect(filter, account, accountConnected) {
+        if (filter == ChatFilter.CHANNELS) {
+            selectedChannel = null
+            channelRows = emptyList()
+            channelUpdates = emptyList()
+            channelError = ""
+            if (accountConnected) {
+                channelsLoading = true
+                try {
+                    val result = onLoadChannels(account)
+                    channelsSupported = result.optBoolean("supported")
+                    val data = result.optJSONArray("channels")
+                    channelRows = buildList {
+                        if (data != null) for (index in 0 until data.length()) {
+                            val row = data.optJSONObject(index) ?: continue
+                            val jid = row.optString("jid")
+                            if (jid.endsWith("@newsletter")) add(
+                                Triple(jid, row.optString("name", "Unnamed channel"), row.optString("description"))
+                            )
+                        }
+                    }
+                    if (!channelsSupported) channelError = result.optString("reason", "Channels are not supported by this paired session.")
+                } catch (failure: Exception) {
+                    channelsSupported = false
+                    channelError = failure.message ?: "Could not retrieve Channels."
+                } finally { channelsLoading = false }
+            }
+        }
+    }
+    LaunchedEffect(selectedChannel, account) {
+        val jid = selectedChannel ?: return@LaunchedEffect
+        updatesLoading = true
+        channelUpdates = emptyList()
+        try {
+            val result = onLoadChannelUpdates(account, jid)
+            val data = result.optJSONArray("updates")
+            if (!result.optBoolean("supported")) {
+                channelError = result.optString("reason", "Channel updates are unsupported by this session.")
+            } else {
+                channelError = ""
+                channelUpdates = buildList {
+                    if (data != null) for (index in 0 until data.length()) data.optJSONObject(index)?.let(::add)
+                }
+            }
+        } catch (failure: Exception) {
+            channelError = failure.message ?: "Could not retrieve Channel updates."
+        } finally { updatesLoading = false }
+    }
+
     val chatTheme = savedChatTheme.replaceFirstChar { it.uppercase() }
     val showAvatars = savedShowAvatars
     val showPreviews = savedShowPreviews
@@ -299,6 +358,77 @@ fun ChatsScreen(
             )
             Spacer(Modifier.height(14.dp))
         }
+        if (filter == ChatFilter.CHANNELS) {
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        if (selectedChannel == null) "Subscribed Channels" else channelRows.firstOrNull { it.first == selectedChannel }?.second ?: "Channel",
+                        fontSize = 14.sp, color = StudioPalette.Ink, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (selectedChannel != null) {
+                        StudioActionButton("All Channels", compact = true, onClick = { selectedChannel = null; channelError = "" })
+                    }
+                }
+                if (!accountConnected) {
+                    Text("Connect this WhatsApp session to view its subscribed Channels.", color = StudioPalette.Muted, fontSize = 12.sp)
+                } else if (channelsLoading || updatesLoading) {
+                    Text("Loading Channel information…", color = StudioPalette.Muted, fontSize = 12.sp)
+                } else if (channelError.isNotBlank()) {
+                    Text(channelError, color = StudioPalette.Muted, fontSize = 12.sp)
+                } else if (selectedChannel == null && channelRows.isEmpty()) {
+                    Text(
+                        if (channelsSupported) "No subscribed Channels found." else "This session does not support listing Channels.",
+                        color = StudioPalette.Muted, fontSize = 12.sp
+                    )
+                } else if (selectedChannel != null && channelUpdates.isEmpty()) {
+                    Text("No Channel updates are available.", color = StudioPalette.Muted, fontSize = 12.sp)
+                }
+            }
+            if (selectedChannel == null) {
+                itemsIndexed(
+                    items = channelRows.filter { query.isBlank() || it.second.contains(query, true) || it.third.contains(query, true) },
+                    key = { _, row -> row.first }
+                ) { index, row ->
+                    if (index > 0) StudioDivider()
+                    Row(
+                        Modifier.fillMaxWidth().clickable { selectedChannel = row.first }
+                            .padding(vertical = 13.dp, horizontal = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            Modifier.size(44.dp).clip(CircleShape).background(StudioPalette.Soft),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Outlined.Public, contentDescription = null, tint = StudioPalette.Accent, modifier = Modifier.size(22.dp))
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(row.second, color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text(row.third.ifBlank { "Subscribed Channel" }, color = StudioPalette.Muted, fontSize = 11.5.sp, maxLines = 2)
+                        }
+                    }
+                }
+            } else {
+                itemsIndexed(channelUpdates, key = { index, row -> row.optString("id").ifBlank { "update-$index" } }) { index, update ->
+                    if (index > 0) StudioDivider()
+                    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        val kind = update.optString("type", "text")
+                        Text(
+                            update.optString("text").ifBlank { "Channel $kind update" },
+                            color = StudioPalette.Ink, fontSize = 13.sp, lineHeight = 18.sp
+                        )
+                        val time = update.optLong("timestampMillis")
+                        if (time > 0L) {
+                            Text(SimpleDateFormat("d MMM yyyy · h:mm a", Locale.getDefault()).format(Date(time)), color = StudioPalette.Muted, fontSize = 10.sp)
+                        }
+                    }
+                }
+            }
+        } else {
         item {
             if (visibleChats.isEmpty()) {
                 StudioCard(padding = PaddingValues(horizontal = 16.dp, vertical = 26.dp)) {
@@ -381,6 +511,7 @@ fun ChatsScreen(
                 )
             }
             item { Spacer(Modifier.height(16.dp)) }
+        }
         }
     }
     }

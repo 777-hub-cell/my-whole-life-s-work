@@ -64,7 +64,8 @@ fun EnvironmentScreen(
         item {
             StudioPageTitle(
                 "ENV",
-                "Managed environment values for the Private and Public accounts. Command prefixes are fixed by Aharane."
+                "Managed environment values for the Private and Public accounts. Command prefixes are fixed by Aharane.",
+                compact = true
             )
             if (previewMode) {
                 Text(

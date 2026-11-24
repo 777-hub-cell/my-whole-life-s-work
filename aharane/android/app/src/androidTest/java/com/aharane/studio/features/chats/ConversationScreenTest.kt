@@ -1,6 +1,7 @@
 package com.aharane.studio.features.chats
 
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -238,7 +239,7 @@ class ConversationScreenTest {
 
     @Test
     fun activeVoiceRecordingShowsStopAndCancelControls() {
-        var recording by androidx.compose.runtime.mutableStateOf(true)
+        val recording = androidx.compose.runtime.mutableStateOf(true)
         var stopped = 0
         var cancelled = 0
         compose.setContent {
@@ -247,16 +248,16 @@ class ConversationScreenTest {
                     conversation = testConversation(),
                     messages = emptyList(),
                     connected = true,
-                    voiceRecording = recording,
+                    voiceRecording = recording.value,
                     onBack = {},
                     onSend = { _, _ -> },
                     onRecordVoice = {
                         stopped++
-                        recording = false
+                        recording.value = false
                     },
                     onCancelVoiceRecording = {
                         cancelled++
-                        recording = false
+                        recording.value = false
                     }
                 )
             }
@@ -268,13 +269,13 @@ class ConversationScreenTest {
         compose.runOnIdle {
             assertEquals(1, stopped)
             assertEquals(0, cancelled)
-            assertEquals(false, recording)
+            assertEquals(false, recording.value)
         }
     }
 
     @Test
     fun cancellingVoiceRecordingDiscardsItWithoutSending() {
-        var recording by androidx.compose.runtime.mutableStateOf(true)
+        val recording = androidx.compose.runtime.mutableStateOf(true)
         var sent = 0
         var cancelled = 0
         compose.setContent {
@@ -283,13 +284,13 @@ class ConversationScreenTest {
                     conversation = testConversation(),
                     messages = emptyList(),
                     connected = true,
-                    voiceRecording = recording,
+                    voiceRecording = recording.value,
                     onBack = {},
                     onSend = { _, _ -> sent++ },
                     onRecordVoice = {},
                     onCancelVoiceRecording = {
                         cancelled++
-                        recording = false
+                        recording.value = false
                     }
                 )
             }
@@ -301,7 +302,7 @@ class ConversationScreenTest {
         compose.runOnIdle {
             assertEquals(1, cancelled)
             assertEquals(0, sent)
-            assertEquals(false, recording)
+            assertEquals(false, recording.value)
         }
     }
 

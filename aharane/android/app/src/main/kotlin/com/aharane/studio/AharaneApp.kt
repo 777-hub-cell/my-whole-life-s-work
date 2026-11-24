@@ -150,7 +150,10 @@ fun AharaneApp(
             // A process that died while sending leaves a durable SENDING row.
             // Move it to FAILED before any automatic flush so retries reuse its
             // original server idempotency key instead of creating a new message.
-            withContext(Dispatchers.IO) { local.resetInterruptedOutgoingMessages() }
+            withContext(Dispatchers.IO) {
+                local.resetInterruptedOutgoingMessages()
+                local.resetInterruptedOutgoingMedia()
+            }
             localChatRepository = local
             localChatStorageError = ""
         } catch (error: Exception) {
@@ -499,7 +502,18 @@ fun AharaneApp(
         var rounds = 0
         do {
             received += page.messages
+            val queuedMediaBeforeSync = local?.outgoingMediaMessages(conversation.key).orEmpty()
             local?.saveMessages(conversation, page.messages, if (cursor.timestampMillis == 0L) page.hasOlder else null)
+            val newlyReconciledMedia = queuedMediaBeforeSync.filter { queued ->
+                !queued.remoteMessageId.isNullOrBlank() && page.messages.any { it.messageId == queued.remoteMessageId }
+            }
+            newlyReconciledMedia.forEach { queued ->
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        encryptedMediaCache.delete(conversation.key.account.apiValue, conversation.key.jid, queued.clientMessageId)
+                    }
+                }
+            }
             local?.applyDeletedMessages(conversation.key, page.deletedMessageIds)
             local?.applyRemoteDeletedMessages(
                 conversation.key,
@@ -565,6 +579,84 @@ fun AharaneApp(
         }
     }
 
+    suspend fun flushQueuedMediaMessage(conversation: ChatSummary, clientMessageId: String) {
+        val local = localChatRepository ?: return
+        val queued = local.outgoingMediaMessage(conversation.key, clientMessageId) ?: return
+        if (queued.state == "SENT" || queued.state == "SENDING") return
+        local.updateOutgoingMedia(conversation.key, clientMessageId, "SENDING", null)
+        if (activeConversation?.key == conversation.key) activeMessages = local.messages(conversation.key)
+
+        val remoteMessageId = try {
+            val bytes = withContext(Dispatchers.IO) {
+                encryptedMediaCache.read(
+                    conversation.key.account.apiValue, conversation.key.jid, clientMessageId,
+                    queued.cachePath, queued.cacheSha256
+                )
+            }
+            repository.sendMedia(
+                conversation, bytes, queued.mimeType, queued.fileName, queued.caption,
+                isVoiceNote = queued.isVoiceNote,
+                durationSeconds = queued.durationSeconds,
+                clientMessageId = clientMessageId
+            )
+        } catch (error: Exception) {
+            val uncertain = (error as? AharaneApiException)?.statusCode == 409
+            val explanation = if (uncertain) {
+                "WhatsApp delivery is uncertain. Aharane did not resend this attachment to avoid a duplicate. Check the conversation before retrying."
+            } else {
+                error.message ?: "The attachment could not be sent. Retry will reuse the same message ID."
+            }
+            local.updateOutgoingMedia(conversation.key, clientMessageId, "FAILED", explanation)
+            if (activeConversation?.key == conversation.key) activeMessages = local.messages(conversation.key)
+            return
+        }
+
+        local.updateOutgoingMedia(
+            conversation.key, clientMessageId, "SENT", null,
+            remoteMessageId.takeIf { it.isNotBlank() }
+        )
+        if (activeConversation?.key == conversation.key) {
+            activeMessages = local.messages(conversation.key)
+            runCatching { refreshConversationIncrementally(conversation) }
+                .onSuccess { activeMessages = it }
+                .onFailure { serverError = it.message ?: "Attachment sent; refreshing history is unavailable." }
+        }
+    }
+
+    suspend fun enqueueOutgoingMedia(
+        conversation: ChatSummary,
+        bytes: ByteArray,
+        mimeType: String,
+        fileName: String,
+        caption: String = "",
+        isVoiceNote: Boolean = false,
+        durationSeconds: Int = 0,
+        quotedMessageId: String? = null
+    ) {
+        val local = localChatRepository ?: error("Encrypted offline chat storage is unavailable.")
+        require(bytes.isNotEmpty() && bytes.size <= 24 * 1024 * 1024) {
+            "WhatsApp attachments are limited to 24 MB in Aharane."
+        }
+        val clientMessageId = java.util.UUID.randomUUID().toString().replace("-", "")
+        val cacheRecord = withContext(Dispatchers.IO) {
+            encryptedMediaCache.store(
+                conversation.key.account.apiValue, conversation.key.jid, clientMessageId, bytes
+            )
+        }
+        try {
+            local.enqueueMediaMessage(
+                conversation, mimeType, fileName, caption, quotedMessageId, cacheRecord,
+                isVoiceNote, durationSeconds, clientMessageId
+            )
+        } catch (error: Exception) {
+            withContext(Dispatchers.IO) {
+                encryptedMediaCache.delete(conversation.key.account.apiValue, conversation.key.jid, clientMessageId)
+            }
+            throw error
+        }
+        activeMessages = local.messages(conversation.key)
+    }
+
     fun stopAndSendVoiceNote() {
         val active = voiceRecorder ?: return
         val conversation = activeConversation ?: return
@@ -578,29 +670,25 @@ fun AharaneApp(
         }
         voiceRecorder = null
         voiceRecording = false
-        if (previewMode || !authenticated || !serverReachable) {
+        if (previewMode || localChatRepository == null) {
             recorded.file.delete()
-            Toast.makeText(context, "Voice notes can only be sent to a connected live WhatsApp account.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Encrypted local chat storage is unavailable; voice note was not kept.", Toast.LENGTH_SHORT).show()
             return
         }
         connectionScope.launch {
             try {
                 val bytes = withContext(Dispatchers.IO) { recorded.file.readBytes() }
-                repository.sendMedia(
-                    conversation,
-                    bytes,
-                    "audio/ogg",
-                    "voice-note.ogg",
-                    "",
-                    isVoiceNote = true,
-                    durationSeconds = recorded.durationSeconds
+                enqueueOutgoingMedia(
+                    conversation, bytes, "audio/ogg", "voice-note.ogg", "",
+                    isVoiceNote = true, durationSeconds = recorded.durationSeconds
                 )
-                activeMessages = refreshConversationIncrementally(conversation)
-                chatsByAccount[conversation.key.account] = localChatRepository?.saveConversations(repository.chats(conversation.key.account))
-                    ?: repository.chats(conversation.key.account)
-                Toast.makeText(context, "Voice note sent.", Toast.LENGTH_SHORT).show()
+                if (connected) {
+                    chatsByAccount[conversation.key.account] = localChatRepository?.saveConversations(repository.chats(conversation.key.account))
+                        ?: chatsByAccount[conversation.key.account].orEmpty()
+                }
+                Toast.makeText(context, "Voice note saved to the encrypted outbox.", Toast.LENGTH_SHORT).show()
             } catch (error: Exception) {
-                Toast.makeText(context, error.message ?: "Voice note could not be sent.", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, error.message ?: "Voice note could not be queued.", Toast.LENGTH_LONG).show()
             } finally {
                 recorded.file.delete()
             }
@@ -759,13 +847,25 @@ fun AharaneApp(
                     val name = queryDisplayName(context, uri)
                     val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
                     val bytes = withContext(Dispatchers.IO) {
-                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        val input = context.contentResolver.openInputStream(uri)
                             ?: error("Could not read the selected attachment.")
+                        input.use { stream ->
+                            val output = ByteArrayOutputStream()
+                            val buffer = ByteArray(64 * 1024)
+                            var total = 0
+                            while (true) {
+                                val count = stream.read(buffer)
+                                if (count < 0) break
+                                total += count
+                                require(total <= 24 * 1024 * 1024) {
+                                    "WhatsApp attachments are limited to 24 MB in Aharane."
+                                }
+                                output.write(buffer, 0, count)
+                            }
+                            output.toByteArray()
+                        }
                     }
-                    if (bytes.size > 24 * 1024 * 1024) error("WhatsApp attachments are limited to 24 MB in Aharane.")
-                    repository.sendMedia(conversation, bytes, mime, name, "")
-                    activeMessages = refreshConversationIncrementally(conversation)
-                    chatsByAccount[conversation.key.account] = repository.chats(conversation.key.account)
+                    enqueueOutgoingMedia(conversation, bytes, mime, name, "")
                 } catch (error: Exception) {
                     Toast.makeText(context, error.message ?: "Attachment could not be sent.", Toast.LENGTH_LONG).show()
                 }
@@ -780,11 +880,8 @@ fun AharaneApp(
         if (uri != null && conversation != null) {
             connectionScope.launch {
                 try {
-                    require(!previewMode && authenticated && serverReachable) {
-                        "Connect to the live Aharane server before sending a sticker."
-                    }
-                    require(currentAccountState?.connected == true) {
-                        "Connect this WhatsApp account before sending a sticker."
+                    require(!previewMode && localChatRepository != null) {
+                        "Encrypted local chat storage is unavailable."
                     }
                     val selectedName = queryDisplayName(context, uri)
                     val bytes = withContext(Dispatchers.IO) {
@@ -810,10 +907,8 @@ fun AharaneApp(
                     require(invalidReason == null) { invalidReason ?: "Choose a valid WebP sticker." }
                     val fileName = selectedName.takeIf { it.endsWith(".webp", ignoreCase = true) }
                         ?: "sticker.webp"
-                    repository.sendMedia(conversation, bytes, "image/webp", fileName, "")
-                    activeMessages = refreshConversationIncrementally(conversation)
-                    chatsByAccount[conversation.key.account] = repository.chats(conversation.key.account)
-                    Toast.makeText(context, "Sticker sent.", Toast.LENGTH_SHORT).show()
+                    enqueueOutgoingMedia(conversation, bytes, "image/webp", fileName, "")
+                    Toast.makeText(context, "Sticker saved to the encrypted outbox.", Toast.LENGTH_SHORT).show()
                 } catch (error: Exception) {
                     Toast.makeText(context, error.message ?: "Sticker could not be sent.", Toast.LENGTH_LONG).show()
                 }
@@ -1508,6 +1603,11 @@ fun AharaneApp(
             val conversation = conversations.firstOrNull { it.key.jid == row.jid } ?: return@forEach
             flushQueuedTextMessage(conversation, row.clientMessageId)
         }
+        val pendingMedia = local.pendingOutgoingMedia(selectedAccount)
+        pendingMedia.forEach { row ->
+            val conversation = conversations.firstOrNull { it.key.jid == row.jid } ?: return@forEach
+            flushQueuedMediaMessage(conversation, row.clientMessageId)
+        }
     }
     val currentChats = if (previewMode) DesignPreviewFixtures.conversations else chatsByAccount[selectedAccount].orEmpty()
     val sourceFileEntries = if (previewMode) {
@@ -1751,6 +1851,7 @@ fun AharaneApp(
                     conversation = activeConversation!!,
                     messages = if (previewMode) previewMessages.filter { it.key == activeConversation!!.key } else activeMessages,
                     connected = if (previewMode) true else currentAccountState?.connected == true,
+                    canQueueMedia = !previewMode && localChatRepository != null && connectionManager.hasSavedSession(),
                     voiceRecording = voiceRecording,
                     onLoadAvatar = { chat ->
                         if (previewMode || !connected) null else repository.whatsappAvatarBytes(chat)
@@ -1856,11 +1957,18 @@ fun AharaneApp(
                             connectionScope.launch {
                                 try {
                                     val local = localChatRepository ?: error("Local encrypted outgoing-message queue is unavailable.")
-                                    val queued = local.outgoingMessage(target.key, clientMessageId)
-                                    if (queued?.state == "FAILED") {
-                                        local.updateOutgoingMessage(target.key, clientMessageId, "PENDING", null)
+                                    val queuedMedia = local.outgoingMediaMessage(target.key, clientMessageId)
+                                    if (queuedMedia?.state == "FAILED") {
+                                        local.updateOutgoingMedia(target.key, clientMessageId, "PENDING", null)
                                         activeMessages = local.messages(target.key)
-                                        flushQueuedTextMessage(target, clientMessageId)
+                                        flushQueuedMediaMessage(target, clientMessageId)
+                                    } else {
+                                        val queued = local.outgoingMessage(target.key, clientMessageId)
+                                        if (queued?.state == "FAILED") {
+                                            local.updateOutgoingMessage(target.key, clientMessageId, "PENDING", null)
+                                            activeMessages = local.messages(target.key)
+                                            flushQueuedTextMessage(target, clientMessageId)
+                                        }
                                     }
                                 } catch (error: Exception) {
                                     Toast.makeText(context, error.message ?: "Queued message could not be retried.", Toast.LENGTH_LONG).show()

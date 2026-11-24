@@ -143,6 +143,7 @@ fun ConversationScreen(
     onAttach: () -> Unit = {},
     onPickSticker: () -> Unit = {},
     onRecordVoice: () -> Unit = {},
+    canQueueMedia: Boolean = connected,
     voiceRecording: Boolean = false,
     onCancelVoiceRecording: () -> Unit = {},
     onOpenMedia: (ChatMessage) -> Unit = {},
@@ -717,13 +718,13 @@ fun ConversationScreen(
             ConversationTool(
                 Icons.Outlined.EmojiEmotions,
                 "Choose a WebP sticker",
-                enabled = connected && !voiceRecording,
+                enabled = canQueueMedia && !voiceRecording,
                 onClick = onPickSticker
             )
             ConversationTool(
                 Icons.Outlined.AttachFile,
                 "Attach image, video, audio or document",
-                enabled = connected && !voiceRecording,
+                enabled = canQueueMedia && !voiceRecording,
                 onClick = onAttach
             )
             Box(
@@ -770,7 +771,7 @@ fun ConversationScreen(
                         if ((hasDraft || voiceRecording) && connected) StudioPalette.Accent else StudioPalette.Line,
                         CircleShape
                     )
-                    .clickable(enabled = connected) {
+                    .clickable(enabled = if (hasDraft) connected else canQueueMedia) {
                         if (hasDraft) {
                             val messageText = draft.trim()
                             if (messageText.isNotEmpty()) {
@@ -1519,7 +1520,7 @@ private fun MessageContent(
                 onLoadMediaPreview
             } else onLoadMedia
             LaunchedEffect(message.messageId, mediaPreview, mediaPreviewUnavailable, autoDownloadImages) {
-                if (mediaConnected && autoDownloadImages && mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
+                if (mediaConnected && autoDownloadImages && mediaPreview == null && !mediaPreviewUnavailable && !message.localOutboxMedia) onLoadMediaPreview()
             }
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 if (animatedMediaFile != null) {
@@ -1549,6 +1550,7 @@ private fun MessageContent(
                             Text(message.mediaFileName ?: messageAttachmentLabel(message.kind), color = foreground, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                             Text(
                                 when {
+                                    message.localOutboxMedia -> "Stored securely on this phone · waiting to send"
                                     mediaPreviewUnavailable -> message.mediaUnavailable?.ifBlank { "Preview unavailable · tap to open" } ?: "Preview unavailable · tap to open"
                                     !mediaConnected -> "Tap to open"
                                     !autoDownloadImages -> "Automatic preview is off · tap to open"
@@ -1570,7 +1572,7 @@ private fun MessageContent(
         }
         MessageKind.VIDEO -> {
             LaunchedEffect(message.messageId, mediaPreview, mediaPreviewUnavailable, autoDownloadVideoPreviews) {
-                if (mediaConnected && autoDownloadVideoPreviews && mediaPreview == null && !mediaPreviewUnavailable) onLoadMediaPreview()
+                if (mediaConnected && autoDownloadVideoPreviews && mediaPreview == null && !mediaPreviewUnavailable && !message.localOutboxMedia) onLoadMediaPreview()
             }
             if (videoFile != null) {
                 InlineVideoPlayer(videoFile, appearance.mediaRadius)
@@ -1633,7 +1635,11 @@ private fun MessageContent(
                         "${message.mediaMimeType ?: "File type unavailable"} · ${message.mediaSizeBytes?.let(::formatMediaBytes) ?: "Size unavailable"}",
                         color = foreground.copy(alpha = .72f), fontSize = 10.5.sp
                     )
-                    if (message.mediaUnavailable != null) Text(message.mediaUnavailable, color = StudioPalette.Bad, fontSize = 10.sp)
+                    if (message.localOutboxMedia) {
+                        Text("Stored securely on this phone · waiting to send", color = StudioPalette.Muted, fontSize = 10.sp)
+                    } else if (message.mediaUnavailable != null) {
+                        Text(message.mediaUnavailable, color = StudioPalette.Bad, fontSize = 10.sp)
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Open", color = foreground, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onLoadMedia))
                         Text("Download", color = foreground, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onDownloadMedia))

@@ -6,23 +6,20 @@ import org.junit.Test
 
 class StickerPayloadTest {
     @Test
-    fun acceptsAWellFormedWebpContainer() {
-        assertNull(validateWebpStickerPayload(webpPayload(24)))
+    fun acceptsAWebpWithAnExtendedHeaderAndImagePayload() {
+        assertNull(validateWebpStickerPayload(webpPayload()))
     }
 
     @Test
     fun rejectsNonWebpFilesEvenWhenThePickerReportsAnImage() {
-        val bytes = webpPayload(24)
+        val bytes = webpPayload()
         "NOPE".toByteArray(Charsets.US_ASCII).copyInto(bytes, 0)
-        assertEquals(
-            "Choose a WebP sticker file.",
-            validateWebpStickerPayload(bytes)
-        )
+        assertEquals("Choose a WebP sticker file.", validateWebpStickerPayload(bytes))
     }
 
     @Test
     fun rejectsTruncatedRiffContainers() {
-        val bytes = webpPayload(24)
+        val bytes = webpPayload()
         bytes[4] = 0x40
         assertEquals(
             "The selected WebP sticker is incomplete or corrupted.",
@@ -32,16 +29,15 @@ class StickerPayloadTest {
 
     @Test
     fun rejectsFilesAboveTheStickerSizeLimit() {
-        val bytes = webpPayload(MAX_WEBP_STICKER_BYTES + 1)
         assertEquals(
-            "WebP stickers must be 2 MB or smaller.",
-            validateWebpStickerPayload(bytes)
+            "WebP stickers must be 500 KB or smaller.",
+            validateWebpStickerPayload(ByteArray(MAX_WEBP_STICKER_BYTES + 1))
         )
     }
 
     @Test
-    fun rejectsUnexpectedFirstImageChunks() {
-        val bytes = webpPayload(24)
+    fun rejectsUnexpectedFirstChunks() {
+        val bytes = webpPayload()
         "ANIM".toByteArray(Charsets.US_ASCII).copyInto(bytes, 12)
         assertEquals(
             "The selected WebP sticker is incomplete or corrupted.",
@@ -49,13 +45,27 @@ class StickerPayloadTest {
         )
     }
 
-    private fun webpPayload(size: Int): ByteArray {
+    @Test
+    fun rejectsExtendedHeadersWithoutAnImageFrame() {
+        assertEquals(
+            "The selected WebP sticker is incomplete or corrupted.",
+            validateWebpStickerPayload(webpPayload(imageChunk = false))
+        )
+    }
+
+    private fun webpPayload(imageChunk: Boolean = true): ByteArray {
+        val size = if (imageChunk) 44 else 30
         val bytes = ByteArray(size)
         "RIFF".toByteArray(Charsets.US_ASCII).copyInto(bytes, 0)
         writeUInt32LittleEndian(bytes, 4, size - 8)
         "WEBP".toByteArray(Charsets.US_ASCII).copyInto(bytes, 8)
         "VP8X".toByteArray(Charsets.US_ASCII).copyInto(bytes, 12)
-        writeUInt32LittleEndian(bytes, 16, size - 20)
+        writeUInt32LittleEndian(bytes, 16, 10)
+        if (imageChunk) {
+            "VP8L".toByteArray(Charsets.US_ASCII).copyInto(bytes, 30)
+            writeUInt32LittleEndian(bytes, 34, 5)
+            bytes[38] = 0x2f
+        }
         return bytes
     }
 
@@ -65,3 +75,4 @@ class StickerPayloadTest {
         bytes[offset + 2] = ((value ushr 16) and 0xff).toByte()
         bytes[offset + 3] = ((value ushr 24) and 0xff).toByte()
     }
+}

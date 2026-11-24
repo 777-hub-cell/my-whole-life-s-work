@@ -2,40 +2,84 @@ package com.aharane.studio.features.chats
 
 import java.nio.charset.StandardCharsets
 
-internal const val MAX_WEBP_STICKER_BYTES: Int = 2 * 1024 * 1024
+internal const val MAX_WEBP_STICKER_BYTES: Int = 500 * 1024
 
 /**
- * Returns a user-facing validation error for a WebP sticker payload, or null when
- * its RIFF/WebP container and first image chunk are structurally plausible and
- * within the client limit. The server remains authoritative for WhatsApp acceptance.
+ * Performs bounded RIFF/WebP container validation before the existing server
+ * converts the uploaded image/webp payload into a WhatsApp sticker message.
+ * It does not decode pixels or replace WhatsApp's own sticker validation.
  */
 internal fun validateWebpStickerPayload(bytes: ByteArray): String? {
-    if (bytes.size < 20) return "The selected file is not a valid WebP sticker."
+    if (bytes.size < 30) return "The selected file is not a valid WebP sticker."
     if (bytes.size > MAX_WEBP_STICKER_BYTES) {
-        return "WebP stickers must be 2 MB or smaller."
+        return "WebP stickers must be 500 KB or smaller."
     }
 
-    val riff = String(bytes, 0, 4, StandardCharsets.US_ASCII)
-    val webp = String(bytes, 8, 4, StandardCharsets.US_ASCII)
-    if (riff != "RIFF" || webp != "WEBP") {
+    if (String(bytes, 0, 4, StandardCharsets.US_ASCII) != "RIFF" ||
+        String(bytes, 8, 4, StandardCharsets.US_ASCII) != "WEBP"
+    ) {
         return "Choose a WebP sticker file."
     }
 
     val riffPayloadLength = readUInt32LittleEndian(bytes, 4)
-    if (riffPayloadLength < 12L || riffPayloadLength + 8L > bytes.size.toLong()) {
+    if (riffPayloadLength + 8L != bytes.size.toLong() || riffPayloadLength < 22L) {
         return "The selected WebP sticker is incomplete or corrupted."
     }
 
-    val firstChunkType = String(bytes, 12, 4, StandardCharsets.US_ASCII)
-    if (firstChunkType !in setOf("VP8 ", "VP8L", "VP8X")) {
-        return "The selected WebP sticker is incomplete or corrupted."
+    val containerEnd = bytes.size
+    var offset = 12
+    var firstChunk = true
+    var hasImagePayload = false
+
+    while (offset < containerEnd) {
+        if (offset + 8 > containerEnd) {
+            return "The selected WebP sticker is incomplete or corrupted."
+        }
+
+        val chunkType = String(bytes, offset, 4, StandardCharsets.US_ASCII)
+        val chunkLength = readUInt32LittleEndian(bytes, offset + 4)
+        val payloadStart = offset + 8L
+        val payloadEnd = payloadStart + chunkLength
+        if (payloadEnd > containerEnd.toLong()) {
+            return "The selected WebP sticker is incomplete or corrupted."
+        }
+
+        if (firstChunk && chunkType !in setOf("VP8 ", "VP8L", "VP8X")) {
+            return "The selected WebP sticker is incomplete or corrupted."
+        }
+
+        when (chunkType) {
+            "VP8X" -> if (chunkLength != 10L) {
+                return "The selected WebP sticker is incomplete or corrupted."
+            }
+            "VP8 " -> {
+                if (chunkLength < 10L) return "The selected WebP sticker is incomplete or corrupted."
+                hasImagePayload = true
+            }
+            "VP8L" -> {
+                if (chunkLength < 5L || (bytes[payloadStart.toInt()].toInt() and 0xff) != 0x2f) {
+                    return "The selected WebP sticker is incomplete or corrupted."
+                }
+                hasImagePayload = true
+            }
+            "ANIM" -> if (chunkLength != 6L) {
+                return "The selected WebP sticker is incomplete or corrupted."
+            }
+            "ANMF" -> {
+                if (chunkLength < 16L) return "The selected WebP sticker is incomplete or corrupted."
+                hasImagePayload = true
+            }
+        }
+
+        val paddedEnd = payloadEnd + (chunkLength and 1L)
+        if (paddedEnd > containerEnd.toLong()) {
+            return "The selected WebP sticker is incomplete or corrupted."
+        }
+        offset = paddedEnd.toInt()
+        firstChunk = false
     }
 
-    val firstChunkLength = readUInt32LittleEndian(bytes, 16)
-    if (firstChunkLength <= 0L ||
-        firstChunkLength + 12L > riffPayloadLength ||
-        firstChunkLength + 20L > bytes.size.toLong()
-    ) {
+    if (offset != containerEnd || !hasImagePayload) {
         return "The selected WebP sticker is incomplete or corrupted."
     }
 

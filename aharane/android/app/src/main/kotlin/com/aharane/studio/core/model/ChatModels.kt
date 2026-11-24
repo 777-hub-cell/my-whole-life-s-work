@@ -72,7 +72,8 @@ data class ChatMessage(
     val localOutboxState: String? = null,
     val localOutboxError: String? = null,
     val deletedByRemote: Boolean = false,
-    val deletedAtMillis: Long = 0L
+    val deletedAtMillis: Long = 0L,
+    val localOutboxMedia: Boolean = false
 ) {
     init {
         require(messageId.isNotBlank())

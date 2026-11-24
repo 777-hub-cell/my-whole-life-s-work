@@ -1593,7 +1593,7 @@ fun AharaneApp(
         ChatAccount.PUBLIC -> runtime?.publicAccount
     }
 
-    LaunchedEffect(connected, selectedAccount, currentAccountState?.connected, localChatRepository, chatsByAccount[selectedAccount]) {
+    LaunchedEffect(connected, selectedAccount, currentAccountState?.connected, localChatRepository, chatsByAccount[selectedAccount], activeMessages) {
         if (!connected || currentAccountState?.connected != true) return@LaunchedEffect
         val local = localChatRepository ?: return@LaunchedEffect
         val conversations = chatsByAccount[selectedAccount].orEmpty()
@@ -1977,20 +1977,22 @@ fun AharaneApp(
                         }
                     },
                     onAttach = {
-                        if (connected && currentAccountState?.connected == true) {
+                        if (!previewMode && localChatRepository != null && connectionManager.hasSavedSession()) {
                             chatAttachmentLauncher.launch(arrayOf("image/*", "video/*", "audio/*", "application/*"))
+                        } else {
+                            Toast.makeText(context, "Sign in to Aharane to keep attachments in your encrypted outbox.", Toast.LENGTH_SHORT).show()
                         }
                     },
                     onPickSticker = {
-                        if (connected && currentAccountState?.connected == true) {
+                        if (!previewMode && localChatRepository != null && connectionManager.hasSavedSession()) {
                             chatStickerLauncher.launch(arrayOf("image/webp"))
                         } else {
-                            Toast.makeText(context, "Connect this WhatsApp account before sending a sticker.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Sign in to Aharane to keep stickers in your encrypted outbox.", Toast.LENGTH_SHORT).show()
                         }
                     },
                     onRecordVoice = {
-                        if (!connected || currentAccountState?.connected != true) {
-                            Toast.makeText(context, "Connect the selected WhatsApp account to send a voice note.", Toast.LENGTH_SHORT).show()
+                        if (previewMode || localChatRepository == null || !connectionManager.hasSavedSession()) {
+                            Toast.makeText(context, "Sign in to Aharane to queue a voice note securely.", Toast.LENGTH_SHORT).show()
                         } else if (voiceRecording) {
                             stopAndSendVoiceNote()
                         } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {

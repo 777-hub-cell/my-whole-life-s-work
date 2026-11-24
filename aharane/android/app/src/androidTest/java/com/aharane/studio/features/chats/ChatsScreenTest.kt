@@ -39,7 +39,7 @@ class ChatsScreenTest {
                     onFilterSelected = { filter = it },
                     conversations = conversations,
                     accountConnected = true,
-                    showAvatars = false
+                    savedShowAvatars = false
                 )
             }
         }
@@ -71,7 +71,7 @@ class ChatsScreenTest {
                     onFilterSelected = { filter = it },
                     conversations = conversations,
                     accountConnected = true,
-                    showAvatars = false
+                    savedShowAvatars = false
                 )
             }
         }
@@ -111,7 +111,7 @@ class ChatsScreenTest {
                     onFilterSelected = {},
                     conversations = conversations,
                     accountConnected = false,
-                    showAvatars = false
+                    savedShowAvatars = false
                 )
             }
         }

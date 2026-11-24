@@ -98,9 +98,12 @@ export default {
   aliases: ['soundstickerinspect', 'sinspect'],
   description: 'Inspect the raw structure of a replied-to WhatsApp sticker or sound sticker.',
   usage: '.stickerinspect (reply to a sticker)',
+  ownerOnly: true,
+  publicOwnerOnly: true,
+  hidden: true,
   async run(ctx) {
-    if (ctx.isSupremeOwner !== true) {
-      await ctx.reply('Only the verified NIGHT supreme owner can inspect raw WhatsApp message structures.')
+    if (ctx.isPublicOwner !== true) {
+      await ctx.reply('Only the verified NIGHT public owner can inspect raw WhatsApp message structures.')
       return
     }
 

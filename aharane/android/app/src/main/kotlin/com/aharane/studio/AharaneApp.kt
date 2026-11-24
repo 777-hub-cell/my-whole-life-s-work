@@ -799,7 +799,7 @@ fun AharaneApp(
                                 if (count < 0) break
                                 total += count
                                 require(total <= MAX_WEBP_STICKER_BYTES) {
-                                    "WebP stickers must be 2 MB or smaller."
+                                    "WebP stickers must be 500 KB or smaller."
                                 }
                                 output.write(buffer, 0, count)
                             }

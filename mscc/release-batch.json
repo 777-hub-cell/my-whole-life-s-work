@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-pslimit-command-routing-20261112",
+  "releaseId": "night-sound-sticker-inspector-20261124",
   "baseBranch": "mscc-azure",
-  "baseCommit": "bdabeccb427499571841dc39068c0c2ed3e7b7e0",
+  "baseCommit": "0f42193202c885bf2f4188261b0bdfca9a91d2e6",
   "pullRequests": [
-    16
+    85
   ],
-  "preparedAt": "2026-11-12T11:51:21.856Z",
-  "notes": "Release the .pslimit dispatch fix from PR #16. Public owner-only command denials now explain why the command was ignored; the Account A private self-chat owner console also registers .pslimit; .pslimit 80 sends one numbered diagnostic pack and .pslimit <search> <count> (for example cat 80) builds exactly that many real stickers into one native pack. The normal .ps splitter remains at 60."
+  "preparedAt": "2026-11-24T23:00:00.000Z",
+  "notes": "Release the private NIGHT sound-sticker inspector from PR #85. The supreme-owner-only .stickerinspect command inspects the raw structure of a replied-to WhatsApp sticker message, reports safe metadata, handles common message wrappers and audioStickerMessage, and formats the report with readable line breaks."
 }

@@ -35,6 +35,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.DateRange
@@ -139,6 +140,7 @@ fun ConversationScreen(
     onBack: () -> Unit,
     onSend: (String, ChatMessage?) -> Unit,
     onAttach: () -> Unit = {},
+    onPickSticker: () -> Unit = {},
     onRecordVoice: () -> Unit = {},
     onOpenMedia: (ChatMessage) -> Unit = {},
     onKeepMediaOffline: (ChatMessage) -> Unit = {},
@@ -680,6 +682,12 @@ fun ConversationScreen(
             verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.spacedBy(7.dp)
         ) {
+            ConversationTool(
+                Icons.Outlined.EmojiEmotions,
+                "Choose a WebP sticker",
+                enabled = connected,
+                onClick = onPickSticker
+            )
             ConversationTool(
                 Icons.Outlined.AttachFile,
                 "Attach image, video, audio or document",

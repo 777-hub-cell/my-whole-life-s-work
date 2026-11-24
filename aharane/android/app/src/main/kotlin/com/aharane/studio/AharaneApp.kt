@@ -79,6 +79,7 @@ import com.aharane.studio.core.navigation.MainDestination
 import com.aharane.studio.features.chats.ChatsScreen
 import com.aharane.studio.features.notes.EncryptedNotesStore
 import com.aharane.studio.features.chats.ConversationScreen
+import com.aharane.studio.features.chats.validateWebpStickerPayload
 import com.aharane.studio.features.commands.VisualCommandBuilderScreen
 import com.aharane.studio.features.configuration.ConfigurationScreen
 import com.aharane.studio.features.connection.ConnectionScreen
@@ -766,6 +767,39 @@ fun AharaneApp(
                     chatsByAccount[conversation.key.account] = repository.chats(conversation.key.account)
                 } catch (error: Exception) {
                     Toast.makeText(context, error.message ?: "Attachment could not be sent.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    val chatStickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        val conversation = activeConversation
+        if (uri != null && conversation != null) {
+            connectionScope.launch {
+                try {
+                    require(!previewMode && authenticated && serverReachable) {
+                        "Connect to the live Aharane server before sending a sticker."
+                    }
+                    require(currentAccountState?.connected == true) {
+                        "Connect this WhatsApp account before sending a sticker."
+                    }
+                    val selectedName = queryDisplayName(context, uri)
+                    val bytes = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                            ?: error("Could not read the selected sticker.")
+                    }
+                    val invalidReason = validateWebpStickerPayload(bytes)
+                    require(invalidReason == null) { invalidReason ?: "Choose a valid WebP sticker." }
+                    val fileName = selectedName.takeIf { it.endsWith(".webp", ignoreCase = true) }
+                        ?: "sticker.webp"
+                    repository.sendMedia(conversation, bytes, "image/webp", fileName, "")
+                    activeMessages = refreshConversationIncrementally(conversation)
+                    chatsByAccount[conversation.key.account] = repository.chats(conversation.key.account)
+                    Toast.makeText(context, "Sticker sent.", Toast.LENGTH_SHORT).show()
+                } catch (error: Exception) {
+                    Toast.makeText(context, error.message ?: "Sticker could not be sent.", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -1820,6 +1854,13 @@ fun AharaneApp(
                     onAttach = {
                         if (connected && currentAccountState?.connected == true) {
                             chatAttachmentLauncher.launch(arrayOf("image/*", "video/*", "audio/*", "application/*"))
+                        }
+                    },
+                    onPickSticker = {
+                        if (connected && currentAccountState?.connected == true) {
+                            chatStickerLauncher.launch(arrayOf("image/webp"))
+                        } else {
+                            Toast.makeText(context, "Connect this WhatsApp account before sending a sticker.", Toast.LENGTH_SHORT).show()
                         }
                     },
                     onRecordVoice = {

@@ -211,6 +211,32 @@ class ConversationScreenTest {
     }
 
     @Test
+    fun connectedComposerExposesStickerPickerWithoutSendingText() {
+        var stickerPickerRequests = 0
+        var sentMessages = 0
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = emptyList(),
+                    connected = true,
+                    onBack = {},
+                    onSend = { _, _ -> sentMessages++ },
+                    onPickSticker = { stickerPickerRequests++ }
+                )
+            }
+        }
+        compose.onNodeWithContentDescription("Choose a WebP sticker")
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+        compose.runOnIdle {
+            assertEquals(1, stickerPickerRequests)
+            assertEquals(0, sentMessages)
+        }
+    }
+
+    @Test
     fun disconnectedComposerKeepsDraftButDisablesSendAndAttachments() {
         compose.setContent {
             AharaneTheme(themeMode = "light") {
@@ -226,6 +252,7 @@ class ConversationScreenTest {
         compose.onNodeWithTag("conversation-composer").performTextInput("Draft stays on this phone")
         compose.onNodeWithTag("conversation-send").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Attach image, video, audio or document").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Choose a WebP sticker").assertIsNotEnabled()
         compose.onNodeWithTag("conversation-composer").assertTextEquals("Draft stays on this phone")
     }
 }

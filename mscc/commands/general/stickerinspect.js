@@ -21,6 +21,10 @@ const SAFE_FIELDS = new Set([
   'fileName',
 ])
 
+const MAX_STRUCTURE_LINES = 55
+const MAX_REPORT_CHARS = 9000
+const MAX_CHAT_MESSAGE_CHARS = 3200
+
 function isByteArray(value) {
   return Buffer.isBuffer(value) || value instanceof Uint8Array
 }
@@ -63,7 +67,7 @@ function describeValue(value) {
   return String(value)
 }
 
-function inspectStructure(root, maxLines = 55) {
+function inspectStructure(root, maxLines = MAX_STRUCTURE_LINES) {
   const lines = []
   const seen = new Set()
   const visit = (value, path, depth) => {
@@ -89,8 +93,36 @@ function inspectStructure(root, maxLines = 55) {
   }
 
   visit(root, 'message', 0)
-  if (lines.length >= maxLines) lines.push('…output capped')
+  if (lines.length >= maxLines) lines.push('…structure output capped')
   return lines
+}
+
+function splitChatReport(value, limit = MAX_CHAT_MESSAGE_CHARS) {
+  const text = String(value || '')
+  const chunks = []
+  let remaining = text
+
+  while (remaining.length > limit) {
+    let cut = remaining.lastIndexOf('\n', limit)
+    if (cut < Math.floor(limit / 2)) cut = limit
+    chunks.push(remaining.slice(0, cut))
+    remaining = remaining.slice(cut).replace(/^\n/u, '')
+  }
+
+  if (remaining) chunks.push(remaining)
+  return chunks
+}
+
+async function replyWithReport(ctx, rawReport) {
+  const capped = rawReport.length > MAX_REPORT_CHARS
+    ? rawReport.slice(0, MAX_REPORT_CHARS) + '\n…report truncated for chat safety'
+    : rawReport
+  const chunks = splitChatReport(capped)
+
+  for (let index = 0; index < chunks.length; index += 1) {
+    const heading = chunks.length > 1 ? `[Sticker inspection ${index + 1}/${chunks.length}]\n` : ''
+    await ctx.reply(heading + chunks[index])
+  }
 }
 
 export default {
@@ -98,20 +130,13 @@ export default {
   aliases: ['soundstickerinspect', 'sinspect'],
   description: 'Inspect the raw structure of a replied-to WhatsApp sticker or sound sticker.',
   usage: '.stickerinspect (reply to a sticker)',
-  ownerOnly: true,
-  publicOwnerOnly: true,
   hidden: true,
   async run(ctx) {
-    if (ctx.isPublicOwner !== true) {
-      await ctx.reply('Only the verified NIGHT public owner can inspect raw WhatsApp message structures.')
-      return
-    }
-
     const current = ctx.message?.message
     const quoted = findQuotedMessage(current)
     const target = quoted || current
     if (!target) {
-      await ctx.reply('Reply to the sticker with .stickerinspect so I can inspect its incoming message structure.')
+      await ctx.reply('Reply to a sticker with .stickerinspect so I can inspect its incoming message structure.')
       return
     }
 
@@ -139,6 +164,6 @@ export default {
       ...inspectStructure(content),
     ].join('\n')
 
-    await ctx.reply(report.slice(0, 6500))
+    await replyWithReport(ctx, report)
   },
 }

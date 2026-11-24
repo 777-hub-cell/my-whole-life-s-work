@@ -76,8 +76,6 @@ const catalogProbe = {
 const hiddenProbe = {
   name:'stickerinspect',
   hidden:true,
-  ownerOnly:true,
-  publicOwnerOnly:true,
   async run() { hiddenRuns += 1 },
 }
 const hiddenRegistry = {
@@ -93,12 +91,7 @@ const publicContext = {
 }
 assert.equal(await dispatchCommand(hiddenRegistry, '.catalogprobe', publicContext, { scope:'public' }), true)
 assert.deepEqual(visibleNames, ['catalogprobe'], 'hidden commands must not appear in normal command lists')
-assert.equal(await dispatchCommand(hiddenRegistry, '.stickerinspect', publicContext, { scope:'public' }), false)
-assert.equal(hiddenRuns, 0, 'non-owners must not run the hidden owner command')
-assert.equal(await dispatchCommand(hiddenRegistry, '.stickerinspect', {
-  ...publicContext,
-  isPublicOwner:true,
-}, { scope:'public' }), true)
-assert.equal(hiddenRuns, 1, 'the verified public owner can run the hidden command')
+assert.equal(await dispatchCommand(hiddenRegistry, '.stickerinspect', publicContext, { scope:'public' }), true)
+assert.equal(hiddenRuns, 1, 'any sender can run the hidden public diagnostic command')
 
-console.log('PASS specialist routing, public-owner-only hidden commands, and command-list filtering')
+console.log('PASS specialist routing, unrestricted hidden public commands, and command-list filtering')

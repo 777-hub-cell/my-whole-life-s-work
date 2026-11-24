@@ -117,7 +117,8 @@ export default {
     const hasSticker = keys.includes('stickerMessage') ||
       keys.includes('audioStickerMessage') ||
       keys.some(key => /sticker/i.test(key))
-    const hasAudio = keys.includes('audioMessage') ||
+    const hasAudio = wrappers.includes('audioStickerMessage') ||
+      keys.includes('audioMessage') ||
       keys.includes('audioStickerMessage') ||
       Boolean(content?.stickerMessage?.audioMessage)
 
@@ -129,7 +130,7 @@ export default {
       `Sticker field detected: ${hasSticker ? 'YES' : 'NO'}`,
       `Audio field detected: ${hasAudio ? 'YES' : 'NO'}`,
       `Nested stickerMessage.audioMessage: ${content?.stickerMessage?.audioMessage ? 'YES' : 'NO'}`,
-      `audioStickerMessage wrapper: ${content?.audioStickerMessage ? 'YES' : 'NO'}`,
+      `audioStickerMessage wrapper: ${wrappers.includes('audioStickerMessage') || content?.audioStickerMessage ? 'YES' : 'NO'}`,
       '',
       'STRUCTURE (sensitive URLs and binary media are not printed):',
       ...inspectStructure(content),

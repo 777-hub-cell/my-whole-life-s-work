@@ -577,7 +577,20 @@ export async function executeVisualWorkflow(input, options = {}) {
   const validation = validateWorkflow(workflow)
   const dryRun = options.dryRun === true
   const store = options.store
-  const event = options.context
+  // Preserve caller-provided command arguments, but derive them from the raw
+  // command text for direct/manual invocations that only provide messageText.
+  // An explicit empty rawArgs value remains authoritative (scheduled runs and
+  // message-trigger workflows intentionally have no command arguments).
+  const event = options.context && typeof options.context === 'object'
+    ? { ...options.context }
+    : options.context
+  const commandTrigger = workflow.nodes.find(node => node.type === 'trigger.command')
+  if (commandTrigger && event && event.rawArgs === undefined) {
+    const tokens = textValue(event.messageText).trim().split(/\\s+/).filter(Boolean)
+    const inferredArgs = tokens.slice(1)
+    if (!Array.isArray(event.args)) event.args = inferredArgs
+    event.rawArgs = event.args.join(' ')
+  }
   const now = options.now || Date.now
   const trace = []
   if (!validation.valid) return { ok: false, dryRun, validation, trace, error: 'Workflow validation failed.' }

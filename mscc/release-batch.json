@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-stickerinspect-public-owner-20261124",
+  "releaseId": "night-stickerinspect-public-chat-log-20261124",
   "baseBranch": "mscc-azure",
-  "baseCommit": "808ba0a3f40d150f52353560e5aa4e025e6af104",
+  "baseCommit": "da216fd05b06218224d16592b5e8461ffa3b4bc7",
   "pullRequests": [
-    87
+    89
   ],
-  "preparedAt": "2026-11-24T16:14:48.628Z",
-  "notes": "Release the hidden public-owner .stickerinspect command. It runs from the public NIGHT account for verified public owners, is excluded from normal command listings, and inspects safe structure/metadata from the replied-to WhatsApp sticker or sound-sticker message."
+  "preparedAt": "2026-11-24T16:50:00.000Z",
+  "notes": "Deploy the merged PR #89: make .stickerinspect available to any public sender and return the safe sticker/sound-sticker inspection report directly in WhatsApp chat."
 }

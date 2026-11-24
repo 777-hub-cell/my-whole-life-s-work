@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url'
 import express from 'express'
 import { WebSocket, WebSocketServer } from 'ws'
 import pino from 'pino'
-import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState, WAMessageStubType, downloadMediaMessage } from '@itsliaaa/baileys'
+import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState, WAMessageStubType, downloadMediaMessage, getKeyAuthor, jidNormalizedUser } from '@itsliaaa/baileys'
+import { createPollVoteEnvelope, decryptIncomingPollVote } from './chat-polls.js'
 import {
   isAllowedInbound,
   isPrivateVisibleChatJid,
@@ -1030,6 +1031,46 @@ function textFromMessage(message) {
   ).trim()
 }
 
+function findPollUpdate(message) {
+  let current = message?.message
+  for (let depth = 0; current && depth < 6; depth += 1) {
+    if (current.pollUpdateMessage) return current.pollUpdateMessage
+    const next =
+      current.ephemeralMessage?.message ||
+      current.viewOnceMessage?.message ||
+      current.viewOnceMessageV2?.message ||
+      current.viewOnceMessageV2Extension?.message ||
+      current.deviceSentMessage?.message ||
+      current.documentWithCaptionMessage?.message ||
+      current.editedMessage?.message ||
+      null
+    if (!next) return null
+    current = next
+  }
+  return null
+}
+
+async function applyIncomingPollVote(accountId, currentSocket, message, pollUpdate) {
+  const jid = String(message?.key?.remoteJid || '')
+  const pollMessageId = String(pollUpdate?.pollCreationMessageKey?.id || '')
+  const normalizedMe = jidNormalizedUser(String(currentSocket?.user?.id || ''))
+  const voterJid = getKeyAuthor(message?.key, normalizedMe)
+  if (!jid || !pollMessageId || !voterJid || !normalizedMe) return false
+  const pollMessage = await chatStore.getMessage(accountId, jid, pollMessageId)
+  if (!pollMessage || pollMessage.type !== 'poll' || !pollMessage.sourceMessage) return false
+  const selectedHashes = decryptIncomingPollVote({
+    pollMessage,
+    vote: pollUpdate.vote,
+    voterJid,
+  })
+  if (!selectedHashes.length) return false
+  const actorKey = createHash('sha256').update(String(voterJid), 'utf8').digest('hex')
+  const result = await chatStore.applyPollVote(accountId, jid, pollMessageId, actorKey, selectedHashes)
+  if (!result) return false
+  publishStudioEvent('whatsapp.poll.updated', { accountId, jid, pollMessageId })
+  return true
+}
+
 function markMessageSeen(id) {
   if (!id) return false
   if (seenMessageIds.has(id)) return true
@@ -1052,6 +1093,25 @@ async function handleMessages(sessionId, currentSocket, event) {
     if (remoteJid === 'status@broadcast') {
       whatsappDiscovery.recordStatus(sessionId, message)
       continue // Status never grants bot command privileges.
+    }
+    const pollUpdate = findPollUpdate(message)
+    if (pollUpdate) {
+      const shouldPersistPoll = sessionId === 'private'
+        ? isPrivateVisibleChatJid(remoteJid)
+        : sessionId === 'public' && message.key.fromMe !== true && isPrivateVisibleChatJid(remoteJid)
+      if (shouldPersistPoll) {
+        try {
+          await applyIncomingPollVote(sessionId, currentSocket, message, pollUpdate)
+        } catch (error) {
+          logger.warn?.({
+            event: 'chat.poll.vote-decrypt-failed',
+            accountId: sessionId,
+            pollMessageId: String(pollUpdate.pollCreationMessageKey?.id || ''),
+            error: String(error?.message || error).slice(0, 180),
+          })
+        }
+      }
+      continue
     }
     const rawSenderJid = String(message.key?.participant || remoteJid)
     const senderAlternateJid = String(remoteJid.endsWith('@g.us')
@@ -2686,6 +2746,90 @@ app.post('/api/chats/:accountId/:jid/delete', requireAdmin, async (req, res) => 
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not delete this message.') })
   }
 })
+app.post('/api/chats/:accountId/:jid/polls', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = decodeURIComponent(String(req.params.jid || ''))
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid) ||
+        !await chatStore.hasConversation(accountId, jid)) {
+      return res.status(404).json({ ok: false, error: 'Conversation not found or not authorized.' })
+    }
+    const name = String(req.body?.name || '').trim()
+    const options = Array.isArray(req.body?.options)
+      ? req.body.options.map(value => String(value || '').trim()) : []
+    const selectableCount = Number(req.body?.selectableCount || 1)
+    if (!name || name.length > 120) {
+      return res.status(400).json({ ok: false, error: 'Enter a poll question up to 120 characters.' })
+    }
+    if (options.length < 2 || options.length > 12 ||
+        options.some(value => !value || value.length > 100) ||
+        new Set(options.map(value => value.toLocaleLowerCase())).size !== options.length) {
+      return res.status(400).json({ ok: false, error: 'A poll needs 2–12 unique options, each up to 100 characters.' })
+    }
+    if (!Number.isInteger(selectableCount) || selectableCount < 1 || selectableCount > options.length) {
+      return res.status(400).json({ ok: false, error: 'The maximum number of choices must be between 1 and the number of options.' })
+    }
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected') {
+      return res.status(503).json({ ok: false, error: 'Connect this WhatsApp account before creating a poll.' })
+    }
+    const sent = await socket.sendMessage(jid, {
+      poll: {
+        name,
+        values: options,
+        selectableCount,
+        toAnnouncementGroup: false,
+        hideVoter: false,
+        canAddOption: false,
+      },
+    })
+    await chatStore.recordMessage({ sessionId: accountId, message: sent, socket })
+    publishStudioEvent('whatsapp.poll.created', { accountId, jid, messageId: String(sent?.key?.id || '') })
+    res.json({ ok: true, message: String(sent?.key?.id || '') })
+  } catch (error) {
+    res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not create this poll.') })
+  }
+})
+
+app.post('/api/chats/:accountId/:jid/:messageId/poll-vote', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = decodeURIComponent(String(req.params.jid || ''))
+    const messageId = String(req.params.messageId || '')
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid) ||
+        !await chatStore.hasConversation(accountId, jid)) {
+      return res.status(404).json({ ok: false, error: 'Conversation not found or not authorized.' })
+    }
+    const selectedOptions = Array.isArray(req.body?.selectedOptions)
+      ? req.body.selectedOptions.map(value => String(value || '').trim()) : []
+    const pollMessage = await chatStore.getMessage(accountId, jid, messageId)
+    if (!pollMessage || pollMessage.type !== 'poll' || !pollMessage.sourceMessage) {
+      return res.status(404).json({ ok: false, error: 'The original poll is not available in this conversation.' })
+    }
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected') {
+      return res.status(503).json({ ok: false, error: 'Connect this WhatsApp account before voting.' })
+    }
+    const voterJid = jidNormalizedUser(String(socket.user?.id || ''))
+    const encrypted = createPollVoteEnvelope({ pollMessage, selectedOptions, voterJid })
+    await socket.sendMessage(jid, {
+      pollUpdate: {
+        metadata: {},
+        key: pollMessage.sourceMessage.key,
+        vote: encrypted.vote,
+      },
+    }, { quoted: pollMessage.sourceMessage })
+    const actorKey = createHash('sha256').update(encrypted.voterJid, 'utf8').digest('hex')
+    const updated = await chatStore.applyPollVote(
+      accountId, jid, messageId, actorKey, encrypted.selectedOptionHashes
+    )
+    publishStudioEvent('whatsapp.poll.updated', { accountId, jid, pollMessageId: messageId })
+    res.json({ ok: true, messageId, selectedOptions: encrypted.selectedOptionNames, poll: updated })
+  } catch (error) {
+    res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not submit this poll vote.') })
+  }
+})
+
 app.post('/api/chats/:accountId/:jid/send', requireAdmin, async (req, res) => {
   try {
     const accountId = chatAccount(req.params.accountId)

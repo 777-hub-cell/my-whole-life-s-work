@@ -2,7 +2,6 @@ package com.aharane.studio.features.more
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -121,6 +120,7 @@ fun MoreScreen(
     appearanceStore: ChatAppearanceStore? = null,
     notesStore: EncryptedNotesStore? = null,
     updatesRepository: AharaneRepository? = null,
+    channelsEnabled: Boolean = false,
     appearanceRevision: Int = 0,
     cachedConversations: List<ChatSummary> = emptyList(),
     mediaCache: EncryptedMediaCache? = null,
@@ -175,7 +175,10 @@ fun MoreScreen(
 
     Crossfade(
         targetState = page,
-        animationSpec = tween(if (LocalStudioMotionEnabled.current) 210 else 0),
+        animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Float>(
+            enabled = LocalStudioMotionEnabled.current,
+            targetMillis = StudioFoundationContract.Motion.ScreenTransitionMillis
+        ),
         label = "more-page-transition"
     ) { targetPage ->
     if (targetPage == "whatsapp-updates" && updatesRepository != null) {
@@ -183,6 +186,7 @@ fun MoreScreen(
             repository = updatesRepository,
             selectedAccount = selectedChatAccount,
             onAccountSelected = onChatAccountSelected,
+            connected = channelsEnabled,
             onBack = { onPageChange("more") }
         )
     } else if (targetPage == "notes" && notesStore != null) {
@@ -834,8 +838,8 @@ fun MoreScreen(
                     )
                     StudioDivider()
                     StudioRow(
-                        "Status & Channels",
-                        "Browse updates available to each linked WhatsApp account",
+                        "Channels",
+                        "Browse Channels followed by each linked WhatsApp account",
                         icon = null,
                         trailing = "›",
                         onClick = { onPageChange("whatsapp-updates") }

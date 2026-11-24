@@ -3,12 +3,16 @@ package com.aharane.studio.features.commands
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createComposeRule
+import android.view.KeyEvent
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import com.aharane.studio.core.design.AharaneTheme
@@ -37,11 +41,17 @@ class VisualCommandBuilderScreenTest {
         compose.onNodeWithTag("node-card-trigger.command").performClick()
         compose.onNodeWithTag("node-config-field-command").performTextClearance()
         compose.onNodeWithTag("node-config-field-command").performTextInput("welcome")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
         compose.onNodeWithText("Apply").performClick()
 
+        compose.onNodeWithTag("visual-command-node-library")
+            .performScrollToNode(hasTestTag("add-node-message.sendText"))
         compose.onNodeWithTag("add-node-message.sendText").performClick()
         compose.onNodeWithTag("node-config-field-text").performTextClearance()
         compose.onNodeWithTag("node-config-field-text").performTextInput("Hello from the builder")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
         compose.onNodeWithText("Apply").performClick()
 
         compose.onNodeWithTag("socket-message.replyText-out-next").performClick()
@@ -56,6 +66,8 @@ class VisualCommandBuilderScreenTest {
         compose.onNodeWithTag("node-card-trigger.command").performClick()
         compose.onNodeWithTag("node-config-field-command").performTextClearance()
         compose.onNodeWithTag("node-config-field-command").performTextInput("unsaved-local")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
         compose.onNodeWithText("Apply").performClick()
         compose.onNodeWithTag("workflow-load").performClick()
         compose.onNodeWithText("welcome").performClick()

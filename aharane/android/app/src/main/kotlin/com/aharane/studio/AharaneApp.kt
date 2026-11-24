@@ -27,8 +27,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -134,6 +132,7 @@ fun AharaneApp(
     appLockEnabled: Boolean = false
 ) {
     val context = LocalContext.current
+    val motionEnabled = LocalStudioMotionEnabled.current
     val connectionScope = rememberCoroutineScope()
     val repository = remember(connectionManager) { AharaneRepository(connectionManager) }
     val chatAppearanceStore = remember(context, previewMode) { ChatAppearanceStore(context.applicationContext, previewMode) }
@@ -1267,7 +1266,13 @@ fun AharaneApp(
     LaunchedEffect(currentDestination) {
         val index = MainDestination.entries.indexOf(currentDestination)
         if (index >= 0 && tabPagerState.settledPage != index) {
-            tabPagerState.animateScrollToPage(index)
+            tabPagerState.animateScrollToPage(
+                page = index,
+                animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Float>(
+                    enabled = motionEnabled,
+                    targetMillis = StudioFoundationContract.Motion.ScreenTransitionMillis
+                )
+            )
         }
     }
     LaunchedEffect(tabPagerState) {
@@ -1483,14 +1488,26 @@ fun AharaneApp(
         EnvironmentValue(it.key, it.value, it.readOnly, it.type, it.secret)
     }
 
+    Box(
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.TopCenter
+    ) {
     Column(
-        Modifier.fillMaxSize()
+        Modifier
+            .then(
+                if (editorOpen || activeConversation != null || commandBuilderOpen || engineLibraryOpen) Modifier
+                else Modifier.widthIn(max = StudioFoundationContract.Layout.ContentMaxWidth)
+            )
+            .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
-        if (!editorOpen && activeConversation == null && !commandBuilderOpen && !engineLibraryOpen &&
-            !configurationOpen && currentDestination == MainDestination.HOME) {
-            StudioHeader(connected = connected, preview = previewMode)
+        if (!editorOpen && activeConversation == null && !commandBuilderOpen && !engineLibraryOpen) {
+            StudioHeader(
+                connected = connected,
+                preview = previewMode,
+                showBrand = currentDestination == MainDestination.HOME
+            )
         }
 
         if (previewMode) {
@@ -2503,7 +2520,8 @@ fun AharaneApp(
                         page = morePage,
                         onPageChange = { morePage = it },
                         notesStore = remember(context) { EncryptedNotesStore(context.applicationContext) },
-                        updatesRepository = if (previewMode) null else repository,
+                        updatesRepository = repository,
+                        channelsEnabled = connected && !previewMode,
                         onOpenEnvironment = { destinationName = MainDestination.ENVIRONMENT.name; morePage = "more" },
                         onOpenConfiguration = { configurationOpen = true; morePage = "more" },
                         connected = connected,
@@ -2725,7 +2743,7 @@ fun AharaneApp(
             }
         }
 
-        if (!editorOpen && activeConversation == null && !commandBuilderOpen) {
+        if (!editorOpen && activeConversation == null && !commandBuilderOpen && !engineLibraryOpen) {
             StudioBottomNavigation(
                 selected = currentDestination,
                 onNavigate = {
@@ -2735,6 +2753,7 @@ fun AharaneApp(
                 }
             )
         }
+    }
     }
 
     if (accountControlTarget != null) {

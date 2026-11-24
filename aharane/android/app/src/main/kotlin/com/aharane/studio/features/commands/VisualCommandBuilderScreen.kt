@@ -457,7 +457,7 @@ fun VisualCommandBuilderScreen(
     val configuredNode = workflow.nodes.firstOrNull { it.id == configNodeId }
 
     Column(
-        Modifier.fillMaxSize().background(StudioPalette.Background).padding(horizontal = 12.dp, vertical = 8.dp)
+        Modifier.fillMaxSize().background(StudioPalette.Background).navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -759,7 +759,7 @@ fun VisualCommandBuilderScreen(
                 )
             } else {
                 LazyColumn(
-                    Modifier.fillMaxSize(),
+                    Modifier.fillMaxSize().testTag("visual-command-node-library"),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     contentPadding = PaddingValues(bottom = 8.dp)
                 ) {

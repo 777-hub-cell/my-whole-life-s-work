@@ -282,7 +282,7 @@ fun ConversationScreen(
     }
 
     Column(
-        Modifier.fillMaxSize().background(StudioPalette.Background).imePadding()
+        Modifier.fillMaxSize().background(StudioPalette.Background).navigationBarsPadding().imePadding()
     ) {
         Row(
             Modifier.fillMaxWidth().height(58.dp)

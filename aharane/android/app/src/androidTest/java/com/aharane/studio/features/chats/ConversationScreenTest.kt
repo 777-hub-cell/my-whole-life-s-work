@@ -6,11 +6,14 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.junit4.createComposeRule
+import android.view.KeyEvent
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -86,12 +89,14 @@ class ConversationScreenTest {
         compose.onAllNodesWithText("This is the older message being quoted.").assertCountEquals(2)
         compose.onNodeWithText("Professional").performClick()
         compose.onNodeWithTag("ai-reply-instruction").performTextInput("Keep it warm and brief.")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
         compose.onNodeWithText("Generate reply").performClick()
         compose.waitUntil(timeoutMillis = 5_000) {
             compose.onAllNodesWithTag("ai-reply-draft").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("ai-reply-draft").assertTextEquals("Thanks for explaining. I can do that.")
-        compose.onNodeWithText("Send reply").performClick()
+        compose.onNodeWithText("Send reply").performScrollTo().performClick()
         compose.runOnIdle {
             assertEquals("This is the selected incoming message.", suppliedMessage)
             assertEquals("This is the older message being quoted.", suppliedQuote)

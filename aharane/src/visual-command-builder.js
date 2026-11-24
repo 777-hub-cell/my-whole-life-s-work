@@ -586,7 +586,7 @@ export async function executeVisualWorkflow(input, options = {}) {
     : options.context
   const commandTrigger = workflow.nodes.find(node => node.type === 'trigger.command')
   if (commandTrigger && event && event.rawArgs === undefined) {
-    const tokens = textValue(event.messageText).trim().split(/\\s+/).filter(Boolean)
+    const tokens = textValue(event.messageText).trim().split(/\s+/).filter(Boolean)
     const inferredArgs = tokens.slice(1)
     if (!Array.isArray(event.args)) event.args = inferredArgs
     event.rawArgs = event.args.join(' ')

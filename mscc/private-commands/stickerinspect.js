@@ -133,7 +133,7 @@ export default {
       '',
       'STRUCTURE (sensitive URLs and binary media are not printed):',
       ...inspectStructure(content),
-    ].join('\\n')
+    ].join('\n')
 
     await ctx.reply(report.slice(0, 6500))
   },

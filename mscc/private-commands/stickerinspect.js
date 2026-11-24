@@ -5,6 +5,7 @@ const WRAPPER_KEYS = new Set([
   'viewOnceMessageV2Extension',
   'documentWithCaptionMessage',
   'editedMessage',
+  'audioStickerMessage',
 ])
 
 const SAFE_FIELDS = new Set([

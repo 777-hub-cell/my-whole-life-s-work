@@ -143,6 +143,7 @@ fun AharaneApp(
     var localChatRepository by remember { mutableStateOf<LocalChatRepository?>(null) }
     var localChatStorageError by remember { mutableStateOf("") }
     var syncingAllChats by remember { mutableStateOf(false) }
+    var mediaOutboxRevision by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(context) {
         try {
@@ -655,6 +656,7 @@ fun AharaneApp(
             throw error
         }
         activeMessages = local.messages(conversation.key)
+        mediaOutboxRevision += 1
     }
 
     fun stopAndSendVoiceNote() {
@@ -1593,7 +1595,7 @@ fun AharaneApp(
         ChatAccount.PUBLIC -> runtime?.publicAccount
     }
 
-    LaunchedEffect(connected, selectedAccount, currentAccountState?.connected, localChatRepository, chatsByAccount[selectedAccount], activeMessages) {
+    LaunchedEffect(connected, selectedAccount, currentAccountState?.connected, localChatRepository, chatsByAccount[selectedAccount], mediaOutboxRevision) {
         if (!connected || currentAccountState?.connected != true) return@LaunchedEffect
         val local = localChatRepository ?: return@LaunchedEffect
         val conversations = chatsByAccount[selectedAccount].orEmpty()

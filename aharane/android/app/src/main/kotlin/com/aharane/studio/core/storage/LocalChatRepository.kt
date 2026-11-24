@@ -4,6 +4,7 @@ import android.content.Context
 import com.aharane.studio.core.model.*
 import java.util.UUID
 import org.json.JSONArray
+import org.json.JSONObject
 
 class LocalChatRepository(context: Context) {
     private val secureDatabase = EncryptedChatDatabase.open(context.applicationContext)
@@ -382,7 +383,11 @@ private fun ChatMessage.toRow() = ChatMessageRow(
     mediaUrl = mediaUrl, mediaSizeBytes = mediaSizeBytes, mediaDurationSeconds = mediaDurationSeconds,
     viewOnceViewed = viewOnceViewed, mediaUnavailable = mediaUnavailable, isStarred = isStarred,
     isVoiceNote = isVoiceNote, reactionsJson = JSONArray(reactions).toString(),
-    deletedByRemote = deletedByRemote, deletedAtMillis = deletedAtMillis
+    deletedByRemote = deletedByRemote, deletedAtMillis = deletedAtMillis,
+    pollOptionsJson = JSONArray(pollOptions).toString(),
+    pollSelectableCount = pollSelectableCount.coerceAtLeast(1),
+    pollVoteCountsJson = JSONObject(pollVoteCounts).toString(),
+    pollMyVotesJson = JSONArray(pollMyVotes).toString()
 )
 
 private fun ChatMessageRow.toModel() = ChatMessage(
@@ -401,5 +406,18 @@ private fun ChatMessageRow.toModel() = ChatMessage(
         List(json.length()) { json.optString(it) }
     }.getOrDefault(emptyList()),
     deletedByRemote = deletedByRemote,
-    deletedAtMillis = deletedAtMillis
+    deletedAtMillis = deletedAtMillis,
+    pollOptions = runCatching {
+        val values = JSONArray(pollOptionsJson)
+        List(values.length()) { values.optString(it) }.filter(String::isNotBlank)
+    }.getOrDefault(emptyList()),
+    pollSelectableCount = pollSelectableCount.coerceAtLeast(1),
+    pollVoteCounts = runCatching {
+        val values = JSONObject(pollVoteCountsJson)
+        buildMap { values.keys().forEach { key -> put(key, values.optInt(key).coerceAtLeast(0)) } }
+    }.getOrDefault(emptyMap()),
+    pollMyVotes = runCatching {
+        val values = JSONArray(pollMyVotesJson)
+        List(values.length()) { values.optString(it) }.filter(String::isNotBlank)
+    }.getOrDefault(emptyList())
 )

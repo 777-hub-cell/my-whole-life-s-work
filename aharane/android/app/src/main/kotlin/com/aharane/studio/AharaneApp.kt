@@ -502,9 +502,9 @@ fun AharaneApp(
         val received = mutableListOf<ChatMessage>()
         var rounds = 0
         do {
-            received += page.messages
+            received += page.messages + page.updatedPolls
             val queuedMediaBeforeSync = local?.outgoingMediaMessages(conversation.key).orEmpty()
-            local?.saveMessages(conversation, page.messages, if (cursor.timestampMillis == 0L) page.hasOlder else null)
+            local?.saveMessages(conversation, page.messages + page.updatedPolls, if (cursor.timestampMillis == 0L) page.hasOlder else null)
             val newlyReconciledMedia = queuedMediaBeforeSync.filter { queued ->
                 !queued.remoteMessageId.isNullOrBlank() && page.messages.any { it.messageId == queued.remoteMessageId }
             }
@@ -1918,6 +1918,33 @@ fun AharaneApp(
                         }
                     },
                     onBack = { activeConversation = null },
+                    onCreatePoll = { name, options, selectableCount ->
+                        val target = activeConversation
+                        if (target != null && !previewMode && currentAccountState?.connected == true) {
+                            connectionScope.launch {
+                                try {
+                                    repository.createPoll(target, name, options, selectableCount)
+                                    activeMessages = refreshConversationIncrementally(target)
+                                    chatsByAccount[target.key.account] = repository.chats(target.key.account)
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Poll could not be created.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    onVotePoll = { message, selectedOptions ->
+                        val target = activeConversation
+                        if (target != null && !previewMode && currentAccountState?.connected == true) {
+                            connectionScope.launch {
+                                try {
+                                    repository.votePoll(target, message, selectedOptions)
+                                    activeMessages = refreshConversationIncrementally(target)
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Poll vote could not be sent.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
                     onSend = { text, replyTo ->
                         val target = activeConversation
                         if (previewMode && target != null) {

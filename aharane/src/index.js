@@ -2640,10 +2640,15 @@ app.get('/api/chats/:accountId/:jid/sync', requireAdmin, async (req, res) => {
     })
     const deletedMessageIds = before > 0 ? [] : await chatStore.listDeletedMessageIds(accountId, jid)
     const remoteDeletedMessages = await chatStore.listRemoteDeletedMessages(accountId, jid)
+    const pollUpdates = (await chatStore.getMessages(accountId, jid, {
+      limit: 500,
+      pollActorKey: currentPollActorKey(accountId),
+    })).filter(message => message.type === 'poll').slice(-100)
     const timestamps = messages.map(message => Number(message.timestamp) || 0).filter(value => value > 0)
     res.json({
       ok: true,
       messages,
+      pollUpdates,
       deletedMessageIds,
       remoteDeletedMessages,
       hasOlder: before > 0 ? messages.length >= limit : after === 0 && messages.length >= limit,

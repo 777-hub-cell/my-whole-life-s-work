@@ -73,7 +73,11 @@ data class ChatMessage(
     val localOutboxError: String? = null,
     val deletedByRemote: Boolean = false,
     val deletedAtMillis: Long = 0L,
-    val localOutboxMedia: Boolean = false
+    val localOutboxMedia: Boolean = false,
+    val pollOptions: List<String> = emptyList(),
+    val pollSelectableCount: Int = 1,
+    val pollVoteCounts: Map<String, Int> = emptyMap(),
+    val pollMyVotes: List<String> = emptyList()
 ) {
     init {
         require(messageId.isNotBlank())

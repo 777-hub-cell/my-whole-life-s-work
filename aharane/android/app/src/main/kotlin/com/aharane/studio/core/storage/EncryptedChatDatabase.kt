@@ -77,7 +77,11 @@ data class ChatMessageRow(
     val cachedMediaSha256: String? = null,
     val cachedMediaBytes: Long = 0L,
     val deletedByRemote: Boolean = false,
-    val deletedAtMillis: Long = 0L
+    val deletedAtMillis: Long = 0L,
+    @ColumnInfo(defaultValue = "'[]'") val pollOptionsJson: String = "[]",
+    @ColumnInfo(defaultValue = "1") val pollSelectableCount: Int = 1,
+    @ColumnInfo(defaultValue = "'{}'") val pollVoteCountsJson: String = "{}",
+    @ColumnInfo(defaultValue = "'[]'") val pollMyVotesJson: String = "[]"
 )
 
 @Entity(
@@ -241,7 +245,7 @@ interface ChatDao {
 
 @Database(
     entities = [ChatConversationRow::class, ChatMessageRow::class, ChatOutgoingMessageRow::class, ChatOutgoingMediaRow::class],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 abstract class AharaneChatDatabase : RoomDatabase() {
@@ -255,6 +259,15 @@ class EncryptedChatDatabase private constructor(
     companion object {
         private const val KEY_ALIAS = "com.aharane.chat.database.wrap.v1"
         private const val KEY_FILE = "chat-database-key.wrap"
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE chat_messages ADD COLUMN pollOptionsJson TEXT NOT NULL DEFAULT '[]'")
+                database.execSQL("ALTER TABLE chat_messages ADD COLUMN pollSelectableCount INTEGER NOT NULL DEFAULT 1")
+                database.execSQL("ALTER TABLE chat_messages ADD COLUMN pollVoteCountsJson TEXT NOT NULL DEFAULT '{}' ")
+                database.execSQL("ALTER TABLE chat_messages ADD COLUMN pollMyVotesJson TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
 
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(database: SupportSQLiteDatabase) {
@@ -343,7 +356,7 @@ class EncryptedChatDatabase private constructor(
             val factory = SupportOpenHelperFactory(passphrase)
             val db = Room.databaseBuilder(context.applicationContext, AharaneChatDatabase::class.java, file.absolutePath)
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 .build()
             try {
                 // Force the encrypted open now. A bad or missing key fails closed here.

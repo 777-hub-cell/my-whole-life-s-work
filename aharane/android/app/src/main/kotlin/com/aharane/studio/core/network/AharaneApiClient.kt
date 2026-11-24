@@ -197,6 +197,18 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
     suspend fun markChatUnread(account: String, jid: String): JSONObject =
         post("chats/$account/${encodePath(jid)}/mark-unread", JSONObject())
 
+    suspend fun createChatPoll(account: String, jid: String, name: String, options: List<String>, selectableCount: Int): JSONObject =
+        post(
+            "chats/$account/${encodePath(jid)}/polls",
+            JSONObject().put("name", name).put("options", JSONArray(options)).put("selectableCount", selectableCount)
+        )
+
+    suspend fun voteChatPoll(account: String, jid: String, messageId: String, selectedOptions: List<String>): JSONObject =
+        post(
+            "chats/$account/${encodePath(jid)}/${encodePath(messageId)}/poll-vote",
+            JSONObject().put("selectedOptions", JSONArray(selectedOptions))
+        )
+
     suspend fun downloadChatMedia(account: String, jid: String, messageId: String): JSONObject =
         post(
             "chats/$account/${encodePath(jid)}/media/$messageId/download",

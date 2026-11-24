@@ -19,6 +19,12 @@ import {
   senderNumberFromJid,
 } from './policy.js'
 import { createAccountRuntime } from './account-runtime.js'
+import {
+  WHATSAPP_LIBRARY,
+  WHATSAPP_TRANSPORT_CONTRACT_VERSION,
+  inspectWhatsAppCapabilities,
+  normalizeReceiptStatus,
+} from './whatsapp-contract.js'
 import { loadCommandRegistry, dispatchCommand, parseCommand } from './command-registry.js'
 import { isPrivateSelfChat, isPrivateSelfCommand, isPublicOwnerSender } from './authorization.js'
 import { loadOwnerConfig, normalizeOwnerConfig, saveOwnerConfig } from './owner-config.js'
@@ -1097,8 +1103,7 @@ async function handleMessages(sessionId, currentSocket, event) {
 
     const remoteJid = String(message.key?.remoteJid || '')
     if (remoteJid === 'status@broadcast') {
-      whatsappDiscovery.recordStatus(sessionId, message)
-      continue // Status never grants bot command privileges.
+      continue // Status is excluded from Aharane and is never stored or exposed.
     }
     const pollUpdate = findPollUpdate(message)
     if (pollUpdate) {
@@ -1416,14 +1421,7 @@ accountRuntime = createAccountRuntime({
         }
       }
 
-      const raw = update.status
-      let status = ''
-      if (typeof raw === 'number' && Number.isFinite(raw)) {
-        status = raw <= 0 ? 'failed' : raw === 1 ? 'pending' : raw === 2 ? 'sent' : raw === 3 ? 'delivered' : raw >= 4 ? 'read' : ''
-      } else {
-        const value = String(raw || '').toLowerCase()
-        status = ['pending', 'sent', 'delivered', 'read', 'failed'].includes(value) ? value : ''
-      }
+      const status = normalizeReceiptStatus(update.status)
       if (status) await chatStore.updateMessageStatus(sessionId, jid, messageId, status)
     }
   },
@@ -2441,52 +2439,22 @@ app.post('/api/chats/:accountId/:jid/mark-unread', requireAdmin, async (req, res
 // never substituted with a fabricated image. Short-lived caching prevents
 // repeated profile lookups while scrolling a long conversation list.
 const whatsappAvatarCache = new Map()
-app.get('/api/whatsapp/:accountId/statuses', requireAdmin, (req, res) => {
+app.get('/api/whatsapp/:accountId/capabilities', requireAdmin, (req, res) => {
   try {
     const accountId = chatAccount(req.params.accountId)
     const session = accountRuntime.get(accountId)
     res.json({
-      ok: true, accountId,
+      ok: true,
+      accountId,
+      contractVersion: WHATSAPP_TRANSPORT_CONTRACT_VERSION,
+      library: WHATSAPP_LIBRARY,
       connected: session.state === 'connected',
-      entries: whatsappDiscovery.listStatuses(accountId),
-      limitation: 'Only WhatsApp statuses actually delivered to this session in the last 24 hours are available. No bulk friends-status API is assumed.',
+      capabilities: inspectWhatsAppCapabilities(session.socket, {
+        mediaDownloadAvailable: typeof downloadMediaMessage === 'function',
+      }),
     })
   } catch (error) {
     res.status(400).json({ ok: false, error: String(error?.message || error) })
-  }
-})
-app.get('/api/whatsapp/:accountId/statuses/:sender/:messageId/media', requireAdmin, async (req, res) => {
-  try {
-    const accountId = chatAccount(req.params.accountId)
-    const sender = decodeURIComponent(String(req.params.sender || ''))
-    const messageId = String(req.params.messageId || '')
-    if (!/^[0-9]{5,30}@(s\\.whatsapp\\.net|lid)$/.test(sender) ||
-        !/^[A-Za-z0-9_-]{1,256}$/.test(messageId)) {
-      return res.status(400).json({ ok: false, error: 'Invalid Status reference.' })
-    }
-    const session = accountRuntime.get(accountId)
-    if (session.state !== 'connected' || !session.socket) {
-      return res.status(503).json({ ok: false, error: 'Account is offline.' })
-    }
-    const source = whatsappDiscovery.getStatusMedia(accountId, sender, messageId)
-    if (!source?.message || !['image', 'video', 'audio', 'sticker'].includes(source.kind)) {
-      return res.status(404).json({ ok: false, error: 'Status media was not received or has expired.' })
-    }
-    const buffer = await downloadMediaMessage(source.message, 'buffer', {}, {
-      logger, reuploadRequest: session.socket.updateMediaMessage
-    })
-    if (!Buffer.isBuffer(buffer) || buffer.length === 0 || buffer.length > 25 * 1024 * 1024) {
-      return res.status(413).json({ ok: false, error: 'Status media is unavailable or exceeds 25 MB.' })
-    }
-    const mime = source.kind === 'image' ? 'image/jpeg' : source.kind === 'video' ? 'video/mp4'
-      : source.kind === 'audio' ? 'audio/ogg' : 'image/webp'
-    res.set('Content-Type', mime)
-    res.set('Content-Disposition', 'inline')
-    res.set('Cache-Control', 'private, no-store')
-    res.set('X-Content-Type-Options', 'nosniff')
-    res.send(buffer)
-  } catch (error) {
-    res.status(400).json({ ok: false, error: String(error?.message || 'Status media could not be downloaded.') })
   }
 })
 app.get('/api/whatsapp/:accountId/channels', requireAdmin, async (req, res) => {

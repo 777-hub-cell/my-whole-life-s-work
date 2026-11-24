@@ -339,3 +339,19 @@ test('permanent installer bearer token is revoked after the owner creates a Stud
  assert.ok(source.includes('const ok = (!auth?.passwordHash && tokenMatches(bearer)) || adminSessionMatches(bearer, auth)'))
  assert.ok(source.includes('sessionKey: randomBytes(32)'))
 })
+
+
+test('WhatsApp transport exposes a versioned capability contract and no Status API', async () => {
+ const runtime=await read('../src/index.js')
+ const contract=await read('../src/whatsapp-contract.js')
+ const discovery=await read('../src/whatsapp-discovery.js')
+ assert.ok(runtime.includes("app.get('/api/whatsapp/:accountId/capabilities'"))
+ assert.ok(runtime.includes('WHATSAPP_TRANSPORT_CONTRACT_VERSION'))
+ assert.ok(runtime.includes('inspectWhatsAppCapabilities'))
+ assert.ok(runtime.includes("app.get('/api/whatsapp/:accountId/channels'"))
+ assert.equal(runtime.includes("app.get('/api/whatsapp/:accountId/statuses'"), false)
+ assert.equal(runtime.includes("app.get('/api/whatsapp/:accountId/statuses/:sender/:messageId/media'"), false)
+ assert.doesNotMatch(runtime, /whatsappDiscovery\.(recordStatus|listStatuses|getStatusMedia)/)
+ assert.doesNotMatch(discovery, /status@broadcast|recordStatus|listStatuses|getStatusMedia/i)
+ assert.ok(contract.includes('WHATSAPP_TRANSPORT_CONTRACT_VERSION = 1'))
+})

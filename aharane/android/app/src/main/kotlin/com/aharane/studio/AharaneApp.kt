@@ -80,6 +80,7 @@ import com.aharane.studio.features.chats.ChatsScreen
 import com.aharane.studio.features.notes.EncryptedNotesStore
 import com.aharane.studio.features.chats.ConversationScreen
 import com.aharane.studio.features.chats.validateWebpStickerPayload
+import com.aharane.studio.features.chats.MAX_WEBP_STICKER_BYTES
 import com.aharane.studio.features.commands.VisualCommandBuilderScreen
 import com.aharane.studio.features.configuration.ConfigurationScreen
 import com.aharane.studio.features.connection.ConnectionScreen
@@ -787,8 +788,23 @@ fun AharaneApp(
                     }
                     val selectedName = queryDisplayName(context, uri)
                     val bytes = withContext(Dispatchers.IO) {
-                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        val input = context.contentResolver.openInputStream(uri)
                             ?: error("Could not read the selected sticker.")
+                        input.use { stream ->
+                            val output = ByteArrayOutputStream()
+                            val buffer = ByteArray(16 * 1024)
+                            var total = 0
+                            while (true) {
+                                val count = stream.read(buffer)
+                                if (count < 0) break
+                                total += count
+                                require(total <= MAX_WEBP_STICKER_BYTES) {
+                                    "WebP stickers must be 2 MB or smaller."
+                                }
+                                output.write(buffer, 0, count)
+                            }
+                            output.toByteArray()
+                        }
                     }
                     val invalidReason = validateWebpStickerPayload(bytes)
                     require(invalidReason == null) { invalidReason ?: "Choose a valid WebP sticker." }

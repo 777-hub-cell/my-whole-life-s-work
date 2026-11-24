@@ -12,15 +12,17 @@ class StickerPayloadTest {
 
     @Test
     fun rejectsNonWebpFilesEvenWhenThePickerReportsAnImage() {
+        val bytes = webpPayload(24)
+        "NOPE".toByteArray(Charsets.US_ASCII).copyInto(bytes, 0)
         assertEquals(
             "Choose a WebP sticker file.",
-            validateWebpStickerPayload("not a sticker".toByteArray())
+            validateWebpStickerPayload(bytes)
         )
     }
 
     @Test
     fun rejectsTruncatedRiffContainers() {
-        val bytes = webpPayload(12)
+        val bytes = webpPayload(24)
         bytes[4] = 0x40
         assertEquals(
             "The selected WebP sticker is incomplete or corrupted.",
@@ -37,15 +39,29 @@ class StickerPayloadTest {
         )
     }
 
+    @Test
+    fun rejectsUnexpectedFirstImageChunks() {
+        val bytes = webpPayload(24)
+        "ANIM".toByteArray(Charsets.US_ASCII).copyInto(bytes, 12)
+        assertEquals(
+            "The selected WebP sticker is incomplete or corrupted.",
+            validateWebpStickerPayload(bytes)
+        )
+    }
+
     private fun webpPayload(size: Int): ByteArray {
         val bytes = ByteArray(size)
         "RIFF".toByteArray(Charsets.US_ASCII).copyInto(bytes, 0)
-        val payloadLength = size - 8
-        bytes[4] = (payloadLength and 0xff).toByte()
-        bytes[5] = ((payloadLength ushr 8) and 0xff).toByte()
-        bytes[6] = ((payloadLength ushr 16) and 0xff).toByte()
-        bytes[7] = ((payloadLength ushr 24) and 0xff).toByte()
+        writeUInt32LittleEndian(bytes, 4, size - 8)
         "WEBP".toByteArray(Charsets.US_ASCII).copyInto(bytes, 8)
+        "VP8X".toByteArray(Charsets.US_ASCII).copyInto(bytes, 12)
+        writeUInt32LittleEndian(bytes, 16, size - 20)
         return bytes
     }
-}
+
+    private fun writeUInt32LittleEndian(bytes: ByteArray, offset: Int, value: Int) {
+        bytes[offset] = (value and 0xff).toByte()
+        bytes[offset + 1] = ((value ushr 8) and 0xff).toByte()
+        bytes[offset + 2] = ((value ushr 16) and 0xff).toByte()
+        bytes[offset + 3] = ((value ushr 24) and 0xff).toByte()
+    }

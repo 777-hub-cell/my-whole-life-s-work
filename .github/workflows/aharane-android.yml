@@ -92,7 +92,7 @@ jobs:
           disable-animations: true
           script: |
             cd aharane/android
-            set -euo pipefail
+            set -eu
             for attempt in 1 2 3; do
               if ./gradlew --no-daemon connectedDebugAndroidTest; then
                 exit 0
@@ -350,7 +350,7 @@ jobs:
           disable-animations: true
           script: |
             cd aharane/android
-            set -euo pipefail
+            set -eu
             for attempt in 1 2 3; do
               if ./gradlew --no-daemon connectedDebugAndroidTest; then
                 exit 0

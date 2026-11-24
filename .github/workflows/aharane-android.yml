@@ -27,7 +27,8 @@ jobs:
   server-workflow-tests:
     name: Aharane server logic and workflow tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # The test runner also enforces 60s per test for an actionable failure.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
         with:

@@ -49,6 +49,7 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Poll
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Send
+import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -142,6 +143,8 @@ fun ConversationScreen(
     onAttach: () -> Unit = {},
     onPickSticker: () -> Unit = {},
     onRecordVoice: () -> Unit = {},
+    voiceRecording: Boolean = false,
+    onCancelVoiceRecording: () -> Unit = {},
     onOpenMedia: (ChatMessage) -> Unit = {},
     onKeepMediaOffline: (ChatMessage) -> Unit = {},
     onViewOnce: (ChatMessage) -> Unit = {},
@@ -675,6 +678,35 @@ fun ConversationScreen(
             }
         }
 
+        AnimatedVisibility(
+            visible = voiceRecording,
+            enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 120 else 0)) +
+                expandVertically(tween(if (LocalStudioMotionEnabled.current) 160 else 0)),
+            exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 90 else 0)) +
+                shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 120 else 0))
+        ) {
+            Row(
+                Modifier.fillMaxWidth().background(StudioPalette.Surface)
+                    .padding(start = 14.dp, end = 8.dp, top = 5.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier.size(7.dp).clip(CircleShape).background(StudioPalette.Bad)
+                )
+                Text(
+                    "Recording voice note · Tap send to finish",
+                    color = StudioPalette.Ink,
+                    fontSize = 11.5.sp,
+                    modifier = Modifier.weight(1f).padding(start = 8.dp)
+                )
+                ConversationTool(
+                    Icons.Outlined.Close,
+                    "Cancel voice note",
+                    onClick = onCancelVoiceRecording
+                )
+            }
+        }
+
         Row(
             Modifier.fillMaxWidth().background(StudioPalette.Surface)
                 .border(width = 0.5.dp, color = StudioPalette.Line)
@@ -685,13 +717,13 @@ fun ConversationScreen(
             ConversationTool(
                 Icons.Outlined.EmojiEmotions,
                 "Choose a WebP sticker",
-                enabled = connected,
+                enabled = connected && !voiceRecording,
                 onClick = onPickSticker
             )
             ConversationTool(
                 Icons.Outlined.AttachFile,
                 "Attach image, video, audio or document",
-                enabled = connected,
+                enabled = connected && !voiceRecording,
                 onClick = onAttach
             )
             Box(
@@ -707,6 +739,7 @@ fun ConversationScreen(
                     value = draft,
                     onValueChange = { draft = it },
                     modifier = Modifier.fillMaxWidth().testTag("conversation-composer"),
+                    enabled = !voiceRecording,
                     minLines = 1,
                     maxLines = 4,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(
@@ -729,12 +762,12 @@ fun ConversationScreen(
             Box(
                 Modifier.size(44.dp).clip(CircleShape)
                     .background(
-                        if (hasDraft && connected) StudioPalette.Accent
+                        if ((hasDraft || voiceRecording) && connected) StudioPalette.Accent
                         else StudioPalette.Background
                     )
                     .border(
                         1.dp,
-                        if (hasDraft && connected) StudioPalette.Accent else StudioPalette.Line,
+                        if ((hasDraft || voiceRecording) && connected) StudioPalette.Accent else StudioPalette.Line,
                         CircleShape
                     )
                     .clickable(enabled = connected) {
@@ -752,9 +785,17 @@ fun ConversationScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    if (hasDraft) Icons.Outlined.Send else Icons.Outlined.Mic,
-                    contentDescription = if (hasDraft) "Send message" else "Voice note",
-                    tint = if (hasDraft && connected) Color.White else StudioPalette.Muted,
+                    when {
+                        hasDraft -> Icons.Outlined.Send
+                        voiceRecording -> Icons.Outlined.Stop
+                        else -> Icons.Outlined.Mic
+                    },
+                    contentDescription = when {
+                        hasDraft -> "Send message"
+                        voiceRecording -> "Stop and send voice note"
+                        else -> "Start voice note"
+                    },
+                    tint = if ((hasDraft || voiceRecording) && connected) Color.White else StudioPalette.Muted,
                     modifier = Modifier.size(19.dp)
                 )
             }

@@ -1751,6 +1751,7 @@ fun AharaneApp(
                     conversation = activeConversation!!,
                     messages = if (previewMode) previewMessages.filter { it.key == activeConversation!!.key } else activeMessages,
                     connected = if (previewMode) true else currentAccountState?.connected == true,
+                    voiceRecording = voiceRecording,
                     onLoadAvatar = { chat ->
                         if (previewMode || !connected) null else repository.whatsappAvatarBytes(chat)
                     },
@@ -1890,6 +1891,12 @@ fun AharaneApp(
                             pendingVoiceStart = true
                             microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         }
+                    },
+                    onCancelVoiceRecording = {
+                        voiceRecorder?.cancel()
+                        voiceRecorder = null
+                        voiceRecording = false
+                        Toast.makeText(context, "Voice note discarded.", Toast.LENGTH_SHORT).show()
                     },
                     onKeepMediaOffline = { message ->
                         val target = activeConversation

@@ -237,6 +237,75 @@ class ConversationScreenTest {
     }
 
     @Test
+    fun activeVoiceRecordingShowsStopAndCancelControls() {
+        var recording by androidx.compose.runtime.mutableStateOf(true)
+        var stopped = 0
+        var cancelled = 0
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = emptyList(),
+                    connected = true,
+                    voiceRecording = recording,
+                    onBack = {},
+                    onSend = { _, _ -> },
+                    onRecordVoice = {
+                        stopped++
+                        recording = false
+                    },
+                    onCancelVoiceRecording = {
+                        cancelled++
+                        recording = false
+                    }
+                )
+            }
+        }
+
+        compose.onNodeWithText("Recording voice note · Tap send to finish").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Stop and send voice note").assertIsDisplayed().performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertEquals(1, stopped)
+            assertEquals(0, cancelled)
+            assertEquals(false, recording)
+        }
+    }
+
+    @Test
+    fun cancellingVoiceRecordingDiscardsItWithoutSending() {
+        var recording by androidx.compose.runtime.mutableStateOf(true)
+        var sent = 0
+        var cancelled = 0
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = emptyList(),
+                    connected = true,
+                    voiceRecording = recording,
+                    onBack = {},
+                    onSend = { _, _ -> sent++ },
+                    onRecordVoice = {},
+                    onCancelVoiceRecording = {
+                        cancelled++
+                        recording = false
+                    }
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Cancel voice note").assertIsDisplayed().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Recording voice note · Tap send to finish").assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(1, cancelled)
+            assertEquals(0, sent)
+            assertEquals(false, recording)
+        }
+    }
+
+    @Test
     fun disconnectedComposerKeepsDraftButDisablesSendAndAttachments() {
         compose.setContent {
             AharaneTheme(themeMode = "light") {

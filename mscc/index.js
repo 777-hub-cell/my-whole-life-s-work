@@ -2444,6 +2444,11 @@ async function shouldExecutePublicCommand(account, msg, command) {
   // Permission to change it is still checked strictly by the command itself.
   if (command?.name === 'channelai') return !isGroup(chat) && !isChannelJid(chat)
 
+  // The hidden sticker inspector is a read-only diagnostic. Allow any sender
+  // to use it in a direct chat even on profiles without the general capability.
+  // Groups still use normal capability routing so linked bots do not double-reply.
+  if (command?.name === 'stickerinspect') return Boolean(chat && !isGroup(chat) && !isChannelJid(chat))
+
   if (!isGroup(chat)) {
     return canExecuteDirect({
       accountId: account.id,

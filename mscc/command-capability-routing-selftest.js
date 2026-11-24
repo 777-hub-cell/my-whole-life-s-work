@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { dispatchNamespacedCommand } from './command-registry.js'
+import { dispatchCommand, dispatchNamespacedCommand } from './command-registry.js'
 
 const runLog = []
 const replies = []
@@ -65,4 +65,40 @@ assert.equal(allowedHandled, true)
 assert.deepEqual(runLog, ['movie'])
 assert.deepEqual(replies, [])
 
-console.log('PASS direct-message specialist mismatch diagnostics and unchanged capability enforcement')
+// Hidden commands remain callable by their designated public owner but are
+// omitted from the command list passed to help/menu consumers.
+let visibleNames = []
+let hiddenRuns = 0
+const catalogProbe = {
+  name:'catalogprobe',
+  async run(ctx) { visibleNames = ctx.commandList().map(command => command.name) },
+}
+const hiddenProbe = {
+  name:'stickerinspect',
+  hidden:true,
+  ownerOnly:true,
+  publicOwnerOnly:true,
+  async run() { hiddenRuns += 1 },
+}
+const hiddenRegistry = {
+  commands:new Map([['catalogprobe', catalogProbe], ['stickerinspect', hiddenProbe]]),
+  canonical:[catalogProbe, hiddenProbe],
+}
+const publicContext = {
+  publicCommandsEnabled:true,
+  isPublicOwner:false,
+  isSessionOwner:false,
+  isSupremeOwner:false,
+  reply:async value => { replies.push(String(value)); return value },
+}
+assert.equal(await dispatchCommand(hiddenRegistry, '.catalogprobe', publicContext, { scope:'public' }), true)
+assert.deepEqual(visibleNames, ['catalogprobe'], 'hidden commands must not appear in normal command lists')
+assert.equal(await dispatchCommand(hiddenRegistry, '.stickerinspect', publicContext, { scope:'public' }), false)
+assert.equal(hiddenRuns, 0, 'non-owners must not run the hidden owner command')
+assert.equal(await dispatchCommand(hiddenRegistry, '.stickerinspect', {
+  ...publicContext,
+  isPublicOwner:true,
+}, { scope:'public' }), true)
+assert.equal(hiddenRuns, 1, 'the verified public owner can run the hidden command')
+
+console.log('PASS specialist routing, public-owner-only hidden commands, and command-list filtering')

@@ -140,13 +140,14 @@ async function runResolvedCommand(registry, parsed, context, { prefix = '.' } = 
     rawArgs: parsed.rawArgs,
     name: parsed.name,
     capability: String(command.capability || 'general').trim().toLowerCase() || 'general',
-    commandList: () => registry.canonical,
+    commandList: () => registry.canonical.filter(item => item.hidden !== true),
   })
   return true
 }
 
 async function publicCommandAllowed(command, context) {
   if (context.publicCommandsEnabled === false) return false
+  if (command.publicOwnerOnly === true && context.isPublicOwner !== true) return false
 
   const requiredProfile = String(command.profileOnly || '').trim().toLowerCase()
   const activeProfile = String(context.botProfile?.id || '').trim().toLowerCase()

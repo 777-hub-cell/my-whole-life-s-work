@@ -763,7 +763,7 @@ function relatedCommands(command, commands, spec, prefix) {
   const names = new Set((spec?.related || []).map(value => String(value).toLowerCase()))
   const capability = String(command?.capability || '').toLowerCase()
   for (const candidate of commands) {
-    if (candidate === command) continue
+    if (candidate === command || candidate?.hidden === true) continue
     if (capability && String(candidate?.capability || '').toLowerCase() === capability) {
       names.add(String(candidate.name || '').toLowerCase())
     }

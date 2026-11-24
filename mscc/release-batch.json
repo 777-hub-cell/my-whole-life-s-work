@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-sound-sticker-inspector-20261124",
+  "releaseId": "night-stickerinspect-public-owner-20261124",
   "baseBranch": "mscc-azure",
-  "baseCommit": "0f42193202c885bf2f4188261b0bdfca9a91d2e6",
+  "baseCommit": "808ba0a3f40d150f52353560e5aa4e025e6af104",
   "pullRequests": [
-    85
+    87
   ],
-  "preparedAt": "2026-11-24T23:00:00.000Z",
-  "notes": "Release the private NIGHT sound-sticker inspector from PR #85. The supreme-owner-only .stickerinspect command inspects the raw structure of a replied-to WhatsApp sticker message, reports safe metadata, handles common message wrappers and audioStickerMessage, and formats the report with readable line breaks."
+  "preparedAt": "2026-11-24T16:14:48.628Z",
+  "notes": "Release the hidden public-owner .stickerinspect command. It runs from the public NIGHT account for verified public owners, is excluded from normal command listings, and inspects safe structure/metadata from the replied-to WhatsApp sticker or sound-sticker message."
 }

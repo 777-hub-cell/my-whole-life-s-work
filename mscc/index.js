@@ -870,9 +870,14 @@ async function writeCommandSettingsSchema() {
   await rename(CORTEX_SETTINGS_SCHEMA_FILE + '.tmp', CORTEX_SETTINGS_SCHEMA_FILE)
 }
 
+function listedPublicCommands() {
+  return publicCommandRegistry.canonical.filter(command => command.hidden !== true)
+}
+
 function runtimeCommand(command, scope) {
   let permission = 'all'
   if (scope === 'private') permission = 'supreme-owner-account-a-private-dm'
+  else if (command.publicOwnerOnly === true) permission = 'public-owner'
   else if (command.ownerOnly === true && command.adminOnly === true) permission = 'session-owner-or-supreme+group-admin'
   else if (command.ownerOnly === true) permission = 'session-owner-or-supreme'
   else if (command.adminOnly === true) permission = 'group-admin'
@@ -895,7 +900,7 @@ async function writeRuntimeRegistry() {
   const privateCommands = privateCommandRegistry.canonical
     .map(command => runtimeCommand(command, 'private'))
     .sort((a, b) => a.name.localeCompare(b.name))
-  const publicCommands = publicCommandRegistry.canonical
+  const publicCommands = listedPublicCommands()
     .map(command => runtimeCommand(command, 'public'))
     .sort((a, b) => a.name.localeCompare(b.name))
   const commands = [...privateCommands, ...publicCommands]
@@ -957,7 +962,7 @@ async function reloadModule(id) {
   if (!['mscc-private-commands', 'mscc-public-commands'].includes(moduleId)) throw new Error(`Unknown module: ${id}`)
   await reloadCommands()
   const registry = moduleId === 'mscc-private-commands' ? privateCommandRegistry : publicCommandRegistry
-  const commands = registry.canonical.map(command => command.name).sort()
+  const commands = registry.canonical.filter(command => command.hidden !== true).map(command => command.name).sort()
   await recordActivity('module.reloaded', { module: moduleId, commandCount: commands.length })
   return { ok:true, module:moduleId, commands }
 }
@@ -3608,7 +3613,7 @@ async function saveManagedEnv(key, rawValue) {
 
 function commandModuleCatalog() {
   const groups = new Map()
-  for (const command of publicCommandRegistry.canonical) {
+  for (const command of listedPublicCommands()) {
     const id = String(command.capability || 'general').trim().toLowerCase() || 'general'
     if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(id)) continue
     if (!groups.has(id)) groups.set(id, {
@@ -3734,7 +3739,7 @@ function commandDiagnostics() {
     retentionHours: Math.round(TTL_MS / 3600000),
     waVersion: Array.isArray(waVersion) ? waVersion.join('.') : '',
     privateCommandCount: privateCommandRegistry.canonical.length,
-    publicCommandCount: publicCommandRegistry.canonical.length,
+    publicCommandCount: listedPublicCommands().length,
     sourceCount: sourceRegistry?.listAll().length || 0,
     publicPrefix: settings.publicPrefix || DEFAULT_PUBLIC_PREFIX,
     publicCommandsEnabled: settings.publicCommandsEnabled !== false,
@@ -3874,17 +3879,17 @@ async function init() {
   josiahAssistant = createJosiahAssistant({
     ai:smartAI,
     storage:sharedStorage,
-    getCommands:() => publicCommandRegistry.canonical,
+    getCommands:() => listedPublicCommands(),
   })
   namiAssistant = createNamiAssistant({
     ai:smartAI,
     storage:sharedStorage,
-    getCommands:() => publicCommandRegistry.canonical,
+    getCommands:() => listedPublicCommands(),
   })
   mimiAssistant = createMiMiAssistant({
     ai:smartAI,
     storage:sharedStorage,
-    getCommands:() => publicCommandRegistry.canonical,
+    getCommands:() => listedPublicCommands(),
   })
   sourceRegistry = new SourceRegistry({ rootUrl:SOURCES_URL, storage:sharedStorage })
   await sourceRegistry.load()

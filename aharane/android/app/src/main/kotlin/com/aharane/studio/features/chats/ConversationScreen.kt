@@ -1185,8 +1185,10 @@ fun ConversationScreen(
                         }
                     }
                 }
-                StudioPaletteAction("Add option", enabled = pollOptionsDraft.size < 12) {
-                    pollOptionsDraft = pollOptionsDraft + ""
+                if (pollOptionsDraft.size < 12) {
+                    StudioPaletteAction("Add option") {
+                        pollOptionsDraft = pollOptionsDraft + ""
+                    }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = pollAllowMultiple, onCheckedChange = { pollAllowMultiple = it })
@@ -1235,17 +1237,17 @@ fun ConversationScreen(
                     color = StudioPalette.Muted,
                     fontSize = 12.sp
                 )
-                StudioPaletteAction(
-                    "Create poll",
-                    enabled = connected,
-                    onClick = {
+                if (connected) {
+                    StudioPaletteAction("Create poll") {
                         moreOpen = false
                         pollQuestionDraft = ""
                         pollOptionsDraft = listOf("", "")
                         pollAllowMultiple = false
                         pollCreateOpen = true
                     }
-                )
+                } else {
+                    Text("Create poll · connect this WhatsApp account", color = StudioPalette.Muted, fontSize = 12.sp)
+                }
                 StudioPaletteAction("Close", onClick = { moreOpen = false })
             }
         }

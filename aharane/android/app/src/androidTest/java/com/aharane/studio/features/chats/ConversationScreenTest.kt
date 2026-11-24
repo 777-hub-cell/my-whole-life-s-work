@@ -307,6 +307,76 @@ class ConversationScreenTest {
     }
 
     @Test
+    fun pollCardSubmitsOnlySelectedOptionAndShowsVotes() {
+        var submitted: List<String> = emptyList()
+        val poll = com.aharane.studio.core.model.ChatMessage(
+            key = testConversation().key,
+            messageId = "poll-1",
+            direction = com.aharane.studio.core.model.MessageDirection.INCOMING,
+            kind = com.aharane.studio.core.model.MessageKind.POLL,
+            text = "Lunch?",
+            timestampMillis = 1_763_600_000_000L,
+            pollOptions = listOf("Jollof rice", "Fried rice", "Pasta"),
+            pollSelectableCount = 1,
+            pollVoteCounts = mapOf("Jollof rice" to 3, "Fried rice" to 1, "Pasta" to 0),
+            pollMyVotes = emptyList()
+        )
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = listOf(poll),
+                    connected = true,
+                    onBack = {},
+                    onSend = { _, _ -> },
+                    onVotePoll = { _, options -> submitted = options }
+                )
+            }
+        }
+
+        compose.onNodeWithText("Lunch?").assertIsDisplayed()
+        compose.onNodeWithText("3").assertIsDisplayed()
+        compose.onNodeWithText("Fried rice").performClick()
+        compose.onNodeWithText("Vote").performClick()
+        compose.runOnIdle { assertEquals(listOf("Fried rice"), submitted) }
+    }
+
+    @Test
+    fun conversationOptionsOpensPollCreationForm() {
+        var createdQuestion = ""
+        var createdOptions: List<String> = emptyList()
+        var createdSelectCount = 0
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = emptyList(),
+                    connected = true,
+                    onBack = {},
+                    onSend = { _, _ -> },
+                    onCreatePoll = { question, options, count ->
+                        createdQuestion = question
+                        createdOptions = options
+                        createdSelectCount = count
+                    }
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Conversation options").performClick()
+        compose.onNodeWithText("Create poll").performClick()
+        compose.onNodeWithTag("poll-question").performTextInput("Lunch?")
+        compose.onNodeWithTag("poll-option-0").performTextInput("Jollof rice")
+        compose.onNodeWithTag("poll-option-1").performTextInput("Pasta")
+        compose.onNodeWithText("Create poll").performClick()
+        compose.runOnIdle {
+            assertEquals("Lunch?", createdQuestion)
+            assertEquals(listOf("Jollof rice", "Pasta"), createdOptions)
+            assertEquals(1, createdSelectCount)
+        }
+    }
+
+    @Test
     fun disconnectedComposerKeepsDraftButDisablesSendAndAttachments() {
         compose.setContent {
             AharaneTheme(themeMode = "light") {

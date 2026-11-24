@@ -298,6 +298,45 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     })
   }
 
+  async function beginIdempotentMediaSend(id, {
+    clientMessageId, jid: jidValue, mimeType, fileName, caption = '',
+    sha256, sizeBytes, isVoiceNote = false, durationSeconds = 0,
+  } = {}) {
+    const account = accountId(id)
+    const jid = safeJid(jidValue)
+    const key = String(clientMessageId || '')
+    if (!jid || !/^[A-Za-z0-9_-]{8,128}$/.test(key)) {
+      throw Object.assign(new Error('A valid client message id and conversation are required.'), { status: 400 })
+    }
+    const digest = String(sha256 || '')
+    if (!/^[a-f0-9]{64}$/.test(digest) || !Number.isSafeInteger(Number(sizeBytes)) || Number(sizeBytes) <= 0) {
+      throw Object.assign(new Error('A valid attachment digest and size are required.'), { status: 400 })
+    }
+    const payloadHash = createHash('sha256').update(JSON.stringify({
+      jid, mimeType: String(mimeType || ''), fileName: String(fileName || ''),
+      caption: String(caption || ''), sha256: digest, sizeBytes: Number(sizeBytes),
+      isVoiceNote: isVoiceNote === true, durationSeconds: Math.max(0, Number(durationSeconds) || 0),
+    })).digest('hex')
+    await ensureReady(account)
+    return enqueue(account, async () => {
+      const entries = await readSendKeys(account)
+      const existing = entries[key]
+      if (existing) {
+        if (existing.payloadHash !== payloadHash || existing.jid !== jid) {
+          throw Object.assign(new Error('This client media id was already used for different attachment content.'), { status: 409 })
+        }
+        if (existing.state === 'sent') return { state: 'sent', messageId: existing.messageId || '' }
+        return { state: 'uncertain', messageId: existing.messageId || '' }
+      }
+      entries[key] = {
+        clientMessageId: key, jid, payloadHash, state: 'sending', messageId: '',
+        createdAt: Date.now(), updatedAt: Date.now(), kind: 'media',
+      }
+      await writeSendKeys(account, entries)
+      return { state: 'sending', messageId: '' }
+    })
+  }
+
   async function completeIdempotentSend(id, clientMessageId, messageId) {
     const account = accountId(id), key = String(clientMessageId || '')
     if (!/^[A-Za-z0-9_-]{8,128}$/.test(key)) throw Object.assign(new Error('Invalid client message id.'), { status: 400 })
@@ -1026,5 +1065,5 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return { bytes: total, files: count }
   }
 
-  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, updateMessageStatus, markMessageDeletedRemotely, markMessageDeletedByOther, markConversationIncomingMessagesDeletedRemotely, listRemoteDeletedMessages, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, deleteConversationMessages, listDeletedMessageIds, beginIdempotentSend, completeIdempotentSend, getIdempotentSend, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
+  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, updateMessageStatus, markMessageDeletedRemotely, markMessageDeletedByOther, markConversationIncomingMessagesDeletedRemotely, listRemoteDeletedMessages, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, deleteConversationMessages, listDeletedMessageIds, beginIdempotentSend, beginIdempotentMediaSend, completeIdempotentSend, getIdempotentSend, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
 }

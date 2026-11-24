@@ -2730,6 +2730,25 @@ app.post('/api/chats/:accountId/:jid/media', requireAdmin, express.raw({ type: '
     const mime = String(req.get('x-media-type') || 'application/octet-stream').split(';')[0].toLowerCase()
     const filename = String(req.get('x-file-name') || 'attachment').slice(0, 100).replace(/[\u0000-\u001f/\\]/g, '_')
     const caption = String(req.get('x-caption') || '').slice(0, 1000)
+    const isVoiceNote = req.get('x-voice-note') === 'true'
+    const durationSeconds = Math.max(0, Math.min(3600, Number(req.get('x-duration-seconds')) || 0))
+    const clientMessageId = String(req.get('x-client-message-id') || '')
+    const mediaDigest = createHash('sha256').update(req.body).digest('hex')
+    if (clientMessageId) {
+      const intent = await chatStore.beginIdempotentMediaSend(accountId, {
+        clientMessageId, jid, mimeType: mime, fileName: filename, caption,
+        sha256: mediaDigest, sizeBytes: req.body.length, isVoiceNote, durationSeconds,
+      })
+      if (intent.state === 'sent') {
+        return res.json({ ok: true, message: intent.messageId, clientMessageId, idempotentReplay: true })
+      }
+      if (intent.state === 'uncertain') {
+        return res.status(409).json({
+          ok: false, state: 'uncertain', clientMessageId,
+          error: 'This attachment send already started but its final WhatsApp result was not recorded. It was not sent again to avoid a duplicate.',
+        })
+      }
+    }
     let content
     if (mime.startsWith('image/') && mime !== 'image/webp') content = { image: req.body, caption }
     else if (mime.startsWith('video/')) content = { video: req.body, caption }
@@ -2737,9 +2756,11 @@ app.post('/api/chats/:accountId/:jid/media', requireAdmin, express.raw({ type: '
     else if (mime === 'image/webp') content = { sticker: req.body }
     else content = { document: req.body, mimetype: mime, fileName: filename, caption }
     const sent = await socket.sendMessage(jid, content)
-    await chatStore.recordOutgoingMedia({ sessionId: accountId, jid, buffer: req.body, mimeType: mime, fileName: filename, sendResult: sent, text: caption, ptt: req.get('x-voice-note') === 'true', duration: req.get('x-duration-seconds') })
+    await chatStore.recordOutgoingMedia({ sessionId: accountId, jid, buffer: req.body, mimeType: mime, fileName: filename, sendResult: sent, text: caption, ptt: isVoiceNote, duration: durationSeconds })
+    const messageId = sent?.key?.id || ''
+    if (clientMessageId) await chatStore.completeIdempotentSend(accountId, clientMessageId, messageId)
     publishStudioEvent('whatsapp.message.sent', { accountId, jid, type: 'media' })
-    res.json({ ok: true, message: sent?.key?.id || '' })
+    res.json({ ok: true, message: messageId, clientMessageId })
   } catch (error) {
     res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not send the attachment.') })
   }

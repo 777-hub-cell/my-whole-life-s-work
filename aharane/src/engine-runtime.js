@@ -187,7 +187,14 @@ export async function executeCustomEngine(engine, inputValues, options = {}) {
     )
     const promiseHandle = context.unwrapResult(evaluated)
     try {
-      const settled = await context.resolvePromise(promiseHandle)
+      // QuickJS Promise callbacks are queued inside the guest runtime. Turning
+      // the guest Promise into a host Promise is not enough: drain its pending
+      // jobs so the guest .then(resolve, reject) callback can actually run.
+      const hostResult = context.resolvePromise(promiseHandle)
+      while (context.runtime.hasPendingJob()) {
+        context.unwrapResult(context.runtime.executePendingJobs())
+      }
+      const settled = await hostResult
       const finalHandle = context.unwrapResult(settled)
       try {
         const outputs = validateEngineOutputs(manifest, jsonSafe(context.dump(finalHandle)))

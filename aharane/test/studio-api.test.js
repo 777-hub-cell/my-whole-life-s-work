@@ -230,6 +230,35 @@ test('new and existing file writes are checked against their on-disk contents be
  assert.ok(update.includes('if (savedContent !== content)'))
 })
 
+test('native media uploads use stable idempotency keys and an encrypted local outbox', async () => {
+ const runtime=await read('../src/index.js')
+ const store=await read('../src/chat-store.js')
+ const client=await read('../android/app/src/main/kotlin/com/aharane/studio/core/network/AharaneApiClient.kt')
+ const local=await read('../android/app/src/main/kotlin/com/aharane/studio/core/storage/LocalChatRepository.kt')
+ assert.ok(runtime.includes("req.get('x-client-message-id')"))
+ assert.ok(runtime.includes('chatStore.beginIdempotentMediaSend'))
+ assert.ok(runtime.includes('chatStore.completeIdempotentSend(accountId, clientMessageId, messageId)'))
+ assert.ok(runtime.includes('This attachment send already started'))
+ assert.ok(store.includes('async function beginIdempotentMediaSend'))
+ assert.ok(client.includes('"X-Client-Message-Id"'))
+ assert.ok(local.includes('ChatOutgoingMediaRow'))
+ assert.ok(local.includes('EncryptedMediaRecord'))
+})
+
+test('poll voting uses the pinned Baileys encrypted poll-vote helper and server routes', async () => {
+ const runtime=await read('../src/index.js')
+ const store=await read('../src/chat-store.js')
+ const polls=await read('../src/chat-polls.js')
+ assert.ok(runtime.includes("'/api/chats/:accountId/:jid/polls'"))
+ assert.ok(runtime.includes("'/api/chats/:accountId/:jid/:messageId/poll-vote'"))
+ assert.ok(runtime.includes('applyIncomingPollVote'))
+ assert.ok(runtime.includes('decryptIncomingPollVote'))
+ assert.ok(store.includes('async function applyPollVote'))
+ assert.ok(store.includes('pollVotesByActor'))
+ assert.ok(polls.includes('proto.Message.PollVoteMessage.encode'))
+ assert.ok(polls.includes('decryptPollVote(vote'))
+})
+
 test('Web Chat supports persistent chat preferences, per-conversation search, quoted replies and message actions', async () => {
  const runtime=await read('../src/index.js')
  const store=await read('../src/chat-store.js')

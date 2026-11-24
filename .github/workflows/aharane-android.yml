@@ -64,19 +64,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
       - name: Unit tests
         working-directory: aharane/android
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3; do
-            if ./gradlew --no-daemon testDebugUnitTest; then
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "Android unit-test dependency resolution failed on attempt $attempt; retrying."
-              ./gradlew --stop || true
-              sleep $((attempt * 15))
-            fi
-          done
-          exit 1
+        run: sh ./ci-gradle-retry.sh testDebugUnitTest
       - name: Enable KVM for Android instrumentation tests
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -90,35 +78,10 @@ jobs:
           arch: x86_64
           profile: pixel_7
           disable-animations: true
-          script: |
-            cd aharane/android
-            set -eu
-            for attempt in 1 2 3; do
-              if ./gradlew --no-daemon connectedDebugAndroidTest; then
-                exit 0
-              fi
-              if [ "$attempt" -lt 3 ]; then
-                echo "Android instrumentation dependency resolution failed on attempt $attempt; retrying."
-                ./gradlew --stop || true
-                sleep $((attempt * 15))
-              fi
-            done
-            exit 1
+          script: cd aharane/android && sh ./ci-gradle-retry.sh connectedDebugAndroidTest
       - name: Assemble debug APK
         working-directory: aharane/android
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3; do
-            if ./gradlew --no-daemon assembleDebug; then
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "Android debug APK build failed on attempt $attempt; retrying."
-              ./gradlew --stop || true
-              sleep $((attempt * 15))
-            fi
-          done
-          exit 1
+        run: sh ./ci-gradle-retry.sh assembleDebug
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -147,19 +110,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
       - name: Build production release APK without any signing key
         working-directory: aharane/android
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3; do
-            if ./gradlew --no-daemon clean assembleRelease -PaharaneVersionCode=${GITHUB_RUN_NUMBER}; then
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "Gradle build/dependency resolution failed on attempt $attempt; retrying."
-              ./gradlew --stop || true
-              sleep $((attempt * 15))
-            fi
-          done
-          exit 1
+        run: sh ./ci-gradle-retry.sh clean assembleRelease -PaharaneVersionCode=${GITHUB_RUN_NUMBER}
       - name: Verify release build is installable and not debuggable
         working-directory: aharane/android
         run: |
@@ -235,19 +186,7 @@ jobs:
           keytool -list -keystore "$KEYSTORE" -storepass "$AHARANE_RELEASE_STORE_PASSWORD" -alias "$AHARANE_RELEASE_KEY_ALIAS" >/dev/null
       - name: Build signed release APK
         working-directory: aharane/android
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3; do
-            if ./gradlew --no-daemon clean assembleRelease -PaharaneRequireReleaseSigning=true -PaharaneVersionCode=${GITHUB_RUN_NUMBER}; then
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "Signed Android release dependency resolution failed on attempt $attempt; retrying."
-              ./gradlew --stop || true
-              sleep $((attempt * 15))
-            fi
-          done
-          exit 1
+        run: sh ./ci-gradle-retry.sh clean assembleRelease -PaharaneRequireReleaseSigning=true -PaharaneVersionCode=${GITHUB_RUN_NUMBER}
       - name: Verify package and production signature
         working-directory: aharane/android
         run: |
@@ -348,20 +287,7 @@ jobs:
           arch: x86_64
           profile: pixel_2
           disable-animations: true
-          script: |
-            cd aharane/android
-            set -eu
-            for attempt in 1 2 3; do
-              if ./gradlew --no-daemon connectedDebugAndroidTest; then
-                exit 0
-              fi
-              if [ "$attempt" -lt 3 ]; then
-                echo "Android instrumentation dependency resolution failed on attempt $attempt; retrying."
-                ./gradlew --stop || true
-                sleep $((attempt * 15))
-              fi
-            done
-            exit 1
+          script: cd aharane/android && sh ./ci-gradle-retry.sh connectedDebugAndroidTest
 
   web-reference-screenshots:
     name: Capture actual web Studio reference at mobile size

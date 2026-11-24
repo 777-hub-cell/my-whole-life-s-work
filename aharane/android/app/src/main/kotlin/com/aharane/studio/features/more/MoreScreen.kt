@@ -1,6 +1,8 @@
 package com.aharane.studio.features.more
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,6 +50,10 @@ import com.aharane.studio.core.model.ChatSummary
 import com.aharane.studio.features.chats.ChatAppearanceStore
 import com.aharane.studio.features.chats.ChatAppearanceStudioScreen
 import com.aharane.studio.core.storage.EncryptedMediaCache
+import com.aharane.studio.features.notes.EncryptedNotesStore
+import com.aharane.studio.features.notes.NotesScreen
+import com.aharane.studio.features.whatsapp.WhatsAppUpdatesScreen
+import com.aharane.studio.core.network.AharaneRepository
 
 private val AccentChoices = listOf(
     "#0E7A5C", "#3867D6", "#8752C7", "#B34D76", "#B56C22", "#4D7779"
@@ -74,13 +80,13 @@ fun MoreScreen(
     page: String,
     onPageChange: (String) -> Unit,
     onOpenEnvironment: () -> Unit = {},
+    onOpenConfiguration: () -> Unit = {},
     connected: Boolean = false,
     privateAccountStatus: String = "Status not loaded",
     publicAccountStatus: String = "Status not loaded",
-    privateOwnerNumber: String = "",
+    ownerNumber: String = "",
     publicOwnerNumber: String = "",
     publicBotNumber: String = "",
-    allowedPublicSenders: String = "",
     activityEntries: List<String> = emptyList(),
     storageSummary: String = "—",
     storageTotalSummary: String = "—",
@@ -90,7 +96,7 @@ fun MoreScreen(
     largestFiles: List<String> = emptyList(),
     folderSummaries: List<String> = emptyList(),
     onAccountAction: (String) -> Unit = {},
-    onSaveOwnerSettings: (String, String, String, String) -> Unit = { _, _, _, _ -> },
+    onSaveOwnerSettings: (String, String, String) -> Unit = { _, _, _ -> },
     onClearActivity: () -> Unit = {},
     onRefreshActivity: () -> Unit = {},
     onCopyActivity: () -> Unit = {},
@@ -113,6 +119,8 @@ fun MoreScreen(
     onChatAppearanceChange: (String, Boolean, Boolean, Boolean) -> Unit = { _, _, _, _ -> },
     onChatMessageSizeChanged: (Int) -> Unit = {},
     appearanceStore: ChatAppearanceStore? = null,
+    notesStore: EncryptedNotesStore? = null,
+    updatesRepository: AharaneRepository? = null,
     appearanceRevision: Int = 0,
     cachedConversations: List<ChatSummary> = emptyList(),
     mediaCache: EncryptedMediaCache? = null,
@@ -137,18 +145,16 @@ fun MoreScreen(
             }
         }
     }
-    var privateOwnerDraft by rememberSaveable { mutableStateOf(privateOwnerNumber) }
+    var ownerDraft by rememberSaveable { mutableStateOf(ownerNumber) }
     var publicOwnerDraft by rememberSaveable { mutableStateOf(publicOwnerNumber) }
     var publicBotDraft by rememberSaveable { mutableStateOf(publicBotNumber) }
-    var allowedSendersDraft by rememberSaveable { mutableStateOf(allowedPublicSenders) }
     var currentPassword by rememberSaveable { mutableStateOf("") }
     var newPassword by rememberSaveable { mutableStateOf("") }
 
-    LaunchedEffect(privateOwnerNumber, publicOwnerNumber, publicBotNumber, allowedPublicSenders) {
-        privateOwnerDraft = privateOwnerNumber
+    LaunchedEffect(ownerNumber, publicOwnerNumber, publicBotNumber) {
+        ownerDraft = ownerNumber
         publicOwnerDraft = publicOwnerNumber
         publicBotDraft = publicBotNumber
-        allowedSendersDraft = allowedPublicSenders
     }
     val context = LocalContext.current
 
@@ -167,7 +173,21 @@ fun MoreScreen(
         onPageChange(if (page == "chat-appearance-studio") "chat-settings" else "more")
     }
 
-    if (page == "appearance") {
+    Crossfade(
+        targetState = page,
+        animationSpec = tween(if (LocalStudioMotionEnabled.current) 210 else 0),
+        label = "more-page-transition"
+    ) { targetPage ->
+    if (targetPage == "whatsapp-updates" && updatesRepository != null) {
+        WhatsAppUpdatesScreen(
+            repository = updatesRepository,
+            selectedAccount = selectedChatAccount,
+            onAccountSelected = onChatAccountSelected,
+            onBack = { onPageChange("more") }
+        )
+    } else if (targetPage == "notes" && notesStore != null) {
+        NotesScreen(store = notesStore, onBack = { onPageChange("more") })
+    } else if (targetPage == "appearance") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -312,7 +332,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "chat-settings") {
+    } else if (targetPage == "chat-settings") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
@@ -505,7 +525,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "chat-appearance-studio") {
+    } else if (targetPage == "chat-appearance-studio") {
         if (appearanceStore != null) {
             ChatAppearanceStudioScreen(
                 account = selectedChatAccount,
@@ -521,7 +541,7 @@ fun MoreScreen(
                 Text("The local appearance store could not be opened.", color = StudioPalette.Muted, fontSize = 12.sp)
             }
         }
-    } else if (page == "starred") {
+    } else if (targetPage == "starred") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -554,14 +574,14 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "accounts") {
+    } else if (targetPage == "accounts") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
         ) {
             item {
                 Spacer(Modifier.height(12.dp))
-                StudioPageTitle("Accounts", "Two independent WhatsApp sessions. Pairing numbers are saved in Configuration.")
+                StudioPageTitle("Accounts & owners", "Two independent WhatsApp sessions, one shared Owner identity.")
                 Spacer(Modifier.height(14.dp))
             }
             item {
@@ -593,25 +613,30 @@ fun MoreScreen(
                     )
                 }
             }
-            item { StudioSectionHeading("Owner identities") }
+            item { StudioSectionHeading("Owner") }
             item {
                 StudioCard(padding = PaddingValues(14.dp)) {
-                    OwnerNumberField("Private Owner number", privateOwnerDraft, connected) { privateOwnerDraft = it }
+                    Text(
+                        "The Private and Public Owners are configured independently. The Public Owner may be the Public bot's own WhatsApp number.",
+                        color = StudioPalette.Muted,
+                        fontSize = 12.5.sp,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(Modifier.height(13.dp))
+                    OwnerNumberField("Private Owner phone number", ownerDraft, connected) { ownerDraft = it }
                     Spacer(Modifier.height(12.dp))
-                    OwnerNumberField("Public Owner number", publicOwnerDraft, connected) { publicOwnerDraft = it }
+                    OwnerNumberField("Public Owner phone number", publicOwnerDraft, connected) { publicOwnerDraft = it }
                     Spacer(Modifier.height(12.dp))
                     OwnerNumberField("Public bot WhatsApp number", publicBotDraft, connected) { publicBotDraft = it }
-                    Spacer(Modifier.height(12.dp))
-                    OwnerNumberField("Allowed public senders (comma separated)", allowedSendersDraft, connected) { allowedSendersDraft = it }
                     Spacer(Modifier.height(14.dp))
                     StudioActionButton(
                         "Save owner settings",
                         primary = true,
                         enabled = connected,
-                        onClick = { onSaveOwnerSettings(privateOwnerDraft, publicOwnerDraft, publicBotDraft, allowedSendersDraft) }
+                        onClick = { onSaveOwnerSettings(ownerDraft, publicOwnerDraft, publicBotDraft) }
                     )
                     if (!connected) Text(
-                        "Connect to your Aharane server to load or save owner identities.",
+                        "Connect to your Aharane server to load or save these settings.",
                         color = StudioPalette.Muted,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 8.dp)
@@ -619,7 +644,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "activity") {    } else if (page == "activity") {
+    } else if (targetPage == "activity") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -691,7 +716,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "storage") {
+    } else if (targetPage == "storage") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -782,17 +807,17 @@ fun MoreScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
-            item { StudioPageTitle("More", "Additional tools and information") }
+            item { StudioPageTitle("More", "Additional tools and information", compact = true) }
 
             item {
                 Spacer(Modifier.height(18.dp))
                 StudioCard {
                     StudioRow(
-                        "Accounts & owners",
-                        "Pair the two WhatsApp sessions and set their separate Owner identities",
+                        "Configuration",
+                        "Private and Public Owner settings, commands and account preferences",
                         icon = null,
                         trailing = "›",
-                        onClick = { onPageChange("accounts") }
+                        onClick = onOpenConfiguration
                     )
                 }
             }
@@ -800,6 +825,22 @@ fun MoreScreen(
             item { StudioSectionHeading("Tools") }
             item {
                 StudioCard {
+                    StudioRow(
+                        "Notes",
+                        "Encrypted notes stored privately on this device",
+                        icon = null,
+                        trailing = "›",
+                        onClick = { onPageChange("notes") }
+                    )
+                    StudioDivider()
+                    StudioRow(
+                        "Status & Channels",
+                        "Browse updates available to each linked WhatsApp account",
+                        icon = null,
+                        trailing = "›",
+                        onClick = { onPageChange("whatsapp-updates") }
+                    )
+                    StudioDivider()
                     StudioRow(
                         "Activity and logs",
                         "Review bot activity and diagnostic records",
@@ -887,6 +928,8 @@ fun MoreScreen(
         }
     }
 
+
+    }
     if (customColorOpen) {
         Dialog(onDismissRequest = { customColorOpen = false }) {
             Column(

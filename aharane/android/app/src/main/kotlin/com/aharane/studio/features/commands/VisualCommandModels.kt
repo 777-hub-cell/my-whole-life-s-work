@@ -49,8 +49,8 @@ data class VisualNode(
             return VisualNode(
                 id = json.optString("id").ifBlank { UUID.randomUUID().toString() },
                 type = json.optString("type"),
-                x = json.optDouble("x", 32.0).takeIf { it.isFinite() }?.toFloat()?.coerceIn(0f, 10_000f) ?: 32f,
-                y = json.optDouble("y", 80.0).takeIf { it.isFinite() }?.toFloat()?.coerceIn(0f, 10_000f) ?: 80f,
+                x = json.optDouble("x", 32.0).toFloat().coerceIn(0f, 10_000f),
+                y = json.optDouble("y", 80.0).toFloat().coerceIn(0f, 10_000f),
                 config = config
             )
         }
@@ -167,8 +167,10 @@ data class VisualNodeDefinition(
     val type: String,
     val name: String,
     val description: String,
+    val category: String = "",
     val inputs: List<VisualSocket>,
-    val outputs: List<VisualSocket>
+    val outputs: List<VisualSocket>,
+    val version: Int = 1
 ) {
     companion object {
         fun fromJson(json: JSONObject): VisualNodeDefinition {
@@ -183,8 +185,10 @@ data class VisualNodeDefinition(
                 type = json.optString("type"),
                 name = json.optString("name"),
                 description = json.optString("description"),
+                category = json.optString("category"),
                 inputs = parse("inputs"),
-                outputs = parse("outputs")
+                outputs = parse("outputs"),
+                version = json.optInt("version", 1)
             )
         }
     }

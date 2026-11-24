@@ -1,39 +1,34 @@
 import { readFile, mkdir, open, rename, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { normalizePhone, parseAllowedSenders } from './policy.js'
+import { normalizePhone } from './policy.js'
 
-function allowedList(value) {
-  if (Array.isArray(value)) return [...parseAllowedSenders(value.join(','))].sort()
-  return [...parseAllowedSenders(value)].sort()
-}
-
+/**
+ * Owner identities belong to their sessions. Version 4 preserves distinct v2
+ * identities; version 3 already collapsed them, so its last saved identity is
+ * retained for both until a user explicitly changes either one.
+ * The Public Owner may legitimately be the Public session's own number.
+ */
 export function normalizeOwnerConfig(value = {}) {
-  const privateOwnerNumber = normalizePhone(value.privateOwnerNumber)
-  const publicOwnerNumber = normalizePhone(value.publicOwnerNumber)
+  const privateOwnerNumber = normalizePhone(value.privateOwnerNumber ?? value.ownerNumber)
+  const publicOwnerNumber = normalizePhone(value.publicOwnerNumber ?? value.ownerNumber)
   const publicBotNumber = normalizePhone(value.publicBotNumber)
-  const configuredNumbers = [privateOwnerNumber, publicOwnerNumber, publicBotNumber].filter(Boolean)
-  if (new Set(configuredNumbers).size !== configuredNumbers.length) {
-    throw new Error('Private Owner, Public Owner, and Public bot WhatsApp numbers must be different.')
-  }
-  const allowedPublicSenders = new Set(allowedList(value.allowedPublicSenders))
-  if (publicOwnerNumber) allowedPublicSenders.add(publicOwnerNumber)
   return {
-    version: 2,
+    version: 4,
+    ownerNumber: privateOwnerNumber, // legacy read-only alias for older clients
     privateOwnerNumber,
     publicOwnerNumber,
     publicBotNumber,
-    allowedPublicSenders: [...allowedPublicSenders].sort(),
+    allowedPublicSenders: [], // Public access has no manual sender allow-list
     updatedAt: String(value.updatedAt || ''),
   }
 }
 
 export async function loadOwnerConfig(file, legacy = {}) {
   const fallback = normalizeOwnerConfig({
-    privateOwnerNumber: legacy.privateOwnerNumber || '',
-    publicOwnerNumber: legacy.publicOwnerNumber || '',
-    publicBotNumber: legacy.publicBotNumber || '',
-    allowedPublicSenders: legacy.allowedPublicSenders || '',
+    privateOwnerNumber: legacy.privateOwnerNumber || legacy.ownerNumber,
+    publicOwnerNumber: legacy.publicOwnerNumber || legacy.ownerNumber,
+    publicBotNumber: legacy.publicBotNumber,
   })
   let raw
   try {
@@ -43,10 +38,9 @@ export async function loadOwnerConfig(file, legacy = {}) {
     throw new Error('Aharane owner configuration could not be read; refusing to guess owner identities.')
   }
   return normalizeOwnerConfig({
-    privateOwnerNumber: raw?.privateOwnerNumber ?? fallback.privateOwnerNumber,
-    publicOwnerNumber: raw?.publicOwnerNumber ?? fallback.publicOwnerNumber,
+    privateOwnerNumber: raw?.privateOwnerNumber ?? raw?.ownerNumber ?? fallback.privateOwnerNumber,
+    publicOwnerNumber: raw?.publicOwnerNumber ?? raw?.ownerNumber ?? fallback.publicOwnerNumber,
     publicBotNumber: raw?.publicBotNumber ?? fallback.publicBotNumber,
-    allowedPublicSenders: raw?.allowedPublicSenders ?? fallback.allowedPublicSenders,
     updatedAt: raw?.updatedAt,
   })
 }

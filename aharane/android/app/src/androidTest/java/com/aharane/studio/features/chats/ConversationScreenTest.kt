@@ -2,13 +2,16 @@ package com.aharane.studio.features.chats
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -141,6 +144,44 @@ class ConversationScreenTest {
     }
 
     @Test
+    fun bubbleSwipeRightOpensReplyWithoutSendingAutomatically() {
+        val selected = testIncomingMessage()
+        var sends = 0
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = listOf(selected),
+                    connected = true,
+                    onBack = {},
+                    onSend = { _, _ -> sends++ }
+                )
+            }
+        }
+        compose.onNodeWithTag("message-bubble-selected-message").performTouchInput { swipeRight() }
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Cancel reply").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(0, sends) }
+    }
+
+    @Test
+    fun tappingBubbleDoesNotTriggerAccidentalReply() {
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = listOf(testIncomingMessage()),
+                    connected = true,
+                    onBack = {},
+                    onSend = { _, _ -> }
+                )
+            }
+        }
+        compose.onNodeWithTag("message-bubble-selected-message").performClick()
+        compose.onAllNodes(hasContentDescription("Cancel reply")).assertCountEquals(0)
+    }
+
+    @Test
     fun connectedComposerDeliversTextToSendCallbackAndClearsDraft() {
         val sent = mutableListOf<String>()
         compose.setContent {
@@ -155,7 +196,10 @@ class ConversationScreenTest {
             }
         }
         compose.onNodeWithTag("conversation-composer").performTextInput("Hello from the chat test")
-        compose.onNodeWithContentDescription("Send message").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("conversation-composer").assertTextEquals("Hello from the chat test")
+        compose.onNodeWithTag("conversation-send").assertIsDisplayed().assertIsEnabled().performClick()
+        compose.waitForIdle()
         compose.runOnIdle { assertEquals(listOf("Hello from the chat test"), sent) }
         compose.onNodeWithTag("conversation-composer").performTextInput("Second draft")
         compose.onNodeWithTag("conversation-composer").assertTextEquals("Second draft")

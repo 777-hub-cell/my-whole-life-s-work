@@ -18,6 +18,8 @@ import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -25,6 +27,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -75,6 +79,7 @@ import com.aharane.studio.core.network.ServerStorageSnapshot
 import com.aharane.studio.core.network.ServerMessageMetrics
 import com.aharane.studio.core.navigation.MainDestination
 import com.aharane.studio.features.chats.ChatsScreen
+import com.aharane.studio.features.notes.EncryptedNotesStore
 import com.aharane.studio.features.chats.ConversationScreen
 import com.aharane.studio.features.commands.VisualCommandBuilderScreen
 import com.aharane.studio.features.configuration.ConfigurationScreen
@@ -84,6 +89,7 @@ import com.aharane.studio.features.environment.EnvironmentScreen
 import com.aharane.studio.features.environment.EnvironmentValue
 import com.aharane.studio.features.files.CodeEditorScreen
 import com.aharane.studio.features.files.FilesScreen
+import com.aharane.studio.features.files.EngineLibraryScreen
 import com.aharane.studio.features.files.StudioEditorDocument
 import com.aharane.studio.features.files.StudioFileEntry
 import com.aharane.studio.features.home.HomeScreen
@@ -337,6 +343,7 @@ fun AharaneApp(
     var editorFromConfiguration by rememberSaveable { mutableStateOf(false) }
     var configurationOpen by rememberSaveable { mutableStateOf(false) }
     var commandBuilderOpen by rememberSaveable { mutableStateOf(false) }
+    var engineLibraryOpen by rememberSaveable { mutableStateOf(false) }
     var morePage by rememberSaveable { mutableStateOf("more") }
     var activeConversation by remember { mutableStateOf<ChatSummary?>(null) }
     var activeEditorPath by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1254,6 +1261,23 @@ fun AharaneApp(
     }
 
     val currentDestination = MainDestination.valueOf(destinationName)
+    val tabPagerState = rememberPagerState(initialPage = MainDestination.entries.indexOf(currentDestination)) {
+        MainDestination.entries.size
+    }
+    LaunchedEffect(currentDestination) {
+        val index = MainDestination.entries.indexOf(currentDestination)
+        if (index >= 0 && tabPagerState.settledPage != index) {
+            tabPagerState.animateScrollToPage(index)
+        }
+    }
+    LaunchedEffect(tabPagerState) {
+        snapshotFlow { tabPagerState.settledPage }.collect { page ->
+            if (page in MainDestination.entries.indices) {
+                val name = MainDestination.entries[page].name
+                if (destinationName != name) destinationName = name
+            }
+        }
+    }
     val selectedAccount = ChatAccount.valueOf(accountName)
     val selectedFilter = ChatFilter.valueOf(filterName)
     val connected = authenticated && !previewMode && serverReachable
@@ -1464,8 +1488,9 @@ fun AharaneApp(
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
-        if (!editorOpen && activeConversation == null && !commandBuilderOpen) {
-            StudioHeader()
+        if (!editorOpen && activeConversation == null && !commandBuilderOpen && !engineLibraryOpen &&
+            !configurationOpen && currentDestination == MainDestination.HOME) {
+            StudioHeader(connected = connected, preview = previewMode)
         }
 
         if (previewMode) {
@@ -1491,11 +1516,35 @@ fun AharaneApp(
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
-                commandBuilderOpen -> VisualCommandBuilderScreen(
+                engineLibraryOpen && !commandBuilderOpen -> EngineLibraryScreen(
                     repository = repository,
                     connected = connected,
-                    onBack = { commandBuilderOpen = false }
+                    onBack = { engineLibraryOpen = false }
                 )
+                commandBuilderOpen -> {
+                    // Keep the builder composed while the Engine library is open;
+                    // unsaved graphs and socket positions must survive code editing.
+                    VisualCommandBuilderScreen(
+                        repository = repository,
+                        connected = connected,
+                        onBack = { commandBuilderOpen = false; engineLibraryOpen = false },
+                        onManageEngines = { engineLibraryOpen = true }
+                    )
+                    if (engineLibraryOpen) {
+                        Dialog(
+                            onDismissRequest = { engineLibraryOpen = false },
+                            properties = DialogProperties(usePlatformDefaultWidth = false)
+                        ) {
+                            Box(Modifier.fillMaxSize()) {
+                                EngineLibraryScreen(
+                                    repository = repository,
+                                    connected = connected,
+                                    onBack = { engineLibraryOpen = false }
+                                )
+                            }
+                        }
+                    }
+                }
                 editorOpen -> CodeEditorScreen(
                     modifier = Modifier.fillMaxSize(),
                     onClose = {
@@ -1635,6 +1684,9 @@ fun AharaneApp(
                     conversation = activeConversation!!,
                     messages = if (previewMode) previewMessages.filter { it.key == activeConversation!!.key } else activeMessages,
                     connected = if (previewMode) true else currentAccountState?.connected == true,
+                    onLoadAvatar = { chat ->
+                        if (previewMode || !connected) null else repository.whatsappAvatarBytes(chat)
+                    },
                     aiReplyAvailable = !previewMode && aiReplyAvailable,
                     onGenerateAiReply = { message, quotedMessage, tone, instruction ->
                         repository.generateAiReply(message, quotedMessage, tone, instruction)
@@ -2093,9 +2145,9 @@ fun AharaneApp(
                     connected = connected,
                     serverValues = environmentRows.associate { it.key to it.value } + mapOf(
                         "PRIVATE_OWNER_NUMBER" to owners.privateOwnerNumber,
-                        "PUBLIC_BOT_NUMBER" to owners.publicBotNumber
+                        "PUBLIC_OWNER_NUMBER" to owners.publicOwnerNumber
                     ),
-                    ownerNumberValue = if (accountName == ChatAccount.PRIVATE.name) owners.privateOwnerNumber else owners.publicBotNumber,
+                    ownerNumberValue = if (accountName == ChatAccount.PRIVATE.name) owners.privateOwnerNumber else owners.publicOwnerNumber,
                     onBack = { configurationOpen = false },
                     onEditConfig = {
                         editorFromConfiguration = true
@@ -2111,7 +2163,7 @@ fun AharaneApp(
                         val updatedOwners = if (profile == "Private") {
                             owners.copy(privateOwnerNumber = values["PRIVATE_OWNER_NUMBER"] ?: owners.privateOwnerNumber)
                         } else {
-                            owners.copy(publicBotNumber = values["PUBLIC_BOT_NUMBER"] ?: owners.publicBotNumber)
+                            owners.copy(publicOwnerNumber = values["PUBLIC_OWNER_NUMBER"] ?: owners.publicOwnerNumber)
                         }
                         repository.saveOwnerSettings(updatedOwners)
                         val nextEnvironment = environmentRows.map { row ->
@@ -2125,7 +2177,12 @@ fun AharaneApp(
                         }
                     }
                 )
-                else -> when (currentDestination) {
+                else -> HorizontalPager(
+                    state = tabPagerState,
+                    modifier = Modifier.fillMaxSize()
+                ) { page ->
+                    val destination = MainDestination.entries[page]
+                    when (destination) {
                     MainDestination.HOME -> HomeScreen(
                         onOpenChats = { destinationName = MainDestination.CHATS.name },
                         onOpenMore = { destinationName = MainDestination.MORE.name; morePage = "more" },
@@ -2147,6 +2204,12 @@ fun AharaneApp(
                         metricsAvailable = messageMetrics != null && connected,
                         messagesLast24h = messageMetrics?.messagesLast24h ?: 0,
                         hourlyMessageCounts = messageMetrics?.hourlyMessages ?: emptyList(),
+                        monthUtc = messageMetrics?.monthUtc ?: "",
+                        monthlyDataSince = messageMetrics?.availableSince,
+                        dailySent = messageMetrics?.dailySent ?: emptyList(),
+                        dailyReceived = messageMetrics?.dailyReceived ?: emptyList(),
+                        sentThisMonth = messageMetrics?.sentThisMonth ?: 0,
+                        receivedThisMonth = messageMetrics?.receivedThisMonth ?: 0,
                         onAccountAction = { target ->
                             if (previewMode) {
                                 openPairingScreen(target)
@@ -2170,7 +2233,31 @@ fun AharaneApp(
                         onFilterSelected = { filterName = it.name },
                         conversations = currentChats,
                         accountConnected = if (previewMode) true else runtime?.let { if (selectedAccount == ChatAccount.PRIVATE) it.privateAccount.connected else it.publicAccount.connected } == true,
+                        onConnectAccount = {
+                            if (previewMode) {
+                                openPairingScreen(selectedAccount)
+                            } else if (connected) {
+                                connectionScope.launch {
+                                    try {
+                                        beginAccountLink(selectedAccount)
+                                    } catch (error: Exception) {
+                                        Toast.makeText(context, error.message ?: "Account pairing could not start.", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        },
+                        onLoadChannels = { account ->
+                            if (previewMode || !connected) JSONObject().put("supported", false).put("reason", "Connect a real paired session to load Channels.")
+                            else repository.subscribedChannels(account)
+                        },
+                        onLoadChannelUpdates = { account, jid ->
+                            if (previewMode || !connected) JSONObject().put("supported", false).put("reason", "Channel updates require a paired session.")
+                            else repository.channelUpdates(account, jid)
+                        },
                         onConversationSelected = { activeConversation = it },
+                        onLoadAvatar = { chat ->
+                            if (previewMode || !connected) null else repository.whatsappAvatarBytes(chat)
+                        },
                         onChatAction = { chat, action ->
                             if (previewMode) return@ChatsScreen
                             connectionScope.launch {
@@ -2250,6 +2337,7 @@ fun AharaneApp(
                         }
                     )
                     MainDestination.FILES -> FilesScreen(
+                        onOpenEngines = { engineLibraryOpen = true },
                         entries = studioFileEntries,
                         connected = connected,
                         initialPath = fileDirectory,
@@ -2414,14 +2502,16 @@ fun AharaneApp(
                         onEditorLineNumbersChanged = onEditorLineNumbersChanged,
                         page = morePage,
                         onPageChange = { morePage = it },
+                        notesStore = remember(context) { EncryptedNotesStore(context.applicationContext) },
+                        updatesRepository = if (previewMode) null else repository,
                         onOpenEnvironment = { destinationName = MainDestination.ENVIRONMENT.name; morePage = "more" },
+                        onOpenConfiguration = { configurationOpen = true; morePage = "more" },
                         connected = connected,
                         privateAccountStatus = runtime?.privateAccount?.let(::accountStateLabel) ?: "Status not loaded",
                         publicAccountStatus = runtime?.publicAccount?.let(::accountStateLabel) ?: "Status not loaded",
-                        privateOwnerNumber = owners.privateOwnerNumber,
+                        ownerNumber = owners.privateOwnerNumber,
                         publicOwnerNumber = owners.publicOwnerNumber,
                         publicBotNumber = owners.publicBotNumber,
-                        allowedPublicSenders = owners.allowedPublicSenders.joinToString(", "),
                         activityEntries = activityRows.map { "${it.timestamp} · ${it.level.uppercase(Locale.ROOT)} · ${it.source} · ${it.message}" },
                         storageSummary = storageSnapshot?.let { formatBytes(it.usedBytes) } ?: "—",
                         storageTotalSummary = storageSnapshot?.let { formatBytes(it.totalBytes) } ?: "—",
@@ -2456,18 +2546,14 @@ fun AharaneApp(
                                 }
                             }
                         },
-                        onSaveOwnerSettings = { privateOwner, publicOwner, publicBot, allowed ->
+                        onSaveOwnerSettings = { privateOwner, publicOwner, publicBot ->
                             if (previewMode || !connected) {
-                                Toast.makeText(context, "Preview mode cannot save owner settings to a server.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Connect to your Aharane server to save owner settings.", Toast.LENGTH_SHORT).show()
                             } else connectionScope.launch {
                                 try {
-                                    val updated = ServerOwnerSettings(
-                                        privateOwnerNumber = privateOwner,
-                                        publicOwnerNumber = publicOwner,
-                                        publicBotNumber = publicBot,
-                                        allowedPublicSenders = allowed.split(',').map(String::trim).filter(String::isNotBlank)
+                                    repository.saveOwnerSettings(
+                                        ServerOwnerSettings(privateOwnerNumber = privateOwner, publicOwnerNumber = publicOwner, publicBotNumber = publicBot)
                                     )
-                                    repository.saveOwnerSettings(updated)
                                     owners = repository.ownerSettings()
                                     Toast.makeText(context, "Owner settings saved.", Toast.LENGTH_SHORT).show()
                                 } catch (error: Exception) {
@@ -2634,6 +2720,7 @@ fun AharaneApp(
                             chatAppearance = chatAppearanceStore.resolve(selectedAccount).toJson()
                         }
                     )
+                    }
                 }
             }
         }

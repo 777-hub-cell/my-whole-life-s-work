@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatMessage
 import com.aharane.studio.core.model.ChatSummary
@@ -44,9 +45,10 @@ data class ServerAiReplyAvailability(
 data class ServerOwnerSettings(
     val privateOwnerNumber: String = "",
     val publicOwnerNumber: String = "",
-    val publicBotNumber: String = "",
-    val allowedPublicSenders: List<String> = emptyList()
-)
+    val publicBotNumber: String = ""
+) {
+    val ownerNumber: String get() = privateOwnerNumber // legacy display alias
+}
 
 data class ServerEnvironmentValue(
     val key: String,
@@ -100,7 +102,13 @@ data class ServerStorageSnapshot(
 data class ServerMessageMetrics(
     val messagesLast24h: Int,
     val totalMessages: Int,
-    val hourlyMessages: List<Int>
+    val hourlyMessages: List<Int>,
+    val monthUtc: String = "",
+    val availableSince: String? = null,
+    val dailySent: List<Int> = emptyList(),
+    val dailyReceived: List<Int> = emptyList(),
+    val sentThisMonth: Int = 0,
+    val receivedThisMonth: Int = 0
 )
 
 
@@ -157,9 +165,15 @@ interface VisualCommandDataSource {
     suspend fun updateVisualCommand(id: String, workflow: JSONObject): JSONObject
     suspend fun deleteVisualCommand(id: String): JSONObject
     suspend fun testVisualCommand(id: String, messageText: String = ""): JSONObject
+    suspend fun createCustomNode(definition: JSONObject): JSONObject =
+        throw UnsupportedOperationException("Custom node management is unavailable.")
+    suspend fun deleteCustomNode(id: String): JSONObject =
+        throw UnsupportedOperationException("Custom node management is unavailable.")
 }
 
 class AharaneRepository(private val connection: AharaneConnectionManager) : VisualCommandDataSource {
+    private data class AvatarCacheEntry(val expiresAt: Long, val bytes: ByteArray?)
+    private val avatarCache = ConcurrentHashMap<String, AvatarCacheEntry>()
     private val api: AharaneApiClient
         get() = connection.api ?: throw IllegalStateException("Connect to your Aharane server first.")
     override suspend fun visualCommands(account: String): JSONObject =
@@ -176,6 +190,35 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
 
     override suspend fun testVisualCommand(id: String, messageText: String): JSONObject =
         api.post("visual-commands/" + encodePath(id) + "/test", JSONObject().put("messageText", messageText))
+
+    override suspend fun createCustomNode(definition: JSONObject): JSONObject =
+        api.post("custom-nodes", JSONObject().put("node", definition))
+
+    override suspend fun deleteCustomNode(id: String): JSONObject =
+        api.delete("custom-nodes/" + encodePath(id), JSONObject().put("confirm", true))
+
+    suspend fun subscribedChannels(account: ChatAccount): JSONObject =
+        api.get("whatsapp/${account.apiValue}/channels")
+
+    suspend fun channelUpdates(account: ChatAccount, jid: String): JSONObject =
+        api.get("whatsapp/${account.apiValue}/channels/${encodePath(jid)}/updates")
+
+    suspend fun engineLibrary(): JSONObject = api.get("engines")
+
+    suspend fun readEngine(id: String): JSONObject =
+        api.get("engines/" + encodePath(id)).optJSONObject("engine") ?: JSONObject()
+
+    suspend fun createEngine(manifest: JSONObject, code: String): JSONObject =
+        api.post("engines", JSONObject().put("manifest", manifest).put("code", code))
+
+    suspend fun updateEngine(id: String, manifest: JSONObject, code: String, expectedVersion: Int): JSONObject =
+        api.put(
+            "engines/" + encodePath(id),
+            JSONObject().put("manifest", manifest).put("code", code).put("expectedVersion", expectedVersion)
+        )
+
+    suspend fun deleteEngine(id: String): JSONObject =
+        api.delete("engines/" + encodePath(id), JSONObject().put("confirm", true))
 
     suspend fun runtimeSnapshot(): ServerRuntimeSnapshot {
         val payload = api.get("studio/snapshot")
@@ -206,10 +249,9 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
     suspend fun ownerSettings(): ServerOwnerSettings {
         val result = api.get("owners").optJSONObject("owners") ?: JSONObject()
         return ServerOwnerSettings(
-            privateOwnerNumber = result.optString("privateOwnerNumber"),
-            publicOwnerNumber = result.optString("publicOwnerNumber"),
-            publicBotNumber = result.optString("publicBotNumber"),
-            allowedPublicSenders = result.optJSONArray("allowedPublicSenders").toStringList()
+            privateOwnerNumber = result.optString("privateOwnerNumber").ifBlank { result.optString("ownerNumber") },
+            publicOwnerNumber = result.optString("publicOwnerNumber").ifBlank { result.optString("ownerNumber") },
+            publicBotNumber = result.optString("publicBotNumber")
         )
     }
 
@@ -220,7 +262,6 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
                 .put("privateOwnerNumber", settings.privateOwnerNumber)
                 .put("publicOwnerNumber", settings.publicOwnerNumber)
                 .put("publicBotNumber", settings.publicBotNumber)
-                .put("allowedPublicSenders", JSONArray(settings.allowedPublicSenders))
         )
     }
 
@@ -286,6 +327,46 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
             require(it.isNotBlank()) { "The AI provider returned an empty reply. Try again." }
         }
     }
+
+    /**
+     * Load real, account-scoped WhatsApp profile pictures on demand.
+     * The backend returns the authenticated WhatsApp session identity, so a
+     * re-paired account cannot accidentally reuse another session's avatar.
+     * Privacy-restricted pictures gracefully return null.
+     */
+    suspend fun whatsappAvatarBytes(chat: ChatSummary): ByteArray? {
+        val meta = api.get(
+            "chats/${chat.key.account.apiValue}/${encodePath(chat.key.jid)}/avatar"
+        )
+        val session = meta.optString("sourceSession")
+        if (session.isBlank()) return null
+        val cacheKey = "${chat.key.account.apiValue}:$session:${chat.key.jid}"
+        val now = System.currentTimeMillis()
+        avatarCache[cacheKey]?.takeIf { it.expiresAt > now }?.let { return it.bytes }
+        val sourceUrl = meta.optString("pictureUrl")
+        val bytes = if (sourceUrl.isBlank()) null else downloadWhatsappAvatar(sourceUrl)
+        avatarCache[cacheKey] = AvatarCacheEntry(now + if (bytes == null) 60_000L else 600_000L, bytes)
+        if (avatarCache.size > 350) {
+            avatarCache.entries.removeIf { it.value.expiresAt <= now }
+            if (avatarCache.size > 350) avatarCache.clear()
+        }
+        return bytes
+    }
+
+    suspend fun whatsappStatuses(account: ChatAccount): JSONObject =
+        api.get("whatsapp/${account.apiValue}/statuses")
+
+    suspend fun whatsappStatusMedia(account: ChatAccount, senderJid: String, messageId: String): ByteArray =
+        api.getBytes(
+            "whatsapp/${account.apiValue}/statuses/${encodePath(senderJid)}/${encodePath(messageId)}/media"
+        )
+
+
+    suspend fun whatsappChannels(account: ChatAccount): JSONObject =
+        api.get("whatsapp/${account.apiValue}/channels")
+
+    suspend fun whatsappChannelUpdates(account: ChatAccount, jid: String): JSONObject =
+        api.get("whatsapp/${account.apiValue}/channels/${encodePath(jid)}/updates")
 
     suspend fun chats(account: ChatAccount, query: String = "", limit: Int = 200): List<ChatSummary> {
         val response = api.get(
@@ -1012,12 +1093,23 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
     suspend fun metrics(): ServerMessageMetrics {
         val response = api.get("metrics")
         val hourly = response.optJSONArray("hourlyMessages") ?: JSONArray()
+        val month = response.optJSONObject("thisMonth") ?: JSONObject()
+        fun counts(name: String): List<Int> {
+            val values = month.optJSONArray(name) ?: JSONArray()
+            return List(values.length()) { index -> values.optInt(index).coerceAtLeast(0) }
+        }
         return ServerMessageMetrics(
             messagesLast24h = response.optInt("messagesLast24h"),
             totalMessages = response.optInt("totalMessages"),
             hourlyMessages = buildList {
                 for (index in 0 until hourly.length()) add(hourly.optInt(index))
-            }
+            },
+            monthUtc = month.optString("month"),
+            availableSince = month.optString("availableSince").takeIf { it.isNotBlank() && it != "null" },
+            dailySent = counts("dailySent"),
+            dailyReceived = counts("dailyReceived"),
+            sentThisMonth = month.optInt("sent"),
+            receivedThisMonth = month.optInt("received")
         )
     }
 

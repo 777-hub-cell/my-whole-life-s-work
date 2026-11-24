@@ -11,7 +11,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
@@ -552,11 +555,12 @@ fun ChatAppearanceStudioScreen(
         }
 
         LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+            modifier = Modifier.fillMaxWidth().weight(1f).imePadding(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
         item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SettingSection("Wallpaper")
             SegmentRow(listOf("Default", "Solid", "Gradient", "Photo"), when (appearance.wallpaper) {
                 "solid" -> "Solid"; "gradient" -> "Gradient"; "photo" -> "Photo"; else -> "Default"
@@ -588,8 +592,10 @@ fun ChatAppearanceStudioScreen(
             ValueSlider("Blur", appearance.wallpaperBlur, 0f..24f, "dp") { change("wallpaperBlur", it.toInt().toString()) }
             ValueSlider("Dimming", appearance.wallpaperDim, 0f..0.8f, "%", 100f) { change("wallpaperDim", it.toString()) }
             ValueSlider("Wallpaper brightness", appearance.wallpaperBrightness, 0f..1.5f, "×") { change("wallpaperBrightness", it.toString()) }
+            }
         }
         item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SettingSection("Message bubbles")
             Text("Incoming", color = StudioPalette.Muted, fontSize = 11.sp)
             ColorPalette(appearance.incomingBubble) { change("incomingBubble", it) }
@@ -598,17 +604,23 @@ fun ChatAppearanceStudioScreen(
             ValueSlider("Corner radius", appearance.bubbleRadius.toFloat(), 8f..28f, "dp") { change("bubbleRadius", it.toInt().toString()) }
             ValueSlider("Message spacing", appearance.bubbleSpacing.toFloat(), 2f..14f, "dp") { change("bubbleSpacing", it.toInt().toString()) }
             ToggleSetting("Subtle bubble borders", appearance.bubbleBorder) { change("bubbleBorder", it.toString()) }
+            }
         }
         item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SettingSection("Typography")
             ValueSlider("Message size", appearance.messageSize.toFloat(), 12f..22f, "sp") { change("messageSize", it.toInt().toString()) }
+            Text("Font family", color = StudioPalette.Muted, fontSize = 11.sp)
             SegmentRow(listOf("Instrument", "System", "Mono"), appearance.fontFamily) { change("fontFamily", it) }
+            Text("Font weight", color = StudioPalette.Muted, fontSize = 11.sp)
             SegmentRow(listOf("Normal", "Medium", "Bold"), appearance.fontWeight.replaceFirstChar { it.uppercase() }) {
                 change("fontWeight", it.lowercase())
             }
             ValueSlider("Line spacing", appearance.lineSpacing, 0f..12f, "sp") { change("lineSpacing", it.toString()) }
+            }
         }
         item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SettingSection("Conversation layout")
             SegmentRow(listOf("Compact", "Comfortable", "Spacious"), appearance.density.replaceFirstChar { it.uppercase() }) {
                 change("density", it.lowercase())
@@ -619,8 +631,10 @@ fun ChatAppearanceStudioScreen(
             ToggleSetting("Show timestamps", appearance.showTimestamps) { change("showTimestamps", it.toString()) }
             ToggleSetting("Show date separators", appearance.showDateSeparators) { change("showDateSeparators", it.toString()) }
             ToggleSetting("Show inbox message previews", appearance.showPreviews) { change("showPreviews", it.toString()) }
+            }
         }
         item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SettingSection("Media")
             ValueSlider("Image and video corner radius", appearance.mediaRadius.toFloat(), 0f..24f, "dp") { change("mediaRadius", it.toInt().toString()) }
             SegmentRow(listOf("Compact", "Expanded"), appearance.attachmentStyle.replaceFirstChar { it.uppercase() }) {
@@ -634,6 +648,7 @@ fun ChatAppearanceStudioScreen(
             }
             ToggleSetting("Automatically load video previews", appearance.autoDownloadVideoPreviews) {
                 change("autoDownloadVideoPreviews", it.toString())
+            }
             }
         }
         item {
@@ -755,16 +770,35 @@ private fun SegmentRow(options: List<String>, selected: String, onSelected: (Str
 @Composable
 private fun ColorPalette(selected: String, onSelected: (String) -> Unit) {
     val colors = listOf("#FFFFFF", "#DCEFE5", "#E7EAF5", "#F3E6D9", "#E9E1F1", "#26332F", "#304B43", "#202A34")
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        colors.forEach { color ->
-            val chosen = selected.equals(color, true)
-            Box(
-                Modifier.size(if (chosen) 34.dp else 30.dp).clip(RoundedCornerShape(50))
-                    .background(parseColor(color))
-                    .border(if (chosen) 2.dp else 1.dp, if (chosen) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(50))
-                    .clickable { onSelected(color) }
-            )
+    var showCustom by rememberSaveable { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            colors.forEach { color ->
+                val chosen = selected.equals(color, true)
+                Box(
+                    Modifier.size(if (chosen) 34.dp else 30.dp).clip(CircleShape)
+                        .background(parseColor(color))
+                        .border(if (chosen) 2.dp else 1.dp, if (chosen) StudioPalette.Accent else StudioPalette.Line, CircleShape)
+                        .clickable { onSelected(color) }
+                )
+            }
         }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(22.dp).clip(CircleShape)
+                    .background(parseColor(selected))
+                    .border(1.dp, StudioPalette.Line, CircleShape)
+            )
+            Spacer(Modifier.width(10.dp))
+            TextButton(onClick = { showCustom = !showCustom }) {
+                Text(if (showCustom) "Close colour wheel" else "Choose custom colour")
+            }
+        }
+        if (showCustom) ChatColorWheel(selectedHex = selected, onColorSelected = onSelected)
     }
 }
 
@@ -837,10 +871,4 @@ private fun PreviewBubble(text: String, outgoing: Boolean, appearance: ChatAppea
 private fun parseColor(value: String): Color =
     runCatching { Color(android.graphics.Color.parseColor(value)) }.getOrDefault(Color(0xFFE9EFEB))
 
-private fun readableForeground(background: Color): Color {
-    fun linear(channel: Float): Float = if (channel <= .04045f) channel / 12.92f else Math.pow(((channel + .055f) / 1.055f).toDouble(), 2.4).toFloat()
-    val luminance = .2126f * linear(background.red) + .7152f * linear(background.green) + .0722f * linear(background.blue)
-    val whiteContrast = 1.05f / (luminance + .05f)
-    val blackContrast = (luminance + .05f) / .05f
-    return if (blackContrast >= whiteContrast) Color(0xFF101713) else Color.White
-}
+private fun readableForeground(background: Color): Color = chatReadableForeground(background)

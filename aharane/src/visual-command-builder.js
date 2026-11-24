@@ -1,6 +1,8 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { validateCustomNodeDefinition, runCustomNode } from './custom-node-engine.js'
+import { validateEngineManifest } from './engine-contract.js'
 
 const MAX_NODES = 100
 const MAX_EDGES = 300
@@ -45,6 +47,8 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
     { type: 'group.settingUpdate', name: 'Change group settings', description: 'Set who can send messages or edit group information (Public Owner only).', ports: ports([execIn], [execOut]) },
   ] },
   { category: 'Media and attachments', nodes: [
+    { type: 'media.sendImage', name: 'Send image', description: 'Send an Engine-produced image to the triggering WhatsApp chat.', ports: ports([execIn, { id: 'image', label: 'Image', type: 'image' }, { id: 'caption', label: 'Caption', type: 'string' }], [execOut, { id: 'sent', label: 'Sent image', type: 'message' }]) },
+    { type: 'media.sendImages', name: 'Send image results', description: 'Send a bounded number of Engine-produced images to the triggering WhatsApp chat.', ports: ports([execIn, { id: 'images', label: 'Images', type: 'list' }, { id: 'caption', label: 'Caption', type: 'string' }], [execOut, { id: 'sent', label: 'Sent messages', type: 'list' }]) },
     { type: 'media.forwardOriginal', name: 'Forward original message', description: 'Forward the triggering message with its original supported media payload.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Forwarded message', type: 'message' }]) },
   ] },
   { category: 'Interactive messages', nodes: [
@@ -96,6 +100,62 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
 ])
 
 const definitions = new Map(VISUAL_NODE_LIBRARY.flatMap(group => group.nodes.map(node => [node.type, node])))
+const customDefinitions = new Map()
+const engineDefinitions = new Map()
+const enginePortType = type => type === 'text' ? 'string' : type
+
+export function registerEngineNode(input) {
+  const manifest = validateEngineManifest(input)
+  const type = 'engine.' + manifest.id
+  const definition = {
+    type, name: manifest.name, description: 'Run the custom ' + manifest.name + ' Engine.',
+    category: 'Engine', version: manifest.version, engineId: manifest.id,
+    ports: ports(
+      [execIn, ...manifest.inputs.map(port => ({ id: port.id, label: port.id, type: enginePortType(port.type), required: port.required }))],
+      [execOut, ...manifest.outputs.map(port => ({ id: port.id, label: port.id, type: enginePortType(port.type) }))]
+    ),
+  }
+  engineDefinitions.set(type, manifest)
+  definitions.set(type, definition)
+  return structuredClone(definition)
+}
+
+export function unregisterEngineNode(id) {
+  const type = String(id).startsWith('engine.') ? String(id) : 'engine.' + String(id)
+  engineDefinitions.delete(type)
+  definitions.delete(type)
+}
+
+export function registerCustomNode(input) {
+  const item = validateCustomNodeDefinition(input)
+  const definition = {
+    type: item.type, name: item.name, description: item.description,
+    category: item.category,
+    ports: ports([execIn, ...item.inputs], [execOut, { id: 'result', label: 'Result', type: item.outputType }]),
+  }
+  customDefinitions.set(item.type, item)
+  definitions.set(item.type, definition)
+  return structuredClone(item)
+}
+export function unregisterCustomNode(type) {
+  if (!String(type).startsWith('custom.')) throw new Error('Only custom nodes may be unregistered.')
+  customDefinitions.delete(type)
+  definitions.delete(type)
+}
+export function currentVisualNodeLibrary() {
+  const categories = VISUAL_NODE_LIBRARY.map(group => ({
+    category: group.category, nodes: group.nodes.map(node => ({ ...node, category: group.category })),
+  }))
+  const engineGroup = { category: 'Engine', nodes: [] }
+  for (const [type, manifest] of engineDefinitions) engineGroup.nodes.push({ ...definitions.get(type), version: manifest.version })
+  categories.push(engineGroup)
+  for (const [type, definition] of customDefinitions) {
+    let group = categories.find(item => item.category === 'Custom nodes')
+    if (!group) { group = { category: 'Custom nodes', nodes: [] }; categories.push(group) }
+    group.nodes.push({ ...definitions.get(type), version: definition.version })
+  }
+  return categories
+}
 const triggerTypes = new Set(['trigger.command', 'trigger.message'])
 const OWNER_ONLY_NODES = new Set([
   'group.updateSubject', 'group.updateDescription', 'group.participantsUpdate', 'group.settingUpdate',
@@ -227,11 +287,15 @@ export function validateWorkflow(input) {
       if (config.requireReply != null && typeof config.requireReply !== 'boolean' && !['true', 'false'].includes(String(config.requireReply))) {
         issue(node.id, 'error', 'The reply requirement setting is invalid.', 'Use the toggle to enable or disable it.')
       }
+      const messageLimit = Number(config.maxMessagesPerRun == null ? 10 : config.maxMessagesPerRun)
+      if (!Number.isInteger(messageLimit) || messageLimit < 1 || messageLimit > 20) issue(node.id, 'error', 'The per-run message limit must be from 1 to 20.', 'Choose how many WhatsApp messages this command may send in one execution.')
       const chatScope = textValue(config.chatScope, 16) || 'direct'
       if (!['direct', 'groups', 'both'].includes(chatScope)) issue(node.id, 'error', 'The chat scope is invalid.', 'Choose direct chats, groups, or both.')
       if (workflow.account === 'private' && chatScope !== 'direct') issue(node.id, 'error', 'Private commands cannot run in groups.', 'Keep the Private account scope set to direct chats.')
     }
     if (node.type === 'trigger.message') {
+      const messageLimit = Number(config.maxMessagesPerRun == null ? 10 : config.maxMessagesPerRun)
+      if (!Number.isInteger(messageLimit) || messageLimit < 1 || messageLimit > 20) issue(node.id, 'error', 'The per-run message limit must be from 1 to 20.', 'Choose how many WhatsApp messages this workflow may send in one execution.')
       const chatScope = textValue(config.chatScope, 16) || 'direct'
       if (!['direct', 'groups', 'both'].includes(chatScope)) issue(node.id, 'error', 'The message-event chat scope is invalid.', 'Choose direct chats, groups, or both.')
     }
@@ -311,6 +375,36 @@ export function validateWorkflow(input) {
     }
     if (node.type === 'value.toText' && !inputEdge(workflow, node.id, 'value')) {
       issue(node.id, 'error', 'The number input is not connected.', 'Connect a numeric output, such as Increment counter.')
+    }
+    if (node.type.startsWith('custom.')) {
+      const definition = customDefinitions.get(node.type)
+      if (!definition) issue(node.id, 'error', 'Custom node definition is missing.', 'Restore the node definition.')
+      else if (node.config.nodeVersion != null && Number(node.config.nodeVersion) !== definition.version) {
+        issue(node.id, 'error', 'Custom node version does not match.', 'Update or restore the required node definition version.')
+      }
+    }
+    if (node.type.startsWith('engine.')) {
+      const manifest = engineDefinitions.get(node.type)
+      if (!manifest) issue(node.id, 'error', 'Engine definition is missing.', 'Restore the Engine or replace this node.')
+      else {
+        if (node.config.engineVersion != null && Number(node.config.engineVersion) !== manifest.version) {
+          issue(node.id, 'error', 'Engine version does not match.', 'Update the node and re-check its connected ports.')
+        }
+        for (const port of manifest.inputs) {
+          const configured = Object.prototype.hasOwnProperty.call(node.config, port.id) && node.config[port.id] !== ''
+          if (port.required && !configured && !inputEdge(workflow, node.id, port.id)) {
+            issue(node.id, 'error', 'Engine input "' + port.id + '" is missing.', 'Enter a value or connect a compatible node output.')
+          }
+        }
+      }
+    }
+    if (node.type === 'media.sendImage' && !inputEdge(workflow, node.id, 'image')) {
+      issue(node.id, 'error', 'Image input is not connected.', 'Connect an image output from an Engine.')
+    }
+    if (node.type === 'media.sendImages') {
+      if (!inputEdge(workflow, node.id, 'images')) issue(node.id, 'error', 'Images input is not connected.', 'Connect a list output from an Engine.')
+      const limit = Number(config.limit == null ? 10 : config.limit)
+      if (!Number.isInteger(limit) || limit < 1 || limit > 20) issue(node.id, 'error', 'Image/message limit must be from 1 to 20.', 'Choose a safe per-run limit.')
     }
     if (node.type === 'flow.delay') {
       const ms = Number(config.milliseconds == null ? 1000 : config.milliseconds)
@@ -472,7 +566,7 @@ function triggerAllowsGroups(trigger) {
 function safeChat(context, trigger) {
   const jid = textValue(context.remoteJid, 100)
   const scope = textValue(trigger?.config?.chatScope, 16) || 'direct'
-  const direct = /^\d{7,15}@s\.whatsapp\.net$/.test(jid)
+  const direct = /^\d{7,15}@s\.whatsapp\.net$/.test(jid) || /^\d{5,25}@lid$/.test(jid)
   if (direct) return scope === 'direct' || scope === 'both'
   return context.sessionId === 'public' && context.allowedPublicSender === true &&
     isGroupJid(jid) && (scope === 'groups' || scope === 'both')
@@ -493,8 +587,19 @@ export async function executeVisualWorkflow(input, options = {}) {
     : event.sessionId === 'public' && event.allowedPublicSender === true
   if (!authorized) return { ok: false, dryRun, validation, trace, error: 'This WhatsApp account is not authorized to run the workflow.' }
   const trigger = workflow.nodes.find(node => triggerTypes.has(node.type))
+  const perRunMessageLimit = Number(trigger?.config?.maxMessagesPerRun == null ? 10 : trigger.config.maxMessagesPerRun)
+  let sentMessageCount = 0
+  const sendWhatsAppMessage = async (...args) => {
+    if (sentMessageCount >= perRunMessageLimit) {
+      throw new Error('This command reached its ' + perRunMessageLimit + ' message-per-run limit.')
+    }
+    if (typeof event.socket?.sendMessage !== 'function') throw new Error('WhatsApp sending is unavailable.')
+    const sent = await event.socket.sendMessage(...args)
+    if (sent?.key?.id) sentMessageCount += 1
+    return sent
+  }
   if (!safeChat(event, trigger)) return { ok: false, dryRun, validation, trace, error: 'This workflow is not enabled for the current chat type.' }
-  if (trigger.type === 'trigger.command') {
+  if (trigger.type === 'trigger.command' && event.scheduledExecution !== true) {
     const prefix = workflow.account === 'private' ? '.' : '!'
     const raw = textValue(event.messageText).trim()
     if (!raw.startsWith(prefix)) return { ok: false, dryRun, validation, trace, error: 'The test message does not match the command trigger.' }
@@ -554,7 +659,7 @@ export async function executeVisualWorkflow(input, options = {}) {
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would send: ' + value.slice(0, 160) })
             outputs.set(node.id, { sent: { simulated: true, text: value } })
           } else {
-            const sent = await event.socket.sendMessage(event.remoteJid, { text: value },
+            const sent = await sendWhatsAppMessage(event.remoteJid, { text: value },
               node.type === 'message.replyText' ? { quoted: event.message } : undefined)
             if (!sent?.key?.id) throw new Error('WhatsApp did not return a sent message.')
             outputs.set(node.id, { sent })
@@ -566,7 +671,7 @@ export async function executeVisualWorkflow(input, options = {}) {
           if (!emoji || !key?.id || !key?.remoteJid) throw new Error('A reaction requires an emoji and the original message key.')
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would react with ' + emoji + '.' })
           else {
-            const sent = await event.socket.sendMessage(event.remoteJid, { react: { text: emoji, key } })
+            const sent = await sendWhatsAppMessage(event.remoteJid, { react: { text: emoji, key } })
             if (!sent?.key?.id) throw new Error('WhatsApp did not return a reaction message result.')
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the reaction.' })
           }
@@ -580,7 +685,7 @@ export async function executeVisualWorkflow(input, options = {}) {
           if (dryRun) {
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would send location: ' + name })
           } else {
-            const sent = await event.socket.sendMessage(event.remoteJid, {
+            const sent = await sendWhatsAppMessage(event.remoteJid, {
               location: { degreesLatitude: latitude, degreesLongitude: longitude, name },
             })
             if (!sent?.key?.id) throw new Error('WhatsApp did not return a location message.')
@@ -596,7 +701,7 @@ export async function executeVisualWorkflow(input, options = {}) {
           if (dryRun) {
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would share contact: ' + name })
           } else {
-            const sent = await event.socket.sendMessage(event.remoteJid, {
+            const sent = await sendWhatsAppMessage(event.remoteJid, {
               contacts: { displayName: name, contacts: [{ vcard }] },
             })
             if (!sent?.key?.id) throw new Error('WhatsApp did not return a contact message.')
@@ -618,7 +723,7 @@ export async function executeVisualWorkflow(input, options = {}) {
           if (dryRun) {
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would send interactive buttons.' })
           } else {
-            const sent = await event.socket.sendMessage(event.remoteJid, { text: messageText, buttons })
+            const sent = await sendWhatsAppMessage(event.remoteJid, { text: messageText, buttons })
             if (!sent?.key?.id) throw new Error('WhatsApp did not return an interactive message.')
             outputs.set(node.id, { sent })
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the interactive message.' })
@@ -628,7 +733,7 @@ export async function executeVisualWorkflow(input, options = {}) {
           if (dryRun) {
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would forward the original message and its supported media.' })
           } else {
-            const sent = await event.socket.sendMessage(event.remoteJid, { forward: event.message })
+            const sent = await sendWhatsAppMessage(event.remoteJid, { forward: event.message })
             if (!sent?.key?.id) throw new Error('WhatsApp did not return the forwarded message.')
             outputs.set(node.id, { sent })
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the forwarded message.' })
@@ -647,7 +752,7 @@ export async function executeVisualWorkflow(input, options = {}) {
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would send poll: ' + title })
             outputs.set(node.id, { sent: { simulated: true, title, values } })
           } else {
-            const sent = await event.socket.sendMessage(event.remoteJid, {
+            const sent = await sendWhatsAppMessage(event.remoteJid, {
               poll: { name: title, values, selectableCount },
             })
             if (!sent?.key?.id) throw new Error('WhatsApp did not return a poll message.')
@@ -753,7 +858,7 @@ export async function executeVisualWorkflow(input, options = {}) {
           if (!/^\d{5,25}@newsletter$/.test(newsletterJid) || !text) throw new Error('Newsletter ID or post text is invalid.')
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would publish text to the newsletter.' })
           else {
-            const sent = await event.socket.sendMessage(newsletterJid, { text })
+            const sent = await sendWhatsAppMessage(newsletterJid, { text })
             if (!sent?.key?.id) throw new Error('WhatsApp did not return the newsletter post.')
             outputs.set(node.id, { sent })
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the newsletter post.' })
@@ -799,6 +904,76 @@ export async function executeVisualWorkflow(input, options = {}) {
           counters[key] = value
           outputs.set(node.id, { value })
           trace.push({ nodeId: node.id, type: node.type, status: dryRun ? 'simulated' : 'success', message: key + ': ' + value })
+        } else if (node.type === 'media.sendImage' || node.type === 'media.sendImages') {
+          const key = node.type === 'media.sendImage' ? 'image' : 'images'
+          const raw = readInput(workflow, node, key, key, state)
+          const items = node.type === 'media.sendImage' ? [raw] : raw
+          if (!Array.isArray(items) || !items.length) throw new Error('The Engine did not provide any images.')
+          const limit = node.type === 'media.sendImage' ? 1 : Number(node.config.limit == null ? 10 : node.config.limit)
+          if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error('Image/message limit must be between 1 and 20.')
+          const remaining = Math.max(0, perRunMessageLimit - sentMessageCount)
+          const selected = items.slice(0, Math.min(limit, remaining))
+          if (!selected.length) throw new Error('This command has reached its per-run WhatsApp message limit.')
+          const images = selected.map(item => {
+            if (!item || typeof item !== 'object' ||
+                !/^image\/(?:jpeg|png|webp|gif)$/.test(String(item.mimeType || '')) ||
+                typeof item.base64 !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(item.base64) ||
+                item.base64.length > 700000) {
+              throw new Error('Engine image must contain a supported mimeType and bounded base64 data.')
+            }
+            const data = Buffer.from(item.base64, 'base64')
+            if (!data.length || data.length > 512 * 1024) throw new Error('Engine image exceeds the 512 KiB send limit.')
+            return data
+          })
+          if (dryRun) {
+            trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would send ' + images.length + ' image(s).' })
+          } else {
+            if (typeof event.socket?.sendMessage !== 'function') throw new Error('WhatsApp media sending is unavailable.')
+            const sent = []
+            for (const image of images) {
+              const response = await sendWhatsAppMessage(event.remoteJid, { image, caption: textValue(node.config.caption, 1000) })
+              if (!response?.key?.id) throw new Error('WhatsApp did not confirm an image message.')
+              sent.push(response)
+            }
+            outputs.set(node.id, node.type === 'media.sendImage' ? { sent: sent[0] } : { sent })
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted ' + sent.length + ' image message(s).' })
+          }
+        } else if (node.type.startsWith('engine.')) {
+          const manifest = engineDefinitions.get(node.type)
+          if (!manifest) throw new Error('Engine definition is not registered.')
+          if (dryRun) {
+            trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would execute Engine ' + manifest.name + '.' })
+          } else {
+            if (typeof options.runEngine !== 'function') throw new Error('The custom Engine runtime is unavailable.')
+            const values = {}
+            for (const port of manifest.inputs) {
+              const value = readInput(workflow, node, port.id, port.id, state)
+              if (value == null && !port.required) continue
+              if (port.type === 'number') values[port.id] = Number(value)
+              else if (port.type === 'boolean') values[port.id] = value === true || value === 'true'
+              else if (port.type === 'json') values[port.id] = typeof value === 'string' ? JSON.parse(value) : value
+              else if (port.type === 'list') values[port.id] = Array.isArray(value) ? value : String(value ?? '').split(/[,\n]+/).filter(Boolean)
+              else values[port.id] = String(value ?? '')
+            }
+            const result = await options.runEngine(manifest.id, values)
+            outputs.set(node.id, result.outputs || result)
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'Engine ' + manifest.name + ' completed in ' + Number(result.durationMs || 0) + ' ms.' })
+          }
+          next = firstEdge(node, 'next')
+        } else if (node.type.startsWith('custom.')) {
+          const definition = customDefinitions.get(node.type)
+          if (!definition) throw new Error('Custom node definition is not registered.')
+          const values = {}
+          for (const port of definition.inputs) {
+            const raw = readInput(workflow, node, port.id, port.id, state)
+            values[port.id] = port.type === 'number' ? Number(raw)
+              : port.type === 'boolean' ? (raw === true || raw === 'true')
+              : port.type === 'list' ? (Array.isArray(raw) ? raw : String(raw).split(','))
+              : String(raw ?? '')
+          }
+          const result = runCustomNode(definition, values, node.config)
+          outputs.set(node.id, result)
+          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'Custom node evaluated: ' + definition.operator })
         } else if (node.type === 'flow.delay') {
           const ms = Number(node.config.milliseconds == null ? 1000 : node.config.milliseconds)
           if (!Number.isInteger(ms) || ms < 0 || ms > MAX_DELAY_MS) throw new Error('Wait duration is invalid.')
@@ -840,7 +1015,7 @@ export async function executeVisualWorkflow(input, options = {}) {
 }
 
 export function createVisualCommandStore(filePath) {
-  let data = { version: 1, workflows: [], counters: {} }
+  let data = { version: 1, workflows: [], counters: {}, customNodes: [] }
   let tail = Promise.resolve()
   let storageError = ''
 
@@ -871,7 +1046,7 @@ export function createVisualCommandStore(filePath) {
       try {
         const loaded = JSON.parse(await readFile(filePath, 'utf8'))
         if (loaded?.version === 1 && Array.isArray(loaded.workflows) && loaded.counters && typeof loaded.counters === 'object' && !Array.isArray(loaded.counters)) {
-          data = { version: 1, workflows: loaded.workflows.map(normalizeWorkflow), counters: loaded.counters }
+          data = { version: 1, workflows: loaded.workflows.map(normalizeWorkflow), counters: loaded.counters, customNodes: Array.isArray(loaded.customNodes) ? loaded.customNodes.map(registerCustomNode) : [] }
         } else if (loaded != null) {
           storageError = 'Visual command storage has an unsupported or invalid format. Saved data was preserved; repair the file before editing workflows.'
         }
@@ -883,6 +1058,35 @@ export function createVisualCommandStore(filePath) {
       return this.list()
     },
     storageWarning() { return storageError },
+    listCustomNodes() { return structuredClone(data.customNodes) },
+    saveCustomNode(input) {
+      return mutate(async () => {
+        const item = validateCustomNodeDefinition(input)
+        const index = data.customNodes.findIndex(value => value.id === item.id)
+        const previous = index >= 0 ? data.customNodes[index] : null
+        if (previous && data.workflows.some(workflow => workflow.nodes.some(node => node.type === item.type))) {
+          throw new Error('Custom node is used by a workflow. Duplicate it under a new ID to preserve existing workflow behavior.')
+        }
+        if (previous && item.version <= previous.version) throw new Error('Increase the custom node version when updating.')
+        if (index < 0 && data.customNodes.length >= 100) throw new Error('The custom-node library limit is 100.')
+        registerCustomNode(item)
+        if (index >= 0) data.customNodes[index] = item
+        else data.customNodes.push(item)
+        return structuredClone(item)
+      })
+    },
+    removeCustomNode(id) {
+      return mutate(async () => {
+        const type = 'custom.' + String(id)
+        if (data.workflows.some(workflow => workflow.nodes.some(node => node.type === type))) {
+          throw new Error('Cannot remove a custom node used by a saved workflow.')
+        }
+        const before = data.customNodes.length
+        data.customNodes = data.customNodes.filter(node => node.type !== type)
+        if (data.customNodes.length !== before) unregisterCustomNode(type)
+        return data.customNodes.length !== before
+      })
+    },
     list(account) { return data.workflows.filter(item => !account || item.account === account).map(item => structuredClone(item)) },
     get(id) { const item = data.workflows.find(workflow => workflow.id === id); return item ? structuredClone(item) : null },
     async save(input) {

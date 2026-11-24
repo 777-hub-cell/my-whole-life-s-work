@@ -745,6 +745,13 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return enqueue(account, async () => {
       const rows = await readRows(account), row = rows.find(item => item.jid === jid && item.id === key)
       if (!row || row.viewOnceViewed === true || row.status === value) return row || null
+      // Receipt events can arrive out of order after reconnects. A stale
+      // delivered event must never turn actual blue read ticks grey.
+      const receiptOrder = { pending: 0, sent: 1, delivered: 2, read: 3 }
+      if (row.status in receiptOrder && value in receiptOrder &&
+          receiptOrder[value] <= receiptOrder[row.status]) return row
+      // A late failure cannot undo a confirmed delivery or read receipt.
+      if (value === 'failed' && ['delivered', 'read'].includes(row.status)) return row
       row.status = value
       await rewriteRows(account, rows)
       return { id: row.id, jid: row.jid, status: row.status }
@@ -965,7 +972,38 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         hourlyMessages[bucket] += 1
       }
     }
-    return { messagesLast24h, totalMessages, hourlyMessages }
+    // All counts are based only on persisted chat messages. Historical gaps
+    // cannot be inferred from a newly paired WhatsApp session.
+    const monthStart = new Date(Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), 1))
+    const dayCount = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0)).getUTCDate()
+    const dailySent = Array(dayCount).fill(0)
+    const dailyReceived = Array(dayCount).fill(0)
+    const unique = new Set()
+    let availableSince = null
+    for (const id of ACCOUNTS) {
+      for (const row of await readRows(id)) {
+        const ts = Number(row.timestamp)
+        const key = id + '|' + String(row.jid || '') + '|' + String(row.id || '')
+        if (!row.id || !Number.isFinite(ts) || ts <= 0 || ts > now || unique.has(key)) continue
+        unique.add(key)
+        if (availableSince === null || ts < availableSince) availableSince = ts
+        if (ts < monthStart.getTime()) continue
+        const day = new Date(ts).getUTCDate() - 1
+        if (row.fromMe === true) dailySent[day] += 1
+        else dailyReceived[day] += 1
+      }
+    }
+    return {
+      messagesLast24h, totalMessages, hourlyMessages,
+      thisMonth: {
+        timeZone: 'UTC',
+        month: monthStart.toISOString().slice(0, 7),
+        availableSince: availableSince == null ? null : new Date(availableSince).toISOString(),
+        dailySent, dailyReceived,
+        sent: dailySent.reduce((a, n) => a + n, 0),
+        received: dailyReceived.reduce((a, n) => a + n, 0),
+      },
+    }
   }
 
   async function mediaUsage() {

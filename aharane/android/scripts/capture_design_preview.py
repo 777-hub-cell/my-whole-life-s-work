@@ -132,9 +132,9 @@ def tap_label(
         )
     return False
 
-def assert_visible_texts(labels):
-    """Fail the screenshot run if the native popup drifts from the web actions."""
-    deadline = time.time() + 8
+def assert_visible_texts(labels, timeout_seconds: float = 8):
+    """Wait for expected native UI text, failing with the missing labels."""
+    deadline = time.time() + timeout_seconds
     while time.time() < deadline:
         visible = {node.attrib.get("text", "") for node in nodes()}
         missing = [
@@ -144,7 +144,7 @@ def assert_visible_texts(labels):
         if not missing:
             return
         time.sleep(0.35)
-    raise RuntimeError(f"File popup is missing expected actions: {missing!r}")
+    raise RuntimeError(f"Expected UI text is not visible: {missing!r}")
 
 def assert_absent_texts(labels):
     """Ensure removed or relocated entries do not reappear on More."""
@@ -160,7 +160,7 @@ def assert_absent_texts(labels):
         raise RuntimeError(f"Unexpected UI entries are visible: {found!r}")
 
 
-def scroll_until_label_visible(label: str, max_swipes: int = 6):
+def scroll_until_label_visible(label: str, max_swipes: int = 14):
     """Scroll a screen until a label is visible without activating it."""
     for _ in range(max_swipes + 1):
         visible = [
@@ -174,7 +174,7 @@ def scroll_until_label_visible(label: str, max_swipes: int = 6):
     raise RuntimeError(f"Could not scroll to visible UI label: {label!r}")
 
 
-def scroll_back_until_label_visible(label: str, max_swipes: int = 6):
+def scroll_back_until_label_visible(label: str, max_swipes: int = 14):
     """Scroll toward the top of a LazyColumn until an earlier section is visible."""
     for _ in range(max_swipes + 1):
         visible = [
@@ -200,15 +200,20 @@ def main():
         "adb", "shell", "am", "start", "-n", "com.aharane.studio/.MainActivity",
         "--ez", "aharane_preview_mode", "true"
     )
-    capture("01-home.png", 5)
-    tap_label("Preview", occurrence=0)
-    assert_visible_texts(["Pairing code", "QR code", "This is a preview", "Back to accounts"])
+    # Wait for the actual Home page instead of capturing the launch splash.
+    assert_visible_texts(["Welcome back", "WhatsApp accounts"], timeout_seconds=25)
+    capture("01-home.png")
+    # The header's Preview status badge is not interactive. Open the Private
+    # account's Preview action (the second visible Preview label).
+    tap_label("Preview", occurrence=1)
+    assert_visible_texts(["Pairing code", "QR code", "This is a preview"])
     capture("01a-whatsapp-pairing-code-choice.png")
     tap_label("QR code")
     capture("01aa-whatsapp-qr-choice.png")
     tap_label("Pairing code")
     capture("01ab-whatsapp-pairing-code-choice.png")
-    tap_label("Back to accounts")
+    # The visible top Back control and the lower CTA share the same onBack handler.
+    tap_label("‹  Back")
     tap_label("Configuration", scroll_to_find=True)
     capture("01b-configuration.png")
     tap_label("Edit config.js", scroll_to_find=True)
@@ -307,9 +312,11 @@ def main():
     if tap_label("Choose photo", scroll_to_find=True, required=False):
         capture("06c-android-photo-picker.png", 1)
         back()
-    tap_label("Message bubbles", scroll_to_find=True)
+    # These are section headings inside the Appearance Studio, not buttons.
+    # Scroll them into view and capture the controls beneath each heading.
+    scroll_until_label_visible("Message bubbles")
     capture("06d-message-bubble-customisation.png")
-    tap_label("Typography", scroll_to_find=True)
+    scroll_until_label_visible("Typography")
     capture("06e-typography-settings.png")
     scroll_back_until_label_visible("Apply to")
     tap_label("Conversation")

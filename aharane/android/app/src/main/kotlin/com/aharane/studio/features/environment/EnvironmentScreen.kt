@@ -1,6 +1,13 @@
 package com.aharane.studio.features.environment
 
-import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,17 +16,20 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aharane.studio.core.design.*
@@ -40,10 +50,11 @@ fun EnvironmentScreen(
     onSave: suspend (List<EnvironmentValue>) -> Boolean = { false },
     previewMode: Boolean = false
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val drafts = remember(values) { mutableStateListOf<EnvironmentValue>().apply { addAll(values) } }
     var saving by remember { mutableStateOf(false) }
+    var saveMessage by remember { mutableStateOf("") }
+    var saveSucceeded by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -53,7 +64,8 @@ fun EnvironmentScreen(
         item {
             StudioPageTitle(
                 "ENV",
-                "Managed environment values for the Private and Public accounts. Command prefixes are fixed by Aharane."
+                "Managed environment values for the Private and Public accounts. Command prefixes are fixed by Aharane.",
+                compact = true
             )
             if (previewMode) {
                 Text(
@@ -142,34 +154,77 @@ fun EnvironmentScreen(
             }
         } else {
             item {
-                Box(
-                    Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 15.dp)
-                        .height(1.dp).background(StudioPalette.Line)
-                )
+                StudioCard(padding = PaddingValues(horizontal = 16.dp, vertical = 22.dp)) {
+                    Column(
+                        Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(9.dp)
+                    ) {
+                        Box(
+                            Modifier.size(46.dp).clip(CircleShape).background(StudioPalette.Soft),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Outlined.Terminal, contentDescription = null, tint = StudioPalette.Accent, modifier = Modifier.size(22.dp))
+                        }
+                        Text(
+                            if (connected || previewMode) "No environment values yet"
+                            else "Connect to Aharane",
+                            color = StudioPalette.Ink,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            if (connected || previewMode) "Managed values will appear here when this server exposes them. Command prefixes remain fixed by Aharane."
+                            else "Connect your server to view and manage its environment values.",
+                            color = StudioPalette.Muted,
+                            fontSize = 12.5.sp,
+                            lineHeight = 18.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
             }
         }
 
         item {
-            Row(
-                Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                StudioActionButton(
-                    if (saving) "Saving…" else "Save changes",
-                    primary = true,
-                    enabled = (connected || previewMode) && !saving,
-                    onClick = {
-                        scope.launch {
-                            saving = true
-                            val saved = runCatching { onSave(drafts.toList()) }.getOrDefault(false)
-                            Toast.makeText(
-                                context,
-                                if (saved) "ENV values saved." else "ENV values could not be saved.",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            saving = false
+            if (drafts.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    StudioActionButton(
+                        if (saving) "Saving…" else "Save changes",
+                        primary = true,
+                        enabled = (connected || previewMode) && !saving,
+                        onClick = {
+                            scope.launch {
+                                saving = true
+                                val result = runCatching { onSave(drafts.toList()) }
+                                saveSucceeded = result.getOrDefault(false)
+                                saveMessage = when {
+                                    saveSucceeded -> "Changes saved."
+                                    result.exceptionOrNull()?.message?.isNotBlank() == true -> result.exceptionOrNull()?.message.orEmpty()
+                                    else -> "Changes could not be saved. Check the connection and try again."
+                                }
+                                saving = false
+                            }
                         }
-                    }
+                    )
+                }
+            }
+            AnimatedVisibility(
+                visible = saveMessage.isNotBlank(),
+                enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 140 else 0)) +
+                    expandVertically(tween(if (LocalStudioMotionEnabled.current) 170 else 0)),
+                exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
+                    shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 130 else 0))
+            ) {
+                Text(
+                    saveMessage,
+                    color = if (saveSucceeded) StudioPalette.Accent else StudioPalette.Bad,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
                 )
             }
             if (!connected && !previewMode) {
@@ -187,14 +242,25 @@ fun EnvironmentScreen(
 
 @Composable
 private fun NativeToggle(checked: Boolean, enabled: Boolean) {
+    val motionEnabled = LocalStudioMotionEnabled.current
+    val track by animateColorAsState(
+        if (enabled && checked) StudioPalette.Accent else StudioPalette.Line,
+        animationSpec = tween(if (motionEnabled) 160 else 0),
+        label = "environment-toggle-track"
+    )
+    val thumbX by animateDpAsState(
+        if (checked) 18.dp else 0.dp,
+        animationSpec = tween(if (motionEnabled) 180 else 0),
+        label = "environment-toggle-thumb"
+    )
     Box(
         Modifier.width(42.dp).height(24.dp).clip(CircleShape)
-            .background(if (checked) StudioPalette.Accent else StudioPalette.Line)
+            .background(track)
             .padding(3.dp),
-        contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
+        contentAlignment = Alignment.CenterStart
     ) {
         Box(
-            Modifier.size(18.dp).clip(CircleShape)
+            Modifier.offset(x = thumbX).size(18.dp).clip(CircleShape)
                 .background(if (enabled) Color.White else StudioPalette.Surface)
         )
     }

@@ -2,7 +2,7 @@ name: Aharane Android
 
 on:
   pull_request:
-    branches: [mscc-azure, feat/aharane-kotlin-native-foundation-20261119]
+    branches: [mscc-azure, feat/aharane-kotlin-native-foundation-20261119, audit/aharane-complete-quality-20261123]
     paths: ['aharane/android/**', 'aharane/src/**', 'aharane/test/**', 'aharane/package.json', '.github/workflows/aharane-android.yml']
   push:
     branches: [mscc-azure]
@@ -27,7 +27,8 @@ jobs:
   server-workflow-tests:
     name: Aharane server logic and workflow tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # The test runner also enforces 60s per test for an actionable failure.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
         with:
@@ -64,7 +65,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
       - name: Unit tests
         working-directory: aharane/android
-        run: ./gradlew --no-daemon testDebugUnitTest
+        run: sh ./ci-gradle-retry.sh testDebugUnitTest
       - name: Enable KVM for Android instrumentation tests
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -78,10 +79,10 @@ jobs:
           arch: x86_64
           profile: pixel_7
           disable-animations: true
-          script: cd aharane/android && ./gradlew --no-daemon connectedDebugAndroidTest
+          script: cd aharane/android && sh ./ci-gradle-retry.sh connectedDebugAndroidTest
       - name: Assemble debug APK
         working-directory: aharane/android
-        run: ./gradlew --no-daemon assembleDebug
+        run: sh ./ci-gradle-retry.sh assembleDebug
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -110,7 +111,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
       - name: Build production release APK without any signing key
         working-directory: aharane/android
-        run: ./gradlew --no-daemon clean assembleRelease -PaharaneVersionCode=${GITHUB_RUN_NUMBER}
+        run: sh ./ci-gradle-retry.sh clean assembleRelease -PaharaneVersionCode=${GITHUB_RUN_NUMBER}
       - name: Verify release build is installable and not debuggable
         working-directory: aharane/android
         run: |
@@ -146,6 +147,69 @@ jobs:
           path: release-tools/**
           if-no-files-found: error
           retention-days: 7
+
+  signed-release:
+    name: Sign and verify production Android APK
+    if: github.event_name == 'workflow_dispatch' && inputs.build_signed_release
+    needs: [build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      AHARANE_RELEASE_KEYSTORE_BASE64: ${{ secrets.AHARANE_RELEASE_KEYSTORE_BASE64 }}
+      AHARANE_RELEASE_STORE_PASSWORD: ${{ secrets.AHARANE_RELEASE_STORE_PASSWORD }}
+      AHARANE_RELEASE_KEY_ALIAS: ${{ secrets.AHARANE_RELEASE_KEY_ALIAS }}
+      AHARANE_RELEASE_KEY_PASSWORD: ${{ secrets.AHARANE_RELEASE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+      - name: Install Android 16 SDK and signing tools
+        run: sdkmanager --install "platforms;android-36" "platform-tools" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Restore private release keystore
+        run: |
+          set -euo pipefail
+          : "${AHARANE_RELEASE_KEYSTORE_BASE64:?Missing AHARANE_RELEASE_KEYSTORE_BASE64 secret}"
+          : "${AHARANE_RELEASE_STORE_PASSWORD:?Missing AHARANE_RELEASE_STORE_PASSWORD secret}"
+          : "${AHARANE_RELEASE_KEY_ALIAS:?Missing AHARANE_RELEASE_KEY_ALIAS secret}"
+          : "${AHARANE_RELEASE_KEY_PASSWORD:?Missing AHARANE_RELEASE_KEY_PASSWORD secret}"
+          KEYSTORE="$RUNNER_TEMP/aharane-release.jks"
+          printf '%s' "$AHARANE_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          test -s "$KEYSTORE"
+          echo "AHARANE_RELEASE_KEYSTORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
+          keytool -list -keystore "$KEYSTORE" -storepass "$AHARANE_RELEASE_STORE_PASSWORD" -alias "$AHARANE_RELEASE_KEY_ALIAS" >/dev/null
+      - name: Build signed release APK
+        working-directory: aharane/android
+        run: sh ./ci-gradle-retry.sh clean assembleRelease -PaharaneRequireReleaseSigning=true -PaharaneVersionCode=${GITHUB_RUN_NUMBER}
+      - name: Verify package and production signature
+        working-directory: aharane/android
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/aharane-badging.txt"
+          grep -q "package: name='com.aharane.studio'" "$RUNNER_TEMP/aharane-badging.txt"
+          if grep -q "application-debuggable" "$RUNNER_TEMP/aharane-badging.txt"; then
+            echo "Signed release is incorrectly debuggable" >&2
+            exit 1
+          fi
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/aharane-signature.txt"
+          unzip -t "$APK" >/dev/null
+          sha256sum "$APK"
+      - name: Upload signed production APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: aharane-android-production-signed
+          path: aharane/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
 
   preview-screenshots:
     name: Run native app and capture real emulator screenshots
@@ -188,9 +252,43 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: aharane-native-android-screenshots
-          path: screenshots/*.png
-          if-no-files-found: warn
+          path: screenshots/*
+          if-no-files-found: error
           retention-days: 14
+
+  
+  api26-compatibility:
+    name: Minimum supported Android API 26 instrumentation tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+      - name: Install compile SDK and platform tools
+        run: sdkmanager --install "platforms;android-36" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Enable KVM for Android 8.0 emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run instrumentation tests on the minimum supported API
+        uses: reactivecircus/android-emulator-runner@v2.38.0
+        with:
+          api-level: 26
+          target: default
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: cd aharane/android && sh ./ci-gradle-retry.sh connectedDebugAndroidTest
 
   web-reference-screenshots:
     name: Capture actual web Studio reference at mobile size

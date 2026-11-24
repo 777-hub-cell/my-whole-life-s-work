@@ -106,9 +106,17 @@ Baileys v7 can report a delete-for-everyone action as a REVOKE protocol update t
  
 ## Production-signed APK builds
 
-The repository workflow creates an **unsigned production release candidate** and uploads it separately from the debug test APK. It also uploads the official Android `apksigner` utility. Neither artifact contains the release private key.
+The normal CI run produces a debug APK for testing and an unsigned production release candidate. A manual **Aharane Android** workflow run can produce a signed production APK when `build_signed_release=true`.
 
-The final direct-install APK must be signed locally with the permanent Aharane release keystore stored in a private secret vault/Library. Do not upload the keystore, passwords, or Base64 key material to GitHub, commits, workflow inputs, or artifacts. The resulting APK should be verified with `apksigner verify --verbose --print-certs` before distribution.
+Configure these four GitHub Actions repository secrets using the same private release keystore:
 
-Keep an offline backup of the keystore and both passwords. Every future update of `com.aharane.studio` must use this same key; losing it prevents compatible updates. The first signed APK has a different certificate from CI debug builds, so an already-installed debug copy must be uninstalled before the first signed install. Uninstalling removes that copy's local encrypted cache and sign-in session, but it does not remove server-side chats, WhatsApp sessions, or workspace files.
+- `AHARANE_RELEASE_KEYSTORE_BASE64`: Base64-encoded bytes of the private `.jks` keystore.
+- `AHARANE_RELEASE_STORE_PASSWORD`: Keystore password.
+- `AHARANE_RELEASE_KEY_ALIAS`: Signing-key alias.
+- `AHARANE_RELEASE_KEY_PASSWORD`: Private-key password.
 
+The workflow restores the keystore only into the ephemeral runner's temporary directory, requires signing for the Gradle release task, checks the package ID and non-debuggable release manifest, verifies the APK signature with `apksigner`, and uploads `aharane-android-production-signed`. The keystore and passwords are never placed in the repository or build artifacts.
+
+Keep an offline backup of the keystore and both passwords. Every future update of `com.aharane.studio` must use the same signing key; losing it prevents compatible updates. The first signed APK has a different certificate from CI debug builds, so an already-installed debug copy must be uninstalled before the first signed install. Uninstalling removes that copy's local encrypted cache and sign-in session, but it does not remove server-side chats, WhatsApp sessions, or workspace files.
+
+This release key is the new Aharane signing identity supplied with the signed production package and separate key-backup archive. Store that archive privately and use the same keystore for every future release.

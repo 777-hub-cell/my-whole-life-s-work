@@ -1,6 +1,19 @@
 package com.aharane.studio.features.chats
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable as ComposeAnimatable
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -46,7 +59,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
@@ -68,6 +83,7 @@ import com.aharane.studio.core.design.StudioPalette
 import com.aharane.studio.core.design.StudioActionButton
 import com.aharane.studio.core.design.StudioTag
 import com.aharane.studio.core.design.StudioTextInput
+import com.aharane.studio.core.design.LocalStudioMotionEnabled
 import com.aharane.studio.core.model.ChatMessage
 import com.aharane.studio.core.model.ChatSummary
 import com.aharane.studio.core.model.MessageDirection
@@ -92,6 +108,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -108,6 +125,7 @@ fun ConversationScreen(
     conversation: ChatSummary,
     messages: List<ChatMessage>,
     connected: Boolean,
+    onLoadAvatar: suspend (ChatSummary) -> ByteArray? = { null },
     aiReplyAvailable: Boolean = false,
     onGenerateAiReply: suspend (String, String, String, String) -> String = { _, _, _, _ -> "" },
     mediaRequestsAvailable: Boolean = connected,
@@ -189,6 +207,26 @@ fun ConversationScreen(
         }
     }
 
+    // The conversation header displays the real account-scoped WhatsApp
+    // picture when available. For private/unavailable pictures, show initials.
+    val contactAvatar by produceState<ImageBitmap?>(
+        initialValue = null, conversation.key, connected
+    ) {
+        if (connected) {
+            val bytes = try {
+                onLoadAvatar(conversation)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            value = bytes?.let { data ->
+                withContext(Dispatchers.Default) {
+                    BitmapFactory.decodeByteArray(data, 0, data.size)?.asImageBitmap()
+                }
+            }
+        }
+    }
     val listState = rememberLazyListState()
     val visible = remember(messages, searchResults, search, conversation.key) {
         val source = if ((search.isNotBlank() || selectedSearchDay != null) && searchResults != null) searchResults else messages
@@ -214,9 +252,18 @@ fun ConversationScreen(
         )
     }
 
-    LaunchedEffect(messages, searchResults, search, conversation.key) {
+    // Only follow incoming messages while already at the latest message.
+    // Reading older history must not be interrupted by a background sync.
+    var initialPositionApplied by remember(conversation.key) { mutableStateOf(false) }
+    LaunchedEffect(visible.lastOrNull()?.messageId, search, selectedSearchDay, conversation.key) {
         if (visible.isNotEmpty()) {
-            listState.animateScrollToItem(visible.lastIndex)
+            val lastPreviouslyVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+            val atBottom = lastPreviouslyVisible == null ||
+                lastPreviouslyVisible >= listState.layoutInfo.totalItemsCount - 2
+            if (!initialPositionApplied || atBottom || search.isNotBlank() || selectedSearchDay != null) {
+                listState.animateScrollToItem(visible.lastIndex)
+            }
+            initialPositionApplied = true
         }
     }
     BackHandler {
@@ -249,12 +296,21 @@ fun ConversationScreen(
                     .clip(CircleShape).background(StudioPalette.Soft),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    conversation.title.trim().take(1).uppercase(),
-                    color = StudioPalette.Accent,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                if (contactAvatar != null) {
+                    Image(
+                        bitmap = contactAvatar!!,
+                        contentDescription = "WhatsApp profile picture of " + conversation.title,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Text(
+                        conversation.title.trim().take(1).uppercase(),
+                        color = StudioPalette.Accent,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(
@@ -300,7 +356,14 @@ fun ConversationScreen(
             }
         }
 
-        if (searchOpen) {
+        AnimatedVisibility(
+            visible = searchOpen,
+            enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 130 else 0)) +
+                expandVertically(tween(if (LocalStudioMotionEnabled.current) 190 else 0)),
+            exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
+                shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 150 else 0))
+        ) {
+            Column(Modifier.fillMaxWidth()) {
             Row(
                 Modifier.fillMaxWidth().background(StudioPalette.Surface)
                     .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -357,6 +420,7 @@ fun ConversationScreen(
                 }
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(StudioPalette.Line))
+            }
         }
 
         if (mediaGalleryOpen) {
@@ -532,11 +596,12 @@ fun ConversationScreen(
                         }
                     }
                     itemsIndexed(visible, key = { _, item -> item.messageId }) { index, message ->
-                        val previous = visible.getOrNull(index - 1)
-                        if (appearance.showDateSeparators && (previous == null || !sameDay(previous.timestampMillis, message.timestampMillis))) {
-                            ConversationDayDivider(message.timestampMillis)
-                        }
-                        MessageBubble(
+                        Column(Modifier.animateItem()) {
+                            val previous = visible.getOrNull(index - 1)
+                            if (appearance.showDateSeparators && (previous == null || !sameDay(previous.timestampMillis, message.timestampMillis))) {
+                                ConversationDayDivider(message.timestampMillis)
+                            }
+                            MessageBubble(
                             message = message,
                             appearance = appearance,
                             autoDownloadImages = autoDownloadImages,
@@ -567,16 +632,23 @@ fun ConversationScreen(
                             onLoadVideo = { onLoadVideo(message) },
                             onLoadAudio = { onLoadAudio(message) },
                             onDownloadMedia = { onDownloadMedia(message) },
-                            onOpenLocation = { onOpenLocation(message) }
-                        )
+                                onOpenLocation = { onOpenLocation(message) }
+                            )
+                        }
                     }
                 }
             }
             }
         }
 
-        if (replyTo != null) {
-            Row(
+        AnimatedVisibility(
+            visible = replyTo != null,
+            enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 130 else 0)) +
+                expandVertically(tween(if (LocalStudioMotionEnabled.current) 180 else 0)),
+            exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
+                shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 140 else 0))
+        ) {
+            if (replyTo != null) Row(
                 Modifier.fillMaxWidth().background(StudioPalette.Surface)
                     .padding(start = 12.dp, end = 8.dp, top = 7.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -1108,16 +1180,57 @@ private fun MessageBubble(
     onOpenLocation: () -> Unit
 ) {
     val outgoing = message.direction == MessageDirection.OUTGOING
+    val swipeOffset = remember(message.messageId) { ComposeAnimatable(0f) }
+    val swipeScope = rememberCoroutineScope()
+    val swipeThreshold = with(LocalDensity.current) { 64.dp.toPx() }
+    val swipeLimit = with(LocalDensity.current) { 98.dp.toPx() }
+    val motionEnabled = LocalStudioMotionEnabled.current
     val bubble = appearanceColor(if (outgoing) appearance.outgoingBubble else appearance.incomingBubble)
-    val foreground = readableAppearanceText(bubble)
+    val foreground = chatReadableForeground(bubble)
+    val mutedForeground = chatSecondaryForeground(bubble)
     val timestamp = remember(message.timestampMillis) {
         SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(message.timestampMillis))
     }
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start,
-        verticalAlignment = Alignment.Bottom
-    ) {
+    Box(Modifier.fillMaxWidth()) {
+        if (swipeOffset.value > 2f) {
+            Icon(
+                Icons.Outlined.ArrowBack,
+                contentDescription = "Swipe right to reply",
+                tint = if (swipeOffset.value >= swipeThreshold) StudioPalette.Accent else StudioPalette.Muted,
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = 13.dp)
+                    .size(22.dp).graphicsLayer { rotationZ = 180f }
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth()
+                .offset { IntOffset(swipeOffset.value.roundToInt(), 0) }
+                .pointerInput(message.messageId, swipeThreshold, swipeLimit, motionEnabled) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            val activated = swipeOffset.value >= swipeThreshold
+                            if (activated) onReply()
+                            swipeScope.launch {
+                                if (motionEnabled) swipeOffset.animateTo(0f, spring(stiffness = 650f))
+                                else swipeOffset.snapTo(0f)
+                            }
+                        },
+                        onDragCancel = {
+                            swipeScope.launch {
+                                if (motionEnabled) swipeOffset.animateTo(0f, spring(stiffness = 650f))
+                                else swipeOffset.snapTo(0f)
+                            }
+                        },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            swipeScope.launch {
+                                swipeOffset.snapTo((swipeOffset.value + dragAmount).coerceIn(0f, swipeLimit))
+                            }
+                        }
+                    )
+                },
+            horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start,
+            verticalAlignment = Alignment.Bottom
+        ) {
         if (!outgoing && appearance.showAvatars) {
             Box(
                 Modifier.size(24.dp).clip(CircleShape).background(StudioPalette.Soft),
@@ -1150,7 +1263,7 @@ private fun MessageBubble(
                     ) else Modifier
                 )
                 .combinedClickable(
-                    onClick = onReply,
+                    onClick = {},
                     onLongClick = { if (connected) onStar() }
                 )
                 .testTag("message-bubble-" + message.messageId)
@@ -1159,7 +1272,7 @@ private fun MessageBubble(
             if (!outgoing && appearance.showSenderLabels && !message.senderName.isNullOrBlank()) {
                 Text(
                     message.senderName,
-                    color = if (appearanceLuminance(bubble) > 0.45f) StudioPalette.Accent else foreground.copy(alpha = .85f),
+                    color = mutedForeground,
                     fontSize = 10.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(bottom = 4.dp)
@@ -1175,13 +1288,13 @@ private fun MessageBubble(
                 ) {
                     Text(
                         if (reply?.direction == MessageDirection.OUTGOING) "You" else "Reply",
-                        color = if (outgoing) Color.White.copy(alpha = .9f) else StudioPalette.Accent,
+                        color = chatReadableForeground(if (outgoing) Color.White.copy(alpha = .13f).compositeOver(bubble) else StudioPalette.Background),
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         quotedPreview,
-                        color = foreground.copy(alpha = .78f),
+                        color = chatReadableForeground(if (outgoing) Color.White.copy(alpha = .13f).compositeOver(bubble) else StudioPalette.Background),
                         fontSize = 11.5.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
@@ -1252,7 +1365,7 @@ private fun MessageBubble(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (showTimestamp) {
-                        Text(timestamp, color = foreground.copy(alpha = if (outgoing) .72f else .55f), fontSize = 9.5.sp)
+                        Text(timestamp, color = mutedForeground, fontSize = 9.5.sp)
                     }
                     if (message.isStarred) {
                         Text("★  ", color = foreground.copy(alpha = .9f), fontSize = 10.sp)
@@ -1302,6 +1415,7 @@ private fun MessageBubble(
             }
         }
     }
+}
 }
 
 @Composable
@@ -1761,13 +1875,6 @@ private fun StudioPaletteAction(label: String, onClick: () -> Unit) {
 private fun appearanceColor(value: String): Color =
     runCatching { Color(android.graphics.Color.parseColor(value)) }.getOrDefault(StudioPalette.Background)
 
-private fun readableAppearanceText(background: Color): Color {
-    val luminance = .2126f * background.red + .7152f * background.green + .0722f * background.blue
-    return if (luminance > .52f) Color(0xFF17201C) else Color.White
-}
-
-private fun appearanceLuminance(color: Color): Float =
-    .2126f * color.red + .7152f * color.green + .0722f * color.blue
 
 
 @Composable

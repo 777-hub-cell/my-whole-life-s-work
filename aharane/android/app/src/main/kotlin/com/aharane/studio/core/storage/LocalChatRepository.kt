@@ -56,6 +56,71 @@ class LocalChatRepository(context: Context) {
         return clientMessageId
     }
 
+    suspend fun enqueueMediaMessage(
+        conversation: ChatSummary,
+        mimeType: String,
+        fileName: String,
+        caption: String,
+        quotedMessageId: String?,
+        cacheRecord: EncryptedMediaRecord,
+        isVoiceNote: Boolean = false,
+        durationSeconds: Int = 0,
+        clientMessageId: String = UUID.randomUUID().toString().replace("-", "")
+    ): String {
+        require(mimeType.isNotBlank() && fileName.isNotBlank())
+        require(cacheRecord.sizeBytes in 1..(24L * 1024L * 1024L))
+        require(quotedMessageId.isNullOrBlank() || dao.message(
+            conversation.key.account.apiValue, conversation.key.jid, quotedMessageId
+        ) != null) { "The quoted message is not in this conversation's saved history." }
+        dao.putOutgoingMedia(
+            ChatOutgoingMediaRow(
+                account = conversation.key.account.apiValue,
+                jid = conversation.key.jid,
+                clientMessageId = clientMessageId,
+                mimeType = mimeType,
+                fileName = fileName,
+                caption = caption,
+                quotedMessageId = quotedMessageId,
+                queuedAtMillis = System.currentTimeMillis(),
+                state = "PENDING",
+                lastError = null,
+                cachePath = cacheRecord.relativePath,
+                cacheSha256 = cacheRecord.sha256,
+                sizeBytes = cacheRecord.sizeBytes,
+                isVoiceNote = isVoiceNote,
+                durationSeconds = durationSeconds.coerceAtLeast(0),
+                remoteMessageId = null
+            )
+        )
+        return clientMessageId
+    }
+
+    suspend fun outgoingMediaMessage(key: ConversationKey, clientMessageId: String): ChatOutgoingMediaRow? =
+        dao.outgoingMediaMessage(key.account.apiValue, key.jid, clientMessageId)
+
+    suspend fun pendingOutgoingMedia(account: ChatAccount, limit: Int = 100): List<ChatOutgoingMediaRow> =
+        dao.pendingOutgoingMedia(account.apiValue, limit.coerceIn(1, 200))
+
+    suspend fun updateOutgoingMedia(
+        key: ConversationKey,
+        clientMessageId: String,
+        state: String,
+        error: String? = null,
+        remoteMessageId: String? = null
+    ) {
+        require(state in setOf("PENDING", "SENDING", "SENT", "FAILED"))
+        dao.updateOutgoingMedia(key.account.apiValue, key.jid, clientMessageId, state, error, remoteMessageId)
+    }
+
+    suspend fun resetInterruptedOutgoingMedia() {
+        dao.interruptedOutgoingMedia().forEach { row ->
+            dao.updateOutgoingMedia(
+                row.account, row.jid, row.clientMessageId, "FAILED",
+                "The app stopped during media sending. Retry reuses the same server idempotency key.", null
+            )
+        }
+    }
+
     suspend fun outgoingMessage(key: ConversationKey, clientMessageId: String): ChatOutgoingMessageRow? =
         dao.outgoingMessage(key.account.apiValue, key.jid, clientMessageId)
 
@@ -111,7 +176,10 @@ class LocalChatRepository(context: Context) {
         val rows = messages.map { it.toRow() }
         if (rows.isNotEmpty()) {
             dao.putMessages(rows)
-            rows.forEach { dao.reconcileOutgoingMessage(it.account, it.jid, it.messageId) }
+            rows.forEach {
+                dao.reconcileOutgoingMessage(it.account, it.jid, it.messageId)
+                dao.reconcileOutgoingMedia(it.account, it.jid, it.messageId)
+            }
         }
         val old = dao.conversation(conversation.key.account.apiValue, conversation.key.jid)
         val latestIncoming = rows.maxWithOrNull(compareBy<ChatMessageRow> { it.timestampMillis }.thenBy { it.messageId })
@@ -152,7 +220,8 @@ class LocalChatRepository(context: Context) {
     suspend fun messages(key: ConversationKey): List<ChatMessage> {
         val saved = dao.messages(key.account.apiValue, key.jid).map { it.toModel() }
         val queued = dao.outgoingMessages(key.account.apiValue, key.jid).map { it.toChatMessage(key) }
-        return (saved + queued).distinctBy { it.messageId }.sortedBy { it.timestampMillis }
+        val queuedMedia = dao.outgoingMedia(key.account.apiValue, key.jid).map { it.toChatMessage(key) }
+        return (saved + queued + queuedMedia).distinctBy { it.messageId }.sortedBy { it.timestampMillis }
     }
 
     suspend fun olderMessages(key: ConversationKey, before: Long, limit: Int = 100): List<ChatMessage> =
@@ -227,6 +296,7 @@ class LocalChatRepository(context: Context) {
     suspend fun clearLocalConversation(key: ConversationKey) {
         dao.clearMessages(key.account.apiValue, key.jid)
         dao.clearOutgoingMessages(key.account.apiValue, key.jid)
+        dao.clearOutgoingMedia(key.account.apiValue, key.jid)
         dao.clearConversation(key.account.apiValue, key.jid)
     }
 
@@ -255,6 +325,38 @@ private fun ChatOutgoingMessageRow.toChatMessage(key: ConversationKey): ChatMess
     localOutboxState = state,
     localOutboxError = lastError
 )
+
+private fun ChatOutgoingMediaRow.toChatMessage(key: ConversationKey): ChatMessage {
+    val kind = when {
+        mimeType == "image/webp" -> MessageKind.STICKER
+        mimeType.startsWith("image/") -> MessageKind.IMAGE
+        mimeType.startsWith("video/") -> MessageKind.VIDEO
+        mimeType.startsWith("audio/") -> MessageKind.AUDIO
+        else -> MessageKind.DOCUMENT
+    }
+    return ChatMessage(
+        key = key,
+        messageId = remoteMessageId?.takeIf { it.isNotBlank() } ?: "local-$clientMessageId",
+        direction = MessageDirection.OUTGOING,
+        kind = kind,
+        text = caption,
+        timestampMillis = queuedAtMillis,
+        status = when (state) {
+            "SENT" -> MessageStatus.SENT
+            "FAILED" -> MessageStatus.FAILED
+            else -> MessageStatus.PENDING
+        },
+        mediaMimeType = mimeType,
+        mediaFileName = fileName,
+        mediaSizeBytes = sizeBytes,
+        mediaDurationSeconds = durationSeconds.toLong().takeIf { it > 0 },
+        isVoiceNote = isVoiceNote,
+        mediaUnavailable = "Stored securely on this phone · waiting to send",
+        localOutboxState = state,
+        localOutboxError = lastError,
+        localOutboxMedia = true
+    )
+}
 
 private fun ChatSummary.toRow() = ChatConversationRow(
     account = key.account.apiValue, jid = key.jid, title = title, lastMessagePreview = lastMessagePreview,

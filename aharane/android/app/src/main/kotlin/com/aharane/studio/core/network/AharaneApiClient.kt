@@ -217,7 +217,8 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
         fileName: String,
         caption: String,
         isVoiceNote: Boolean = false,
-        durationSeconds: Int = 0
+        durationSeconds: Int = 0,
+        clientMessageId: String? = null
     ): JSONObject = uploadBytes(
         "chats/$account/${encodePath(jid)}/media",
         bytes,
@@ -228,7 +229,9 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
             "X-Caption" to caption,
             "X-Voice-Note" to isVoiceNote.toString(),
             "X-Duration-Seconds" to durationSeconds.toString()
-        )
+        ) + clientMessageId?.takeIf { it.isNotBlank() }?.let {
+            mapOf("X-Client-Message-Id" to it)
+        }.orEmpty()
     )
 
     suspend fun sendViewOnceRequest(account: String, messageId: String): ByteArray =

@@ -602,7 +602,8 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
         fileName: String,
         caption: String,
         isVoiceNote: Boolean = false,
-        durationSeconds: Int = 0
+        durationSeconds: Int = 0,
+        clientMessageId: String? = null
     ): String {
         val result = api.sendChatMedia(
             conversation.key.account.apiValue,
@@ -612,7 +613,8 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
             fileName,
             caption,
             isVoiceNote,
-            durationSeconds
+            durationSeconds,
+            clientMessageId
         )
         return result.optString("message")
     }

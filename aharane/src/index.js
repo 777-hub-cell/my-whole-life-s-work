@@ -1031,6 +1031,12 @@ function textFromMessage(message) {
   ).trim()
 }
 
+function currentPollActorKey(accountId) {
+  const socket = accountRuntime.get(accountId)?.socket
+  const voterJid = jidNormalizedUser(String(socket?.user?.id || ''))
+  return voterJid ? createHash('sha256').update(voterJid, 'utf8').digest('hex') : ''
+}
+
 function findPollUpdate(message) {
   let current = message?.message
   for (let depth = 0; current && depth < 6; depth += 1) {
@@ -2628,7 +2634,10 @@ app.get('/api/chats/:accountId/:jid/sync', requireAdmin, async (req, res) => {
     if (after > 0 && before > 0) return res.status(400).json({ ok: false, error: 'Use either an after or before cursor, not both.' })
     if (afterId && !after) return res.status(400).json({ ok: false, error: 'An after message id requires an after timestamp.' })
     if (beforeId && !before) return res.status(400).json({ ok: false, error: 'A before message id requires a before timestamp.' })
-    const messages = await chatStore.getMessages(accountId, jid, { limit, after, before, afterId, beforeId })
+    const messages = await chatStore.getMessages(accountId, jid, {
+      limit, after, before, afterId, beforeId,
+      pollActorKey: currentPollActorKey(accountId),
+    })
     const deletedMessageIds = before > 0 ? [] : await chatStore.listDeletedMessageIds(accountId, jid)
     const remoteDeletedMessages = await chatStore.listRemoteDeletedMessages(accountId, jid)
     const timestamps = messages.map(message => Number(message.timestamp) || 0).filter(value => value > 0)
@@ -2660,7 +2669,10 @@ app.get('/api/chats/:accountId/:jid/messages', requireAdmin, async (req, res) =>
     const accountId = chatAccount(req.params.accountId)
     const jid = decodeURIComponent(String(req.params.jid || ''))
     if ((!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid)) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found.' })
-    const messages = await chatStore.getMessages(accountId, jid, { limit: req.query.limit, before: req.query.before })
+    const messages = await chatStore.getMessages(accountId, jid, {
+      limit: req.query.limit, before: req.query.before,
+      pollActorKey: currentPollActorKey(accountId),
+    })
     await chatStore.markRead(accountId, jid)
     res.json({ ok: true, messages })
   } catch (error) {

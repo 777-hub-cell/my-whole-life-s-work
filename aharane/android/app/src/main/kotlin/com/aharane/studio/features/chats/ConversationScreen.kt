@@ -52,6 +52,7 @@ import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -146,6 +147,8 @@ fun ConversationScreen(
     canQueueMedia: Boolean = connected,
     voiceRecording: Boolean = false,
     onCancelVoiceRecording: () -> Unit = {},
+    onCreatePoll: (String, List<String>, Int) -> Unit = { _, _, _ -> },
+    onVotePoll: (ChatMessage, List<String>) -> Unit = { _, _ -> },
     onOpenMedia: (ChatMessage) -> Unit = {},
     onKeepMediaOffline: (ChatMessage) -> Unit = {},
     onViewOnce: (ChatMessage) -> Unit = {},
@@ -182,6 +185,10 @@ fun ConversationScreen(
     var search by rememberSaveable { mutableStateOf("") }
     var selectedSearchDay by rememberSaveable { mutableStateOf<Long?>(null) }
     var moreOpen by remember { mutableStateOf(false) }
+    var pollCreateOpen by remember { mutableStateOf(false) }
+    var pollQuestionDraft by rememberSaveable(conversation.key.account.apiValue, conversation.key.jid) { mutableStateOf("") }
+    var pollOptionsDraft by remember { mutableStateOf(listOf("", "")) }
+    var pollAllowMultiple by rememberSaveable(conversation.key.account.apiValue, conversation.key.jid) { mutableStateOf(false) }
     var actionMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var aiReplyMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var aiReplyTone by rememberSaveable { mutableStateOf("Natural") }
@@ -638,7 +645,9 @@ fun ConversationScreen(
                             onLoadVideo = { onLoadVideo(message) },
                             onLoadAudio = { onLoadAudio(message) },
                             onDownloadMedia = { onDownloadMedia(message) },
-                                onOpenLocation = { onOpenLocation(message) }
+                                onOpenLocation = { onOpenLocation(message) },
+                            onVotePoll = { selectedOptions -> onVotePoll(message, selectedOptions) },
+                            connected = connected
                             )
                         }
                     }
@@ -1125,6 +1134,89 @@ fun ConversationScreen(
         }
     }
 
+    if (pollCreateOpen) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { pollCreateOpen = false }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(StudioPalette.Surface).padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Create poll", color = StudioPalette.Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("Write a question and add 2–12 unique options.", color = StudioPalette.Muted, fontSize = 12.sp)
+                BasicTextField(
+                    value = pollQuestionDraft,
+                    onValueChange = { pollQuestionDraft = it.take(120) },
+                    singleLine = false,
+                    maxLines = 3,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = StudioPalette.Ink),
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+                        .background(StudioPalette.Background).border(1.dp, StudioPalette.Line, RoundedCornerShape(9.dp))
+                        .padding(horizontal = 11.dp, vertical = 12.dp).testTag("poll-question"),
+                    decorationBox = { inner ->
+                        Box {
+                            if (pollQuestionDraft.isBlank()) Text("Poll question", color = StudioPalette.Muted, fontSize = 13.sp)
+                            inner()
+                        }
+                    }
+                )
+                pollOptionsDraft.forEachIndexed { index, option ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        BasicTextField(
+                            value = option,
+                            onValueChange = { value ->
+                                pollOptionsDraft = pollOptionsDraft.toMutableList().also { it[index] = value.take(100) }
+                            },
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = StudioPalette.Ink),
+                            modifier = Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                                .background(StudioPalette.Background).border(1.dp, StudioPalette.Line, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 10.dp, vertical = 10.dp).testTag("poll-option-$index"),
+                            decorationBox = { inner ->
+                                Box {
+                                    if (option.isBlank()) Text("Option ${index + 1}", color = StudioPalette.Muted, fontSize = 12.sp)
+                                    inner()
+                                }
+                            }
+                        )
+                        if (pollOptionsDraft.size > 2) {
+                            StudioPaletteAction("Remove") {
+                                pollOptionsDraft = pollOptionsDraft.filterIndexed { optionIndex, _ -> optionIndex != index }
+                            }
+                        }
+                    }
+                }
+                StudioPaletteAction("Add option", enabled = pollOptionsDraft.size < 12) {
+                    pollOptionsDraft = pollOptionsDraft + ""
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = pollAllowMultiple, onCheckedChange = { pollAllowMultiple = it })
+                    Text("Allow multiple choices", color = StudioPalette.Ink, fontSize = 12.sp)
+                }
+                val normalizedOptions = pollOptionsDraft.map(String::trim)
+                val validOptions = normalizedOptions.size in 2..12 &&
+                    normalizedOptions.all(String::isNotBlank) &&
+                    normalizedOptions.map { it.lowercase(Locale.ROOT) }.distinct().size == normalizedOptions.size
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    StudioPaletteAction("Cancel") { pollCreateOpen = false }
+                    StudioActionButton(
+                        "Create poll",
+                        compact = true,
+                        primary = true,
+                        enabled = connected && pollQuestionDraft.isNotBlank() && validOptions,
+                        onClick = {
+                            onCreatePoll(
+                                pollQuestionDraft.trim(),
+                                normalizedOptions,
+                                if (pollAllowMultiple) normalizedOptions.size else 1
+                            )
+                            pollCreateOpen = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+
     if (moreOpen) {
         androidx.compose.ui.window.Dialog(onDismissRequest = { moreOpen = false }) {
             Column(
@@ -1142,6 +1234,17 @@ fun ConversationScreen(
                     conversation.key.account.label + " WhatsApp inbox",
                     color = StudioPalette.Muted,
                     fontSize = 12.sp
+                )
+                StudioPaletteAction(
+                    "Create poll",
+                    enabled = connected,
+                    onClick = {
+                        moreOpen = false
+                        pollQuestionDraft = ""
+                        pollOptionsDraft = listOf("", "")
+                        pollAllowMultiple = false
+                        pollCreateOpen = true
+                    }
                 )
                 StudioPaletteAction("Close", onClick = { moreOpen = false })
             }
@@ -1227,7 +1330,9 @@ private fun MessageBubble(
     onLoadVideo: () -> Unit,
     onLoadAudio: () -> Unit,
     onDownloadMedia: () -> Unit,
-    onOpenLocation: () -> Unit
+    onOpenLocation: () -> Unit,
+    onVotePoll: (List<String>) -> Unit,
+    connected: Boolean
 ) {
     val outgoing = message.direction == MessageDirection.OUTGOING
     val swipeOffset = remember(message.messageId) { ComposeAnimatable(0f) }
@@ -1396,7 +1501,9 @@ private fun MessageBubble(
                     onLoadMedia = onOpenMedia,
                     onLoadAudio = onLoadAudio,
                     onDownloadMedia = onDownloadMedia,
-                    onOpenLocation = onOpenLocation
+                    onOpenLocation = onOpenLocation,
+                    onVotePoll = onVotePoll,
+                    pollConnected = connected
                 )
             }
             if (message.deletedByRemote && !message.isViewOnce) {
@@ -1492,7 +1599,9 @@ private fun MessageContent(
     onLoadMedia: () -> Unit,
     onLoadAudio: () -> Unit,
     onDownloadMedia: () -> Unit,
-    onOpenLocation: () -> Unit
+    onOpenLocation: () -> Unit,
+    onVotePoll: (List<String>) -> Unit,
+    pollConnected: Boolean
 ) {
     val soft = if (outgoing) Color.White.copy(alpha = .13f) else StudioPalette.Background
     when (message.kind) {
@@ -1701,39 +1810,86 @@ private fun MessageContent(
             }
         }
         MessageKind.POLL -> {
-            val lines = message.text.lineSequence().map(String::trim).filter(String::isNotBlank).toList()
-            val question = lines.firstOrNull()?.takeIf { !it.startsWith("•") } ?: "Poll"
-            val options = lines.drop(if (lines.firstOrNull() == question) 1 else 0)
-                .map { it.removePrefix("•").trim() }.filter(String::isNotBlank)
+            val question = message.text.lineSequence().firstOrNull { it.isNotBlank() }
+                ?.takeIf { !it.trimStart().startsWith("•") }?.trim() ?: "Poll"
+            val options = message.pollOptions.ifEmpty {
+                message.text.lineSequence().map(String::trim)
+                    .filter { it.startsWith("•") }.map { it.removePrefix("•").trim() }.toList()
+            }
+            var selected by remember(message.messageId, message.pollMyVotes) {
+                mutableStateOf(message.pollMyVotes.toSet())
+            }
+            val multiple = message.pollSelectableCount > 1
+            val totalVotes = message.pollVoteCounts.values.sum()
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(soft).padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(7.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     Icon(Icons.Outlined.Poll, null, tint = foreground, modifier = Modifier.size(18.dp))
                     Text("POLL", color = foreground.copy(alpha = .72f), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.weight(1f))
+                    if (multiple) Text("MULTIPLE CHOICE", color = foreground.copy(alpha = .65f), fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
                 }
                 Text(question, color = foreground, fontSize = appearance.messageSize.sp, fontWeight = FontWeight.SemiBold)
                 if (options.isEmpty()) {
-                    Text(message.text.ifBlank { "Poll options are not available in this saved message." }, color = foreground, fontSize = 12.sp)
+                    Text("Poll options are not available in this saved message.", color = foreground, fontSize = 12.sp)
                 } else {
                     options.forEach { option ->
-                        Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(7.dp))
-                                .background(foreground.copy(alpha = .06f)).padding(horizontal = 9.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        val count = message.pollVoteCounts[option] ?: 0
+                        val checked = option in selected
+                        val fraction = if (totalVotes > 0) (count.toFloat() / totalVotes).coerceIn(0f, 1f) else 0f
+                        Column(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+                                .background(foreground.copy(alpha = if (checked) .10f else .045f))
+                                .clickable(enabled = pollConnected) {
+                                    selected = if (checked) selected - option
+                                    else if (multiple && selected.size < message.pollSelectableCount) selected + option
+                                    else if (!multiple) setOf(option) else selected
+                                }
+                                .padding(horizontal = 9.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Box(Modifier.size(14.dp).border(1.dp, foreground.copy(alpha = .65f), CircleShape))
-                            Text(option, color = foreground, fontSize = 12.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = checked,
+                                    onCheckedChange = { value ->
+                                        selected = if (value) {
+                                            if (multiple && selected.size < message.pollSelectableCount) selected + option
+                                            else if (!multiple) setOf(option) else selected
+                                        } else selected - option
+                                    },
+                                    enabled = pollConnected,
+                                    modifier = Modifier.size(34.dp)
+                                )
+                                Text(option, color = foreground, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                if (totalVotes > 0) {
+                                    Text("$count", color = foreground.copy(alpha = .75f), fontSize = 11.sp)
+                                }
+                            }
+                            if (totalVotes > 0) {
+                                Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(3.dp)).background(foreground.copy(alpha = .12f))) {
+                                    Box(Modifier.fillMaxWidth(fraction).height(4.dp).clip(RoundedCornerShape(3.dp)).background(StudioPalette.Accent))
+                                }
+                            }
                         }
                     }
+                    Text(
+                        if (multiple) "Choose up to ${message.pollSelectableCount} options" else "Choose one option",
+                        color = foreground.copy(alpha = .7f), fontSize = 10.sp
+                    )
+                    StudioActionButton(
+                        if (message.pollMyVotes.isEmpty()) "Vote" else "Update vote",
+                        modifier = Modifier.fillMaxWidth(),
+                        primary = true,
+                        enabled = pollConnected && selected.isNotEmpty(),
+                        onClick = { onVotePoll(options.filter { it in selected }) }
+                    )
+                    Text(
+                        if (totalVotes == 1) "1 vote" else "$totalVotes votes",
+                        color = foreground.copy(alpha = .62f), fontSize = 10.sp
+                    )
                 }
-                Text(
-                    "Poll voting is not supported by the connected Aharane API.",
-                    color = foreground.copy(alpha = .65f),
-                    fontSize = 10.sp
-                )
             }
         }
         MessageKind.UNSUPPORTED -> Text(

@@ -5,7 +5,7 @@ on:
     branches: [mscc-azure, feat/aharane-kotlin-native-foundation-20261119, audit/aharane-complete-quality-20261123]
     paths: ['aharane/android/**', 'aharane/src/**', 'aharane/test/**', 'aharane/package.json', '.github/workflows/aharane-android.yml']
   push:
-    branches: [mscc-azure]
+    branches: [mscc-azure, aharane/source-import-20261125]
     paths: ['aharane/android/**', 'aharane/src/**', 'aharane/test/**', 'aharane/package.json', '.github/workflows/aharane-android.yml']
   workflow_dispatch:
     inputs:

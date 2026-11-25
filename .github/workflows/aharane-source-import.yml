@@ -1,0 +1,112 @@
+name: Import Aharane ZIP source
+
+on:
+  push:
+    branches:
+      - aharane/source-import-20261125
+    paths:
+      - "aharane-source-import/source.zip"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: aharane-source-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out import branch
+        uses: actions/checkout@v4
+        with:
+          ref: aharane/source-import-20261125
+          fetch-depth: 1
+
+      - name: Validate and extract ZIP
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import shutil
+          import stat
+          import tempfile
+          import zipfile
+
+          archive_path = pathlib.Path("aharane-source-import/source.zip")
+          if not archive_path.is_file():
+              raise SystemExit("Upload the source ZIP to aharane-source-import/source.zip")
+
+          staging = pathlib.Path(tempfile.mkdtemp(prefix="aharane-import-"))
+          total = 0
+          file_count = 0
+          allowed_workflows = {
+              ".github/workflows/aharane-android.yml",
+              ".github/workflows/aharane-azure.yml",
+          }
+
+          with zipfile.ZipFile(archive_path) as archive:
+              for info in archive.infolist():
+                  name = info.filename
+                  path = pathlib.PurePosixPath(name)
+                  if path.is_absolute() or ".." in path.parts or not path.parts:
+                      raise SystemExit(f"Unsafe ZIP path: {name}")
+                  if path.parts[0] == "aharane":
+                      pass
+                  elif name in allowed_workflows or (info.is_dir() and name in (".github/", ".github/workflows/")):
+                      pass
+                  else:
+                      raise SystemExit(f"Unexpected ZIP path: {name}")
+
+                  if info.is_dir():
+                      continue
+                  mode = info.external_attr >> 16
+                  if stat.S_ISLNK(mode):
+                      raise SystemExit(f"Symbolic link rejected: {name}")
+                  total += info.file_size
+                  file_count += 1
+                  if total > 25 * 1024 * 1024 or file_count > 1000:
+                      raise SystemExit("ZIP exceeds import safety limits")
+
+                  destination = staging.joinpath(*path.parts)
+                  destination.parent.mkdir(parents=True, exist_ok=True)
+                  with archive.open(info) as source, destination.open("wb") as target:
+                      shutil.copyfileobj(source, target)
+
+          required = [
+              staging / "aharane/package.json",
+              staging / "aharane/src/index.js",
+              staging / "aharane/control-centre/index.html",
+              staging / ".github/workflows/aharane-android.yml",
+              staging / ".github/workflows/aharane-azure.yml",
+          ]
+          missing = [str(path.relative_to(staging)) for path in required if not path.is_file()]
+          if missing:
+              raise SystemExit("ZIP missing required files: " + ", ".join(missing))
+
+          # Replace only Aharane's source tree and its two dedicated workflows.
+          shutil.rmtree("aharane", ignore_errors=True)
+          shutil.copytree(staging / "aharane", "aharane")
+          workflows = pathlib.Path(".github/workflows")
+          workflows.mkdir(parents=True, exist_ok=True)
+          for filename in ("aharane-android.yml", "aharane-azure.yml"):
+              shutil.copy2(staging / ".github/workflows" / filename, workflows / filename)
+
+          print(f"Validated and extracted {file_count} files ({total} bytes)")
+          PY
+
+      - name: Commit imported Aharane source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf aharane-source-import
+          rm -f .github/workflows/aharane-source-import.yml
+          git add -A aharane .github/workflows/aharane-android.yml .github/workflows/aharane-azure.yml
+          if git diff --cached --quiet; then
+            echo "No differences between the ZIP and this branch"
+            exit 0
+          fi
+          git commit -m "Import Aharane ZIP source snapshot"
+          git push origin HEAD:aharane/source-import-20261125

@@ -1,4 +1,14 @@
 pluginManagement {
+    // Resolve the KSP plugin directly to its published implementation artifact.
+    // This avoids intermittent failure resolving the plugin marker POM while
+    // preserving the version pinned in libs.versions.toml.
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == "com.google.devtools.ksp") {
+                useModule("com.google.devtools.ksp:symbol-processing-gradle-plugin:${requested.version}")
+            }
+        }
+    }
     repositories {
         google()
         maven { url = uri("https://repo1.maven.org/maven2") }

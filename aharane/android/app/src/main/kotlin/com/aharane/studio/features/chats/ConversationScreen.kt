@@ -1332,8 +1332,7 @@ private fun MessageBubble(
     onLoadAudio: () -> Unit,
     onDownloadMedia: () -> Unit,
     onOpenLocation: () -> Unit,
-    onVotePoll: (List<String>) -> Unit,
-    connected: Boolean
+    onVotePoll: (List<String>) -> Unit
 ) {
     val outgoing = message.direction == MessageDirection.OUTGOING
     val swipeOffset = remember(message.messageId) { ComposeAnimatable(0f) }

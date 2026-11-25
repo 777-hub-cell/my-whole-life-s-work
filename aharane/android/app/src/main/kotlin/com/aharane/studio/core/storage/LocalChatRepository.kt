@@ -99,6 +99,9 @@ class LocalChatRepository(context: Context) {
     suspend fun outgoingMediaMessage(key: ConversationKey, clientMessageId: String): ChatOutgoingMediaRow? =
         dao.outgoingMediaMessage(key.account.apiValue, key.jid, clientMessageId)
 
+    suspend fun outgoingMediaMessages(key: ConversationKey): List<ChatOutgoingMediaRow> =
+        dao.outgoingMedia(key.account.apiValue, key.jid)
+
     suspend fun pendingOutgoingMedia(account: ChatAccount, limit: Int = 100): List<ChatOutgoingMediaRow> =
         dao.pendingOutgoingMedia(account.apiValue, limit.coerceIn(1, 200))
 

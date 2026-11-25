@@ -27,6 +27,40 @@ import org.json.JSONObject
 
 private data class EngineRow(val id: String, val name: String, val version: Int, val description: String)
 
+/** Plain-text summary of effective grants and advisory diagnostics from GET /engines/:id/capabilities. */
+private fun describeCapabilities(info: JSONObject): String {
+    val capabilities = info.optJSONObject("capabilities") ?: return ""
+    val permissions = capabilities.optJSONArray("permissions") ?: JSONArray()
+    val lines = mutableListOf<String>()
+    for (index in 0 until permissions.length()) {
+        val permission = permissions.optJSONObject(index) ?: continue
+        val hosts = permission.optJSONArray("hosts") ?: JSONArray()
+        val names = (0 until hosts.length()).map { hosts.optString(it) }
+        val grant = if (permission.optBoolean("granted")) names.joinToString(", ") else "not granted"
+        lines.add(permission.optString("id") + ": " + grant)
+    }
+    val findings = info.optJSONObject("diagnostics")?.optJSONArray("findings") ?: JSONArray()
+    for (index in 0 until findings.length()) {
+        val finding = findings.optJSONObject(index) ?: continue
+        lines.add(finding.optString("severity") + ": " + finding.optString("message"))
+    }
+    return lines.joinToString("\n")
+}
+
+/** Plain-text summary of a run envelope: success and outputs, or the structured outcome and message. */
+private fun describeRun(result: JSONObject): String {
+    val revision = result.optJSONObject("engine")?.optInt("revision", 0) ?: 0
+    val denied = result.optJSONArray("denials")?.length() ?: 0
+    val header = if (result.optBoolean("ok")) {
+        "Succeeded in " + result.optLong("durationMs") + " ms, revision " + revision
+    } else {
+        result.optString("outcome") + ": " + result.optString("message")
+    }
+    val deniedLine = if (denied > 0) "\nDenied calls: " + denied else ""
+    val outputs = result.optJSONObject("outputs")?.toString(2) ?: ""
+    return header + deniedLine + (if (outputs.isNotBlank()) "\n" + outputs else "")
+}
+
 private fun portDefinitions(source: String): JSONArray {
     val result = JSONArray()
     val ids = mutableSetOf<String>()
@@ -61,6 +95,7 @@ fun EngineLibraryScreen(
     var id by remember { mutableStateOf("") }
     var version by remember { mutableStateOf("1") }
     var savedVersion by remember { mutableIntStateOf(0) }
+    var savedRevision by remember { mutableIntStateOf(0) }
     var inputs by remember { mutableStateOf("query:string") }
     var outputs by remember { mutableStateOf("results:list") }
     var allowedHosts by remember { mutableStateOf("") }
@@ -68,6 +103,11 @@ fun EngineLibraryScreen(
     var deletingId by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf("") }
+    var testOpen by remember { mutableStateOf(false) }
+    var testInput by remember { mutableStateOf("{}") }
+    var testResult by remember { mutableStateOf("") }
+    var testCapabilities by remember { mutableStateOf("") }
+    var testing by remember { mutableStateOf(false) }
 
     fun refresh() {
         if (!connected) {
@@ -149,7 +189,7 @@ fun EngineLibraryScreen(
                                     .put("timeoutMs", 10000)
                                     .put("maxResults", 10)
                                 if (editingId == null) repository.createEngine(manifest, code)
-                                else repository.updateEngine(id, manifest, code, savedVersion)
+                                else repository.updateEngine(id, manifest, code, savedVersion, savedRevision)
                                 editorVisible = false
                                 error = ""
                                 refresh()
@@ -159,6 +199,22 @@ fun EngineLibraryScreen(
                         }
                     }
                 ) { Text(if (saving) "Saving…" else "Save Engine") }
+                if (editingId != null && savedRevision > 0) {
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = connected && !saving,
+                        onClick = {
+                            val target = editingId ?: return@OutlinedButton
+                            testResult = ""
+                            testCapabilities = ""
+                            testOpen = true
+                            scope.launch {
+                                try { testCapabilities = describeCapabilities(repository.engineCapabilities(target)) }
+                                catch (failure: Exception) { testCapabilities = "" }
+                            }
+                        }
+                    ) { Text("Test run") }
+                }
             }
         } else {
             OutlinedTextField(
@@ -170,7 +226,7 @@ fun EngineLibraryScreen(
                 enabled = connected,
                 onClick = {
                     editingId = null
-                    id = ""; name = ""; version = "1"; savedVersion = 0
+                    id = ""; name = ""; version = "1"; savedVersion = 0; savedRevision = 0
                     inputs = "query:string"; outputs = "results:list"; allowedHosts = ""
                     code = "export async function run(inputs) {\n  return { results: [inputs.query] }\n}"
                     editorVisible = true; error = ""
@@ -200,6 +256,7 @@ fun EngineLibraryScreen(
                                         name = manifest.optString("name")
                                         version = manifest.optInt("version", 1).toString()
                                         savedVersion = manifest.optInt("version", 1)
+                                        savedRevision = item.optInt("revision", 0)
                                         inputs = (manifest.optJSONArray("inputs") ?: JSONArray()).let { array ->
                                             (0 until array.length()).mapNotNull { array.optJSONObject(it) }
                                                 .joinToString(", ") { it.optString("id") + ":" + it.optString("type") }
@@ -228,6 +285,53 @@ fun EngineLibraryScreen(
                 }
             }
         }
+    }
+    if (testOpen) {
+        AlertDialog(
+            onDismissRequest = { if (!testing) testOpen = false },
+            title = { Text("Test run · revision " + savedRevision) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Runs the saved revision, not unsaved edits. Only approved HTTPS hosts can be reached.",
+                        fontSize = 12.sp, color = StudioPalette.Muted
+                    )
+                    if (testCapabilities.isNotBlank()) {
+                        Text(testCapabilities, fontSize = 12.sp, color = StudioPalette.Muted)
+                    }
+                    OutlinedTextField(
+                        value = testInput, onValueChange = { testInput = it.take(8000) },
+                        label = { Text("Inputs as JSON") }, modifier = Modifier.fillMaxWidth()
+                    )
+                    if (testResult.isNotBlank()) {
+                        Text(
+                            testResult, fontSize = 12.sp, color = StudioPalette.Ink,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !testing,
+                    onClick = {
+                        val target = editingId ?: return@TextButton
+                        val values = try { JSONObject(testInput) } catch (failure: org.json.JSONException) {
+                            testResult = "Inputs must be a JSON object, for example {\"query\":\"cats\"}."
+                            return@TextButton
+                        }
+                        scope.launch {
+                            testing = true
+                            testResult = "Running…"
+                            try { testResult = describeRun(repository.runEngine(target, savedRevision, values)) }
+                            catch (failure: Exception) { testResult = failure.message ?: "Test run failed." }
+                            finally { testing = false }
+                        }
+                    }
+                ) { Text(if (testing) "Running…" else "Run") }
+            },
+            dismissButton = { TextButton(enabled = !testing, onClick = { testOpen = false }) { Text("Close") } }
+        )
     }
     if (deletingId != null) {
         AlertDialog(

@@ -1,16 +1,20 @@
 package com.aharane.studio.features.chats
 
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.junit4.createComposeRule
+import android.view.KeyEvent
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -86,12 +90,14 @@ class ConversationScreenTest {
         compose.onAllNodesWithText("This is the older message being quoted.").assertCountEquals(2)
         compose.onNodeWithText("Professional").performClick()
         compose.onNodeWithTag("ai-reply-instruction").performTextInput("Keep it warm and brief.")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
         compose.onNodeWithText("Generate reply").performClick()
         compose.waitUntil(timeoutMillis = 5_000) {
             compose.onAllNodesWithTag("ai-reply-draft").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("ai-reply-draft").assertTextEquals("Thanks for explaining. I can do that.")
-        compose.onNodeWithText("Send reply").performClick()
+        compose.onNodeWithText("Send reply").performScrollTo().performClick()
         compose.runOnIdle {
             assertEquals("This is the selected incoming message.", suppliedMessage)
             assertEquals("This is the older message being quoted.", suppliedQuote)
@@ -206,6 +212,171 @@ class ConversationScreenTest {
     }
 
     @Test
+    fun connectedComposerExposesStickerPickerWithoutSendingText() {
+        var stickerPickerRequests = 0
+        var sentMessages = 0
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = emptyList(),
+                    connected = true,
+                    onBack = {},
+                    onSend = { _, _ -> sentMessages++ },
+                    onPickSticker = { stickerPickerRequests++ }
+                )
+            }
+        }
+        compose.onNodeWithContentDescription("Choose a WebP sticker")
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+        compose.runOnIdle {
+            assertEquals(1, stickerPickerRequests)
+            assertEquals(0, sentMessages)
+        }
+    }
+
+    @Test
+    fun activeVoiceRecordingShowsStopAndCancelControls() {
+        val recording = androidx.compose.runtime.mutableStateOf(true)
+        var stopped = 0
+        var cancelled = 0
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = emptyList(),
+                    connected = true,
+                    voiceRecording = recording.value,
+                    onBack = {},
+                    onSend = { _, _ -> },
+                    onRecordVoice = {
+                        stopped++
+                        recording.value = false
+                    },
+                    onCancelVoiceRecording = {
+                        cancelled++
+                        recording.value = false
+                    }
+                )
+            }
+        }
+
+        compose.onNodeWithText("Recording voice note · Tap send to finish").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Stop and send voice note").assertIsDisplayed().performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertEquals(1, stopped)
+            assertEquals(0, cancelled)
+            assertEquals(false, recording.value)
+        }
+    }
+
+    @Test
+    fun cancellingVoiceRecordingDiscardsItWithoutSending() {
+        val recording = androidx.compose.runtime.mutableStateOf(true)
+        var sent = 0
+        var cancelled = 0
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = emptyList(),
+                    connected = true,
+                    voiceRecording = recording.value,
+                    onBack = {},
+                    onSend = { _, _ -> sent++ },
+                    onRecordVoice = {},
+                    onCancelVoiceRecording = {
+                        cancelled++
+                        recording.value = false
+                    }
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Cancel voice note").assertIsDisplayed().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Recording voice note · Tap send to finish").assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(1, cancelled)
+            assertEquals(0, sent)
+            assertEquals(false, recording.value)
+        }
+    }
+
+    @Test
+    fun pollCardSubmitsOnlySelectedOptionAndShowsVotes() {
+        var submitted: List<String> = emptyList()
+        val poll = com.aharane.studio.core.model.ChatMessage(
+            key = testConversation().key,
+            messageId = "poll-1",
+            direction = com.aharane.studio.core.model.MessageDirection.INCOMING,
+            kind = com.aharane.studio.core.model.MessageKind.POLL,
+            text = "Lunch?",
+            timestampMillis = 1_763_600_000_000L,
+            pollOptions = listOf("Jollof rice", "Fried rice", "Pasta"),
+            pollSelectableCount = 1,
+            pollVoteCounts = mapOf("Jollof rice" to 3, "Fried rice" to 1, "Pasta" to 0),
+            pollMyVotes = emptyList()
+        )
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = listOf(poll),
+                    connected = true,
+                    onBack = {},
+                    onSend = { _, _ -> },
+                    onVotePoll = { _, options -> submitted = options }
+                )
+            }
+        }
+
+        compose.onNodeWithText("Lunch?").assertIsDisplayed()
+        compose.onNodeWithText("3").assertIsDisplayed()
+        compose.onNodeWithText("Fried rice").performClick()
+        compose.onNodeWithText("Vote").performClick()
+        compose.runOnIdle { assertEquals(listOf("Fried rice"), submitted) }
+    }
+
+    @Test
+    fun conversationOptionsOpensPollCreationForm() {
+        var createdQuestion = ""
+        var createdOptions: List<String> = emptyList()
+        var createdSelectCount = 0
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = emptyList(),
+                    connected = true,
+                    onBack = {},
+                    onSend = { _, _ -> },
+                    onCreatePoll = { question, options, count ->
+                        createdQuestion = question
+                        createdOptions = options
+                        createdSelectCount = count
+                    }
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Conversation options").performClick()
+        compose.onNodeWithText("Create poll").performClick()
+        compose.onNodeWithTag("poll-question").performTextInput("Lunch?")
+        compose.onNodeWithTag("poll-option-0").performTextInput("Jollof rice")
+        compose.onNodeWithTag("poll-option-1").performTextInput("Pasta")
+        compose.onNodeWithText("Create poll").performClick()
+        compose.runOnIdle {
+            assertEquals("Lunch?", createdQuestion)
+            assertEquals(listOf("Jollof rice", "Pasta"), createdOptions)
+            assertEquals(1, createdSelectCount)
+        }
+    }
+
+    @Test
     fun disconnectedComposerKeepsDraftButDisablesSendAndAttachments() {
         compose.setContent {
             AharaneTheme(themeMode = "light") {
@@ -221,6 +392,7 @@ class ConversationScreenTest {
         compose.onNodeWithTag("conversation-composer").performTextInput("Draft stays on this phone")
         compose.onNodeWithTag("conversation-send").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Attach image, video, audio or document").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Choose a WebP sticker").assertIsNotEnabled()
         compose.onNodeWithTag("conversation-composer").assertTextEquals("Draft stays on this phone")
     }
 }

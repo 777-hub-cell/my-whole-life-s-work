@@ -1,8 +1,12 @@
 import { readdir } from 'node:fs/promises'
 import { relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { VALID_NAME, parseCommand } from './command-parser.js'
+import { resolveExecutionAuthorization } from './authorization.js'
 
-const VALID_NAME = /^[a-z][a-z0-9_-]{0,63}$/
+// Re-exported so existing importers keep working; the parser lives in its own
+// module so authorization.js can use it without a circular import.
+export { parseCommand }
 
 async function commandFiles(rootPath, directoryPath = rootPath) {
   const entries = await readdir(directoryPath, { withFileTypes: true })
@@ -14,19 +18,6 @@ async function commandFiles(rootPath, directoryPath = rootPath) {
     else if (entry.isFile() && entry.name.endsWith('.js')) files.push(fullPath)
   }
   return files
-}
-
-export function parseCommand(rawText, prefix = '!') {
-  const text = String(rawText || '').trim()
-  const marker = String(prefix || '!')
-  if (!marker || !text.startsWith(marker)) return null
-  const body = text.slice(marker.length).trim()
-  if (!body) return null
-  const [rawName, ...args] = body.split(/\s+/)
-  const rawArgs = body.slice(rawName.length).replace(/^\s+/u, '')
-  const name = rawName.toLowerCase()
-  if (!VALID_NAME.test(name)) return null
-  return { name, args, rawArgs }
 }
 
 export async function loadCommandRegistry(directoryUrl, { scope, cacheBust = Date.now() } = {}) {
@@ -62,29 +53,43 @@ export async function loadCommandRegistry(directoryUrl, { scope, cacheBust = Dat
 }
 
 /**
- * Registries are deliberately not interchangeable:
- * - private commands only run for the verified private self-chat session;
- * - public commands only run on the public session;
- * - public ownerOnly checks the Public Owner identity only.
+ * Registries are deliberately not interchangeable, and dispatch never trusts
+ * caller-supplied privilege flags. Every run is authorised here by the one
+ * canonical evaluator from the verified `auth` proof:
+ * - private commands need verified Private Owner control (own self-chat);
+ * - public commands need a direct, non-self public message;
+ * - public ownerOnly commands additionally need the configured Public Owner.
+ * Any `privateControl`/`isPublicOwner`/`isPrivateOwner` in `context` is
+ * overwritten with the evaluator's result. Missing `auth` denies.
  */
-export async function dispatchCommand({ registry, rawText, context, prefix = '!' } = {}) {
-  if (!registry?.commands || !context) return false
+export async function dispatchCommand({ registry, rawText, context = {}, prefix = '!', auth, onDenied } = {}) {
+  if (!registry?.commands) return false
   const parsed = parseCommand(rawText, prefix)
   if (!parsed) return false
   const command = registry.commands.get(parsed.name)
   if (!command) return false
 
+  const resolved = resolveExecutionAuthorization(auth || {})
+  let decision
   if (registry.scope === 'private') {
-    if (context.sessionId !== 'private' || context.privateControl !== true) return false
+    decision = resolved.decisions.privateControl
   } else if (registry.scope === 'public') {
-    if (context.sessionId !== 'public') return false
-    if (command.ownerOnly === true && context.isPublicOwner !== true) return false
+    decision = resolved.decisions.publicCommand
+    if (decision.allow && command.ownerOnly === true) decision = resolved.decisions.publicOwner
   } else {
+    return false
+  }
+  if (!decision.allow) {
+    try { onDenied?.(decision, { command: command.name }) } catch { /* audit hook must never affect dispatch */ }
     return false
   }
 
   await command.run({
     ...context,
+    sessionId: auth.sessionId,
+    privateControl: resolved.privateControl,
+    isPrivateOwner: resolved.privateControl,
+    isPublicOwner: resolved.isPublicOwner,
     command,
     args: parsed.args,
     rawArgs: parsed.rawArgs,

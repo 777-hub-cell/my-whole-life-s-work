@@ -77,7 +77,11 @@ data class ChatMessageRow(
     val cachedMediaSha256: String? = null,
     val cachedMediaBytes: Long = 0L,
     val deletedByRemote: Boolean = false,
-    val deletedAtMillis: Long = 0L
+    val deletedAtMillis: Long = 0L,
+    @ColumnInfo(defaultValue = "'[]'") val pollOptionsJson: String = "[]",
+    @ColumnInfo(defaultValue = "1") val pollSelectableCount: Int = 1,
+    @ColumnInfo(defaultValue = "'{}'") val pollVoteCountsJson: String = "{}",
+    @ColumnInfo(defaultValue = "'[]'") val pollMyVotesJson: String = "[]"
 )
 
 @Entity(
@@ -94,6 +98,30 @@ data class ChatOutgoingMessageRow(
     val queuedAtMillis: Long,
     val state: String,
     val lastError: String?,
+    val remoteMessageId: String?
+)
+
+@Entity(
+    tableName = "chat_outgoing_media",
+    primaryKeys = ["account", "jid", "clientMessageId"],
+    indices = [Index(value = ["account", "state", "queuedAtMillis"])]
+)
+data class ChatOutgoingMediaRow(
+    val account: String,
+    val jid: String,
+    val clientMessageId: String,
+    val mimeType: String,
+    val fileName: String,
+    val caption: String,
+    val quotedMessageId: String?,
+    val queuedAtMillis: Long,
+    val state: String,
+    val lastError: String?,
+    val cachePath: String,
+    val cacheSha256: String,
+    val sizeBytes: Long,
+    val isVoiceNote: Boolean,
+    val durationSeconds: Int,
     val remoteMessageId: String?
 )
 
@@ -186,11 +214,38 @@ interface ChatDao {
 
     @Query("DELETE FROM chat_outgoing_messages WHERE account = :account AND jid = :jid AND remoteMessageId = :remoteMessageId")
     suspend fun reconcileOutgoingMessage(account: String, jid: String, remoteMessageId: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putOutgoingMedia(row: ChatOutgoingMediaRow)
+
+    @Query("SELECT * FROM chat_outgoing_media WHERE account = :account AND jid = :jid ORDER BY queuedAtMillis ASC")
+    suspend fun outgoingMedia(account: String, jid: String): List<ChatOutgoingMediaRow>
+
+    @Query("SELECT * FROM chat_outgoing_media WHERE account = :account AND state = 'PENDING' ORDER BY queuedAtMillis ASC LIMIT :limit")
+    suspend fun pendingOutgoingMedia(account: String, limit: Int): List<ChatOutgoingMediaRow>
+
+    @Query("SELECT * FROM chat_outgoing_media WHERE state = 'SENDING'")
+    suspend fun interruptedOutgoingMedia(): List<ChatOutgoingMediaRow>
+
+    @Query("SELECT * FROM chat_outgoing_media WHERE account = :account AND jid = :jid AND clientMessageId = :clientMessageId LIMIT 1")
+    suspend fun outgoingMediaMessage(account: String, jid: String, clientMessageId: String): ChatOutgoingMediaRow?
+
+    @Query("UPDATE chat_outgoing_media SET state = :state, lastError = :error, remoteMessageId = COALESCE(:remoteMessageId, remoteMessageId) WHERE account = :account AND jid = :jid AND clientMessageId = :clientMessageId")
+    suspend fun updateOutgoingMedia(account: String, jid: String, clientMessageId: String, state: String, error: String?, remoteMessageId: String?)
+
+    @Query("DELETE FROM chat_outgoing_media WHERE account = :account AND jid = :jid AND clientMessageId = :clientMessageId")
+    suspend fun deleteOutgoingMedia(account: String, jid: String, clientMessageId: String)
+
+    @Query("DELETE FROM chat_outgoing_media WHERE account = :account AND jid = :jid")
+    suspend fun clearOutgoingMedia(account: String, jid: String)
+
+    @Query("DELETE FROM chat_outgoing_media WHERE account = :account AND jid = :jid AND remoteMessageId = :remoteMessageId")
+    suspend fun reconcileOutgoingMedia(account: String, jid: String, remoteMessageId: String)
 }
 
 @Database(
-    entities = [ChatConversationRow::class, ChatMessageRow::class, ChatOutgoingMessageRow::class],
-    version = 5,
+    entities = [ChatConversationRow::class, ChatMessageRow::class, ChatOutgoingMessageRow::class, ChatOutgoingMediaRow::class],
+    version = 7,
     exportSchema = true
 )
 abstract class AharaneChatDatabase : RoomDatabase() {
@@ -204,6 +259,42 @@ class EncryptedChatDatabase private constructor(
     companion object {
         private const val KEY_ALIAS = "com.aharane.chat.database.wrap.v1"
         private const val KEY_FILE = "chat-database-key.wrap"
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE chat_messages ADD COLUMN pollOptionsJson TEXT NOT NULL DEFAULT '[]'")
+                database.execSQL("ALTER TABLE chat_messages ADD COLUMN pollSelectableCount INTEGER NOT NULL DEFAULT 1")
+                database.execSQL("ALTER TABLE chat_messages ADD COLUMN pollVoteCountsJson TEXT NOT NULL DEFAULT '{}' ")
+                database.execSQL("ALTER TABLE chat_messages ADD COLUMN pollMyVotesJson TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """CREATE TABLE IF NOT EXISTS chat_outgoing_media (
+                        account TEXT NOT NULL,
+                        jid TEXT NOT NULL,
+                        clientMessageId TEXT NOT NULL,
+                        mimeType TEXT NOT NULL,
+                        fileName TEXT NOT NULL,
+                        caption TEXT NOT NULL,
+                        quotedMessageId TEXT,
+                        queuedAtMillis INTEGER NOT NULL,
+                        state TEXT NOT NULL,
+                        lastError TEXT,
+                        cachePath TEXT NOT NULL,
+                        cacheSha256 TEXT NOT NULL,
+                        sizeBytes INTEGER NOT NULL,
+                        isVoiceNote INTEGER NOT NULL,
+                        durationSeconds INTEGER NOT NULL,
+                        remoteMessageId TEXT,
+                        PRIMARY KEY(account, jid, clientMessageId)
+                    )"""
+                )
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_chat_outgoing_media_account_state_queuedAtMillis ON chat_outgoing_media(account, state, queuedAtMillis)")
+            }
+        }
 
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(database: SupportSQLiteDatabase) {
@@ -265,7 +356,7 @@ class EncryptedChatDatabase private constructor(
             val factory = SupportOpenHelperFactory(passphrase)
             val db = Room.databaseBuilder(context.applicationContext, AharaneChatDatabase::class.java, file.absolutePath)
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 .build()
             try {
                 // Force the encrypted open now. A bad or missing key fails closed here.

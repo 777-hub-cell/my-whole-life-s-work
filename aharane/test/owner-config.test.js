@@ -84,3 +84,55 @@ test('clearing Public Owner must not inherit Private Owner on reload', async t =
   assert.equal(next.privateOwnerNumber, '2348012345678')
   assert.equal(next.publicOwnerNumber, '')
 })
+
+
+test('legacy single ownerNumber file (v1) maps to both owners once and persists as v4', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'aharane-v1-owner-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const file = join(root, 'owner-config.json')
+  await writeFile(file, JSON.stringify({ ownerNumber: '+234 801 234 5678', allowedSenders: ['2348999999999'] }))
+  const loaded = await loadOwnerConfig(file)
+  assert.equal(loaded.privateOwnerNumber, '2348012345678')
+  assert.equal(loaded.publicOwnerNumber, '2348012345678')
+  assert.deepEqual(loaded.allowedPublicSenders, [], 'a legacy sender allow-list never becomes policy')
+  const saved = await saveOwnerConfig(file, loaded)
+  assert.equal((await loadOwnerConfig(file)).privateOwnerNumber, saved.privateOwnerNumber)
+})
+
+test('corrupt or unreadable owner file refuses to guess identities instead of resetting them', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'aharane-corrupt-owner-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const file = join(root, 'owner-config.json')
+  await writeFile(file, '{ not json')
+  await assert.rejects(() => loadOwnerConfig(file, { ownerNumber: '2348012345678' }), /refusing to guess/)
+})
+
+test('invalid numbers normalise to unset rather than a guessed identity', () => {
+  const cfg = normalizeOwnerConfig({ privateOwnerNumber: '12', publicOwnerNumber: 'abc', publicBotNumber: '9'.repeat(30) })
+  assert.equal(cfg.privateOwnerNumber, '')
+  assert.equal(cfg.publicOwnerNumber, '')
+  assert.equal(cfg.publicBotNumber, '')
+})
+
+test('changing one owner never silently changes the other or the Public bot number', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'aharane-independent-owner-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const file = join(root, 'owner-config.json')
+  const first = await saveOwnerConfig(file, { privateOwnerNumber: '2348012345678', publicOwnerNumber: '14155550123', publicBotNumber: '447700900123' })
+  const next = await saveOwnerConfig(file, { ...first, privateOwnerNumber: '2348099999999' })
+  assert.equal(next.publicOwnerNumber, '14155550123')
+  assert.equal(next.publicBotNumber, '447700900123')
+  const again = await saveOwnerConfig(file, { ...next, publicOwnerNumber: '' })
+  assert.equal(again.privateOwnerNumber, '2348099999999')
+  assert.equal(again.publicBotNumber, '447700900123')
+})
+
+test('restart round-trip is stable: repeated load and save does not alter owners', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'aharane-restart-owner-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const file = join(root, 'owner-config.json')
+  await saveOwnerConfig(file, { privateOwnerNumber: '2348012345678', publicOwnerNumber: '14155550123', publicBotNumber: '447700900123' })
+  for (let i = 0; i < 3; i++) await saveOwnerConfig(file, await loadOwnerConfig(file))
+  const final = await loadOwnerConfig(file)
+  assert.deepEqual([final.privateOwnerNumber, final.publicOwnerNumber, final.publicBotNumber], ['2348012345678', '14155550123', '447700900123'])
+})

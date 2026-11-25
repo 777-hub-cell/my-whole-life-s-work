@@ -6,7 +6,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createAccountRuntime } from '../src/account-runtime.js'
 
-async function fixture(t, { pairingError = null, registered = false } = {}) {
+async function fixture(t, {
+  pairingError = null,
+  registered = false,
+  reconnectBaseMs = 5,
+  reconnectMaxMs = 5,
+  reconnectJitterRatio = 0.2,
+  reconnectRandom = () => 0.5,
+  logger = { info() {}, warn() {}, error() {} },
+} = {}) {
   const root = await mkdtemp(join(tmpdir(), 'aharane-accounts-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const authLoads = []
@@ -52,10 +60,12 @@ async function fixture(t, { pairingError = null, registered = false } = {}) {
       sockets.push(socket)
       return socket
     },
-    reconnectBaseMs: 5,
-    reconnectMaxMs: 5,
+    reconnectBaseMs,
+    reconnectMaxMs,
+    reconnectJitterRatio,
+    reconnectRandom,
     pairingReadyDelayMs: 0,
-    logger: { info() {}, warn() {}, error() {} },
+    logger,
   })
   return { root, runtime, authLoads, authContexts, sockets, savedAuth }
 }
@@ -173,7 +183,7 @@ test('an unregistered pairing socket that closes is not automatically reconnecte
   await runtime.shutdown()
 })
 
-test('a linked account stops after exactly three automatic reconnect attempts', async t => {
+test('automatic reconnects are bounded and explicit reconnect recovers the saved session', async t => {
   const { runtime, sockets } = await fixture(t, { registered: true })
   await runtime.start('private')
   const closeSocket = socket => socket.ev.emit('connection.update', {
@@ -193,7 +203,10 @@ test('a linked account stops after exactly three automatic reconnect attempts', 
   assert.equal(runtime.get('private').state, 'reconnect-exhausted')
   assert.equal(runtime.get('private').reconnectAttempts, 3)
   assert.equal(sockets.length, 4, 'No fourth automatic retry should be created')
-  await assert.rejects(runtime.reconnect('private'), /needs re-pairing/i)
+  const manuallyReconnected = await runtime.reconnect('private')
+  assert.equal(manuallyReconnected.state, 'connecting')
+  assert.equal(runtime.get('private').reconnectAttempts, 0)
+  assert.equal(sockets.length, 5, 'Explicit reconnect reuses the saved session without requesting a new pairing')
   await runtime.shutdown()
 })
 
@@ -563,4 +576,41 @@ test('a new WhatsApp link that fails to reconnect rolls back to the previous aut
   assert.equal(runtime.get('private').pairingSucceeded, false)
   assert.match(runtime.get('private').pairingError, /previous session was kept/i)
   await runtime.shutdown()
+})
+
+
+test('automatic reconnect delay applies deterministic bounded jitter', async t => {
+  const lowerLogs = []
+  const lower = await fixture(t, {
+    registered: true,
+    reconnectBaseMs: 100,
+    reconnectMaxMs: 1000,
+    reconnectJitterRatio: 0.25,
+    reconnectRandom: () => 0,
+    logger: { info() {}, warn(entry) { lowerLogs.push(entry) }, error() {} },
+  })
+  await lower.runtime.start('private')
+  lower.sockets[0].ev.emit('connection.update', {
+    connection: 'close',
+    lastDisconnect: { error: Object.assign(new Error('network reset'), { output: { statusCode: 0 } }) },
+  })
+  assert.equal(lowerLogs.find(entry => entry.event === 'whatsapp.reconnect-scheduled')?.delayMs, 75)
+  await lower.runtime.shutdown()
+
+  const upperLogs = []
+  const upper = await fixture(t, {
+    registered: true,
+    reconnectBaseMs: 100,
+    reconnectMaxMs: 1000,
+    reconnectJitterRatio: 0.25,
+    reconnectRandom: () => 1,
+    logger: { info() {}, warn(entry) { upperLogs.push(entry) }, error() {} },
+  })
+  await upper.runtime.start('private')
+  upper.sockets[0].ev.emit('connection.update', {
+    connection: 'close',
+    lastDisconnect: { error: Object.assign(new Error('network reset'), { output: { statusCode: 0 } }) },
+  })
+  assert.equal(upperLogs.find(entry => entry.event === 'whatsapp.reconnect-scheduled')?.delayMs, 125)
+  await upper.runtime.shutdown()
 })

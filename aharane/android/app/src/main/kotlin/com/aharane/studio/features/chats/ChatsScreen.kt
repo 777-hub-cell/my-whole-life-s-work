@@ -545,7 +545,7 @@ private fun ChatListRow(
     onClick: () -> Unit,
     onAction: (String) -> Unit
 ) {
-    var swipeOpen by rememberSaveable(chat.key.jid) { mutableStateOf(false) }
+    var swipeOpen by rememberSaveable(chat.key.account.apiValue, chat.key.jid) { mutableStateOf(false) }
     var dragDistance by remember { mutableFloatStateOf(0f) }
     val density = LocalDensity.current
     val offset by animateDpAsState(

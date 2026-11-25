@@ -6,6 +6,19 @@ import { validateEngineManifest } from './engine-contract.js'
 
 const MAX_NODES = 100
 const MAX_EDGES = 300
+// Workflow document schema. v1 had no schemaVersion/revision fields; v2 adds both.
+// Older documents are migrated on load (see normalizeWorkflow); newer ones are rejected.
+export const WORKFLOW_SCHEMA_VERSION = 2
+// Users choose their own per-run send amount. This is only the independent system ceiling
+// (a safety/resource protection), not a UI limit; rate, payload and time limits still apply.
+export const SYSTEM_MAX_MESSAGES_PER_RUN = 500
+// Immutable per-revision history kept for each workflow so schedules/runs can reference a saved revision.
+const MAX_REVISIONS_PER_WORKFLOW = 50
+const EXECUTION_CLAIM_TTL_MS = 24 * 60 * 60 * 1000
+const MAX_EXECUTION_CLAIMS = 2000
+const MAX_IMPORT_BYTES = 512 * 1024
+export const WORKFLOW_EXPORT_FORMAT = 'aharane.workflow'
+export const RUN_STATUSES = Object.freeze(['queued', 'running', 'succeeded', 'failed', 'cancelled'])
 const MAX_STEPS = 200
 const MAX_REPEAT = 10
 const MAX_DELAY_MS = 10_000
@@ -49,7 +62,6 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
   { category: 'Media and attachments', nodes: [
     { type: 'media.sendImage', name: 'Send image', description: 'Send an Engine-produced image to the triggering WhatsApp chat.', ports: ports([execIn, { id: 'image', label: 'Image', type: 'image' }, { id: 'caption', label: 'Caption', type: 'string' }], [execOut, { id: 'sent', label: 'Sent image', type: 'message' }]) },
     { type: 'media.sendImages', name: 'Send image results', description: 'Send a bounded number of Engine-produced images to the triggering WhatsApp chat.', ports: ports([execIn, { id: 'images', label: 'Images', type: 'list' }, { id: 'caption', label: 'Caption', type: 'string' }], [execOut, { id: 'sent', label: 'Sent messages', type: 'list' }]) },
-    { type: 'media.forwardOriginal', name: 'Forward original message', description: 'Forward the triggering message with its original supported media payload.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Forwarded message', type: 'message' }]) },
   ] },
   { category: 'Interactive messages', nodes: [
     { type: 'message.sendButtons', name: 'Send buttons', description: 'Send up to three interactive reply buttons.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Interactive message', type: 'message' }]) },
@@ -201,16 +213,26 @@ function cleanConfig(config) {
   return result
 }
 
+export function assertSupportedWorkflowSchema(input) {
+  const declared = input?.schemaVersion
+  if (declared != null && (!Number.isInteger(declared) || declared < 1)) {
+    throw new Error('The workflow schemaVersion is invalid.')
+  }
+  if (Number.isInteger(declared) && declared > WORKFLOW_SCHEMA_VERSION) {
+    throw new Error('This workflow uses schema version ' + declared + ', but this server supports up to ' + WORKFLOW_SCHEMA_VERSION + '. Update Aharane before opening it.')
+  }
+}
+
 export function normalizeWorkflow(input = {}) {
   const account = input.account === 'private' || input.account === 'public' ? input.account : ''
-  const nodes = Array.isArray(input.nodes) ? input.nodes.slice(0, MAX_NODES).map(node => ({
+  const nodes = Array.isArray(input.nodes) ? input.nodes.slice(0, MAX_NODES + 1).map(node => ({
     id: textValue(node?.id, 80) || randomUUID(),
     type: textValue(node?.type, 80),
     x: Number.isFinite(Number(node?.x)) ? Math.max(-10000, Math.min(10000, Number(node.x))) : 32,
     y: Number.isFinite(Number(node?.y)) ? Math.max(-10000, Math.min(10000, Number(node.y))) : 32,
     config: cleanConfig(node?.config),
   })) : []
-  const edges = Array.isArray(input.edges) ? input.edges.slice(0, MAX_EDGES).map(edge => ({
+  const edges = Array.isArray(input.edges) ? input.edges.slice(0, MAX_EDGES + 1).map(edge => ({
     id: textValue(edge?.id, 80) || randomUUID(),
     from: textValue(edge?.from, 80),
     fromSocket: textValue(edge?.fromSocket, 40),
@@ -222,7 +244,11 @@ export function normalizeWorkflow(input = {}) {
     name: textValue(input.name, 80).trim() || 'Untitled command',
     account,
     enabled: input.enabled === true,
-    version: 1,
+    // v1 -> v2 migration: documents without schemaVersion are treated as v1 and upgraded here.
+    schemaVersion: WORKFLOW_SCHEMA_VERSION,
+    version: WORKFLOW_SCHEMA_VERSION, // legacy alias kept for older clients
+    // Server-managed save counter; the store increments it on every successful save.
+    revision: Number.isInteger(input.revision) && input.revision >= 1 ? input.revision : 1,
     nodes,
     edges,
     createdAt: textValue(input.createdAt, 40) || new Date().toISOString(),
@@ -256,8 +282,8 @@ export function validateWorkflow(input) {
   const rawEdgeCount = Array.isArray(input?.edges) ? input.edges.length : 0
   const workflow = normalizeWorkflow(input)
   const errors = [], warnings = [], nodeErrors = {}
-  const issue = (nodeId, severity, message, fix) => {
-    const item = { nodeId: nodeId || null, severity, message, fix }
+  const issue = (nodeId, severity, message, fix, edgeId) => {
+    const item = { nodeId: nodeId || null, edgeId: edgeId || null, severity, message, fix }
     ;(severity === 'error' ? errors : warnings).push(item)
     if (nodeId && severity === 'error') (nodeErrors[nodeId] ||= []).push(message)
   }
@@ -288,14 +314,14 @@ export function validateWorkflow(input) {
         issue(node.id, 'error', 'The reply requirement setting is invalid.', 'Use the toggle to enable or disable it.')
       }
       const messageLimit = Number(config.maxMessagesPerRun == null ? 10 : config.maxMessagesPerRun)
-      if (!Number.isInteger(messageLimit) || messageLimit < 1 || messageLimit > 20) issue(node.id, 'error', 'The per-run message limit must be from 1 to 20.', 'Choose how many WhatsApp messages this command may send in one execution.')
+      if (!Number.isInteger(messageLimit) || messageLimit < 1 || messageLimit > SYSTEM_MAX_MESSAGES_PER_RUN) issue(node.id, 'error', 'The per-run message limit must be a whole number from 1 to ' + SYSTEM_MAX_MESSAGES_PER_RUN + '.', 'Choose how many WhatsApp messages this command may send in one execution.')
       const chatScope = textValue(config.chatScope, 16) || 'direct'
       if (!['direct', 'groups', 'both'].includes(chatScope)) issue(node.id, 'error', 'The chat scope is invalid.', 'Choose direct chats, groups, or both.')
       if (workflow.account === 'private' && chatScope !== 'direct') issue(node.id, 'error', 'Private commands cannot run in groups.', 'Keep the Private account scope set to direct chats.')
     }
     if (node.type === 'trigger.message') {
       const messageLimit = Number(config.maxMessagesPerRun == null ? 10 : config.maxMessagesPerRun)
-      if (!Number.isInteger(messageLimit) || messageLimit < 1 || messageLimit > 20) issue(node.id, 'error', 'The per-run message limit must be from 1 to 20.', 'Choose how many WhatsApp messages this workflow may send in one execution.')
+      if (!Number.isInteger(messageLimit) || messageLimit < 1 || messageLimit > SYSTEM_MAX_MESSAGES_PER_RUN) issue(node.id, 'error', 'The per-run message limit must be a whole number from 1 to ' + SYSTEM_MAX_MESSAGES_PER_RUN + '.', 'Choose how many WhatsApp messages this workflow may send in one execution.')
       const chatScope = textValue(config.chatScope, 16) || 'direct'
       if (!['direct', 'groups', 'both'].includes(chatScope)) issue(node.id, 'error', 'The message-event chat scope is invalid.', 'Choose direct chats, groups, or both.')
     }
@@ -387,6 +413,9 @@ export function validateWorkflow(input) {
       const manifest = engineDefinitions.get(node.type)
       if (!manifest) issue(node.id, 'error', 'Engine definition is missing.', 'Restore the Engine or replace this node.')
       else {
+        if (node.config.engineRevision != null && (!Number.isSafeInteger(Number(node.config.engineRevision)) || Number(node.config.engineRevision) < 1)) {
+          issue(node.id, 'error', 'The pinned Engine revision is not a positive whole number.', 'Clear the pin or enter a saved revision number.')
+        }
         if (node.config.engineVersion != null && Number(node.config.engineVersion) !== manifest.version) {
           issue(node.id, 'error', 'Engine version does not match.', 'Update the node and re-check its connected ports.')
         }
@@ -404,7 +433,7 @@ export function validateWorkflow(input) {
     if (node.type === 'media.sendImages') {
       if (!inputEdge(workflow, node.id, 'images')) issue(node.id, 'error', 'Images input is not connected.', 'Connect a list output from an Engine.')
       const limit = Number(config.limit == null ? 10 : config.limit)
-      if (!Number.isInteger(limit) || limit < 1 || limit > 20) issue(node.id, 'error', 'Image/message limit must be from 1 to 20.', 'Choose a safe per-run limit.')
+      if (!Number.isInteger(limit) || limit < 1 || limit > SYSTEM_MAX_MESSAGES_PER_RUN) issue(node.id, 'error', 'Image/message limit must be a whole number from 1 to ' + SYSTEM_MAX_MESSAGES_PER_RUN + '.', 'Choose a per-run limit within the system maximum.')
     }
     if (node.type === 'flow.delay') {
       const ms = Number(config.milliseconds == null ? 1000 : config.milliseconds)
@@ -441,24 +470,27 @@ export function validateWorkflow(input) {
     const key = edge.to + ':' + edge.toSocket
     inputCounts.set(key, (inputCounts.get(key) || 0) + 1)
   }
-  for (const [socketKey, count] of inputCounts) {
-    if (count > 1) {
-      const nodeId = socketKey.slice(0, socketKey.lastIndexOf(':'))
-      issue(nodeId, 'error', 'An input socket has more than one connection.', 'Keep one source connected to each input socket.')
+  const seenInputs = new Set()
+  for (const edge of workflow.edges) {
+    const key = edge.to + ':' + edge.toSocket
+    if ((inputCounts.get(key) || 0) > 1) {
+      // The first connection stays valid; every extra one is reported by its own edge ID.
+      if (seenInputs.has(key)) issue(edge.to, 'error', 'An input socket has more than one connection.', 'Keep one source connected to each input socket.', edge.id)
+      seenInputs.add(key)
     }
   }
 
   for (const edge of workflow.edges) {
     const from = byId.get(edge.from), to = byId.get(edge.to)
     if (!from || !to) {
-      issue(to?.id || from?.id || null, 'error', 'A connection points to a missing node.', 'Delete it and reconnect the nodes.')
+      issue(to?.id || from?.id || null, 'error', 'A connection points to a missing node.', 'Delete it and reconnect the nodes.', edge.id)
       continue
     }
     const source = findPort(from, 'outputs', edge.fromSocket)
     const target = findPort(to, 'inputs', edge.toSocket)
-    if (!source || !target) issue(to.id, 'error', 'A connection uses a socket that does not exist.', 'Reconnect using the visible sockets.')
-    else if (source.type !== target.type) issue(to.id, 'error', 'Cannot connect ' + source.type + ' to ' + target.type + '.', 'Connect sockets with matching types.')
-    if (source?.type === 'exec' && outputEdges(workflow, from.id, edge.fromSocket).length > 1) issue(from.id, 'error', 'An execution output has more than one connection.', 'Use a condition or repeat node for branches.')
+    if (!source || !target) issue(to.id, 'error', 'A connection uses a socket that does not exist.', 'Reconnect using the visible sockets.', edge.id)
+    else if (source.type !== target.type) issue(to.id, 'error', 'Cannot connect ' + source.type + ' to ' + target.type + '.', 'Connect sockets with matching types.', edge.id)
+    if (source?.type === 'exec' && outputEdges(workflow, from.id, edge.fromSocket).length > 1) issue(from.id, 'error', 'An execution output has more than one connection.', 'Use a condition or repeat node for branches.', edge.id)
   }
 
   for (const node of workflow.nodes) {
@@ -572,12 +604,25 @@ function safeChat(context, trigger) {
     isGroupJid(jid) && (scope === 'groups' || scope === 'both')
 }
 
-export async function executeVisualWorkflow(input, options = {}) {
+async function executeWorkflowCore(input, options = {}) {
   const workflow = normalizeWorkflow(input)
   const validation = validateWorkflow(workflow)
   const dryRun = options.dryRun === true
   const store = options.store
-  const event = options.context
+  // Preserve caller-provided command arguments, but derive them from the raw
+  // command text for direct/manual invocations that only provide messageText.
+  // An explicit empty rawArgs value remains authoritative (scheduled runs and
+  // message-trigger workflows intentionally have no command arguments).
+  const event = options.context && typeof options.context === 'object'
+    ? { ...options.context }
+    : options.context
+  const commandTrigger = workflow.nodes.find(node => node.type === 'trigger.command')
+  if (commandTrigger && event && event.rawArgs === undefined) {
+    const tokens = textValue(event.messageText).trim().split(/\s+/).filter(Boolean)
+    const inferredArgs = tokens.slice(1)
+    if (!Array.isArray(event.args)) event.args = inferredArgs
+    event.rawArgs = event.args.join(' ')
+  }
   const now = options.now || Date.now
   const trace = []
   if (!validation.valid) return { ok: false, dryRun, validation, trace, error: 'Workflow validation failed.' }
@@ -587,7 +632,11 @@ export async function executeVisualWorkflow(input, options = {}) {
     : event.sessionId === 'public' && event.allowedPublicSender === true
   if (!authorized) return { ok: false, dryRun, validation, trace, error: 'This WhatsApp account is not authorized to run the workflow.' }
   const trigger = workflow.nodes.find(node => triggerTypes.has(node.type))
-  const perRunMessageLimit = Number(trigger?.config?.maxMessagesPerRun == null ? 10 : trigger.config.maxMessagesPerRun)
+  const configuredMessageLimit = Number(trigger?.config?.maxMessagesPerRun == null ? 10 : trigger.config.maxMessagesPerRun)
+  // Defence in depth: never exceed the system ceiling even if validation was bypassed.
+  const perRunMessageLimit = Number.isInteger(configuredMessageLimit) && configuredMessageLimit >= 1
+    ? Math.min(configuredMessageLimit, SYSTEM_MAX_MESSAGES_PER_RUN)
+    : 1
   let sentMessageCount = 0
   const sendWhatsAppMessage = async (...args) => {
     if (sentMessageCount >= perRunMessageLimit) {
@@ -617,6 +666,16 @@ export async function executeVisualWorkflow(input, options = {}) {
     }
   }
 
+  // Duplicate-send protection: a redelivered trigger message must not run the same workflow twice.
+  // Opt-in (options.deduplicate) so dry runs and tests stay repeatable; production event paths enable it.
+  if (options.deduplicate === true && !dryRun && typeof store.claimExecution === 'function') {
+    const triggerKey = textValue(event.idempotencyKey || event.message?.key?.id, 200)
+    if (triggerKey) {
+      const claimed = await store.claimExecution(workflow.id + ':' + triggerKey)
+      if (!claimed) return { ok: false, dryRun, validation, trace, error: 'This message was already processed by this workflow; nothing was sent again.', duplicate: true }
+    }
+  }
+
   const nodes = new Map(workflow.nodes.map(node => [node.id, node]))
   const outputs = new Map()
   const variables = Object.create(null)
@@ -631,6 +690,7 @@ export async function executeVisualWorkflow(input, options = {}) {
     let id = startId
     const visited = new Set()
     while (id && !terminated) {
+      if (options.signal?.aborted) throw cancelledError()
       if (--budget < 0) throw new Error('Workflow exceeded the 200-step safety limit.')
       if (now() - state.startedAt > MAX_EXECUTION_MS) throw new Error('Workflow exceeded its 30-second execution limit.')
       if (visited.has(id)) throw new Error('An execution cycle was detected.')
@@ -910,7 +970,7 @@ export async function executeVisualWorkflow(input, options = {}) {
           const items = node.type === 'media.sendImage' ? [raw] : raw
           if (!Array.isArray(items) || !items.length) throw new Error('The Engine did not provide any images.')
           const limit = node.type === 'media.sendImage' ? 1 : Number(node.config.limit == null ? 10 : node.config.limit)
-          if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error('Image/message limit must be between 1 and 20.')
+          if (!Number.isInteger(limit) || limit < 1 || limit > SYSTEM_MAX_MESSAGES_PER_RUN) throw new Error('Image/message limit must be between 1 and ' + SYSTEM_MAX_MESSAGES_PER_RUN + '.')
           const remaining = Math.max(0, perRunMessageLimit - sentMessageCount)
           const selected = items.slice(0, Math.min(limit, remaining))
           if (!selected.length) throw new Error('This command has reached its per-run WhatsApp message limit.')
@@ -955,9 +1015,22 @@ export async function executeVisualWorkflow(input, options = {}) {
               else if (port.type === 'list') values[port.id] = Array.isArray(value) ? value : String(value ?? '').split(/[,\n]+/).filter(Boolean)
               else values[port.id] = String(value ?? '')
             }
-            const result = await options.runEngine(manifest.id, values)
+            // Scheduled and live runs go through the same invocation path; the source is derived from
+            // trusted run state, never from workflow data.
+            const result = await options.runEngine(manifest.id, values, {
+              signal: options.signal,
+              revision: node.config.engineRevision,
+              source: event?.scheduledExecution === true ? 'scheduler' : 'workflow',
+              account: event?.sessionId,
+              correlationId: options.runId ? String(options.runId + ':' + node.id).replace(/[^A-Za-z0-9._:-]/g, '-').slice(0, 120) : undefined,
+            })
             outputs.set(node.id, result.outputs || result)
-            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'Engine ' + manifest.name + ' completed in ' + Number(result.durationMs || 0) + ' ms.' })
+            trace.push({
+              nodeId: node.id, type: node.type, status: 'success',
+              message: 'Engine ' + manifest.name + ' completed in ' + Number(result.durationMs || 0) + ' ms.' +
+                (result.engineRevision ? ' Revision ' + result.engineRevision + (result.pinned === false ? ' (latest, not pinned).' : '.') : '') +
+                (result.sourceSha256 ? ' Source ' + String(result.sourceSha256).slice(0, 12) + '.' : ''),
+            })
           }
           next = firstEdge(node, 'next')
         } else if (node.type.startsWith('custom.')) {
@@ -977,7 +1050,7 @@ export async function executeVisualWorkflow(input, options = {}) {
         } else if (node.type === 'flow.delay') {
           const ms = Number(node.config.milliseconds == null ? 1000 : node.config.milliseconds)
           if (!Number.isInteger(ms) || ms < 0 || ms > MAX_DELAY_MS) throw new Error('Wait duration is invalid.')
-          if (!dryRun && ms) await new Promise(resolve => setTimeout(resolve, ms))
+          if (!dryRun && ms) await abortableSleep(ms, options.signal)
           trace.push({ nodeId: node.id, type: node.type, status: dryRun ? 'simulated' : 'success', message: 'Waited ' + ms + ' ms.' })
         } else if (node.type === 'flow.repeat') {
           const count = Number(node.config.count == null ? 2 : node.config.count)
@@ -993,7 +1066,7 @@ export async function executeVisualWorkflow(input, options = {}) {
           throw new Error('This node cannot execute in the current position.')
         }
       } catch (error) {
-        trace.push({ nodeId: node.id, type: node.type, status: 'error', message: textValue(error?.message || error, 240) })
+        trace.push({ nodeId: node.id, type: node.type, status: 'error', message: textValue(error?.message || error, 240), ...(error?.outcome ? { outcome: String(error.outcome) } : {}) })
         return { error: textValue(error?.message || error, 240) }
       }
       id = next
@@ -1014,8 +1087,104 @@ export async function executeVisualWorkflow(input, options = {}) {
   return { ok: !error, dryRun, validation, trace, error, ended: terminated }
 }
 
+function cancelledError() {
+  const error = new Error('The run was cancelled.')
+  error.cancelled = true
+  return error
+}
+function abortableSleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(cancelledError())
+    const timer = setTimeout(() => { signal?.removeEventListener?.('abort', onAbort); resolve() }, ms)
+    const onAbort = () => { clearTimeout(timer); reject(cancelledError()) }
+    signal?.addEventListener?.('abort', onAbort, { once: true })
+  })
+}
+
+/**
+ * Runs a workflow and reports an explicit run state. A run is never reported as
+ * succeeded unless the executor finished without error; cancelled runs are distinct from failures.
+ * options.onStatus({ runId, status }) receives queued -> running -> succeeded|failed|cancelled.
+ * options.signal (AbortSignal) cancels between nodes and during Wait nodes.
+ */
+export async function executeVisualWorkflow(input, options = {}) {
+  const runId = randomUUID()
+  const startedAt = new Date().toISOString()
+  const normalized = normalizeWorkflow(input)
+  const meta = { runId, workflowId: normalized.id, workflowRevision: normalized.revision, startedAt }
+  const emit = status => { try { options.onStatus?.({ runId, status, workflowId: meta.workflowId, workflowRevision: meta.workflowRevision }) } catch { /* observer errors must not affect the run */ } }
+  emit('queued')
+  if (options.signal?.aborted) {
+    emit('cancelled')
+    return { ok: false, dryRun: options.dryRun === true, trace: [], error: 'The run was cancelled.', status: 'cancelled', cancelled: true, ...meta, finishedAt: new Date().toISOString() }
+  }
+  emit('running')
+  let result
+  try {
+    result = await executeWorkflowCore(input, { ...options, runId })
+  } catch (error) {
+    if (error?.cancelled) {
+      emit('cancelled')
+      return { ok: false, dryRun: options.dryRun === true, trace: [], error: 'The run was cancelled.', status: 'cancelled', cancelled: true, ...meta, finishedAt: new Date().toISOString() }
+    }
+    emit('failed')
+    throw error
+  }
+  const cancelled = result.cancelled === true || options.signal?.aborted === true && !result.ok
+  const status = cancelled ? 'cancelled' : result.ok ? 'succeeded' : 'failed'
+  emit(status)
+  return { ...result, status, cancelled, ...meta, finishedAt: new Date().toISOString() }
+}
+
+/** Runs one exact saved revision. An unsaved graph or unknown revision is refused, never guessed. */
+export async function executeWorkflowRevision(workflowId, revision, options = {}) {
+  const store = options.store
+  const snapshot = typeof store?.getRevision === 'function' ? store.getRevision(workflowId, revision) : null
+  if (!snapshot) {
+    return { ok: false, dryRun: options.dryRun === true, trace: [], status: 'failed', workflowId, workflowRevision: revision,
+      error: 'That saved workflow revision was not found. Save the workflow first; an unsaved graph cannot be run.' }
+  }
+  return executeVisualWorkflow(snapshot, options)
+}
+
+/** Portable export: no IDs of the store, no enabled flag, no timestamps. */
+export function exportWorkflow(input) {
+  const workflow = normalizeWorkflow(input)
+  return {
+    format: WORKFLOW_EXPORT_FORMAT,
+    formatVersion: 1,
+    schemaVersion: WORKFLOW_SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    workflow: { name: workflow.name, account: workflow.account, nodes: workflow.nodes, edges: workflow.edges },
+  }
+}
+
+/**
+ * Safe import: size-limited, schema-checked, always lands as a DISABLED draft with a fresh ID and
+ * revision. Nothing is activated or executed by importing; validation findings are returned.
+ */
+export function importWorkflow(payload, options = {}) {
+  let parsed = payload
+  if (typeof payload === 'string') {
+    if (Buffer.byteLength(payload, 'utf8') > MAX_IMPORT_BYTES) throw new Error('The workflow file is too large to import.')
+    try { parsed = JSON.parse(payload) } catch { throw new Error('The workflow file is not valid JSON.') }
+  } else if (payload && typeof payload === 'object') {
+    if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > MAX_IMPORT_BYTES) throw new Error('The workflow file is too large to import.')
+  }
+  if (!parsed || typeof parsed !== 'object' || parsed.format !== WORKFLOW_EXPORT_FORMAT) throw new Error('This is not an Aharane workflow export.')
+  if (parsed.formatVersion !== 1) throw new Error('This workflow export format version is not supported.')
+  assertSupportedWorkflowSchema(parsed)
+  const source = parsed.workflow
+  if (!source || typeof source !== 'object') throw new Error('The workflow export contains no workflow.')
+  if (Array.isArray(source.nodes) && source.nodes.length > MAX_NODES) throw new Error('The imported workflow exceeds the 100-node limit.')
+  if (Array.isArray(source.edges) && source.edges.length > MAX_EDGES) throw new Error('The imported workflow exceeds the 300-connection limit.')
+  const account = options.account === 'private' || options.account === 'public' ? options.account : source.account
+  const workflow = normalizeWorkflow({ name: source.name, account, nodes: source.nodes, edges: source.edges, enabled: false })
+  return { workflow, validation: validateWorkflow(workflow) }
+}
+
 export function createVisualCommandStore(filePath) {
-  let data = { version: 1, workflows: [], counters: {}, customNodes: [] }
+  let data = { version: 1, workflows: [], counters: {}, customNodes: [], revisions: {}, executions: {} }
   let tail = Promise.resolve()
   let storageError = ''
 
@@ -1046,7 +1215,17 @@ export function createVisualCommandStore(filePath) {
       try {
         const loaded = JSON.parse(await readFile(filePath, 'utf8'))
         if (loaded?.version === 1 && Array.isArray(loaded.workflows) && loaded.counters && typeof loaded.counters === 'object' && !Array.isArray(loaded.counters)) {
-          data = { version: 1, workflows: loaded.workflows.map(normalizeWorkflow), counters: loaded.counters, customNodes: Array.isArray(loaded.customNodes) ? loaded.customNodes.map(registerCustomNode) : [] }
+          data = { version: 1, workflows: loaded.workflows.map(normalizeWorkflow), counters: loaded.counters, customNodes: Array.isArray(loaded.customNodes) ? loaded.customNodes.map(registerCustomNode) : [],
+            revisions: loaded.revisions && typeof loaded.revisions === 'object' && !Array.isArray(loaded.revisions) ? loaded.revisions : {},
+            executions: loaded.executions && typeof loaded.executions === 'object' && !Array.isArray(loaded.executions) ? loaded.executions : {} }
+          // Workflows saved before revision history existed become referenceable at their current revision.
+          for (const workflow of data.workflows) {
+            const history = Array.isArray(data.revisions[workflow.id]) ? data.revisions[workflow.id] : []
+            if (!history.some(entry => entry?.revision === workflow.revision)) {
+              history.push({ revision: workflow.revision, savedAt: workflow.updatedAt, workflow: structuredClone(workflow) })
+            }
+            data.revisions[workflow.id] = history
+          }
         } else if (loaded != null) {
           storageError = 'Visual command storage has an unsupported or invalid format. Saved data was preserved; repair the file before editing workflows.'
         }
@@ -1089,7 +1268,8 @@ export function createVisualCommandStore(filePath) {
     },
     list(account) { return data.workflows.filter(item => !account || item.account === account).map(item => structuredClone(item)) },
     get(id) { const item = data.workflows.find(workflow => workflow.id === id); return item ? structuredClone(item) : null },
-    async save(input) {
+    async save(input, options = {}) {
+      assertSupportedWorkflowSchema(input)
       if (Array.isArray(input?.nodes) && input.nodes.length > MAX_NODES) throw new Error('The workflow exceeds the 100-node limit; no nodes were saved.')
       if (Array.isArray(input?.edges) && input.edges.length > MAX_EDGES) throw new Error('The workflow exceeds the 300-connection limit; no connections were saved.')
       const workflow = normalizeWorkflow(input)
@@ -1114,12 +1294,24 @@ export function createVisualCommandStore(filePath) {
             .some(value => commandNames.has(textValue(value, 64).trim().toLowerCase()))
         })
         if (conflict) throw new Error('An enabled workflow already uses this command name or alias.')
+        const expected = options?.expectedRevision
+        if (expected != null && index >= 0 && Number(expected) !== data.workflows[index].revision) {
+          const error = new Error('This workflow was changed by someone else (saved revision ' + data.workflows[index].revision + ', yours ' + expected + '). Reload it before saving so no work is overwritten.')
+          error.conflict = true
+          error.currentRevision = data.workflows[index].revision
+          throw error
+        }
+        workflow.revision = index >= 0 ? data.workflows[index].revision + 1 : 1
         if (index >= 0) workflow.createdAt = data.workflows[index].createdAt
         if (index >= 0) data.workflows[index] = workflow
         else {
           if (data.workflows.length >= 100) throw new Error('The 100-workflow limit has been reached.')
           data.workflows.push(workflow)
         }
+        // Append an immutable snapshot of exactly what was saved.
+        const history = Array.isArray(data.revisions[workflow.id]) ? data.revisions[workflow.id] : []
+        history.push({ revision: workflow.revision, savedAt: workflow.updatedAt, workflow: structuredClone(workflow) })
+        data.revisions[workflow.id] = history.slice(-MAX_REVISIONS_PER_WORKFLOW)
         return { workflow: structuredClone(workflow), validation }
       })
     },
@@ -1128,7 +1320,30 @@ export function createVisualCommandStore(filePath) {
         const before = data.workflows.length
         data.workflows = data.workflows.filter(item => item.id !== id)
         delete data.counters[id]
+        delete data.revisions[id]
         return data.workflows.length !== before
+      })
+    },
+    listRevisions(id) {
+      return (data.revisions[id] || []).map(entry => ({
+        revision: entry.revision, savedAt: entry.savedAt, name: entry.workflow?.name, enabled: entry.workflow?.enabled === true,
+        nodeCount: entry.workflow?.nodes?.length || 0, edgeCount: entry.workflow?.edges?.length || 0,
+      }))
+    },
+    getRevision(id, revision) {
+      const entry = (data.revisions[id] || []).find(item => item.revision === Number(revision))
+      return entry ? structuredClone(entry.workflow) : null
+    },
+    /** Returns true the first time a key is claimed within the TTL, false for a duplicate. Persisted. */
+    claimExecution(key) {
+      return mutate(async () => {
+        const nowMs = Date.now()
+        for (const [existing, at] of Object.entries(data.executions)) if (nowMs - Number(at) > EXECUTION_CLAIM_TTL_MS) delete data.executions[existing]
+        if (Object.hasOwn(data.executions, key)) return false
+        data.executions[key] = nowMs
+        const keys = Object.keys(data.executions)
+        if (keys.length > MAX_EXECUTION_CLAIMS) for (const old of keys.slice(0, keys.length - MAX_EXECUTION_CLAIMS)) delete data.executions[old]
+        return true
       })
     },
     incrementCounter(id, key) {

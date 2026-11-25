@@ -7,7 +7,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -30,6 +29,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -56,6 +56,10 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,49 +82,60 @@ val LocalStudioCornerScale = staticCompositionLocalOf { 1f }
 val LocalStudioRowScale = staticCompositionLocalOf { 1f }
 
 @Composable
-fun StudioHeader(connected: Boolean = false, preview: Boolean = false) {
+fun StudioHeader(
+    connected: Boolean = false,
+    preview: Boolean = false,
+    showBrand: Boolean = true
+) {
     val statusLabel = when {
         preview -> "Preview"
         connected -> "Online"
         else -> "Offline"
     }
     val statusColor = when {
-        preview -> StudioPalette.Accent
-        connected -> StudioPalette.Accent
-        else -> StudioPalette.Muted
+        preview || connected -> StudioPalette.Accent
+        else -> StudioPalette.Bad
+    }
+    val statusBackground = if (preview || connected) {
+        StudioPalette.Soft
+    } else {
+        StudioPalette.Bad.copy(alpha = 0.08f)
     }
     Row(
         modifier = Modifier.fillMaxWidth().background(StudioPalette.Background)
-            .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 18.dp)
-            .height(30.dp),
+            .padding(start = StudioFoundationContract.Layout.HorizontalGutter, end = StudioFoundationContract.Layout.HorizontalGutter, top = 6.dp, bottom = 18.dp)
+            .height(36.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-            Image(
-                painter = painterResource(R.drawable.ic_aharane_brand),
-                contentDescription = null,
-                modifier = Modifier.size(26.dp)
-            )
-            Text(
-                "Aharane",
-                color = StudioPalette.Ink,
-                fontFamily = MaterialTheme.typography.titleLarge.fontFamily,
-                fontSize = 21.sp,
-                lineHeight = 25.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.42).sp
-            )
+        if (showBrand) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                Image(
+                    painter = painterResource(R.drawable.ic_aharane_brand),
+                    contentDescription = null,
+                    modifier = Modifier.size(StudioFoundationContract.Layout.BrandMarkSize)
+                )
+                Text(
+                    "Aharane",
+                    color = StudioPalette.Ink,
+                    fontFamily = MaterialTheme.typography.titleLarge.fontFamily,
+                    fontSize = 21.sp,
+                    lineHeight = 25.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.42).sp
+                )
+            }
         }
         Spacer(Modifier.weight(1f))
         Row(
-            Modifier.clip(RoundedCornerShape(99.dp))
-                .background(StudioPalette.Surface)
+            Modifier.heightIn(min = 36.dp)
+                .clip(RoundedCornerShape(99.dp))
+                .background(statusBackground)
                 .border(1.dp, StudioPalette.Line, RoundedCornerShape(99.dp))
-                .padding(horizontal = 9.dp, vertical = 5.dp),
+                .padding(horizontal = 11.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
         ) {
-            Box(Modifier.size(7.dp).clip(CircleShape).background(statusColor))
+            Box(Modifier.size(8.dp).clip(CircleShape).background(statusColor))
             Text(
                 statusLabel,
                 color = statusColor,
@@ -140,62 +155,57 @@ fun StudioBottomNavigation(
     val motionEnabled = LocalStudioMotionEnabled.current
     Column(Modifier.fillMaxWidth().background(StudioPalette.Surface).navigationBarsPadding()) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(StudioPalette.Line))
-        Row(Modifier.fillMaxWidth().height(58.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth()
+                .height(StudioFoundationContract.Layout.BottomNavigationHeight)
+                .selectableGroup(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             MainDestination.entries.forEach { destination ->
                 val active = selected == destination
                 val tintTarget = if (active) StudioPalette.Accent else StudioPalette.Muted
                 val tint by animateColorAsState(
                     tintTarget,
-                    animationSpec = tween(if (motionEnabled) 190 else 0),
+                    animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Color>(motionEnabled),
                     label = "bottom-nav-tint"
                 )
                 val scale by animateFloatAsState(
-                    if (active && motionEnabled) 1.07f else 1f,
-                    animationSpec = tween(if (motionEnabled) 190 else 0),
+                    if (active && motionEnabled) 1.06f else 1f,
+                    animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Float>(motionEnabled),
                     label = "bottom-nav-scale"
                 )
-                val indicatorColor by animateColorAsState(
-                    if (active) StudioPalette.Soft else Color.Transparent,
-                    animationSpec = tween(if (motionEnabled) 190 else 0),
-                    label = "bottom-nav-indicator"
-                )
+                val icon = when (destination) {
+                    MainDestination.HOME -> Icons.Outlined.Home
+                    MainDestination.CHATS -> Icons.Outlined.ChatBubbleOutline
+                    MainDestination.FILES -> Icons.Outlined.FolderOpen
+                    MainDestination.ENVIRONMENT -> Icons.Outlined.Terminal
+                    MainDestination.MORE -> Icons.Outlined.MoreHoriz
+                }
                 Column(
                     modifier = Modifier.weight(1f).fillMaxHeight()
                         .semantics { this.selected = active }
-                        .clickable { onNavigate(destination) }
+                        .clickable(role = Role.Tab) { onNavigate(destination) }
+                        .testTag("studio-bottom-navigation-${destination.name.lowercase()}")
                         .padding(top = 7.dp, bottom = 5.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically)
                 ) {
-                    val icon = when (destination) {
-                        MainDestination.HOME -> Icons.Outlined.Home
-                        MainDestination.CHATS -> Icons.Outlined.ChatBubbleOutline
-                        MainDestination.FILES -> Icons.Outlined.FolderOpen
-                        MainDestination.ENVIRONMENT -> Icons.Outlined.Terminal
-                        MainDestination.MORE -> Icons.Outlined.MoreHoriz
-                    }
-                    Box(
-                        Modifier.size(width = 48.dp, height = 28.dp)
-                            .clip(CircleShape)
-                            .background(indicatorColor),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            icon,
-                            contentDescription = null,
-                            tint = tint,
-                            modifier = Modifier.size(20.dp).graphicsLayer {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(StudioFoundationContract.Layout.NavigationIconSize)
+                            .graphicsLayer {
                                 scaleX = scale
                                 scaleY = scale
                             }
-                        )
-                    }
+                    )
                     Text(
                         destination.label,
                         color = tint,
-                        fontSize = 11.5.sp,
+                        fontSize = StudioFoundationContract.TypeScale.BottomNavigationLabel,
                         lineHeight = 13.sp,
-                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
                         maxLines = 1
                     )
                 }
@@ -211,7 +221,7 @@ fun StudioPageTitle(title: String, subtitle: String? = null, compact: Boolean = 
             title,
             color = StudioPalette.Ink,
             fontFamily = MaterialTheme.typography.headlineLarge.fontFamily,
-            fontSize = if (compact) 22.sp else 30.sp,
+            fontSize = if (compact) 22.sp else StudioFoundationContract.TypeScale.DisplayTitle,
             lineHeight = if (compact) 27.sp else 33.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = if (compact) (-0.35).sp else (-0.75).sp
@@ -220,7 +230,7 @@ fun StudioPageTitle(title: String, subtitle: String? = null, compact: Boolean = 
             Text(
                 subtitle,
                 color = StudioPalette.Muted,
-                fontSize = if (compact) 12.sp else 15.sp,
+                fontSize = if (compact) 12.sp else StudioFoundationContract.TypeScale.Body,
                 lineHeight = if (compact) 17.sp else 21.sp
             )
         }
@@ -237,7 +247,7 @@ fun StudioSectionHeading(title: String, action: String? = null, onAction: (() ->
             title,
             color = StudioPalette.Ink,
             fontFamily = MaterialTheme.typography.titleLarge.fontFamily,
-            fontSize = 17.sp,
+            fontSize = StudioFoundationContract.TypeScale.SectionTitle,
             lineHeight = 22.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = (-0.15).sp
@@ -265,7 +275,7 @@ fun StudioCard(
             .then(if (motionEnabled) Modifier.animateContentSize() else Modifier)
             .fillMaxWidth(),
         color = StudioPalette.Surface,
-        shape = RoundedCornerShape(18.dp * LocalStudioCornerScale.current),
+        shape = RoundedCornerShape(StudioFoundationContract.Layout.CardRadius * LocalStudioCornerScale.current),
         border = BorderStroke(1.dp, StudioPalette.Line),
         shadowElevation = 1.dp
     ) {
@@ -291,7 +301,7 @@ fun StudioTag(text: String, accent: Boolean = false) {
     Text(
         text,
         color = if (accent) StudioPalette.Accent else StudioPalette.Muted,
-        fontSize = 12.5.sp,
+        fontSize = StudioFoundationContract.TypeScale.Supporting,
         lineHeight = 16.sp,
         fontWeight = FontWeight.SemiBold,
         modifier = Modifier.clip(RoundedCornerShape(99.dp))
@@ -320,18 +330,31 @@ fun StudioRow(
     ) {
         if (icon != null) {
             Box(
-                Modifier.size(38.dp).clip(RoundedCornerShape(11.dp * LocalStudioCornerScale.current)).background(StudioPalette.Background),
+                Modifier.size(StudioFoundationContract.Layout.IconTileSize).clip(RoundedCornerShape(11.dp * LocalStudioCornerScale.current)).background(StudioPalette.Background),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(icon, contentDescription = null, tint = StudioPalette.Muted, modifier = Modifier.size(20.dp))
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(title, color = StudioPalette.Ink, fontSize = 14.sp, lineHeight = 18.sp,
-                fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                title,
+                color = StudioPalette.Ink,
+                fontSize = StudioFoundationContract.TypeScale.Body,
+                lineHeight = 21.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
             if (subtitle != null) {
-                Text(subtitle, color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 17.sp,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    subtitle,
+                    color = StudioPalette.Muted,
+                    fontSize = StudioFoundationContract.TypeScale.Supporting,
+                    lineHeight = 18.sp,
+                    maxLines = subtitleMaxLines,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
         if (trailingContent != null) trailingContent()
@@ -366,19 +389,28 @@ fun StudioActionButton(
     }
     val animatedBackground by animateColorAsState(
         bg,
-        animationSpec = tween(if (motionEnabled) 150 else 0),
+        animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Color>(
+            motionEnabled,
+            StudioFoundationContract.Motion.StateChangeMillis
+        ),
         label = "action-button-background"
     )
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
         if (motionEnabled && enabled && pressed) .975f else 1f,
-        animationSpec = tween(if (motionEnabled) 110 else 0),
+        animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Float>(
+            motionEnabled,
+            StudioFoundationContract.Motion.PressFeedbackMillis
+        ),
         label = "action-button-press"
     )
-    val shape = RoundedCornerShape(12.dp * LocalStudioCornerScale.current)
+    val shape = RoundedCornerShape(StudioFoundationContract.Layout.ControlRadius * LocalStudioCornerScale.current)
     Box(
-        modifier = modifier.defaultMinSize(minHeight = if (compact) 40.dp else 48.dp)
+        modifier = modifier.defaultMinSize(
+            minHeight = if (compact) StudioFoundationContract.Layout.CompactButtonHeight
+            else StudioFoundationContract.Layout.StandardButtonHeight
+        )
             .graphicsLayer {
                 scaleX = pressScale
                 scaleY = pressScale
@@ -398,8 +430,14 @@ fun StudioActionButton(
         AnimatedContent(
             targetState = label,
             transitionSpec = {
-                if (motionEnabled) fadeIn(tween(120)) togetherWith fadeOut(tween(90))
-                else fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                fadeIn(
+                    StudioFoundationContract.Motion.enterSpec<Float>(
+                        motionEnabled,
+                        StudioFoundationContract.Motion.PressFeedbackMillis
+                    )
+                ) togetherWith fadeOut(
+                    StudioFoundationContract.Motion.exitSpec<Float>(motionEnabled, 90)
+                )
             },
             label = "action-button-label"
         ) { currentLabel ->
@@ -425,8 +463,8 @@ fun StudioSearchField(
     showIcon: Boolean = false
 ) {
     Surface(
-        modifier = modifier.fillMaxWidth().heightIn(min = 48.dp),
-        shape = RoundedCornerShape(12.dp * LocalStudioCornerScale.current),
+        modifier = modifier.fillMaxWidth().heightIn(min = StudioFoundationContract.Layout.SearchFieldHeight),
+        shape = RoundedCornerShape(StudioFoundationContract.Layout.ControlRadius * LocalStudioCornerScale.current),
         color = StudioPalette.Surface,
         border = BorderStroke(1.dp, StudioPalette.Line)
     ) {
@@ -465,11 +503,11 @@ fun StudioTextInput(
     modifier: Modifier = Modifier,
     singleLine: Boolean = true,
     minLines: Int = 1,
-    minHeight: androidx.compose.ui.unit.Dp = 48.dp,
+    minHeight: androidx.compose.ui.unit.Dp = StudioFoundationContract.Layout.SearchFieldHeight,
     textSize: androidx.compose.ui.unit.TextUnit = 14.sp,
     tag: String? = null
 ) {
-    val shape = RoundedCornerShape(12.dp * LocalStudioCornerScale.current)
+    val shape = RoundedCornerShape(StudioFoundationContract.Layout.ControlRadius * LocalStudioCornerScale.current)
     Surface(
         modifier = modifier.fillMaxWidth().heightIn(min = minHeight),
         color = StudioPalette.Surface,
@@ -628,17 +666,26 @@ fun StudioSegmented(options: List<String>, selected: String, onSelect: (String) 
             val shape = RoundedCornerShape(9.dp * LocalStudioCornerScale.current)
             val fill by animateColorAsState(
                 if (active) StudioPalette.Soft else Color.Transparent,
-                animationSpec = tween(if (motionEnabled) 180 else 0),
+                animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Color>(
+                    motionEnabled,
+                    StudioFoundationContract.Motion.StateChangeMillis
+                ),
                 label = "segmented-fill"
             )
             val outline by animateColorAsState(
                 if (active) StudioPalette.Accent else Color.Transparent,
-                animationSpec = tween(if (motionEnabled) 180 else 0),
+                animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Color>(
+                    motionEnabled,
+                    StudioFoundationContract.Motion.StateChangeMillis
+                ),
                 label = "segmented-outline"
             )
             val tint by animateColorAsState(
                 if (active) StudioPalette.Accent else StudioPalette.Muted,
-                animationSpec = tween(if (motionEnabled) 180 else 0),
+                animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Color>(
+                    motionEnabled,
+                    StudioFoundationContract.Motion.StateChangeMillis
+                ),
                 label = "segmented-tint"
             )
             Box(
@@ -658,17 +705,154 @@ fun StudioSegmented(options: List<String>, selected: String, onSelect: (String) 
 }
 
 @Composable
+fun StudioLoadingState(
+    message: String = "Loading…",
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
+) {
+    Row(
+        modifier = modifier.fillMaxWidth().padding(vertical = if (compact) 12.dp else 22.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(if (compact) 18.dp else 22.dp),
+            color = StudioPalette.Accent,
+            strokeWidth = 2.dp
+        )
+        Spacer(Modifier.width(9.dp))
+        Text(
+            message,
+            color = StudioPalette.Muted,
+            fontSize = StudioFoundationContract.TypeScale.Supporting,
+            lineHeight = 17.sp
+        )
+    }
+}
+
+@Composable
+fun StudioProgressBar(
+    progress: Float,
+    modifier: Modifier = Modifier
+) {
+    val safeProgress = progress.coerceIn(0f, 1f)
+    val track = StudioPalette.Line
+    val fill = StudioPalette.Accent
+    Canvas(
+        modifier = modifier.fillMaxWidth().height(4.dp).semantics {
+            progressBarRangeInfo = ProgressBarRangeInfo(safeProgress, 0f..1f)
+        }
+    ) {
+        val corner = androidx.compose.ui.geometry.CornerRadius(size.height / 2f)
+        drawRoundRect(color = track, cornerRadius = corner)
+        if (safeProgress > 0f) {
+            drawRoundRect(
+                color = fill,
+                size = androidx.compose.ui.geometry.Size(size.width * safeProgress, size.height),
+                cornerRadius = corner
+            )
+        }
+    }
+}
+
+@Composable
+fun StudioTransferProgress(
+    label: String,
+    progress: Float,
+    detail: String? = null,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                label,
+                color = StudioPalette.Ink,
+                fontSize = StudioFoundationContract.TypeScale.Supporting,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!detail.isNullOrBlank()) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    detail,
+                    color = StudioPalette.Muted,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        StudioProgressBar(progress = progress)
+    }
+}
+
+@Composable
+fun StudioErrorState(
+    title: String,
+    description: String? = null,
+    retryLabel: String = "Retry",
+    onRetry: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            title,
+            color = StudioPalette.Ink,
+            fontSize = StudioFoundationContract.TypeScale.Body,
+            lineHeight = 21.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
+        )
+        if (!description.isNullOrBlank()) {
+            Text(
+                description,
+                color = StudioPalette.Muted,
+                fontSize = StudioFoundationContract.TypeScale.Supporting,
+                lineHeight = 17.sp,
+                textAlign = TextAlign.Center
+            )
+        }
+        if (onRetry != null) {
+            StudioActionButton(
+                label = retryLabel,
+                compact = true,
+                onClick = onRetry
+            )
+        }
+    }
+}
+
+@Composable
 fun StudioEmpty(title: String, description: String? = null, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(title, color = StudioPalette.Muted, fontSize = 14.sp, lineHeight = 19.sp,
-            fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+        Text(
+            title,
+            color = StudioPalette.Muted,
+            fontSize = StudioFoundationContract.TypeScale.Body,
+            lineHeight = 21.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
+        )
         if (description != null) {
-            Text(description, color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 18.sp,
-                textAlign = TextAlign.Center)
+            Text(
+                description,
+                color = StudioPalette.Muted,
+                fontSize = StudioFoundationContract.TypeScale.Supporting,
+                lineHeight = 18.sp,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }

@@ -3,7 +3,6 @@ package com.aharane.studio.core.design
 import android.animation.ValueAnimator
 import android.os.Build
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
@@ -70,29 +69,29 @@ private val Dark = darkColorScheme(
 
 private val StudioTypography = Typography(
     displayLarge = TextStyle(fontFamily = BricolageGrotesque, fontWeight = FontWeight.Bold,
-        fontSize = 30.sp, lineHeight = 34.sp, letterSpacing = (-0.75).sp),
+        fontSize = StudioFoundationContract.TypeScale.DisplayTitle, lineHeight = 34.sp, letterSpacing = (-0.75).sp),
     displayMedium = TextStyle(fontFamily = BricolageGrotesque, fontWeight = FontWeight.Bold,
         fontSize = 26.sp, lineHeight = 30.sp, letterSpacing = (-0.55).sp),
     headlineLarge = TextStyle(fontFamily = BricolageGrotesque, fontWeight = FontWeight.Bold,
-        fontSize = 30.sp, lineHeight = 34.sp, letterSpacing = (-0.75).sp),
+        fontSize = StudioFoundationContract.TypeScale.DisplayTitle, lineHeight = 34.sp, letterSpacing = (-0.75).sp),
     headlineMedium = TextStyle(fontFamily = BricolageGrotesque, fontWeight = FontWeight.Bold,
         fontSize = 26.sp, lineHeight = 30.sp, letterSpacing = (-0.55).sp),
     titleLarge = TextStyle(fontFamily = BricolageGrotesque, fontWeight = FontWeight.Bold,
-        fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.15).sp),
+        fontSize = StudioFoundationContract.TypeScale.SectionTitle, lineHeight = 22.sp, letterSpacing = (-0.15).sp),
     titleMedium = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp, lineHeight = 19.sp),
     bodyLarge = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.Normal,
-        fontSize = 15.sp, lineHeight = 21.sp),
+        fontSize = StudioFoundationContract.TypeScale.Body, lineHeight = 21.sp),
     bodyMedium = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.Normal,
         fontSize = 14.sp, lineHeight = 20.sp),
     bodySmall = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.Normal,
-        fontSize = 12.5.sp, lineHeight = 17.sp),
+        fontSize = StudioFoundationContract.TypeScale.Supporting, lineHeight = 17.sp),
     labelLarge = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp, lineHeight = 18.sp),
     labelMedium = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
         fontSize = 12.5.sp, lineHeight = 16.sp),
     labelSmall = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
-        fontSize = 11.5.sp, lineHeight = 14.sp)
+        fontSize = StudioFoundationContract.TypeScale.BottomNavigationLabel, lineHeight = 14.sp)
 )
 
 private fun blend(from: Color, to: Color, amount: Float): Color = Color(
@@ -145,22 +144,25 @@ fun AharaneTheme(
     // Respect Android's system-wide animation setting, including Battery Saver.
     val motionEnabled = Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ValueAnimator.areAnimatorsEnabled()
     val colorTarget = if (dark) darkScheme else lightScheme
-    val colorDuration = if (motionEnabled) 260 else 0
+    val themeColorSpec = StudioFoundationContract.Motion.stateChangeSpec<Color>(
+        enabled = motionEnabled,
+        targetMillis = StudioFoundationContract.Motion.ThemeTransitionMillis
+    )
     // Theme changes transition as one coherent palette rather than repainting
     // each surface and label in a single frame.
     val animatedScheme = colorTarget.copy(
-        primary = animateColorAsState(colorTarget.primary, tween(colorDuration), label = "theme-primary").value,
-        onPrimary = animateColorAsState(colorTarget.onPrimary, tween(colorDuration), label = "theme-on-primary").value,
-        primaryContainer = animateColorAsState(colorTarget.primaryContainer, tween(colorDuration), label = "theme-primary-container").value,
-        onPrimaryContainer = animateColorAsState(colorTarget.onPrimaryContainer, tween(colorDuration), label = "theme-on-primary-container").value,
-        background = animateColorAsState(colorTarget.background, tween(colorDuration), label = "theme-background").value,
-        onBackground = animateColorAsState(colorTarget.onBackground, tween(colorDuration), label = "theme-on-background").value,
-        surface = animateColorAsState(colorTarget.surface, tween(colorDuration), label = "theme-surface").value,
-        onSurface = animateColorAsState(colorTarget.onSurface, tween(colorDuration), label = "theme-on-surface").value,
-        surfaceVariant = animateColorAsState(colorTarget.surfaceVariant, tween(colorDuration), label = "theme-surface-variant").value,
-        onSurfaceVariant = animateColorAsState(colorTarget.onSurfaceVariant, tween(colorDuration), label = "theme-on-surface-variant").value,
-        outline = animateColorAsState(colorTarget.outline, tween(colorDuration), label = "theme-outline").value,
-        error = animateColorAsState(colorTarget.error, tween(colorDuration), label = "theme-error").value
+        primary = animateColorAsState(colorTarget.primary, themeColorSpec, label = "theme-primary").value,
+        onPrimary = animateColorAsState(colorTarget.onPrimary, themeColorSpec, label = "theme-on-primary").value,
+        primaryContainer = animateColorAsState(colorTarget.primaryContainer, themeColorSpec, label = "theme-primary-container").value,
+        onPrimaryContainer = animateColorAsState(colorTarget.onPrimaryContainer, themeColorSpec, label = "theme-on-primary-container").value,
+        background = animateColorAsState(colorTarget.background, themeColorSpec, label = "theme-background").value,
+        onBackground = animateColorAsState(colorTarget.onBackground, themeColorSpec, label = "theme-on-background").value,
+        surface = animateColorAsState(colorTarget.surface, themeColorSpec, label = "theme-surface").value,
+        onSurface = animateColorAsState(colorTarget.onSurface, themeColorSpec, label = "theme-on-surface").value,
+        surfaceVariant = animateColorAsState(colorTarget.surfaceVariant, themeColorSpec, label = "theme-surface-variant").value,
+        onSurfaceVariant = animateColorAsState(colorTarget.onSurfaceVariant, themeColorSpec, label = "theme-on-surface-variant").value,
+        outline = animateColorAsState(colorTarget.outline, themeColorSpec, label = "theme-outline").value,
+        error = animateColorAsState(colorTarget.error, themeColorSpec, label = "theme-error").value
     )
     val baseDensity = LocalDensity.current
     val scaledDensity = Density(

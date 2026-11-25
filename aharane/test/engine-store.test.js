@@ -23,7 +23,7 @@ test('Engine code persists separately and is never executed by the store', async
     assert.equal(actual.code, code)
     assert.equal(actual.manifest.version, 1)
     assert.equal((await reopened.list())[0].name, 'Pinterest lookup')
-    assert.deepEqual(Object.keys(actual).sort(), ['code', 'createdAt', 'manifest', 'updatedAt'])
+    assert.deepEqual(Object.keys(actual).sort(), ['code', 'createdAt', 'manifest', 'revision', 'sha256', 'updatedAt'])
     assert.equal(await reopened.remove('pinterest', { confirm: true }), true)
     assert.equal(await reopened.get('pinterest'), null)
   } finally { await rm(dir, { recursive: true, force: true }) }

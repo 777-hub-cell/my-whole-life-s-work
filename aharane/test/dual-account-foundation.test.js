@@ -41,8 +41,25 @@ test('Private and Public sessions persist distinct Owner identities', async () =
   assert.ok(runtime.includes("app.put('/api/owners'"))
   assert.ok(!config.includes('The Owner number and Public bot WhatsApp number must be different.'))
   assert.ok(auth.includes('Private Owner never inherits this role.'))
-  assert.ok(runtime.includes('isPublicOwnerSender'))
-  assert.ok(runtime.includes('isPrivateSelfCommand'))
+  assert.ok(runtime.includes('resolveExecutionAuthorization'))
+})
+
+test('every execution path derives privilege from the canonical evaluator, never directly', async () => {
+  const runtime = await read('../src/index.js')
+  const registry = await read('../src/command-registry.js')
+  // No entry path may call the identity primitives or invent flags from the account type.
+  for (const forbidden of [
+    'isPrivateSelfCommand(', 'isPrivateSelfChat(', 'isPublicOwnerSender(', 'isAllowedInbound(',
+    "privateControl: workflow.account", "isPublicOwner: workflow.account", "allowedPublicSender: workflow.account",
+    "privateControl: schedule.account", "isPublicOwner: schedule.account", "allowedPublicSender: schedule.account",
+  ]) assert.ok(!runtime.includes(forbidden), 'index.js must not use: ' + forbidden)
+  // Every call site resolves through the evaluator: direct, scheduler and admin preview.
+  assert.equal(runtime.match(/resolveExecutionAuthorization\((?:\{|authorizationProof)/g).length, 3)
+  assert.ok(runtime.includes("source: 'direct'") && runtime.includes("source: 'scheduler'") && runtime.includes("source: 'admin-preview'"))
+  // Dispatch authorises through the evaluator and no longer trusts caller flags.
+  assert.ok(registry.includes('resolveExecutionAuthorization(auth'))
+  assert.ok(!registry.includes('context.privateControl') && !registry.includes('context.isPublicOwner'))
+  assert.ok(runtime.includes('auth: authorizationProof'))
 })
 
 test('private and public account management is wired into the supplied Studio preview', async () => {

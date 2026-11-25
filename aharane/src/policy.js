@@ -1,4 +1,7 @@
 const DIGITS = /\D/g
+// Legacy groups are <creator>-<timestamp>@g.us; current WhatsApp groups use a
+// single numeric id (for example 120363...@g.us).
+export const GROUP_JID = /^\d{5,25}(?:-\d{5,25})?@g\.us$/
 
 export function normalizePhone(value) {
   const number = String(value ?? '').replace(DIGITS, '')
@@ -35,7 +38,7 @@ function isPublicSenderIdentity(value) {
 export function isPrivateVisibleChatJid(value) {
   const jid = String(value ?? '').trim()
   return /^\d{7,15}@s\.whatsapp\.net$/.test(jid)
-    || /^\d{5,25}-\d{5,25}@g\.us$/.test(jid)
+    || GROUP_JID.test(jid)
     || /^\d{5,25}@lid$/.test(jid)
 }
 
@@ -60,7 +63,7 @@ export function isAllowedInbound({
       jid.endsWith('@newsletter')) return false
 
   if (jid.endsWith('@g.us')) {
-    if (!allowGroups || !/^\d{5,25}-\d{5,25}@g\.us$/.test(jid)) return false
+    if (!allowGroups || !GROUP_JID.test(jid)) return false
     const participant = String(participantJid ?? '').trim()
     const alternate = String(participantAltJid ?? '').trim()
     return isPublicSenderIdentity(participant) || isPublicSenderIdentity(alternate)

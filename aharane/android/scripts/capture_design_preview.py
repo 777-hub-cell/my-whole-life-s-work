@@ -4,6 +4,7 @@
 The launch flag is guarded by ApplicationInfo.FLAG_DEBUGGABLE. This script never
 contacts the Aharane server; sample content is absent from release launches.
 """
+import json
 import re
 import subprocess
 import time
@@ -12,6 +13,9 @@ from pathlib import Path
 
 REMOTE_XML = "/sdcard/window.xml"
 OUT = Path("screenshots")
+SCREEN_INDEX = []
+CURRENT_THEME = "emulator-default"
+DEVICE_INFO = {}
 
 
 def run(*args, capture_output=False):
@@ -28,6 +32,14 @@ def capture(name: str, settle: float = 1.5):
     time.sleep(settle)
     with (OUT / name).open("wb") as image_file:
         subprocess.run(["adb", "exec-out", "screencap", "-p"], check=True, stdout=image_file)
+    SCREEN_INDEX.append({
+        "file": name,
+        "theme": CURRENT_THEME,
+        "device": DEVICE_INFO.get("model", "Android emulator"),
+        "api_level": DEVICE_INFO.get("api_level", "unknown"),
+        "resolution": DEVICE_INFO.get("resolution", "unknown"),
+        "density": DEVICE_INFO.get("density", "unknown"),
+    })
 
 
 def nodes():
@@ -194,7 +206,15 @@ def back():
 
 
 def main():
+    global CURRENT_THEME
     OUT.mkdir(parents=True, exist_ok=True)
+    DEVICE_INFO.update({
+        "model": run("adb", "shell", "getprop", "ro.product.model", capture_output=True).stdout.strip(),
+        "api_level": run("adb", "shell", "getprop", "ro.build.version.sdk", capture_output=True).stdout.strip(),
+        "resolution": run("adb", "shell", "wm", "size", capture_output=True).stdout.strip(),
+        "density": run("adb", "shell", "wm", "density", capture_output=True).stdout.strip(),
+    })
+    SCREEN_INDEX.clear()
     run("adb", "install", "-r", "artifacts/app-debug.apk")
     run(
         "adb", "shell", "am", "start", "-n", "com.aharane.studio/.MainActivity",
@@ -297,12 +317,45 @@ def main():
     capture("04-env.png")
     tap_label("More")
     capture("05-more.png")
-    assert_absent_texts(["Development", "Studio source", "Visual command builder"])
-    tap_label("Accounts & owners")
-    capture("05a-accounts-owners.png")
+    assert_absent_texts([
+        "Development", "Studio source", "Visual command builder",
+        "Status", "Status & Channels", "WhatsApp Status", "No currently received statuses"
+    ])
+    tap_label("Configuration", scroll_to_find=True)
+    capture("05a-configuration-from-more.png")
+    tap_label("‹  Back to Home")
+
+    tap_label("Activity and logs", scroll_to_find=True)
+    capture("05b-activity-and-logs.png")
     back()
+    tap_label("Storage information", scroll_to_find=True)
+    capture("05c-storage-information.png")
+    back()
+    tap_label("Notes", scroll_to_find=True)
+    capture("05d-notes.png")
+    back()
+    tap_label("Channels", scroll_to_find=True)
+    assert_visible_texts(["Connect a paired WhatsApp account to browse Channels"])
+    capture("05h-channels-disconnected.png")
+    back()
+
+    tap_label("Help", scroll_to_find=True)
+    capture("05e-help-dialog.png")
+    tap_label("Close")
+    tap_label("About Aharane", scroll_to_find=True)
+    capture("05f-about-dialog.png")
+    tap_label("Close")
+
     tap_label("Appearance", scroll_to_find=True)
     capture("06-appearance.png")
+    tap_label("Dark")
+    CURRENT_THEME = "dark"
+    capture("06a-appearance-dark.png")
+    back()
+    capture("05g-more-dark.png")
+    tap_label("Appearance", scroll_to_find=True)
+    tap_label("Light")
+    CURRENT_THEME = "light"
     back()
     tap_label("Chat settings", scroll_to_find=True)
     capture("06a-chat-settings.png", 1)
@@ -336,8 +389,20 @@ def main():
     run("adb", "shell", "am", "start", "-n", "com.aharane.studio/.MainActivity")
     capture("07-server-connection.png", 8)
     assert_visible_texts(["Aharane", "Connect your private Studio", "Server address", "HTTPS only"])
+    SCREEN_INDEX.append({
+        "file": "index.json",
+        "device": DEVICE_INFO.get("model", "Android emulator"),
+        "api_level": DEVICE_INFO.get("api_level", "unknown"),
+        "resolution": DEVICE_INFO.get("resolution", "unknown"),
+        "density": DEVICE_INFO.get("density", "unknown"),
+        "screens": SCREEN_INDEX.copy(),
+    })
+    (OUT / "index.json").write_text(
+        json.dumps(SCREEN_INDEX[-1], indent=2),
+        encoding="utf-8"
+    )
 
-    print("Captured debug-only native UI flows and the normal secure first-launch connection screen.")
+    print("Captured debug-only native UI flows and wrote screenshots/index.json.")
 
 
 if __name__ == "__main__":

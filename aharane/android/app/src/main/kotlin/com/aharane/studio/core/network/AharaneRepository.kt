@@ -156,7 +156,8 @@ data class ChatSyncPage(
     val hasNewer: Boolean,
     val syncedAtMillis: Long,
     val deletedMessageIds: List<String> = emptyList(),
-    val remoteDeletedMessages: List<RemoteDeletedMessage> = emptyList()
+    val remoteDeletedMessages: List<RemoteDeletedMessage> = emptyList(),
+    val updatedPolls: List<ChatMessage> = emptyList()
 )
 
 interface VisualCommandDataSource {
@@ -211,10 +212,21 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
     suspend fun createEngine(manifest: JSONObject, code: String): JSONObject =
         api.post("engines", JSONObject().put("manifest", manifest).put("code", code))
 
-    suspend fun updateEngine(id: String, manifest: JSONObject, code: String, expectedVersion: Int): JSONObject =
+    suspend fun updateEngine(id: String, manifest: JSONObject, code: String, expectedVersion: Int, expectedRevision: Int = 0): JSONObject =
         api.put(
             "engines/" + encodePath(id),
             JSONObject().put("manifest", manifest).put("code", code).put("expectedVersion", expectedVersion)
+                // Optional: lets the server reject a save that would overwrite a newer revision at the same version.
+                .also { if (expectedRevision > 0) it.put("expectedRevision", expectedRevision) }
+        )
+
+    suspend fun engineCapabilities(id: String): JSONObject =
+        api.get("engines/" + encodePath(id) + "/capabilities")
+
+    suspend fun runEngine(id: String, revision: Int, inputs: JSONObject): JSONObject =
+        api.post(
+            "engines/" + encodePath(id) + "/run",
+            JSONObject().put("revision", revision).put("inputs", inputs)
         )
 
     suspend fun deleteEngine(id: String): JSONObject =
@@ -446,7 +458,19 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
                         isStarred = row.optBoolean("starred"),
                         isVoiceNote = row.optBoolean("ptt"),
                         replyToMessageId = row.optString("quotedMessageId").takeIf { it.isNotBlank() },
-                        quotedMessageText = row.optString("quotedMessageText").takeIf { it.isNotBlank() }
+                        quotedMessageText = row.optString("quotedMessageText").takeIf { it.isNotBlank() },
+                        pollOptions = row.optJSONArray("pollOptions").let { values ->
+                            if (values == null) emptyList() else List(values.length()) { values.optString(it) }.filter(String::isNotBlank)
+                        },
+                        pollSelectableCount = row.optInt("pollSelectableCount", 1).coerceAtLeast(1),
+                        pollVoteCounts = row.optJSONObject("pollVoteCounts").let { values ->
+                            if (values == null) emptyMap() else buildMap {
+                                values.keys().forEach { option -> put(option, values.optInt(option).coerceAtLeast(0)) }
+                            }
+                        },
+                        pollMyVotes = row.optJSONArray("pollMyVotes").let { values ->
+                            if (values == null) emptyList() else List(values.length()) { values.optString(it) }.filter(String::isNotBlank)
+                        }
                     )
                 )
             }
@@ -509,6 +533,18 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
                     replyToMessageId = row.optString("quotedMessageId").takeIf { it.isNotBlank() },
                     quotedMessageText = row.optString("quotedMessageText").takeIf { it.isNotBlank() },
                     reactions = reactions,
+                    pollOptions = row.optJSONArray("pollOptions").let { values ->
+                        if (values == null) emptyList() else List(values.length()) { values.optString(it) }.filter(String::isNotBlank)
+                    },
+                    pollSelectableCount = row.optInt("pollSelectableCount", 1).coerceAtLeast(1),
+                    pollVoteCounts = row.optJSONObject("pollVoteCounts").let { values ->
+                        if (values == null) emptyMap() else buildMap {
+                            values.keys().forEach { option -> put(option, values.optInt(option).coerceAtLeast(0)) }
+                        }
+                    },
+                    pollMyVotes = row.optJSONArray("pollMyVotes").let { values ->
+                        if (values == null) emptyList() else List(values.length()) { values.optString(it) }.filter(String::isNotBlank)
+                    },
                     deletedByRemote = row.optBoolean("deletedByRemote"),
                     deletedAtMillis = row.optLong("deletedAt")
                 ))
@@ -530,6 +566,35 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
                         if (messageId.isNotBlank()) add(
                             RemoteDeletedMessage(messageId, row.optLong("deletedAt").coerceAtLeast(0L))
                         )
+                    }
+                }
+            },
+            updatedPolls = response.optJSONArray("pollUpdates").let { values ->
+                if (values == null) emptyList() else buildList {
+                    for (index in 0 until values.length()) {
+                        val row = values.optJSONObject(index) ?: continue
+                        val messageId = row.optString("id")
+                        if (messageId.isBlank()) continue
+                        val options = row.optJSONArray("pollOptions") ?: JSONArray()
+                        val counts = row.optJSONObject("pollVoteCounts") ?: JSONObject()
+                        val ownVotes = row.optJSONArray("pollMyVotes") ?: JSONArray()
+                        add(ChatMessage(
+                            key = conversation.key,
+                            messageId = messageId,
+                            direction = if (row.optBoolean("fromMe")) MessageDirection.OUTGOING else MessageDirection.INCOMING,
+                            kind = MessageKind.POLL,
+                            text = row.optString("text"),
+                            timestampMillis = row.optLong("timestamp").let { value ->
+                                if (value > 0 && value < 10_000_000_000L) value * 1000L else value
+                            }.coerceAtLeast(0L),
+                            senderName = row.optString("pushName").takeIf { it.isNotBlank() },
+                            pollOptions = List(options.length()) { options.optString(it) }.filter(String::isNotBlank),
+                            pollSelectableCount = row.optInt("pollSelectableCount", 1).coerceAtLeast(1),
+                            pollVoteCounts = buildMap {
+                                counts.keys().forEach { option -> put(option, counts.optInt(option).coerceAtLeast(0)) }
+                            },
+                            pollMyVotes = List(ownVotes.length()) { ownVotes.optString(it) }.filter(String::isNotBlank)
+                        ))
                     }
                 }
             }
@@ -602,7 +667,8 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
         fileName: String,
         caption: String,
         isVoiceNote: Boolean = false,
-        durationSeconds: Int = 0
+        durationSeconds: Int = 0,
+        clientMessageId: String? = null
     ): String {
         val result = api.sendChatMedia(
             conversation.key.account.apiValue,
@@ -612,9 +678,20 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
             fileName,
             caption,
             isVoiceNote,
-            durationSeconds
+            durationSeconds,
+            clientMessageId
         )
         return result.optString("message")
+    }
+
+    suspend fun createPoll(conversation: ChatSummary, name: String, options: List<String>, selectableCount: Int): String {
+        val response = api.createChatPoll(conversation.key.account.apiValue, conversation.key.jid, name, options, selectableCount)
+        return response.optString("message")
+    }
+
+    suspend fun votePoll(conversation: ChatSummary, poll: ChatMessage, selectedOptions: List<String>) {
+        require(poll.key == conversation.key && poll.kind == MessageKind.POLL)
+        api.voteChatPoll(conversation.key.account.apiValue, conversation.key.jid, poll.messageId, selectedOptions)
     }
 
     suspend fun visibility(account: ChatAccount): JSONObject =

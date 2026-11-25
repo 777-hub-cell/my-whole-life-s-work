@@ -82,6 +82,9 @@ data class VisualEdge(
     }
 }
 
+/** Workflow document schema version this client writes; must match the server's WORKFLOW_SCHEMA_VERSION. */
+internal const val VISUAL_WORKFLOW_SCHEMA_VERSION = 2
+
 data class VisualWorkflow(
     val id: String = UUID.randomUUID().toString(),
     val name: String = "New command",
@@ -90,7 +93,10 @@ data class VisualWorkflow(
     val nodes: List<VisualNode>,
     val edges: List<VisualEdge>,
     val createdAt: String = "",
-    val updatedAt: String = ""
+    val updatedAt: String = "",
+    // Server-managed save counter (0 = never saved). Sent back as expectedRevision so a stale
+    // editor cannot silently overwrite a newer saved workflow.
+    val revision: Int = 0
 ) {
     fun toJson(): JSONObject {
         val nodeRows = JSONArray()
@@ -102,11 +108,13 @@ data class VisualWorkflow(
             .put("name", name)
             .put("account", account)
             .put("enabled", enabled)
-            .put("version", 1)
+            .put("version", VISUAL_WORKFLOW_SCHEMA_VERSION)
+            .put("schemaVersion", VISUAL_WORKFLOW_SCHEMA_VERSION)
             .put("nodes", nodeRows)
             .put("edges", edgeRows)
             .put("createdAt", createdAt)
             .put("updatedAt", updatedAt)
+            .also { if (revision > 0) it.put("expectedRevision", revision) }
     }
 
     companion object {
@@ -121,7 +129,8 @@ data class VisualWorkflow(
                 nodes = buildList { for (index in 0 until nodes.length()) nodes.optJSONObject(index)?.let { add(VisualNode.fromJson(it)) } },
                 edges = buildList { for (index in 0 until edges.length()) edges.optJSONObject(index)?.let { add(VisualEdge.fromJson(it)) } },
                 createdAt = json.optString("createdAt"),
-                updatedAt = json.optString("updatedAt")
+                updatedAt = json.optString("updatedAt"),
+                revision = json.optInt("revision", 0)
             )
         }
 

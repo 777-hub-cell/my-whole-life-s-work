@@ -64,6 +64,11 @@ import java.util.UUID
 private data class ActiveSocket(val nodeId: String, val socketId: String, val type: String)
 
 internal const val WORKSPACE_CANVAS_PADDING_DP = 48f
+// Single source of truth for node-card width: fit-to-screen and canvas-extent maths previously
+// assumed 206 dp while the card is drawn 236 dp wide, which clipped the right-most node.
+internal const val NODE_CARD_WIDTH_DP = 236f
+internal const val WORKSPACE_MIN_ZOOM = 0.35f
+internal const val WORKSPACE_MAX_ZOOM = 1.8f
 internal fun workspaceNodeOffset(node: VisualNode): Offset =
     Offset(node.x + WORKSPACE_CANVAS_PADDING_DP, node.y + WORKSPACE_CANVAS_PADDING_DP)
 
@@ -147,7 +152,7 @@ fun VisualCommandBuilderScreen(
         if (nodes.isNotEmpty() && workspaceViewportSize.width > 0 && workspaceViewportSize.height > 0) {
             val left = nodes.minOf { it.x }
             val top = nodes.minOf { it.y }
-            val right = nodes.maxOf { it.x + 206f }
+            val right = nodes.maxOf { it.x + NODE_CARD_WIDTH_DP }
             val bottom = nodes.maxOf { node ->
                 node.y + (measuredNodeSizes[node.id]?.height?.let { with(density) { it.toDp().value } } ?: 132f)
             }
@@ -155,7 +160,7 @@ fun VisualCommandBuilderScreen(
             val graphHeightPx = with(density) { (bottom - top + 96f).coerceAtLeast(180f).dp.toPx() }
             val availableWidth = (workspaceViewportSize.width - with(density) { 32.dp.toPx() }).coerceAtLeast(1f)
             val availableHeight = (workspaceViewportSize.height - with(density) { 32.dp.toPx() }).coerceAtLeast(1f)
-            zoom = minOf(availableWidth / graphWidthPx, availableHeight / graphHeightPx).coerceIn(0.35f, 1.8f)
+            zoom = minOf(availableWidth / graphWidthPx, availableHeight / graphHeightPx).coerceIn(WORKSPACE_MIN_ZOOM, WORKSPACE_MAX_ZOOM)
         } else {
             zoom = 0.78f
         }
@@ -274,6 +279,11 @@ fun VisualCommandBuilderScreen(
             notice = error.message ?: "The workflow could not be saved."
             if (error is com.aharane.studio.core.network.AharaneApiException && error.statusCode == 422) {
                 notice = error.message ?: "The workflow did not pass validation."
+            }
+            if (error is com.aharane.studio.core.network.AharaneApiException && error.statusCode == 409 &&
+                (error.message ?: "").contains("Reload")) {
+                // Revision conflict: the working graph on screen is left untouched so no edits are lost.
+                notice = "This workflow was changed elsewhere, so nothing was overwritten. Your edits are still on screen; reopen it from Saved to load the latest version."
             }
             false
         } finally {
@@ -430,7 +440,7 @@ fun VisualCommandBuilderScreen(
     fun undoChange() {
         val previous = undo.lastOrNull() ?: return
         redo = redo + workflow
-        workflow = previous
+        workflow = previous.copy(revision = workflow.revision)
         undo = undo.dropLast(1)
         dirty = true
         validation = VisualWorkflowValidation()
@@ -439,7 +449,7 @@ fun VisualCommandBuilderScreen(
     fun redoChange() {
         val next = redo.lastOrNull() ?: return
         undo = undo + workflow
-        workflow = next
+        workflow = next.copy(revision = workflow.revision)
         redo = redo.dropLast(1)
         dirty = true
         validation = VisualWorkflowValidation()
@@ -457,7 +467,7 @@ fun VisualCommandBuilderScreen(
     val configuredNode = workflow.nodes.firstOrNull { it.id == configNodeId }
 
     Column(
-        Modifier.fillMaxSize().background(StudioPalette.Background).padding(horizontal = 12.dp, vertical = 8.dp)
+        Modifier.fillMaxSize().background(StudioPalette.Background).navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -567,7 +577,7 @@ fun VisualCommandBuilderScreen(
                                 if (pressed.size >= 2) {
                                     val distance = (pressed[0].position - pressed[1].position).getDistance()
                                     if (lastDistance > 0f && distance > 0f) {
-                                        zoom = (zoom * (distance / lastDistance)).coerceIn(0.5f, 1.8f)
+                                        zoom = (zoom * (distance / lastDistance)).coerceIn(WORKSPACE_MIN_ZOOM, WORKSPACE_MAX_ZOOM)
                                     }
                                     lastDistance = distance
                                     event.changes.forEach { if (it.pressed) it.consume() }
@@ -581,7 +591,7 @@ fun VisualCommandBuilderScreen(
                     // A stable origin prevents dragging one node from shifting every other node.
                     val canvasOriginX = WORKSPACE_CANVAS_PADDING_DP
                     val canvasOriginY = WORKSPACE_CANVAS_PADDING_DP
-                    val maxNodeRight = workflow.nodes.maxOfOrNull { it.x + 206f } ?: 206f
+                    val maxNodeRight = workflow.nodes.maxOfOrNull { it.x + NODE_CARD_WIDTH_DP } ?: NODE_CARD_WIDTH_DP
                     val maxNodeBottom = workflow.nodes.maxOfOrNull { node ->
                         node.y + (measuredNodeSizes[node.id]?.height?.let { with(density) { it.toDp().value } } ?: 132f)
                     } ?: 180f
@@ -692,10 +702,10 @@ fun VisualCommandBuilderScreen(
                     WorkspaceToolButton("Fit workspace", enabled = true, onClick = ::fitWorkspace) {
                         Text("Fit", color = StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    WorkspaceToolButton("Zoom out", enabled = zoom > 0.35f, onClick = { zoom = (zoom - 0.1f).coerceIn(0.35f, 1.8f) }) {
+                    WorkspaceToolButton("Zoom out", enabled = zoom > WORKSPACE_MIN_ZOOM, onClick = { zoom = (zoom - 0.1f).coerceIn(WORKSPACE_MIN_ZOOM, WORKSPACE_MAX_ZOOM) }) {
                         Text("−", color = StudioPalette.Ink, fontSize = 19.sp)
                     }
-                    WorkspaceToolButton("Zoom in", enabled = zoom < 1.8f, onClick = { zoom = (zoom + 0.1f).coerceIn(0.35f, 1.8f) }) {
+                    WorkspaceToolButton("Zoom in", enabled = zoom < WORKSPACE_MAX_ZOOM, onClick = { zoom = (zoom + 0.1f).coerceIn(WORKSPACE_MIN_ZOOM, WORKSPACE_MAX_ZOOM) }) {
                         Text("+", color = StudioPalette.Ink, fontSize = 17.sp)
                     }
                 }
@@ -759,7 +769,7 @@ fun VisualCommandBuilderScreen(
                 )
             } else {
                 LazyColumn(
-                    Modifier.fillMaxSize(),
+                    Modifier.fillMaxSize().testTag("visual-command-node-library"),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     contentPadding = PaddingValues(bottom = 8.dp)
                 ) {
@@ -967,7 +977,7 @@ private fun NodeCard(
         label = "workflow-node-outline"
     )
     Column(
-        Modifier.offset(nodeOffset.x.dp, nodeOffset.y.dp).width(236.dp)
+        Modifier.offset(nodeOffset.x.dp, nodeOffset.y.dp).width(NODE_CARD_WIDTH_DP.dp)
             .onSizeChanged(onMeasured).testTag("node-card-" + node.type)
             .clip(RoundedCornerShape(8.dp)).background(Color.White)
             .border(if (selected || error != null) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(8.dp))
@@ -1098,8 +1108,8 @@ private fun NodeConfigurationDialog(
 ) {
     var config by remember(node.id) { mutableStateOf(node.config) }
     val fields = when (node.type) {
-        "trigger.command" -> listOf("command" to "Command name", "aliases" to "Aliases, comma-separated", "maxMessagesPerRun" to "Maximum messages per execution (1–20)")
-        "trigger.message" -> listOf("maxMessagesPerRun" to "Maximum messages per execution (1–20)")
+        "trigger.command" -> listOf("command" to "Command name", "aliases" to "Aliases, comma-separated", "maxMessagesPerRun" to "Maximum messages per execution (1–500)")
+        "trigger.message" -> listOf("maxMessagesPerRun" to "Maximum messages per execution (1–500)")
         "group.updateSubject" -> listOf("subject" to "New group name")
         "group.updateDescription" -> listOf("description" to "New group description")
         "group.participantsUpdate" -> listOf("action" to "Action (add/remove/promote/demote)", "participants" to "Phone numbers, one per line")

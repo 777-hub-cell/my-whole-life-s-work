@@ -91,6 +91,35 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  debug-apk:
+    name: Build installable native debug APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+      - name: Install Android 16 SDK platform and tools
+        run: sdkmanager --install "platforms;android-36" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Assemble installable debug APK
+        working-directory: aharane/android
+        run: sh ./ci-gradle-retry.sh assembleDebug
+      - name: Upload installable debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: aharane-native-android-debug-deliverable
+          path: aharane/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
   unsigned-release:
     name: Build an unsigned production release candidate
     runs-on: ubuntu-24.04
@@ -213,8 +242,8 @@ jobs:
 
   preview-screenshots:
     name: Run native app and capture real emulator screenshots
-    needs: build
-    if: needs.build.result == 'success'
+    needs: debug-apk
+    if: needs.debug-apk.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -231,7 +260,7 @@ jobs:
       - name: Download APK from this build
         uses: actions/download-artifact@v4
         with:
-          name: aharane-native-android-debug
+          name: aharane-native-android-debug-deliverable
           path: artifacts
 
       - name: Run app in Android emulator and capture screens

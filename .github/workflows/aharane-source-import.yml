@@ -5,7 +5,8 @@ on:
     branches:
       - aharane/source-import-20261125
     paths:
-      - "aharane-source-import/source.zip"
+      - "aharane-source-import/aharane-source (1).zip"
+      - ".github/workflows/aharane-source-import.yml"
 
 permissions:
   contents: write
@@ -34,9 +35,9 @@ jobs:
           import tempfile
           import zipfile
 
-          archive_path = pathlib.Path("aharane-source-import/source.zip")
+          archive_path = pathlib.Path("aharane-source-import/aharane-source (1).zip")
           if not archive_path.is_file():
-              raise SystemExit("Upload the source ZIP to aharane-source-import/source.zip")
+              raise SystemExit("Expected uploaded ZIP was not found")
 
           staging = pathlib.Path(tempfile.mkdtemp(prefix="aharane-import-"))
           total = 0
@@ -55,6 +56,8 @@ jobs:
                   if path.parts[0] == "aharane":
                       pass
                   elif name in allowed_workflows or (info.is_dir() and name in (".github/", ".github/workflows/")):
+                      pass
+                  elif info.is_dir() and name == "aharane/":
                       pass
                   else:
                       raise SystemExit(f"Unexpected ZIP path: {name}")
@@ -85,7 +88,6 @@ jobs:
           if missing:
               raise SystemExit("ZIP missing required files: " + ", ".join(missing))
 
-          # Replace only Aharane's source tree and its two dedicated workflows.
           shutil.rmtree("aharane", ignore_errors=True)
           shutil.copytree(staging / "aharane", "aharane")
           workflows = pathlib.Path(".github/workflows")

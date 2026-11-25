@@ -646,8 +646,7 @@ fun ConversationScreen(
                             onLoadAudio = { onLoadAudio(message) },
                             onDownloadMedia = { onDownloadMedia(message) },
                                 onOpenLocation = { onOpenLocation(message) },
-                            onVotePoll = { selectedOptions -> onVotePoll(message, selectedOptions) },
-                            connected = connected
+                            onVotePoll = { selectedOptions -> onVotePoll(message, selectedOptions) }
                             )
                         }
                     }

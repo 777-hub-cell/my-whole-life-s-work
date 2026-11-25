@@ -20,8 +20,9 @@ permissions:
   actions: read
 
 concurrency:
-  group: aharane-android-${{ github.ref }}
-  cancel-in-progress: true
+  # Keep an updated source-import build from waiting behind a stale emulator job.
+  group: aharane-android-${{ github.ref }}-${{ github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   server-workflow-tests:

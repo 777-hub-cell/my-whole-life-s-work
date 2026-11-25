@@ -684,7 +684,7 @@ fun AharaneApp(
                     conversation, bytes, "audio/ogg", "voice-note.ogg", "",
                     isVoiceNote = true, durationSeconds = recorded.durationSeconds
                 )
-                if (connected) {
+                if (authenticated && !previewMode && serverReachable) {
                     chatsByAccount[conversation.key.account] = localChatRepository?.saveConversations(repository.chats(conversation.key.account))
                         ?: chatsByAccount[conversation.key.account].orEmpty()
                 }

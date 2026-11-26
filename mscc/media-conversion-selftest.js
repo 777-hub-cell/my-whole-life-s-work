@@ -10,8 +10,11 @@ import {
   mediaIsAnimated,
   socketMediaDownloadOptions,
   downloadMediaWithSocketHost,
+  runFfmpeg,
   runFfmpegWithFrameSyncFallback,
+  mediaToSoundSticker,
 } from './utils/media-conversion.js'
+import { readStickerMetadata } from './utils/sticker-metadata.js'
 
 assert.equal(STICKER_CANVAS, 512)
 assert.equal(STICKER_CORNER_RADIUS, 20, 'Nexia stickerUtils.js rounded-square radius is 20px, not 48/56px')
@@ -125,5 +128,50 @@ exit 0
     else process.env.MSCC_FFMPEG_TEST_LOG = previousCallLog
     await rm(compatDir, { recursive:true, force:true })
   }
+
+// Sound-bearing videos must produce a WebP plus a separate Opus payload.
+// A source with no audio stream returns null so .sticker uses its silent path.
+const soundFixtureDir = await mkdtemp(join(tmpdir(), 'night-sound-sticker-test-'))
+try {
+  const soundVideoPath = join(soundFixtureDir, 'with-audio.mp4')
+  await runFfmpeg([
+    '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=12:duration=2',
+    '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=2',
+    '-shortest',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-movflags', '+faststart',
+    soundVideoPath,
+  ])
+  const soundAssets = await mediaToSoundSticker(await readFile(soundVideoPath), {
+    packName: 'NIGHT sound test',
+    publisher: 'NIGHT',
+    maxDurationSeconds: 2,
+  })
+  assert.ok(soundAssets, 'a video with an audio stream must be recognized as a sound sticker')
+  assert.ok(Buffer.isBuffer(soundAssets.stickerBuffer) && soundAssets.stickerBuffer.length > 1000)
+  assert.ok(Buffer.isBuffer(soundAssets.audioBuffer) && soundAssets.audioBuffer.length > 100)
+  assert.equal(soundAssets.audioBuffer.toString('ascii', 0, 4), 'OggS')
+  assert.equal(soundAssets.isAnimated, true)
+  assert.ok(soundAssets.audioSeconds > 0 && soundAssets.audioSeconds <= 2.1)
+
+  const soundMeta = await readStickerMetadata(soundAssets.stickerBuffer)
+  assert.equal(soundMeta?.['sticker-pack-name'], 'NIGHT sound test')
+  assert.equal(soundMeta?.['sound-sha256'], soundAssets.soundSha256,
+    'WebP metadata must bind to the exact extracted Opus bytes')
+
+  const silentVideoPath = join(soundFixtureDir, 'without-audio.mp4')
+  await runFfmpeg([
+    '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=12:duration=2',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+    silentVideoPath,
+  ])
+  const silentResult = await mediaToSoundSticker(await readFile(silentVideoPath), {
+    packName: 'NIGHT silent test',
+    maxDurationSeconds: 2,
+  })
+  assert.equal(silentResult, null, 'a video without an audio stream must not be mislabeled as a sound sticker')
+} finally {
+  await rm(soundFixtureDir, { recursive:true, force:true })
+}
 
 console.log('media conversion self-test passed')

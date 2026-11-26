@@ -275,6 +275,7 @@ jobs:
           script: |
             set -eu
             mkdir -p screenshots
+            export AHARANE_COMMAND_BUILDER_ONLY=1
             python3 aharane/android/scripts/capture_design_preview.py
 
       - name: Upload real app screenshots

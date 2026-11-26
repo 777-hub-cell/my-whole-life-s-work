@@ -288,24 +288,40 @@ async function probeMediaFile(input) {
   }
 }
 
-function soundStickerAnimatedArgs(input, output, { seconds, fps, quality }) {
+function soundStickerAnimatedArgs(input, stickerOutput, audioOutput, {
+  seconds,
+  fps,
+  quality,
+  compressionLevel,
+}) {
+  // Decode the source once and write the animated WebP and mono Opus outputs
+  // from the same input pass.
   return [
     '-i', input,
     '-map', '0:v:0',
-    '-t', String(seconds),
-    '-an',
-    '-vf', `${STICKER_FIT_FILTER},fps=${fps},format=rgba`,
+    '-t', Number(seconds).toFixed(3),
+    '-vf', `${STICKER_FIT_FILTER},fps=${fps}`,
     '-c:v', 'libwebp',
     '-preset', 'default',
     '-loop', '0',
     '-fps_mode', 'passthrough',
     '-pix_fmt', 'yuva420p',
     '-quality', String(quality),
-    '-compression_level', '6',
-    output,
+    '-compression_level', String(compressionLevel),
+    stickerOutput,
+    '-map', '0:a:0',
+    '-t', Number(seconds).toFixed(3),
+    '-vn',
+    '-ar', '48000',
+    '-ac', '1',
+    '-c:a', 'libopus',
+    '-b:a', '32k',
+    '-vbr', 'on',
+    '-application', 'audio',
+    '-f', 'ogg',
+    audioOutput,
   ]
 }
-
 export function runFfmpeg(args, { timeoutMs = FFMPEG_TIMEOUT_MS } = {}) {
   const binary = String(process.env.FFMPEG_PATH || 'ffmpeg').trim() || 'ffmpeg'
 
@@ -365,27 +381,46 @@ async function serializedConversion(work) {
   }
 }
 
+// Sticker jobs use a dedicated queue, so unrelated media conversions cannot
+// hold up .sticker. Each sticker still gets an isolated temporary directory.
+let stickerConversionTail = Promise.resolve()
+
+async function serializedStickerConversion(work) {
+  const previous = stickerConversionTail
+  let release
+  stickerConversionTail = new Promise(resolve => { release = resolve })
+  await previous.catch(() => {})
+  try {
+    return await work()
+  } finally {
+    release()
+  }
+}
 async function fileSize(path) {
   return Number((await stat(path)).size || 0)
 }
 
-function animatedStickerArgs(input, output, { seconds, fps, quality }) {
+function animatedStickerArgs(input, output, {
+  seconds,
+  fps,
+  quality,
+  compressionLevel = 2,
+}) {
   return [
     '-i', input,
     '-t', String(seconds),
     '-an',
-    '-vf', `${STICKER_FIT_FILTER},fps=${fps},format=rgba`,
+    '-vf', `${STICKER_FIT_FILTER},fps=${fps}`,
     '-c:v', 'libwebp',
     '-preset', 'default',
     '-loop', '0',
     '-fps_mode', 'passthrough',
     '-pix_fmt', 'yuva420p',
     '-quality', String(quality),
-    '-compression_level', '6',
+    '-compression_level', String(compressionLevel),
     output,
   ]
 }
-
 function staticStickerArgs(input, output, quality) {
   return [
     '-i', input,
@@ -401,17 +436,17 @@ function staticStickerArgs(input, output, quality) {
 }
 
 export async function mediaToSticker(buffer, { animated = false, packName, publisher, emojis } = {}) {
-  return serializedConversion(() => withTempDir('sticker', async directory => {
+  const convert = () => withTempDir('sticker', async directory => {
     const input = join(directory, 'input.bin')
     const output = join(directory, 'sticker.webp')
     await writeFile(input, buffer)
 
     if (animated) {
+      // Keep the full six-second duration and use one lower-cost fallback
+      // instead of repeatedly decoding and re-encoding four shorter versions.
       const profiles = [
-        { seconds: 6, fps: 15, quality: 72 },
-        { seconds: 5, fps: 12, quality: 52 },
-        { seconds: 4, fps: 10, quality: 40 },
-        { seconds: 3, fps: 8, quality: 30 },
+        { seconds: 6, fps: 12, quality: 58, compressionLevel: 2 },
+        { seconds: 6, fps: 8, quality: 36, compressionLevel: 1 },
       ]
 
       for (const profile of profiles) {
@@ -427,9 +462,10 @@ export async function mediaToSticker(buffer, { animated = false, packName, publi
 
     const sticker = await readFile(output)
     return applyStickerMetadata(sticker, { packName, publisher, emojis })
-  }))
-}
+  })
 
+  return animated ? serializedStickerConversion(convert) : serializedConversion(convert)
+}
 /**
  * Convert a video that has an audio stream into the two linked payloads
  * required for one native WhatsApp sound sticker. A video with no audio
@@ -443,7 +479,7 @@ export async function mediaToSoundSticker(buffer, {
   maxDurationSeconds = 6,
   emojis = ['🔊'],
 } = {}) {
-  return serializedConversion(() => withTempDir('sound-sticker', async directory => {
+  return serializedStickerConversion(() => withTempDir('sound-sticker', async directory => {
     if (!Buffer.isBuffer(buffer) || !buffer.length || buffer.length > MAX_INPUT_BYTES) {
       throw new Error('That video is empty or too large for sticker conversion.')
     }
@@ -464,66 +500,52 @@ export async function mediaToSoundSticker(buffer, {
       : 6
     const seconds = Math.max(0.5, Math.min(maximum, streamDuration || maximum))
 
-    // Keep the audio separate from WebP. It is attached to StickerMessage
-    // field 26 by sound-sticker-protocol.js and sent in the same WA message.
-    await runFfmpeg([
-      '-i', input,
-      '-t', seconds.toFixed(3),
-      '-vn',
-      '-map', '0:a:0',
-      '-ar', '48000',
-      '-ac', '1',
-      '-c:a', 'libopus',
-      '-b:a', '32k',
-      '-vbr', 'on',
-      '-application', 'audio',
-      '-f', 'ogg',
-      audioOutput,
-    ])
+    // Produce animation and soundtrack together. One lower-cost fallback is
+    // allowed for an over-size sticker; there are no separate audio/video
+    // decode passes or four successive full video encodes.
+    const profiles = [
+      { fps: 12, quality: 56, compressionLevel: 2 },
+      { fps: 8, quality: 36, compressionLevel: 1 },
+    ]
+    for (const profile of profiles) {
+      await runFfmpegWithFrameSyncFallback(soundStickerAnimatedArgs(
+        input,
+        stickerOutput,
+        audioOutput,
+        { ...profile, seconds },
+      ))
+      const [audioBytes, stickerBytes] = await Promise.all([
+        fileSize(audioOutput),
+        fileSize(stickerOutput),
+      ])
+      if (audioBytes <= MAX_STICKER_BYTES && stickerBytes <= MAX_STICKER_BYTES) break
+    }
 
-    const audioBuffer = await readFile(audioOutput)
+    const [audioBuffer, rawStickerBuffer] = await Promise.all([
+      readFile(audioOutput),
+      readFile(stickerOutput),
+    ])
     if (audioBuffer.length < 8 || audioBuffer.toString('ascii', 0, 4) !== 'OggS') {
       throw new Error('NIGHT could not create a valid Ogg/Opus soundtrack for this sticker.')
     }
     if (audioBuffer.length > MAX_STICKER_BYTES) {
       throw new Error('The sticker soundtrack exceeds WhatsApp media limits.')
     }
-
-    // Keep every animation profile at the soundtrack duration. Quality and
-    // frame rate may step down for size, but the video is never shortened
-    // independently of its audio.
-    const profiles = [
-      { fps: 15, quality: 72 },
-      { fps: 12, quality: 58 },
-      { fps: 10, quality: 44 },
-      { fps: 8, quality: 32 },
-    ]
-    let stickerBuffer = null
-    for (const profile of profiles) {
-      await runFfmpegWithFrameSyncFallback(soundStickerAnimatedArgs(input, stickerOutput, {
-        ...profile,
-        seconds,
-      }))
-      if (await fileSize(stickerOutput) <= MAX_STICKER_BYTES) break
-    }
-
-    stickerBuffer = await readFile(stickerOutput)
-    if (stickerBuffer.length > MAX_STICKER_BYTES) {
+    if (rawStickerBuffer.length > MAX_STICKER_BYTES) {
       throw new Error('The animated sticker exceeds WhatsApp media limits. Try a shorter video.')
     }
-    if (stickerBuffer.toString('ascii', 0, 4) !== 'RIFF' ||
-        stickerBuffer.toString('ascii', 8, 12) !== 'WEBP') {
+    if (rawStickerBuffer.toString('ascii', 0, 4) !== 'RIFF' ||
+        rawStickerBuffer.toString('ascii', 8, 12) !== 'WEBP') {
       throw new Error('NIGHT could not create a valid animated WebP sticker.')
     }
 
     const soundSha256 = createHash('sha256').update(audioBuffer).digest('base64')
-    stickerBuffer = await applyStickerMetadata(stickerBuffer, {
+    const stickerBuffer = await applyStickerMetadata(rawStickerBuffer, {
       packName,
       publisher,
       emojis,
       soundSha256,
     })
-
     if (stickerBuffer.length > MAX_STICKER_BYTES) {
       throw new Error('The sound sticker exceeds WhatsApp media limits after metadata is added.')
     }
@@ -538,7 +560,6 @@ export async function mediaToSoundSticker(buffer, {
     }
   }))
 }
-
 export async function stickerToPng(buffer) {
   return serializedConversion(() => withTempDir('toimg', async directory => {
     const input = join(directory, 'sticker.webp')

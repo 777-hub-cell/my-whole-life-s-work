@@ -31,7 +31,7 @@ export function stickerPackNameForCommand(ctx, fallback = DEFAULT_STICKER_PACK_N
     const text = normalizePackName(value)
     if (text) return text
   }
-  return normalizePackName(fallback) || DEFAULT_STICKER_PACK_NAME
+  return normalizePackName(fallback)
 }
 
 export function stickerPackNameFromArgs(ctx, fallback = DEFAULT_STICKER_PACK_NAME) {

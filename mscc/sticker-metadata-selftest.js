@@ -69,4 +69,24 @@ assert.equal(renamedTag['sticker-pack-publisher'], DEFAULT_STICKER_PUBLISHER)
 assert.notEqual(renamedTag['sticker-pack-id'], originalTag['sticker-pack-id'], 'avoid stale pack identity')
 assert.deepEqual(renamedTag.emojis, ['✨'])
 
+const soundMetadata = {
+  packName: 'NIGHT Sound',
+  packId: 'sound-fixture',
+  emojis: ['🔊'],
+  soundSha256: 'c29tZS1hdWRpby1oYXNo',
+}
+const soundExif = buildStickerExif(soundMetadata)
+assert.equal(soundExif.subarray(0, 2).toString('ascii'), 'MM',
+  'sound sticker EXIF must use the WhatsApp big-endian TIFF marker')
+const soundLength = soundExif.readUInt32BE(14)
+const soundDecoded = JSON.parse(soundExif.subarray(26, 26 + soundLength).toString('utf8'))
+assert.equal(soundDecoded['sound-sha256'], soundMetadata.soundSha256)
+assert.deepEqual(soundDecoded.emojis, ['🔊'])
+
+const soundWebp = await applyStickerMetadata(webp, soundMetadata)
+const reloadedSoundMetadata = await readStickerMetadata(soundWebp)
+assert.equal(reloadedSoundMetadata?.['sound-sha256'], soundMetadata.soundSha256,
+  'saved WebP must retain the Opus digest that binds its audio')
+assert.equal(reloadedSoundMetadata?.['sticker-pack-name'], 'NIGHT Sound')
+
 console.log('sticker metadata self-test passed')

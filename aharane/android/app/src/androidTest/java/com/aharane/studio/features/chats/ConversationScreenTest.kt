@@ -369,7 +369,7 @@ class ConversationScreenTest {
         compose.onNodeWithTag("poll-question").performTextInput("Lunch?")
         compose.onNodeWithTag("poll-option-0").performTextInput("Jollof rice")
         compose.onNodeWithTag("poll-option-1").performTextInput("Pasta")
-        compose.onNodeWithText("Create poll").performClick()
+        compose.onNodeWithTag("poll-create-submit").performClick()
         compose.runOnIdle {
             assertEquals("Lunch?", createdQuestion)
             assertEquals(listOf("Jollof rice", "Pasta"), createdOptions)
@@ -393,7 +393,7 @@ class ConversationScreenTest {
         compose.onNodeWithTag("conversation-composer").performTextInput("Draft stays on this phone")
         compose.onNodeWithTag("conversation-send").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Attach image, video, audio or document").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Choose a WebP sticker").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Open sticker tray").assertIsNotEnabled()
         compose.onNodeWithTag("conversation-composer").assertTextEquals("Draft stays on this phone")
     }
 }

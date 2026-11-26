@@ -1272,6 +1272,7 @@ fun ConversationScreen(
                     StudioPaletteAction("Cancel") { pollCreateOpen = false }
                     StudioActionButton(
                         "Create poll",
+                        modifier = Modifier.testTag("poll-create-submit"),
                         compact = true,
                         primary = true,
                         enabled = connected && pollQuestionDraft.isNotBlank() && validOptions,

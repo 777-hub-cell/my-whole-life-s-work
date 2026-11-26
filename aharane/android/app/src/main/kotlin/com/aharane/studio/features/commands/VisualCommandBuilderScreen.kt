@@ -1077,7 +1077,144 @@ private fun CommandActionButton(
 private fun CommandSegment(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         Modifier.clip(RoundedCornerShape(999.dp))
-            .background(@Composable
+            .background(if (selected) CommandStudioPalette.Accent.copy(alpha = 0.18f) else Color.Transparent)
+            .border(
+                1.dp,
+                if (selected) CommandStudioPalette.Accent.copy(alpha = 0.55f) else Color.Transparent,
+                RoundedCornerShape(999.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text(
+            label,
+            color = if (selected) CommandStudioPalette.Ink else CommandStudioPalette.Muted,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.clip(RoundedCornerShape(999.dp))
+            .background(if (selected) CommandStudioPalette.Soft else CommandStudioPalette.Background)
+            .border(
+                1.dp,
+                if (selected) CommandStudioPalette.Accent.copy(alpha = 0.7f) else CommandStudioPalette.Line,
+                RoundedCornerShape(999.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text(
+            label,
+            color = if (selected) CommandStudioPalette.Ink else CommandStudioPalette.Muted,
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun LibraryNodeChip(node: VisualNodeDefinition, enabled: Boolean, onAdd: () -> Unit) {
+    val accent = nodeAccent(node.category)
+    Column(
+        Modifier.width(190.dp)
+            .heightIn(min = 108.dp)
+            .clip(RoundedCornerShape(15.dp))
+            .background(CommandStudioPalette.Node)
+            .border(1.dp, CommandStudioPalette.Line, RoundedCornerShape(15.dp))
+            .padding(11.dp),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(
+                    Modifier.size(25.dp).clip(RoundedCornerShape(8.dp)).background(accent.copy(alpha = 0.17f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(nodeGlyph(node.type), color = accent, fontSize = 13.sp)
+                }
+                Text(
+                    node.category.uppercase(),
+                    color = accent,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                node.name,
+                color = CommandStudioPalette.Ink,
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                node.description,
+                color = CommandStudioPalette.Muted,
+                fontSize = 10.5.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(Modifier.height(9.dp))
+        CommandActionButton(
+            "＋ Add node",
+            modifier = Modifier.fillMaxWidth().testTag("add-node-" + node.type),
+            compact = true,
+            enabled = enabled,
+            onClick = onAdd
+        )
+    }
+}
+
+@Composable
+private fun LibraryNodeRow(node: VisualNodeDefinition, enabled: Boolean, onAdd: () -> Unit) {
+    val accent = nodeAccent(node.category)
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(13.dp))
+            .background(CommandStudioPalette.Node)
+            .border(1.dp, CommandStudioPalette.Line, RoundedCornerShape(13.dp))
+            .padding(horizontal = 11.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(accent.copy(alpha = 0.17f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(nodeGlyph(node.type), color = accent, fontSize = 16.sp)
+        }
+        Spacer(Modifier.width(9.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(node.name, color = CommandStudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                node.description,
+                color = CommandStudioPalette.Muted,
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        CommandActionButton(
+            "Add",
+            modifier = Modifier.testTag("add-node-" + node.type),
+            compact = true,
+            enabled = enabled,
+            onClick = onAdd
+        )
+    }
+}
+
+@Composable
 private fun NodeCard(
     node: VisualNode,
     definition: VisualNodeDefinition,

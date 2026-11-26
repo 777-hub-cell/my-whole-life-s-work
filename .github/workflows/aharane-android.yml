@@ -288,6 +288,8 @@ jobs:
 
   
   api26-compatibility:
+    # Run after the primary Android job has populated the Gradle dependency cache.
+    needs: [build]
     name: Minimum supported Android API 26 instrumentation tests
     runs-on: ubuntu-24.04
     timeout-minutes: 40

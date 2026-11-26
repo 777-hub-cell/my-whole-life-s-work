@@ -27,6 +27,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -52,7 +54,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.aharane.studio.core.design.StudioActionButton
 import com.aharane.studio.core.design.LocalStudioMotionEnabled
 import com.aharane.studio.core.design.StudioPalette
 import com.aharane.studio.core.network.VisualCommandDataSource
@@ -60,6 +61,48 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
+
+private object CommandStudioPalette {
+    val Background = Color(0xFF090E0D)
+    val Surface = Color(0xFF141B19)
+    val Line = Color(0xFF26322F)
+    val Ink = Color(0xFFE9F1EE)
+    val Muted = Color(0xFF8FA19B)
+    val Accent = Color(0xFF3FAE8C)
+    val Bad = Color(0xFFFF7A6E)
+    val Soft = Color(0xFF123B31)
+    val Canvas = Color(0xFF0E1513)
+    val Node = Color(0xFF171F1D)
+    val NodeHeader = Color(0xFF212C28)
+}
+
+private fun nodeAccent(category: String): Color = when {
+    category.contains("trigger", true) || category.contains("event", true) -> Color(0xFF3FAE8C)
+    category.contains("message", true) -> Color(0xFF5A8FD6)
+    category.contains("contact", true) || category.contains("chat", true) -> Color(0xFFC9A24D)
+    category.contains("group", true) || category.contains("participant", true) -> Color(0xFFA085D4)
+    category.contains("condition", true) -> Color(0xFFB18ACB)
+    category.contains("flow", true) -> Color(0xFF65B6B0)
+    category.contains("variable", true) -> Color(0xFFE0B24A)
+    else -> CommandStudioPalette.Accent
+}
+
+private fun nodeGlyph(type: String): String = when {
+    type.startsWith("trigger.") -> "⚡"
+    type.startsWith("message.") -> "✉"
+    type.startsWith("contact.") -> "☎"
+    type.startsWith("group.") -> "♟"
+    type.startsWith("moderation.") -> "⊘"
+    type.startsWith("condition.") -> "◇"
+    type.startsWith("variable.") || type.startsWith("counter.") -> "＄"
+    type.startsWith("flow.") -> "⏱"
+    type.startsWith("media.") -> "▧"
+    type.startsWith("profile.") -> "◎"
+    type.startsWith("newsletter.") -> "◉"
+    type.startsWith("engine.") -> "⚙"
+    type.startsWith("custom.") -> "✦"
+    else -> "◆"
+}
 
 private data class ActiveSocket(val nodeId: String, val socketId: String, val type: String)
 
@@ -93,7 +136,7 @@ fun VisualCommandBuilderScreen(
     var pendingSocket by remember { mutableStateOf<ActiveSocket?>(null) }
     var category by remember { mutableStateOf("All") }
     var search by remember { mutableStateOf("") }
-    var workspaceFraction by remember { mutableFloatStateOf(0.47f) }
+    var workspaceFraction by remember { mutableFloatStateOf(0.67f) }
     var zoom by remember { mutableFloatStateOf(1f) }
     var workspaceViewportSize by remember { mutableStateOf(IntSize.Zero) }
     var workspaceCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
@@ -111,6 +154,8 @@ fun VisualCommandBuilderScreen(
     var showCustomManager by remember { mutableStateOf(false) }
     var customNodes by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var showDelete by remember { mutableStateOf(false) }
+    var libraryExpanded by remember { mutableStateOf(false) }
+    var showMoreActions by remember { mutableStateOf(false) }
     var undo by remember { mutableStateOf<List<VisualWorkflow>>(emptyList()) }
     var redo by remember { mutableStateOf<List<VisualWorkflow>>(emptyList()) }
     var loadedId by remember { mutableStateOf<String?>(null) }
@@ -467,74 +512,121 @@ fun VisualCommandBuilderScreen(
     val configuredNode = workflow.nodes.firstOrNull { it.id == configNodeId }
 
     Column(
-        Modifier.fillMaxSize().background(StudioPalette.Background).navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 8.dp)
+        Modifier.fillMaxSize().background(CommandStudioPalette.Background).navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "‹  More",
-                color = StudioPalette.Accent,
+                color = CommandStudioPalette.Accent,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clickable(onClick = onBack).padding(vertical = 6.dp)
+                modifier = Modifier.clickable(onClick = onBack).padding(vertical = 8.dp)
             )
             Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f)) {
-                Text("Visual command builder", color = StudioPalette.Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text(if (dirty) "Unsaved changes" else if (workflow.enabled) "Active command" else "Workflow draft", color = StudioPalette.Muted, fontSize = 10.sp)
+                Text("Command builder", color = CommandStudioPalette.Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(if (dirty) Color(0xFFF0A500) else CommandStudioPalette.Accent))
+                    Text(
+                        when {
+                            dirty -> "Unsaved changes"
+                            workflow.enabled -> "Active"
+                            else -> "Saved draft"
+                        },
+                        color = CommandStudioPalette.Muted,
+                        fontSize = 11.sp,
+                        maxLines = 1
+                    )
+                }
             }
-            StudioActionButton("Load", modifier = Modifier.testTag("workflow-load"), compact = true, enabled = connected && savedWorkflows.isNotEmpty(), onClick = { showLoad = true })
+            CommandActionButton(
+                "▶ Test",
+                compact = true,
+                enabled = connected && !testing && !saving,
+                modifier = Modifier.testTag("workflow-test"),
+                onClick = { scope.launch { safeTest() } }
+            )
             Spacer(Modifier.width(5.dp))
-            StudioActionButton("Save", modifier = Modifier.testTag("workflow-save"), compact = true, primary = true, enabled = connected && !saving && (!saved || dirty), onClick = {
-                scope.launch { saveDraft() }
-            })
+            CommandActionButton(
+                "Save",
+                compact = true,
+                primary = true,
+                enabled = connected && !saving && (!saved || dirty),
+                modifier = Modifier.testTag("workflow-save"),
+                onClick = { scope.launch { saveDraft() } }
+            )
+            Box {
+                Box(
+                    Modifier.size(40.dp).clip(RoundedCornerShape(12.dp))
+                        .background(CommandStudioPalette.Surface)
+                        .border(1.dp, CommandStudioPalette.Line, RoundedCornerShape(12.dp))
+                        .clickable { showMoreActions = true }
+                        .testTag("workflow-more-actions"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("⋯", color = CommandStudioPalette.Ink, fontSize = 23.sp, lineHeight = 24.sp)
+                }
+                DropdownMenu(
+                    expanded = showMoreActions,
+                    onDismissRequest = { showMoreActions = false },
+                    modifier = Modifier.background(CommandStudioPalette.Surface)
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Delete command", color = CommandStudioPalette.Bad) },
+                        enabled = saved && connected,
+                        onClick = { showMoreActions = false; showDelete = true },
+                        modifier = Modifier.testTag("workflow-delete")
+                    )
+                }
+            }
         }
 
         Row(
-            Modifier.fillMaxWidth().padding(vertical = 6.dp).horizontalScroll(rememberScrollState()),
+            Modifier.fillMaxWidth().padding(vertical = 7.dp).horizontalScroll(rememberScrollState()),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
-                Modifier.clip(RoundedCornerShape(8.dp))
-                    .background(StudioPalette.Surface)
-                    .border(1.dp, StudioPalette.Line, RoundedCornerShape(8.dp))
-                    .clickable(onClick = ::switchAccount)
-                    .padding(horizontal = 10.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                Modifier.clip(RoundedCornerShape(999.dp)).background(CommandStudioPalette.Background)
+                    .border(1.dp, CommandStudioPalette.Line, RoundedCornerShape(999.dp)).padding(3.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Outlined.Person, contentDescription = null, tint = StudioPalette.Accent, modifier = Modifier.size(17.dp))
-                Text(if (account == "private") "Private" else "Public", color = StudioPalette.Ink, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                Text("↕", color = StudioPalette.Muted, fontSize = 12.sp)
+                CommandSegment("Private", selected = account == "private", onClick = { if (account != "private") switchAccount() })
+                CommandSegment("Public", selected = account == "public", onClick = { if (account != "public") switchAccount() })
             }
-            Spacer(Modifier.width(2.dp))
-            StudioActionButton(if (testing) "Testing…" else "Test safely", compact = true, enabled = connected && !testing && !saving, onClick = {
-                scope.launch { safeTest() }
-            })
-            StudioActionButton(
-                if (workflow.enabled) "Deactivate" else "Activate",
-                compact = true,
-                primary = !workflow.enabled,
-                enabled = connected && !saving && !testing,
-                onClick = {
-                    scope.launch {
-                        if (workflow.enabled) {
+            Row(
+                Modifier.clip(RoundedCornerShape(999.dp)).background(CommandStudioPalette.Background)
+                    .border(1.dp, CommandStudioPalette.Line, RoundedCornerShape(999.dp)).padding(3.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CommandSegment("Active", selected = workflow.enabled, onClick = {
+                    if (!workflow.enabled) scope.launch { saveAndActivate() }
+                })
+                CommandSegment("Paused", selected = !workflow.enabled, onClick = {
+                    if (workflow.enabled) {
+                        scope.launch {
                             saving = true
                             try {
                                 val response = repository.updateVisualCommand(workflow.id, workflow.copy(enabled = false).toJson())
                                 val row = response.optJSONObject("workflow") ?: workflow.copy(enabled = false).toJson()
                                 workflow = VisualWorkflow.fromJson(row)
                                 savedWorkflows = savedWorkflows.filterNot { it.id == workflow.id } + workflow
-                                notice = "Command deactivated."
+                                notice = "Command paused."
                             } catch (error: Exception) {
-                                notice = error.message ?: "Command could not be deactivated."
+                                notice = error.message ?: "Command could not be paused."
                             } finally { saving = false }
-                        } else saveAndActivate()
+                        }
                     }
-                }
+                })
+            }
+            CommandActionButton(
+                "Load",
+                compact = true,
+                enabled = connected && savedWorkflows.isNotEmpty(),
+                modifier = Modifier.testTag("workflow-load"),
+                onClick = { showLoad = true }
             )
-            StudioActionButton("Engine library", compact = true, enabled = connected, onClick = onManageEngines)
-            StudioActionButton("Delete", compact = true, destructive = true, enabled = saved && connected, onClick = { showDelete = true })
+            CommandActionButton("Engine library", compact = true, enabled = connected, onClick = onManageEngines)
         }
 
         val hasValidation = validation.errors.isNotEmpty() || validation.warnings.isNotEmpty()
@@ -549,23 +641,23 @@ fun VisualCommandBuilderScreen(
             Text(
                 if (hasErrors) validation.errors.size.toString() + " errors · " + validation.errors.first().message
                 else validation.warnings.size.toString() + " warnings · " + validation.warnings.first().message,
-                color = if (hasErrors) StudioPalette.Bad else StudioPalette.Accent,
+                color = if (hasErrors) CommandStudioPalette.Bad else CommandStudioPalette.Accent,
                 fontSize = 10.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(7.dp))
-                    .background(if (hasErrors) StudioPalette.Bad.copy(alpha = 0.07f) else StudioPalette.Accent.copy(alpha = 0.07f))
+                    .background(if (hasErrors) CommandStudioPalette.Bad.copy(alpha = 0.07f) else CommandStudioPalette.Accent.copy(alpha = 0.07f))
                     .padding(7.dp)
             )
         }
 
         Column(Modifier.fillMaxWidth().weight(workspaceFraction)) {
             Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("WORKSPACE", color = StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text("WORKSPACE", color = CommandStudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.weight(1f))
-                Text(workflow.nodes.size.toString() + " nodes · " + workflow.edges.size + " wires", color = StudioPalette.Muted, fontSize = 10.5.sp, modifier = Modifier.testTag("workflow-node-count"))
+                Text(workflow.nodes.size.toString() + " nodes · " + workflow.edges.size + " wires", color = CommandStudioPalette.Muted, fontSize = 10.5.sp, modifier = Modifier.testTag("workflow-node-count"))
             }
-            Box(Modifier.fillMaxSize().onSizeChanged { workspaceViewportSize = it }.clip(RoundedCornerShape(9.dp)).background(Color(0xFFF2F5F2))) {
+            Box(Modifier.fillMaxSize().onSizeChanged { workspaceViewportSize = it }.clip(RoundedCornerShape(18.dp)).background(CommandStudioPalette.Canvas).border(1.dp, Color(0xFF1D2926), RoundedCornerShape(18.dp))) {
                 Box(
                     Modifier.horizontalScroll(workspaceScroll).verticalScroll(workspaceVerticalScroll).testTag("workflow-workspace").pointerInput(Unit) {
                         awaitEachGesture {
@@ -609,16 +701,15 @@ fun VisualCommandBuilderScreen(
                         }.onGloballyPositioned { workspaceCoordinates = it }
                     ) {
                         Canvas(Modifier.fillMaxSize()) {
-                            val density = this.density
-                            val gridStep = 28.dp.toPx()
-                            var x = 0f
-                            while (x < size.width) {
-                                drawLine(Color(0xFFE3E9E4), Offset(x, 0f), Offset(x, size.height), 0.6.dp.toPx())
-                                x += gridStep
-                            }
-                            var y = 0f
+                            val gridStep = 26.dp.toPx()
+                            val dotRadius = 1.15.dp.toPx()
+                            var y = gridStep
                             while (y < size.height) {
-                                drawLine(Color(0xFFE3E9E4), Offset(0f, y), Offset(size.width, y), 0.6.dp.toPx())
+                                var x = gridStep
+                                while (x < size.width) {
+                                    drawCircle(Color(0xFF2A3A35), radius = dotRadius, center = Offset(x, y))
+                                    x += gridStep
+                                }
                                 y += gridStep
                             }
                             workflow.edges.forEach { edge ->
@@ -678,35 +769,36 @@ fun VisualCommandBuilderScreen(
                 }
                 }
                 Text(
-                    "Swipe sideways to pan · pinch to zoom · drag nodes",
-                    color = StudioPalette.Muted,
+                    "Drag nodes · pinch to zoom · swipe to pan",
+                    color = CommandStudioPalette.Muted,
                     fontSize = 10.5.sp,
-                    modifier = Modifier.align(Alignment.BottomStart).padding(6.dp)
-                        .clip(RoundedCornerShape(5.dp)).background(Color.White.copy(alpha = 0.92f)).padding(5.dp)
+                    modifier = Modifier.align(Alignment.BottomStart).padding(8.dp)
+                        .clip(RoundedCornerShape(10.dp)).background(Color(0xFF141B19).copy(alpha = 0.94f))
+                        .border(1.dp, CommandStudioPalette.Line, RoundedCornerShape(10.dp)).padding(horizontal = 9.dp, vertical = 6.dp)
                 )
                 Row(
                     Modifier.align(Alignment.TopEnd).padding(6.dp)
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(Color.White.copy(alpha = 0.96f))
-                        .border(1.dp, Color(0xFFDCE3DE), RoundedCornerShape(9.dp))
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF141B19).copy(alpha = 0.96f))
+                        .border(1.dp, CommandStudioPalette.Line, RoundedCornerShape(12.dp))
                         .padding(3.dp),
                     horizontalArrangement = Arrangement.spacedBy(3.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     WorkspaceToolButton("Undo", enabled = undo.isNotEmpty(), onClick = ::undoChange) {
-                        Text("↶", color = StudioPalette.Ink, fontSize = 19.sp)
+                        Text("↶", color = CommandStudioPalette.Ink, fontSize = 19.sp)
                     }
                     WorkspaceToolButton("Redo", enabled = redo.isNotEmpty(), onClick = ::redoChange) {
-                        Text("↷", color = StudioPalette.Ink, fontSize = 19.sp)
+                        Text("↷", color = CommandStudioPalette.Ink, fontSize = 19.sp)
                     }
                     WorkspaceToolButton("Fit workspace", enabled = true, onClick = ::fitWorkspace) {
-                        Text("Fit", color = StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Fit", color = CommandStudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                     }
                     WorkspaceToolButton("Zoom out", enabled = zoom > WORKSPACE_MIN_ZOOM, onClick = { zoom = (zoom - 0.1f).coerceIn(WORKSPACE_MIN_ZOOM, WORKSPACE_MAX_ZOOM) }) {
-                        Text("−", color = StudioPalette.Ink, fontSize = 19.sp)
+                        Text("−", color = CommandStudioPalette.Ink, fontSize = 19.sp)
                     }
                     WorkspaceToolButton("Zoom in", enabled = zoom < WORKSPACE_MAX_ZOOM, onClick = { zoom = (zoom + 0.1f).coerceIn(WORKSPACE_MIN_ZOOM, WORKSPACE_MAX_ZOOM) }) {
-                        Text("+", color = StudioPalette.Ink, fontSize = 17.sp)
+                        Text("+", color = CommandStudioPalette.Ink, fontSize = 17.sp)
                     }
                 }
             }
@@ -721,35 +813,49 @@ fun VisualCommandBuilderScreen(
             },
             contentAlignment = Alignment.Center
         ) {
-            Box(Modifier.width(48.dp).height(3.dp).clip(CircleShape).background(StudioPalette.Line))
+            Box(Modifier.width(48.dp).height(3.dp).clip(CircleShape).background(CommandStudioPalette.Line))
         }
 
-        Column(Modifier.fillMaxWidth().weight(1f - workspaceFraction)) {
-            Row(Modifier.fillMaxWidth().padding(top = 3.dp, bottom = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("NODE LIBRARY", color = StudioPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                Spacer(Modifier.weight(1f))
-                Text(visibleNodes.size.toString() + " nodes", color = StudioPalette.Muted, fontSize = 10.5.sp)
+        Column(
+            Modifier.fillMaxWidth().weight(1f - workspaceFraction)
+                .clip(RoundedCornerShape(20.dp)).background(CommandStudioPalette.Surface)
+                .border(1.dp, CommandStudioPalette.Line, RoundedCornerShape(20.dp)).padding(10.dp)
+        ) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("NODE LIBRARY", color = CommandStudioPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 Spacer(Modifier.width(8.dp))
+                Text(visibleNodes.size.toString() + " nodes", color = CommandStudioPalette.Muted, fontSize = 10.5.sp)
+                Spacer(Modifier.weight(1f))
                 Text(
                     "My nodes",
                     modifier = Modifier.testTag("custom-node-manager").clickable(enabled = connected) { showCustomManager = true }
-                        .padding(horizontal = 6.dp, vertical = 5.dp),
-                    color = if (connected) StudioPalette.Accent else StudioPalette.Muted,
-                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold
+                        .padding(horizontal = 8.dp, vertical = 7.dp),
+                    color = if (connected) CommandStudioPalette.Accent else CommandStudioPalette.Muted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
+                Box(
+                    Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(CommandStudioPalette.Background)
+                        .border(1.dp, CommandStudioPalette.Line, RoundedCornerShape(10.dp))
+                        .clickable { libraryExpanded = !libraryExpanded }
+                        .testTag("library-expand-toggle"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(if (libraryExpanded) "▾" else "▴", color = CommandStudioPalette.Ink, fontSize = 17.sp)
+                }
             }
             BasicTextField(
                 value = search,
                 onValueChange = { search = it },
                 singleLine = true,
-                textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 14.sp),
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(7.dp))
-                    .background(StudioPalette.Surface).border(1.dp, StudioPalette.Line, RoundedCornerShape(7.dp))
-                    .heightIn(min = 44.dp)
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                textStyle = TextStyle(color = CommandStudioPalette.Ink, fontSize = 14.sp),
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp))
+                    .background(CommandStudioPalette.Background)
+                    .border(1.dp, CommandStudioPalette.Line, RoundedCornerShape(13.dp))
+                    .heightIn(min = 44.dp).padding(horizontal = 13.dp, vertical = 12.dp),
                 decorationBox = { inner ->
                     Box {
-                        if (search.isBlank()) Text("Search WhatsApp nodes", color = StudioPalette.Muted, fontSize = 14.sp)
+                        if (search.isBlank()) Text("⌕  Search nodes", color = CommandStudioPalette.Muted, fontSize = 14.sp)
                         inner()
                     }
                 }
@@ -762,22 +868,32 @@ fun VisualCommandBuilderScreen(
                 }
             }
             if (loading) {
-                Text("Loading node library…", color = StudioPalette.Muted, fontSize = 10.sp, modifier = Modifier.padding(6.dp))
+                Text("Loading node library…", color = CommandStudioPalette.Muted, fontSize = 12.sp, modifier = Modifier.padding(7.dp))
             } else if (visibleNodes.isEmpty()) {
                 Text(
                     if (connected) "No verified nodes match this search." else "Connect to your Aharane server to load the WhatsApp node library.",
-                    color = StudioPalette.Muted, fontSize = 10.sp, modifier = Modifier.padding(6.dp)
+                    color = CommandStudioPalette.Muted, fontSize = 12.sp, modifier = Modifier.padding(7.dp)
                 )
-            } else {
+            } else if (libraryExpanded) {
                 LazyColumn(
                     Modifier.fillMaxSize().testTag("visual-command-node-library"),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
                     contentPadding = PaddingValues(bottom = 8.dp)
                 ) {
                     items(visibleNodes, key = { it.type }) { definition ->
                         Box(Modifier.animateItem()) {
                             LibraryNodeRow(definition, connected) { addNode(definition) }
                         }
+                    }
+                }
+            } else {
+                LazyRow(
+                    Modifier.fillMaxSize().testTag("visual-command-node-library"),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 6.dp, end = 3.dp)
+                ) {
+                    items(visibleNodes, key = { it.type }) { definition ->
+                        LibraryNodeChip(definition, connected) { addNode(definition) }
                     }
                 }
             }
@@ -792,7 +908,7 @@ fun VisualCommandBuilderScreen(
         ) {
             Text(
                 notice,
-                color = if (notice.contains("error", true) || notice.contains("failed", true) || notice.contains("rejected", true)) StudioPalette.Bad else StudioPalette.Muted,
+                color = if (notice.contains("error", true) || notice.contains("failed", true) || notice.contains("rejected", true)) CommandStudioPalette.Bad else CommandStudioPalette.Muted,
                 fontSize = 13.5.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -860,10 +976,10 @@ fun VisualCommandBuilderScreen(
 
     if (showLoad) {
         Dialog(onDismissRequest = { showLoad = false }) {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(StudioPalette.Surface).padding(14.dp)) {
-                Text("Saved commands", color = StudioPalette.Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(CommandStudioPalette.Surface).padding(14.dp)) {
+                Text("Saved commands", color = CommandStudioPalette.Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
-                if (savedWorkflows.isEmpty()) Text("No saved commands for this account.", color = StudioPalette.Muted, fontSize = 11.sp)
+                if (savedWorkflows.isEmpty()) Text("No saved commands for this account.", color = CommandStudioPalette.Muted, fontSize = 11.sp)
                 savedWorkflows.forEach { item ->
                     Column(Modifier.fillMaxWidth().clickable {
                         scope.launch {
@@ -876,30 +992,30 @@ fun VisualCommandBuilderScreen(
                         }
                     }.padding(vertical = 8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(item.name, color = StudioPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                            Text(if (item.enabled) "Active" else "Draft", color = if (item.enabled) StudioPalette.Accent else StudioPalette.Muted, fontSize = 10.5.sp)
+                            Text(item.name, color = CommandStudioPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text(if (item.enabled) "Active" else "Draft", color = if (item.enabled) CommandStudioPalette.Accent else CommandStudioPalette.Muted, fontSize = 10.5.sp)
                         }
                         Text(
                             item.nodes.firstOrNull { it.type == "trigger.command" }?.config?.get("command") ?: "Message event",
-                            color = StudioPalette.Muted, fontSize = 10.sp
+                            color = CommandStudioPalette.Muted, fontSize = 10.sp
                         )
                     }
                 }
-                StudioActionButton("Close", modifier = Modifier.fillMaxWidth(), compact = true, onClick = { showLoad = false })
+                CommandActionButton("Close", modifier = Modifier.fillMaxWidth(), compact = true, onClick = { showLoad = false })
             }
         }
     }
 
     if (showDelete) {
         Dialog(onDismissRequest = { showDelete = false }) {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(StudioPalette.Surface).padding(14.dp)) {
-                Text("Delete this command?", color = StudioPalette.Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(CommandStudioPalette.Surface).padding(14.dp)) {
+                Text("Delete this command?", color = CommandStudioPalette.Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(6.dp))
-                Text("The saved workflow and its counters will be removed from Aharane.", color = StudioPalette.Muted, fontSize = 11.sp)
+                Text("The saved workflow and its counters will be removed from Aharane.", color = CommandStudioPalette.Muted, fontSize = 11.sp)
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    StudioActionButton("Cancel", modifier = Modifier.weight(1f), compact = true, onClick = { showDelete = false })
-                    StudioActionButton("Delete", modifier = Modifier.weight(1f), compact = true, destructive = true, onClick = {
+                    CommandActionButton("Cancel", modifier = Modifier.weight(1f), compact = true, onClick = { showDelete = false })
+                    CommandActionButton("Delete", modifier = Modifier.weight(1f), compact = true, destructive = true, onClick = {
                         scope.launch {
                             try {
                                 repository.deleteVisualCommand(workflow.id)
@@ -923,35 +1039,45 @@ fun VisualCommandBuilderScreen(
 }
 
 @Composable
-private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun CommandActionButton(
+    label: String,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+    enabled: Boolean = true,
+    primary: Boolean = false,
+    destructive: Boolean = false,
+    onClick: () -> Unit
+) {
+    val fill = when {
+        primary -> CommandStudioPalette.Accent
+        destructive -> Color(0xFF2C1B1A)
+        else -> Color(0xFF1B2623)
+    }
+    val ink = when {
+        primary -> Color(0xFF04251C)
+        destructive -> CommandStudioPalette.Bad
+        else -> CommandStudioPalette.Ink
+    }
     Box(
-        Modifier.clip(RoundedCornerShape(7.dp))
-            .background(if (selected) StudioPalette.Accent else StudioPalette.Surface)
-            .border(1.dp, if (selected) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(7.dp))
-            .clickable(onClick = onClick).padding(horizontal = 11.dp, vertical = 8.dp)
+        modifier.clip(RoundedCornerShape(if (compact) 12.dp else 14.dp))
+            .background(if (enabled) fill else fill.copy(alpha = 0.45f))
+            .border(1.dp, if (primary) CommandStudioPalette.Accent else if (destructive) CommandStudioPalette.Bad.copy(alpha = 0.55f) else CommandStudioPalette.Line,
+                RoundedCornerShape(if (compact) 12.dp else 14.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .heightIn(min = if (compact) 40.dp else 44.dp)
+            .padding(horizontal = if (compact) 11.dp else 15.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Text(label, color = if (selected) Color.White else StudioPalette.Ink, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, color = if (enabled) ink else ink.copy(alpha = 0.45f), fontSize = if (compact) 12.sp else 13.sp,
+            fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
 @Composable
-private fun LibraryNodeRow(node: VisualNodeDefinition, enabled: Boolean, onAdd: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(7.dp))
-            .background(StudioPalette.Surface).border(1.dp, StudioPalette.Line, RoundedCornerShape(7.dp))
-            .padding(horizontal = 11.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(node.name, color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Text(node.description, color = StudioPalette.Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
-        Spacer(Modifier.width(6.dp))
-        StudioActionButton("Add", modifier = Modifier.testTag("add-node-" + node.type), enabled = enabled, onClick = onAdd)
-    }
-}
-
-@Composable
+private fun CommandSegment(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.clip(RoundedCornerShape(999.dp))
+            .background(@Composable
 private fun NodeCard(
     node: VisualNode,
     definition: VisualNodeDefinition,
@@ -967,10 +1093,11 @@ private fun NodeCard(
     val currentOnMove by rememberUpdatedState(onMove)
     val currentOnDragStart by rememberUpdatedState(onDragStart)
     val nodeOffset = workspaceNodeOffset(node)
+    val accent = nodeAccent(definition.category)
     val borderTarget = when {
-        error != null -> StudioPalette.Bad
-        selected -> StudioPalette.Accent
-        else -> Color(0xFFD9E2DC)
+        error != null -> CommandStudioPalette.Bad
+        selected -> accent
+        else -> Color(0xFF2E3B37)
     }
     val borderColor by animateColorAsState(
         borderTarget,
@@ -980,8 +1107,8 @@ private fun NodeCard(
     Column(
         Modifier.offset(nodeOffset.x.dp, nodeOffset.y.dp).width(NODE_CARD_WIDTH_DP.dp)
             .onSizeChanged(onMeasured).testTag("node-card-" + node.type)
-            .clip(RoundedCornerShape(8.dp)).background(Color.White)
-            .border(if (selected || error != null) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(18.dp)).background(CommandStudioPalette.Node)
+            .border(if (selected || error != null) 1.6.dp else 1.dp, borderColor, RoundedCornerShape(18.dp))
             .pointerInput(node.id) {
                 detectDragGestures(onDragStart = { currentOnDragStart() }) { change, amount ->
                     change.consume()
@@ -991,29 +1118,48 @@ private fun NodeCard(
             .clickable(onClick = onSelect)
     ) {
         Row(
-            Modifier.fillMaxWidth().background(Color(0xFFF5F8F5)).padding(horizontal = 10.dp, vertical = 9.dp),
+            Modifier.fillMaxWidth().background(CommandStudioPalette.NodeHeader)
+                .padding(horizontal = 11.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp)
+            horizontalArrangement = Arrangement.spacedBy(9.dp)
         ) {
-            Box(Modifier.size(9.dp).clip(CircleShape).background(if (error != null) StudioPalette.Bad else StudioPalette.Accent))
-            if (definition.category.isNotBlank()) {
-                Text(
-                    definition.category,
-                    color = StudioPalette.Accent,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+            Box(Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(accent.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center) {
+                Text(nodeGlyph(node.type), color = accent, fontSize = 17.sp)
             }
-            Text(definition.name, color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.weight(1f))
-            if (error != null) Text("!", color = StudioPalette.Bad, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                if (definition.category.isNotBlank()) {
+                    Text(definition.category.uppercase(), color = accent, fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Text(definition.name, color = CommandStudioPalette.Ink, fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (error != null) {
+                Box(Modifier.size(22.dp).clip(CircleShape).background(Color(0xFF3C211F)), contentAlignment = Alignment.Center) {
+                    Text("!", color = CommandStudioPalette.Bad, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
-        Text(nodeSummary(node), color = StudioPalette.Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp))
+        Text(
+            nodeSummary(node),
+            color = Color(0xFFC9D6D1),
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 11.dp, vertical = 9.dp)
+                .clip(RoundedCornerShape(11.dp)).background(CommandStudioPalette.Canvas)
+                .border(1.dp, Color(0xFF243230), RoundedCornerShape(11.dp))
+                .padding(horizontal = 10.dp, vertical = 9.dp)
+        )
         if (definition.inputs.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 5.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 7.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 definition.inputs.forEach { socket ->
                     SocketAction(socket, false, "socket-" + node.type + "-in-" + socket.id,
                         onSocket = { onSocket(socket, false) }, onPosition = { onSocketPosition(socket, false, it) })
@@ -1021,7 +1167,12 @@ private fun NodeCard(
             }
         }
         if (definition.outputs.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 5.dp, vertical = 4.dp), horizontalArrangement = Arrangement.End) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 7.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 definition.outputs.forEach { socket ->
                     SocketAction(socket, true, "socket-" + node.type + "-out-" + socket.id,
                         onSocket = { onSocket(socket, true) }, onPosition = { onSocketPosition(socket, true, it) })
@@ -1087,22 +1238,24 @@ private fun SocketAction(
         "number" -> Color(0xFF99763C)
         "boolean" -> Color(0xFF8A6099)
         "message" -> Color(0xFF4A8992)
-        else -> StudioPalette.Muted
+        else -> CommandStudioPalette.Muted
     }
     Row(
-        Modifier.clickable(onClick = onSocket).testTag(tag).padding(horizontal = 2.dp, vertical = 2.dp),
+        Modifier.clickable(onClick = onSocket).testTag(tag).heightIn(min = 30.dp)
+            .padding(horizontal = 3.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(3.dp)
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         if (!output) SocketDot(color, onPosition)
-        Text(socket.label, color = color, fontSize = 10.5.sp, maxLines = 1)
+        Text(socket.label, color = color, fontSize = 11.sp, maxLines = 1)
         if (output) SocketDot(color, onPosition)
     }
 }
 
 @Composable
 private fun SocketDot(color: Color, onPosition: (LayoutCoordinates) -> Unit) {
-    Box(Modifier.size(13.dp).onGloballyPositioned(onPosition).clip(CircleShape).background(Color.White).border(1.8.dp, color, CircleShape))
+    Box(Modifier.size(13.dp).onGloballyPositioned(onPosition).clip(CircleShape)
+        .background(Color(0xFF10171A)).border(2.dp, color, CircleShape))
 }
 
 @Composable
@@ -1151,49 +1304,49 @@ private fun NodeConfigurationDialog(
     Dialog(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth().heightIn(max = 650.dp).clip(RoundedCornerShape(18.dp))
-                .background(StudioPalette.Surface).verticalScroll(rememberScrollState()).padding(18.dp)
+                .background(CommandStudioPalette.Surface).verticalScroll(rememberScrollState()).padding(18.dp)
         ) {
-            Text(definition?.category ?: "NODE", color = StudioPalette.Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(definition?.category ?: "NODE", color = CommandStudioPalette.Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
-            Text(definition?.name ?: node.type, color = StudioPalette.Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(definition?.name ?: node.type, color = CommandStudioPalette.Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(5.dp))
-            Text(definition?.description.orEmpty(), color = StudioPalette.Muted, fontSize = 13.5.sp, lineHeight = 19.sp)
+            Text(definition?.description.orEmpty(), color = CommandStudioPalette.Muted, fontSize = 13.5.sp, lineHeight = 19.sp)
             Spacer(Modifier.height(8.dp))
             fields.forEach { (key, label) ->
-                Text(label, color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                Text(label, color = CommandStudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                 BasicTextField(
                     value = config[key].orEmpty(),
                     onValueChange = { config = config + (key to it) },
                     singleLine = key !in setOf("text", "options", "buttons", "participants", "description"),
-                    textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 14.5.sp),
+                    textStyle = TextStyle(color = CommandStudioPalette.Ink, fontSize = 14.5.sp),
                     modifier = Modifier.fillMaxWidth().padding(top = 5.dp, bottom = 10.dp)
-                        .clip(RoundedCornerShape(9.dp)).background(StudioPalette.Background)
-                        .border(1.dp, StudioPalette.Line, RoundedCornerShape(9.dp)).padding(horizontal = 12.dp, vertical = 12.dp)
+                        .clip(RoundedCornerShape(9.dp)).background(CommandStudioPalette.Background)
+                        .border(1.dp, CommandStudioPalette.Line, RoundedCornerShape(9.dp)).padding(horizontal = 12.dp, vertical = 12.dp)
                         .testTag("node-config-field-" + key)
                 )
             }
             if (node.type == "trigger.command" || node.type == "trigger.message") {
-                Text("Chat scope", color = StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                Text("Chat scope", color = CommandStudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                 val selectedScope = config["chatScope"] ?: "direct"
                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     listOf("direct" to "Direct", "groups" to "Groups", "both" to "Both").forEach { (value, label) ->
                         val active = selectedScope == value
                         Box(
                             Modifier.clip(RoundedCornerShape(6.dp))
-                                .background(if (active) StudioPalette.Accent else StudioPalette.Background)
-                                .border(1.dp, if (active) StudioPalette.Accent else StudioPalette.Line, RoundedCornerShape(6.dp))
+                                .background(if (active) CommandStudioPalette.Accent else CommandStudioPalette.Background)
+                                .border(1.dp, if (active) CommandStudioPalette.Accent else CommandStudioPalette.Line, RoundedCornerShape(6.dp))
                                 .clickable(enabled = allowGroupScope || value == "direct") {
                                     config = config + ("chatScope" to value)
                                 }.padding(horizontal = 8.dp, vertical = 5.dp)
                         ) {
-                            Text(label, color = if (active) Color.White else StudioPalette.Ink, fontSize = 13.5.sp)
+                            Text(label, color = if (active) Color.White else CommandStudioPalette.Ink, fontSize = 13.5.sp)
                         }
                     }
                 }
                 if (!allowGroupScope) {
-                    Text("Private account commands stay in the owner self-chat.", color = StudioPalette.Muted, fontSize = 10.5.sp)
+                    Text("Private account commands stay in the owner self-chat.", color = CommandStudioPalette.Muted, fontSize = 10.5.sp)
                 } else {
-                    Text("Group commands run only when enabled for Public groups.", color = StudioPalette.Muted, fontSize = 10.5.sp)
+                    Text("Group commands run only when enabled for Public groups.", color = CommandStudioPalette.Muted, fontSize = 10.5.sp)
                 }
             }
             if (node.type == "trigger.command") {
@@ -1207,29 +1360,29 @@ private fun NodeConfigurationDialog(
                             checked = checked,
                             onCheckedChange = { config = config + (key to it.toString()) }
                         )
-                        Text(label, color = StudioPalette.Ink, fontSize = 11.sp)
+                        Text(label, color = CommandStudioPalette.Ink, fontSize = 11.sp)
                     }
                 }
             }
             if (node.type == "message.sendText" || node.type == "message.replyText") {
                 Text("Templates: {{message.text}}, {{sender}}, {{args}}, {{arg1}}, {{var:name}}, {{counter:name}}",
-                    color = StudioPalette.Muted, fontSize = 10.5.sp)
+                    color = CommandStudioPalette.Muted, fontSize = 10.5.sp)
             }
             if (issues.isNotEmpty()) {
                 Spacer(Modifier.height(7.dp))
-                Text("Validation", color = StudioPalette.Bad, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("Validation", color = CommandStudioPalette.Bad, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 issues.forEach {
-                    Text(it.message, color = StudioPalette.Bad, fontSize = 13.5.sp)
-                    Text("Fix: " + it.fix, color = StudioPalette.Muted, fontSize = 10.5.sp)
+                    Text(it.message, color = CommandStudioPalette.Bad, fontSize = 13.5.sp)
+                    Text("Fix: " + it.fix, color = CommandStudioPalette.Muted, fontSize = 10.5.sp)
                 }
             }
             Spacer(Modifier.height(9.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                StudioActionButton("Delete", compact = true, destructive = true, onClick = onDelete)
-                StudioActionButton("Disconnect", compact = true, onClick = onDisconnect)
+                CommandActionButton("Delete", compact = true, destructive = true, onClick = onDelete)
+                CommandActionButton("Disconnect", compact = true, onClick = onDisconnect)
                 Spacer(Modifier.weight(1f))
-                StudioActionButton("Cancel", compact = true, onClick = onDismiss)
-                StudioActionButton("Apply", compact = true, primary = true, onClick = { onApply(config) })
+                CommandActionButton("Cancel", compact = true, onClick = onDismiss)
+                CommandActionButton("Apply", compact = true, primary = true, onClick = { onApply(config) })
             }
         }
     }
@@ -1239,13 +1392,13 @@ private fun NodeConfigurationDialog(
 private fun SafeTestResultDialog(result: JSONObject, onDismiss: () -> Unit) {
     val trace = result.optJSONArray("trace") ?: JSONArray()
     Dialog(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(StudioPalette.Surface).padding(13.dp)) {
-            Text("Safe test", color = StudioPalette.Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(CommandStudioPalette.Surface).padding(13.dp)) {
+            Text("Safe test", color = CommandStudioPalette.Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(5.dp))
             Text(
                 if (result.optBoolean("ok")) "Passed · no live WhatsApp actions were performed"
                 else result.optString("error", "The workflow needs attention."),
-                color = if (result.optBoolean("ok")) StudioPalette.Accent else StudioPalette.Bad,
+                color = if (result.optBoolean("ok")) CommandStudioPalette.Accent else CommandStudioPalette.Bad,
                 fontSize = 12.5.sp
             )
             Spacer(Modifier.height(7.dp))
@@ -1253,14 +1406,14 @@ private fun SafeTestResultDialog(result: JSONObject, onDismiss: () -> Unit) {
                 items(trace.length()) { index ->
                     val item = trace.optJSONObject(index) ?: JSONObject()
                     val status = item.optString("status")
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(StudioPalette.Background).padding(7.dp)) {
-                        Text(item.optString("type") + " · " + status, color = if (status == "error") StudioPalette.Bad else StudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                        Text(item.optString("message"), color = StudioPalette.Muted, fontSize = 13.5.sp)
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(CommandStudioPalette.Background).padding(7.dp)) {
+                        Text(item.optString("type") + " · " + status, color = if (status == "error") CommandStudioPalette.Bad else CommandStudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                        Text(item.optString("message"), color = CommandStudioPalette.Muted, fontSize = 13.5.sp)
                     }
                 }
             }
             Spacer(Modifier.height(8.dp))
-            StudioActionButton("Close", modifier = Modifier.fillMaxWidth(), compact = true, onClick = onDismiss)
+            CommandActionButton("Close", modifier = Modifier.fillMaxWidth(), compact = true, onClick = onDismiss)
         }
     }
 }
@@ -1273,16 +1426,15 @@ private fun WorkspaceToolButton(
     content: @Composable () -> Unit
 ) {
     Box(
-        Modifier.size(32.dp).clip(RoundedCornerShape(7.dp))
-            .background(if (enabled) Color(0xFFF5F7F5) else Color(0xFFECEFEC))
-            .border(1.dp, Color(0xFFE0E5E1), RoundedCornerShape(7.dp))
+        Modifier.size(40.dp).clip(RoundedCornerShape(11.dp))
+            .background(if (enabled) Color(0xFF1B2623) else Color(0xFF141B19))
+            .border(1.dp, CommandStudioPalette.Line, RoundedCornerShape(11.dp))
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         content()
     }
 }
-
 
 /**
  * User-defined nodes use a declarative, typed operator contract. Unrestricted
@@ -1316,29 +1468,29 @@ private fun CustomNodeManagerDialog(
         Column(
             Modifier.fillMaxWidth().heightIn(max = 620.dp)
                 .clip(RoundedCornerShape(15.dp))
-                .background(StudioPalette.Surface)
+                .background(CommandStudioPalette.Surface)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(9.dp)
         ) {
-            Text("My custom nodes", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text("My custom nodes", color = CommandStudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Text(
                 "Build reusable, executable logic from safe typed operations. Saved nodes are available in the canvas.",
-                color = StudioPalette.Muted, fontSize = 12.sp
+                color = CommandStudioPalette.Muted, fontSize = 12.sp
             )
             nodes.forEach { node ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(node.optString("name"), color = StudioPalette.Ink, fontSize = 13.sp)
+                        Text(node.optString("name"), color = CommandStudioPalette.Ink, fontSize = 13.sp)
                         Text(
                             node.optString("operator") + " · v" + node.optInt("version", 1),
-                            color = StudioPalette.Muted, fontSize = 11.sp
+                            color = CommandStudioPalette.Muted, fontSize = 11.sp
                         )
                     }
                     val id = node.optString("id")
                     Text(
                         if (confirmDelete == id) "Confirm remove" else "Remove",
-                        color = StudioPalette.Bad, fontSize = 12.sp,
+                        color = CommandStudioPalette.Bad, fontSize = 12.sp,
                         modifier = Modifier.clickable {
                             if (confirmDelete == id) {
                                 confirmDelete = null
@@ -1348,36 +1500,36 @@ private fun CustomNodeManagerDialog(
                     )
                 }
             }
-            Text("Create node", color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text("Create node", color = CommandStudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             listOf(
                 Triple("Node name", name, { value: String -> name = value }),
                 Triple("Node ID (lowercase, hyphenated)", identifier, { value: String -> identifier = value }),
                 Triple("Description", description, { value: String -> description = value })
             ).forEach { (label, value, update) ->
-                Text(label, color = StudioPalette.Ink, fontSize = 12.sp)
+                Text(label, color = CommandStudioPalette.Ink, fontSize = 12.sp)
                 BasicTextField(
                     value = value,
                     onValueChange = update,
-                    textStyle = TextStyle(color = StudioPalette.Ink, fontSize = 14.sp),
+                    textStyle = TextStyle(color = CommandStudioPalette.Ink, fontSize = 14.sp),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(7.dp)).background(StudioPalette.Background)
-                        .border(1.dp, StudioPalette.Line, RoundedCornerShape(7.dp))
+                        .clip(RoundedCornerShape(7.dp)).background(CommandStudioPalette.Background)
+                        .border(1.dp, CommandStudioPalette.Line, RoundedCornerShape(7.dp))
                         .padding(10.dp)
                 )
             }
-            Text("Operation", color = StudioPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text("Operation", color = CommandStudioPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             operations.forEach { (id, label) ->
                 Row(
                     Modifier.fillMaxWidth().clickable { operation = id }.padding(vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     androidx.compose.material3.RadioButton(selected = operation == id, onClick = { operation = id })
-                    Text(label, color = StudioPalette.Ink, fontSize = 13.sp)
+                    Text(label, color = CommandStudioPalette.Ink, fontSize = 13.sp)
                 }
             }
             val valid = Regex("^[a-z][a-z0-9_-]{0,47}$").matches(identifier) && name.isNotBlank()
-            StudioActionButton("Create executable node", modifier = Modifier.fillMaxWidth(), enabled = valid, onClick = {
+            CommandActionButton("Create executable node", modifier = Modifier.fillMaxWidth(), enabled = valid, onClick = {
                 val (inputs, outputType) = when (operation) {
                     "uppercase" -> listOf(typedInput("value", "string")) to "string"
                     "concat" -> listOf(typedInput("value", "string"), typedInput("other", "string")) to "string"
@@ -1394,7 +1546,7 @@ private fun CustomNodeManagerDialog(
                         .put("inputs", JSONArray(inputs)).put("outputType", outputType)
                 )
             })
-            StudioActionButton("Close", modifier = Modifier.fillMaxWidth(), primary = false, onClick = onDismiss)
+            CommandActionButton("Close", modifier = Modifier.fillMaxWidth(), primary = false, onClick = onDismiss)
         }
     }
 }

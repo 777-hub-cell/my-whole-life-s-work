@@ -17,6 +17,7 @@ const stickerMessage = proto.Message.StickerMessage.create({
   isAnimated: true,
   width: 512,
   height: 512,
+  stickerSentTs: 1795650000,
 })
 const secretFixture = Buffer.alloc(32, 0x5a)
 const secretContext = attachSoundStickerMessageSecret({}, secretFixture)
@@ -33,13 +34,13 @@ assert.equal(
   'ordinary stickers must remain ordinary sticker messages',
 )
 
-const fixtureAudioMessage = proto.Message.AudioMessage.create({
+const audioFixture = proto.Message.AudioMessage.create({
   mimetype:'audio/ogg; codecs=opus',
   ptt:true,
   seconds:2,
   waveform:Buffer.alloc(64, 60),
 })
-const audioBytes = proto.Message.AudioMessage.encode(fixtureAudioMessage).finish()
+const audioBytes = proto.Message.AudioMessage.encode(audioFixture).finish()
 const unregister = registerPendingSoundSticker(stickerMessage, {
   audioBytes,
   emojis: '🔊',
@@ -67,14 +68,16 @@ try {
 
   const stickerFields = scanProtobufFields(nestedSticker.value)
   const audioField = stickerFields.find(field => field.fieldNum === 26 && field.wireType === 2)
+  const sentAtField = stickerFields.find(field => field.fieldNum === 18 && field.wireType === 0)
   const emojiField = stickerFields.find(field => field.fieldNum === 25 && field.wireType === 2)
   const premiumField = stickerFields.find(field => field.fieldNum === 24 && field.wireType === 0)
   assert.ok(audioField, 'the sticker payload must carry its linked AudioMessage bytes')
+  assert.equal(sentAtField?.value, 1795650000, 'stickerSentTs survives sound-sticker wrapping')
   assert.deepEqual(Buffer.from(audioField.value), audioBytes, 'sound bytes must not be lost during message encoding')
   const decodedAudio = proto.Message.AudioMessage.decode(audioField.value)
-  assert.equal(decodedAudio.ptt, true, 'sound-sticker audio is voice-style Opus')
+  assert.equal(decodedAudio.ptt, true)
   assert.equal(decodedAudio.seconds, 2)
-  assert.equal(Buffer.from(decodedAudio.waveform).length, 64, 'embedded audio retains its waveform')
+  assert.equal(Buffer.from(decodedAudio.waveform).length, 64)
   assert.equal(emojiField?.value.toString('utf8'), '🔊')
   assert.equal(premiumField?.value, 0)
 } finally {

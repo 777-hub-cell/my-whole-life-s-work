@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,15 +15,19 @@ export const STICKER_CANVAS = 512
 export const STICKER_CORNER_RADIUS = 20
 const STICKER_CORNER_END = STICKER_CANVAS - STICKER_CORNER_RADIUS
 const STICKER_CORNER_RADIUS_SQUARED = STICKER_CORNER_RADIUS ** 2
+const STICKER_EDGE_DISTANCE_X =
+  `if(lt(X,${STICKER_CORNER_RADIUS}),${STICKER_CORNER_RADIUS}-X,if(gt(X,${STICKER_CORNER_END}),X-${STICKER_CORNER_END},0))`
+const STICKER_EDGE_DISTANCE_Y =
+  `if(lt(Y,${STICKER_CORNER_RADIUS}),${STICKER_CORNER_RADIUS}-Y,if(gt(Y,${STICKER_CORNER_END}),Y-${STICKER_CORNER_END},0))`
 export const STICKER_FIT_FILTER =
   `scale=${STICKER_CANVAS}:${STICKER_CANVAS}:force_original_aspect_ratio=increase,` +
   `crop=${STICKER_CANVAS}:${STICKER_CANVAS},format=rgba,` +
   "geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':" +
-  `a='if(lte(pow(max(${STICKER_CORNER_RADIUS}-X,max(X-${STICKER_CORNER_END},0)),2)+` +
-  `pow(max(${STICKER_CORNER_RADIUS}-Y,max(Y-${STICKER_CORNER_END},0)),2),` +
+  `a='if(lte((${STICKER_EDGE_DISTANCE_X})*(${STICKER_EDGE_DISTANCE_X})+` +
+  `(${STICKER_EDGE_DISTANCE_Y})*(${STICKER_EDGE_DISTANCE_Y}),` +
   `${STICKER_CORNER_RADIUS_SQUARED}),alpha(X,Y),0)',setsar=1`
 
-const MAX_STICKER_BYTES = 500 * 1024
+const MAX_STICKER_BYTES = 900 * 1024
 const MAX_INPUT_BYTES = 32 * 1024 * 1024
 const FFMPEG_TIMEOUT_MS = 120_000
 
@@ -270,15 +276,14 @@ function runCapturedProcess(binary, args, { timeoutMs = 20_000, maxOutputBytes =
 
 export function waveformFromPcm(pcm, bars = 64) {
   const bytes = Buffer.isBuffer(pcm) ? pcm : Buffer.from(pcm || [])
-  const sampleCount = Math.floor(bytes.length / 2)
+  const samples = Math.floor(bytes.length / 2)
   const count = Number.isInteger(bars) && bars > 0 ? bars : 64
   const levels = new Array(count).fill(0)
-  if (!sampleCount) return Buffer.from(levels)
-
-  const samplesPerBar = Math.max(1, Math.ceil(sampleCount / count))
+  if (!samples) return Buffer.from(levels)
+  const samplesPerBar = Math.max(1, Math.ceil(samples / count))
   for (let bar = 0; bar < count; bar += 1) {
     const start = bar * samplesPerBar
-    const end = Math.min(sampleCount, start + samplesPerBar)
+    const end = Math.min(samples, start + samplesPerBar)
     if (start >= end) break
     let sum = 0
     for (let i = start; i < end; i += 1) sum += Math.abs(bytes.readInt16LE(i * 2))
@@ -431,7 +436,7 @@ function animatedStickerArgs(input, output, {
   seconds,
   fps,
   quality,
-  compressionLevel = 2,
+  compressionLevel = 3,
 }) {
   return [
     '-i', input,
@@ -472,8 +477,10 @@ export async function mediaToSticker(buffer, { animated = false, packName, publi
       // Keep the full six-second duration and use one lower-cost fallback
       // instead of repeatedly decoding and re-encoding four shorter versions.
       const profiles = [
-        { seconds: 6, fps: 12, quality: 58, compressionLevel: 2 },
-        { seconds: 6, fps: 8, quality: 36, compressionLevel: 1 },
+        { seconds: 6, fps: 12, quality: 58, compressionLevel: 3 },
+        { seconds: 6, fps: 10, quality: 46, compressionLevel: 3 },
+        { seconds: 5, fps: 8, quality: 36, compressionLevel: 2 },
+        { seconds: 4, fps: 6, quality: 28, compressionLevel: 2 },
       ]
 
       for (const profile of profiles) {
@@ -532,8 +539,10 @@ export async function mediaToSoundSticker(buffer, {
     // allowed for an over-size sticker; there are no separate audio/video
     // decode passes or four successive full video encodes.
     const profiles = [
-      { fps: 12, quality: 56, compressionLevel: 2 },
-      { fps: 8, quality: 36, compressionLevel: 1 },
+      { fps: 12, quality: 60, compressionLevel: 3 },
+      { fps: 10, quality: 48, compressionLevel: 3 },
+      { fps: 8, quality: 38, compressionLevel: 2 },
+      { fps: 6, quality: 30, compressionLevel: 2 },
     ]
     for (const profile of profiles) {
       await runFfmpegWithFrameSyncFallback(soundStickerAnimatedArgs(
@@ -568,10 +577,12 @@ export async function mediaToSoundSticker(buffer, {
       throw new Error('NIGHT could not create a valid animated WebP sticker.')
     }
 
+    const soundSha256 = createHash('sha256').update(audioBuffer).digest('base64')
     const stickerBuffer = await applyStickerMetadata(rawStickerBuffer, {
       packName,
       publisher,
       emojis,
+      soundSha256,
     })
     if (stickerBuffer.length > MAX_STICKER_BYTES) {
       throw new Error('The sound sticker exceeds WhatsApp media limits after metadata is added.')
@@ -584,6 +595,7 @@ export async function mediaToSoundSticker(buffer, {
       audioBuffer,
       audioSeconds: seconds,
       audioMimetype: 'audio/ogg; codecs=opus',
+      soundSha256,
       waveform,
       isAnimated: true,
     }

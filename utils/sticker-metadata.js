@@ -74,6 +74,7 @@ export function stickerMetadata({
   publisher = DEFAULT_STICKER_PUBLISHER,
   emojis = DEFAULT_STICKER_EMOJIS,
   packId,
+  soundSha256,
 } = {}) {
   const metadata = {
     'sticker-pack-id': cleanText(packId, randomBytes(32).toString('hex')),
@@ -81,21 +82,38 @@ export function stickerMetadata({
     'sticker-pack-publisher': cleanText(publisher, DEFAULT_STICKER_PUBLISHER),
     emojis: cleanEmojis(emojis),
   }
+  if (typeof soundSha256 === 'string' && soundSha256.trim()) {
+    metadata['sound-sha256'] = soundSha256.trim()
+  }
   return metadata
 }
 
 export function buildStickerExif(options = {}) {
   const metadata = stickerMetadata(options)
   const json = Buffer.from(JSON.stringify(metadata), 'utf8')
-  // Sound and ordinary stickers use the same supported WhatsApp sticker
-  // pack EXIF format. The sound track is carried in the message protobuf.
-  const header = Buffer.from([
-    0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00,
-    0x01, 0x00, 0x41, 0x57, 0x07, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x16, 0x00, 0x00, 0x00,
-  ])
+  // WhatsApp sound stickers use the big-endian TIFF "WA" field marker.
+  // Preserve the existing little-endian sticker metadata for ordinary stickers.
+  const soundSticker = Boolean(metadata['sound-sha256'])
+  const header = soundSticker
+    ? Buffer.from([
+        0x4d, 0x4d, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x08,
+        0x00, 0x01, 0x57, 0x41, 0x00, 0x07, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x1a, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+      ])
+    : Buffer.from([
+        0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x41, 0x57, 0x07, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x16, 0x00, 0x00, 0x00,
+      ])
   const exif = Buffer.concat([header, json])
-  exif.writeUIntLE(json.length, 14, 4)
+  if (soundSticker) {
+    exif.writeUInt32BE(json.length, 14)
+    // Sound-sticker TIFF stores the JSON payload out-of-line at byte 26.
+    exif.writeUInt32BE(26, 18)
+  } else {
+    exif.writeUIntLE(json.length, 14, 4)
+  }
   return exif
 }
 
@@ -111,9 +129,11 @@ export async function readStickerMetadata(buffer) {
   const bigEndian = bytes[0] === 0x4d && bytes[1] === 0x4d
   const length = bigEndian ? bytes.readUInt32BE(14) : bytes.readUInt32LE(14)
   const headerLength = bigEndian ? 26 : 22
-  if (!length || length > bytes.length - headerLength) return null
+  const dataOffset = bigEndian ? bytes.readUInt32BE(18) : headerLength
+  if (!length || dataOffset < headerLength || dataOffset > bytes.length ||
+      length > bytes.length - dataOffset) return null
   try {
-    const decoded = JSON.parse(bytes.subarray(headerLength, headerLength + length).toString('utf8'))
+    const decoded = JSON.parse(bytes.subarray(dataOffset, dataOffset + length).toString('utf8'))
     return decoded && typeof decoded === 'object' ? decoded : null
   } catch {
     return null

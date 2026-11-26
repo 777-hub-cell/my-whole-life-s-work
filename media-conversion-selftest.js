@@ -22,16 +22,17 @@ assert.equal(STICKER_CORNER_RADIUS, 20, 'Nexia stickerUtils.js rounded-square ra
 assert.match(STICKER_FIT_FILTER, /scale=512:512:force_original_aspect_ratio=increase/)
 assert.match(STICKER_FIT_FILTER, /crop=512:512,format=rgba/)
 assert.match(STICKER_FIT_FILTER, /geq=r='r\(X,Y\)':g='g\(X,Y\)':b='b\(X,Y\)'/)
-assert.ok(STICKER_FIT_FILTER.includes("pow(max(20-X,max(X-492,0)),2)+pow(max(20-Y,max(Y-492,0)),2),400),alpha(X,Y),0)"),
-  'Mask must match the exact Nexia stickerUtils.js 20px alpha expression')
+assert.ok(STICKER_FIT_FILTER.includes('if(lt(X,20),20-X,if(gt(X,492),X-492,0))'))
+assert.ok(STICKER_FIT_FILTER.includes('if(lt(Y,20),20-Y,if(gt(Y,492),Y-492,0))'))
+assert.equal(STICKER_FIT_FILTER.includes('pow('), false,
+  'rounded corners avoid costly per-pixel pow() calls')
+const pcm = Buffer.alloc(128)
+for (let i = 0; i < 64; i += 1) pcm.writeInt16LE(i * 400, i * 2)
+assert.equal(waveformFromPcm(pcm, 64).length, 64)
+assert.equal(Math.max(...waveformFromPcm(pcm, 64)), 100)
+assert.equal(waveformFromPcm(Buffer.alloc(0)).length, 64)
 assert.doesNotMatch(STICKER_FIT_FILTER, /pad=/)
 assert.doesNotMatch(STICKER_FIT_FILTER, /color=0x00000000/)
-const pcmFixture = Buffer.alloc(128)
-for (let i = 0; i < 64; i += 1) pcmFixture.writeInt16LE(i * 400, i * 2)
-const waveformFixture = waveformFromPcm(pcmFixture, 64)
-assert.equal(waveformFixture.length, 64)
-assert.equal(Math.max(...waveformFixture), 100)
-assert.equal(waveformFromPcm(Buffer.alloc(0)).length, 64)
 
 assert.equal(classifyMessageMedia({ key:'imageMessage', media:{ mimetype:'image/jpeg' } }), 'image')
 assert.equal(classifyMessageMedia({ key:'videoMessage', media:{ mimetype:'video/mp4' } }), 'video')
@@ -160,14 +161,14 @@ try {
   assert.equal(soundAssets.audioBuffer.toString('ascii', 0, 4), 'OggS')
   assert.equal(soundAssets.isAnimated, true)
   assert.ok(soundAssets.audioSeconds > 0 && soundAssets.audioSeconds <= 2.1)
-
   assert.ok(Buffer.isBuffer(soundAssets.waveform) && soundAssets.waveform.length === 64,
-    'sound-sticker conversion must return the playback waveform')
+    'sound conversion must return a 64-bar playback waveform')
+
   const soundMeta = await readStickerMetadata(soundAssets.stickerBuffer)
   assert.equal(soundMeta?.['sticker-pack-name'], 'NIGHT sound test')
   assert.equal(soundMeta?.['sticker-pack-publisher'], 'NIGHT')
-  assert.equal(Object.hasOwn(soundMeta, 'sound-sha256'), false,
-    'audio hash is carried by media/protobuf, not a custom EXIF field')
+  assert.equal(soundMeta?.['sound-sha256'], soundAssets.soundSha256,
+    'WebP metadata must bind to the exact extracted Opus bytes')
 
   const silentVideoPath = join(soundFixtureDir, 'without-audio.mp4')
   await runFfmpeg([

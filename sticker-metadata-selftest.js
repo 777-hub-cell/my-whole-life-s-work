@@ -80,20 +80,22 @@ const soundMetadata = {
   packName: 'NIGHT Sound',
   packId: 'sound-fixture',
   emojis: ['🔊'],
+  soundSha256: 'c29tZS1hdWRpby1oYXNo',
 }
 const soundExif = buildStickerExif(soundMetadata)
-assert.equal(soundExif.subarray(0, 2).toString('ascii'), 'II',
-  'sound stickers use the standard little-endian WhatsApp sticker EXIF header')
-const soundLength = soundExif.readUIntLE(14, 4)
-const soundDecoded = JSON.parse(soundExif.subarray(22, 22 + soundLength).toString('utf8'))
-assert.equal(soundDecoded['sticker-pack-name'], 'NIGHT Sound')
-assert.equal(soundDecoded['sticker-pack-publisher'], DEFAULT_STICKER_PUBLISHER)
-assert.equal(Object.hasOwn(soundDecoded, 'sound-sha256'), false)
+assert.equal(soundExif.subarray(0, 2).toString('ascii'), 'MM',
+  'sound sticker EXIF must use the WhatsApp big-endian TIFF marker')
+const soundLength = soundExif.readUInt32BE(14)
+assert.equal(soundExif.readUInt32BE(18), 26,
+  'sound EXIF offset points at its JSON payload')
+const soundDecoded = JSON.parse(soundExif.subarray(26, 26 + soundLength).toString('utf8'))
+assert.equal(soundDecoded['sound-sha256'], soundMetadata.soundSha256)
 assert.deepEqual(soundDecoded.emojis, ['🔊'])
 
 const soundWebp = await applyStickerMetadata(webp, soundMetadata)
 const reloadedSoundMetadata = await readStickerMetadata(soundWebp)
+assert.equal(reloadedSoundMetadata?.['sound-sha256'], soundMetadata.soundSha256,
+  'saved WebP must retain the Opus digest that binds its audio')
 assert.equal(reloadedSoundMetadata?.['sticker-pack-name'], 'NIGHT Sound')
-assert.equal(Object.hasOwn(reloadedSoundMetadata, 'sound-sha256'), false)
 
 console.log('sticker metadata self-test passed')

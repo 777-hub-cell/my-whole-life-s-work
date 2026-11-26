@@ -238,7 +238,7 @@ export async function sendSoundSticker(sock, chat, {
   if (!userJid) throw new Error('The WhatsApp connection has no authenticated user identity.')
 
   // Upload a voice-style Opus attachment and embed its complete AudioMessage
-  // (duration + waveform included) inside the sound-sticker protocol wrapper.
+  // (including duration and waveform) in the sound-sticker envelope.
   const preparedAudio = await prepareWAMessageMedia({
     audio: audioBuffer,
     mimetype: 'audio/ogg; codecs=opus',
@@ -275,6 +275,7 @@ export async function sendSoundSticker(sock, chat, {
   }
 
   attachSoundStickerMessageSecret(fullMessage.message)
+  stickerMessage.stickerSentTs = Date.now()
 
   const audioMessage = proto.Message.AudioMessage.create({
     ...preparedAudio.audioMessage,
@@ -293,8 +294,8 @@ export async function sendSoundSticker(sock, chat, {
   })
 
   try {
-    // One protocol message carries the audioStickerMessage wrapper, the
-    // embedded StickerMessage.audioMessage and its 32-byte message secret.
+    // One protocol message: the sticker and its Opus soundtrack are linked
+    // inside audioStickerMessage (field 134). Never send a second audio/PTT.
     await sock.relayMessage(chat, fullMessage.message, {
       messageId: fullMessage.key?.id,
     })

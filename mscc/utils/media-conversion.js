@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -224,6 +225,87 @@ export async function runFfmpegWithFrameSyncFallback(args, options = {}) {
   }
 }
 
+function runCapturedProcess(binary, args, { timeoutMs = 20_000, maxOutputBytes = 128_000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(binary, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    let stdout = Buffer.alloc(0)
+    let stderr = ''
+    let settled = false
+
+    const finish = error => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (error) reject(error)
+      else resolve(stdout.toString('utf8'))
+    }
+
+    child.stdout?.on('data', chunk => {
+      stdout = Buffer.concat([stdout, chunk])
+      if (stdout.length > maxOutputBytes) {
+        child.kill('SIGKILL')
+        finish(new Error('Media inspection output exceeded its safety limit.'))
+      }
+    })
+    child.stderr?.on('data', chunk => {
+      stderr += chunk.toString()
+      if (stderr.length > 16_000) stderr = stderr.slice(-16_000)
+    })
+    child.once('error', error => {
+      if (error?.code === 'ENOENT') {
+        finish(new Error('ffprobe is not installed on this MSCC host.'))
+      } else finish(error)
+    })
+    child.once('close', code => {
+      if (code === 0) return finish()
+      const detail = stderr.trim().split(/\\r?\\n/).slice(-3).join(' | ')
+      finish(new Error(detail || `ffprobe failed with code ${code}`))
+    })
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL')
+      finish(new Error('Media inspection timed out.'))
+    }, timeoutMs)
+    timer.unref?.()
+  })
+}
+
+async function probeMediaFile(input) {
+  const binary = String(process.env.FFPROBE_PATH || 'ffprobe').trim() || 'ffprobe'
+  const raw = await runCapturedProcess(binary, [
+    '-v', 'error',
+    '-show_entries', 'stream=codec_type,duration:format=duration',
+    '-of', 'json',
+    input,
+  ])
+  try {
+    const result = JSON.parse(raw)
+    return {
+      streams: Array.isArray(result?.streams) ? result.streams : [],
+      formatDuration: Number(result?.format?.duration) || 0,
+    }
+  } catch {
+    throw new Error('NIGHT could not read the video stream information.')
+  }
+}
+
+function soundStickerAnimatedArgs(input, output, { seconds, fps, quality }) {
+  return [
+    '-i', input,
+    '-map', '0:v:0',
+    '-t', String(seconds),
+    '-an',
+    '-vf', `${STICKER_FIT_FILTER},fps=${fps},format=rgba`,
+    '-c:v', 'libwebp',
+    '-preset', 'default',
+    '-loop', '0',
+    '-fps_mode', 'passthrough',
+    '-pix_fmt', 'yuva420p',
+    '-quality', String(quality),
+    '-compression_level', '6',
+    output,
+  ]
+}
+
 export function runFfmpeg(args, { timeoutMs = FFMPEG_TIMEOUT_MS } = {}) {
   const binary = String(process.env.FFMPEG_PATH || 'ffmpeg').trim() || 'ffmpeg'
 
@@ -345,6 +427,111 @@ export async function mediaToSticker(buffer, { animated = false, packName, publi
 
     const sticker = await readFile(output)
     return applyStickerMetadata(sticker, { packName, publisher, emojis })
+  }))
+}
+
+/**
+ * Convert a video that has an audio stream into the two linked payloads
+ * required for one native WhatsApp sound sticker. A video with no audio
+ * returns null so the command can use the normal silent animated-sticker
+ * path. Once an audio stream is detected, any extraction/encoding failure
+ * throws: NIGHT must never silently discard that soundtrack.
+ */
+export async function mediaToSoundSticker(buffer, {
+  packName,
+  publisher,
+  maxDurationSeconds = 6,
+  emojis = ['🔊'],
+} = {}) {
+  return serializedConversion(() => withTempDir('sound-sticker', async directory => {
+    const input = join(directory, 'input.bin')
+    const audioOutput = join(directory, 'sound.ogg')
+    const stickerOutput = join(directory, 'sticker.webp')
+    await writeFile(input, buffer)
+
+    const inspected = await probeMediaFile(input)
+    const audioStream = inspected.streams.find(stream => stream?.codec_type === 'audio')
+    if (!audioStream) return null
+
+    const streamDuration = Number(audioStream.duration) || inspected.formatDuration || maxDurationSeconds
+    const requestedMax = Number(maxDurationSeconds)
+    const maximum = Number.isFinite(requestedMax)
+      ? Math.max(0.5, Math.min(10, requestedMax))
+      : 6
+    const seconds = Math.max(0.5, Math.min(maximum, streamDuration || maximum))
+
+    // Keep the audio separate from WebP. It is attached to StickerMessage
+    // field 26 by sound-sticker-protocol.js and sent in the same WA message.
+    await runFfmpeg([
+      '-i', input,
+      '-t', seconds.toFixed(3),
+      '-vn',
+      '-map', '0:a:0',
+      '-ar', '48000',
+      '-ac', '1',
+      '-c:a', 'libopus',
+      '-b:a', '32k',
+      '-vbr', 'on',
+      '-application', 'audio',
+      '-f', 'ogg',
+      audioOutput,
+    ])
+
+    const audioBuffer = await readFile(audioOutput)
+    if (audioBuffer.length < 8 || audioBuffer.toString('ascii', 0, 4) !== 'OggS') {
+      throw new Error('NIGHT could not create a valid Ogg/Opus soundtrack for this sticker.')
+    }
+    if (audioBuffer.length > MAX_STICKER_BYTES) {
+      throw new Error('The sticker soundtrack exceeds WhatsApp media limits.')
+    }
+
+    // Keep every animation profile at the soundtrack duration. Quality and
+    // frame rate may step down for size, but the video is never shortened
+    // independently of its audio.
+    const profiles = [
+      { fps: 15, quality: 72 },
+      { fps: 12, quality: 58 },
+      { fps: 10, quality: 44 },
+      { fps: 8, quality: 32 },
+    ]
+    let stickerBuffer = null
+    for (const profile of profiles) {
+      await runFfmpegWithFrameSyncFallback(soundStickerAnimatedArgs(input, stickerOutput, {
+        ...profile,
+        seconds,
+      }))
+      if (await fileSize(stickerOutput) <= MAX_STICKER_BYTES) break
+    }
+
+    stickerBuffer = await readFile(stickerOutput)
+    if (stickerBuffer.length > MAX_STICKER_BYTES) {
+      throw new Error('The animated sticker exceeds WhatsApp media limits. Try a shorter video.')
+    }
+    if (stickerBuffer.toString('ascii', 0, 4) !== 'RIFF' ||
+        stickerBuffer.toString('ascii', 8, 12) !== 'WEBP') {
+      throw new Error('NIGHT could not create a valid animated WebP sticker.')
+    }
+
+    const soundSha256 = createHash('sha256').update(audioBuffer).digest('base64')
+    stickerBuffer = await applyStickerMetadata(stickerBuffer, {
+      packName,
+      publisher,
+      emojis,
+      soundSha256,
+    })
+
+    if (stickerBuffer.length > MAX_STICKER_BYTES) {
+      throw new Error('The sound sticker exceeds WhatsApp media limits after metadata is added.')
+    }
+
+    return {
+      stickerBuffer,
+      audioBuffer,
+      audioSeconds: seconds,
+      audioMimetype: 'audio/ogg; codecs=opus',
+      soundSha256,
+      isAnimated: true,
+    }
   }))
 }
 

@@ -158,56 +158,37 @@ function pendingAttachment(stickerMessage) {
   return cached
 }
 
-function writeStickerWithAudio(writer, stickerMessage, attachment) {
-  // Message.stickerMessage = field 26; StickerMessage's new sound fields are
-  // fields 24 (premium), 25 (emoji), and 26 (AudioMessage).
-  writer.uint32((26 << 3) | 2).fork()
-
-  const cleanSticker = cloneWithout(
-    stickerMessage,
-    new Set(['premium', 'emojis', 'audioMessage']),
-  )
-  proto.Message.StickerMessage.encode(cleanSticker, writer)
-
-  writer.uint32((24 << 3) | 0).uint32(attachment.premium)
-  if (attachment.emojis) {
-    writer.uint32((25 << 3) | 2).string(attachment.emojis)
-  }
-  writer.uint32((26 << 3) | 2).bytes(attachment.audioBytes)
-  writer.ldelim()
-}
-
 /**
- * Baileys 0.3.18-final predates the WhatsApp sound-sticker envelope.
- * Add field 134 at encode time without editing node_modules or emitting a
- * separate audio/voice-note message.
+ * The sound clip is an embedded StickerMessage.audioMessage field (26).
+ * Patch the StickerMessage encoder itself so the outgoing message remains a
+ * normal top-level Message.stickerMessage; do not invent a field-134 wrapper.
  */
 export function installSoundStickerCodec() {
-  const messageType = proto?.Message
-  if (!messageType?.encode || !messageType?.StickerMessage?.encode || !messageType?.AudioMessage?.encode) {
+  const stickerType = proto?.Message?.StickerMessage
+  if (!stickerType?.encode || !proto?.Message?.AudioMessage?.encode) {
     throw new Error('This Baileys build cannot encode the required sound-sticker message fields.')
   }
-  if (messageType[CODEC_INSTALLED]) return
+  if (stickerType[CODEC_INSTALLED]) return
 
-  const originalEncode = messageType.encode
-  messageType.encode = function encodeWithSoundSticker(message, writer) {
-    const attachment = pendingAttachment(message?.stickerMessage)
-    if (!attachment) return originalEncode.call(this, message, writer)
+  const originalEncode = stickerType.encode
+  stickerType.encode = function encodeWithSoundSticker(stickerMessage, writer) {
+    const attachment = pendingAttachment(stickerMessage)
+    if (!attachment) return originalEncode.call(this, stickerMessage, writer)
 
-    // Keep ordinary Message metadata on the outer object, then wrap the
-    // prepared sticker as FutureProofMessage.message (field 134 -> field 1).
-    const outer = cloneWithout(message, new Set(['stickerMessage', 'audioStickerMessage']))
-    const output = originalEncode.call(this, outer, writer)
-
-    output.uint32((134 << 3) | 2).fork()
-    output.uint32((1 << 3) | 2).fork()
-    writeStickerWithAudio(output, message.stickerMessage, attachment)
-    output.ldelim()
-    output.ldelim()
+    const cleanSticker = cloneWithout(
+      stickerMessage,
+      new Set(['premium', 'emojis', 'audioMessage']),
+    )
+    const output = originalEncode.call(this, cleanSticker, writer)
+    output.uint32((24 << 3) | 0).uint32(attachment.premium)
+    if (attachment.emojis) {
+      output.uint32((25 << 3) | 2).string(attachment.emojis)
+    }
+    output.uint32((26 << 3) | 2).bytes(attachment.audioBytes)
     return output
   }
 
-  Object.defineProperty(messageType, CODEC_INSTALLED, {
+  Object.defineProperty(stickerType, CODEC_INSTALLED, {
     value: true,
     enumerable: false,
   })
@@ -217,6 +198,7 @@ export async function sendSoundSticker(sock, chat, {
   stickerBuffer,
   audioBuffer,
   audioSeconds,
+  audioWaveform,
   quoted,
   emojis = '🔊',
 } = {}) {
@@ -230,21 +212,26 @@ export async function sendSoundSticker(sock, chat, {
   if (!Buffer.isBuffer(audioBuffer) || !audioBuffer.length) {
     throw new Error('The sticker audio payload is empty.')
   }
+  if (!(Buffer.isBuffer(audioWaveform) || audioWaveform instanceof Uint8Array) ||
+      audioWaveform.byteLength !== 64 || [...audioWaveform].some(value => value > 100)) {
+    throw new Error('The sound sticker requires a valid 64-bar audio waveform.')
+  }
 
   installSoundStickerCodec()
 
   const userJid = sock.authState?.creds?.me?.id || sock.user?.id
   if (!userJid) throw new Error('The WhatsApp connection has no authenticated user identity.')
 
-  // Upload the soundtrack as an ordinary Opus media attachment. It is only
-  // embedded in StickerMessage below; ptt is deliberately false.
+  // Prepare the embedded Opus clip as a voice-style AudioMessage. WhatsApp
+  // uses ptt, seconds and a 64-byte waveform for sound-sticker playback.
+  const durationSeconds = Math.max(1, Math.ceil(Number(audioSeconds) || 0))
+  const waveform = Buffer.from(audioWaveform)
   const preparedAudio = await prepareWAMessageMedia({
     audio: audioBuffer,
     mimetype: 'audio/ogg; codecs=opus',
-    ptt: false,
-    ...(Number.isFinite(audioSeconds) && audioSeconds > 0
-      ? { seconds: Math.max(1, Math.ceil(audioSeconds)) }
-      : {}),
+    ptt: true,
+    seconds: durationSeconds,
+    waveform,
   }, {
     upload: sock.waUploadToServer,
     logger: sock.logger,
@@ -253,6 +240,14 @@ export async function sendSoundSticker(sock, chat, {
 
   if (!preparedAudio?.audioMessage) {
     throw new Error('WhatsApp did not prepare the sticker audio attachment.')
+  }
+  preparedAudio.audioMessage.ptt = true
+  preparedAudio.audioMessage.seconds = durationSeconds
+  preparedAudio.audioMessage.waveform = waveform
+  if (preparedAudio.audioMessage.ptt !== true ||
+      Number(preparedAudio.audioMessage.seconds) !== durationSeconds ||
+      Buffer.from(preparedAudio.audioMessage.waveform || []).length !== 64) {
+    throw new Error('WhatsApp audio preparation did not preserve sound-sticker voice metadata.')
   }
 
   const fullMessage = await generateWAMessage(chat, {
@@ -274,6 +269,7 @@ export async function sendSoundSticker(sock, chat, {
   }
 
   attachSoundStickerMessageSecret(fullMessage.message)
+  stickerMessage.stickerSentTs = Date.now()
 
   const audioBytes = proto.Message.AudioMessage.encode(preparedAudio.audioMessage).finish()
   const unregister = registerPendingSoundSticker(stickerMessage, {
@@ -283,8 +279,8 @@ export async function sendSoundSticker(sock, chat, {
   })
 
   try {
-    // One protocol message: the sticker and its Opus soundtrack are linked
-    // inside audioStickerMessage (field 134). Never send a second audio/PTT.
+    // One normal sticker message with its Opus clip embedded in
+    // StickerMessage.audioMessage (field 26). No separate audio message.
     await sock.relayMessage(chat, fullMessage.message, {
       messageId: fullMessage.key?.id,
     })

@@ -28,8 +28,25 @@ function normalizeStickerPackName(value) {
   return Array.from(result).slice(0, 128).join('')
 }
 export function stickerPackNameForCommand(ctx, fallback = DEFAULT_STICKER_PACK_NAME) {
-  // The router has already resolved exactly .sticker or .s. Only its trailing
-  // raw text/args are a custom pack title; the publisher remains unchanged.
+  // Preserve the original behaviour for unrelated commands that reuse this
+  // helper: their own command arguments do not become sticker-pack titles.
+  const candidates = [
+    ctx?.senderName,
+    ctx?.message?.pushName,
+    ctx?.userName,
+    ctx?.userKey,
+  ]
+  for (const value of candidates) {
+    const text = String(value ?? '').trim()
+    if (text) return text.slice(0, 128)
+  }
+  return fallback
+}
+
+export function stickerPackNameFromCommandArgs(ctx, fallback = DEFAULT_STICKER_PACK_NAME) {
+  // The router has already resolved exactly .sticker or .s. Only trailing
+  // raw text/args for these aliases are a custom pack title; publisher stays
+  // unchanged and an empty argument falls back to the sender's profile name.
   const rawName = normalizeStickerPackName(ctx?.rawArgs)
   if (rawName) return rawName
 
@@ -41,17 +58,9 @@ export function stickerPackNameForCommand(ctx, fallback = DEFAULT_STICKER_PACK_N
   const argsName = normalizeStickerPackName(argsText)
   if (argsName) return argsName
 
-  const candidates = [
-    ctx?.senderName,
-    ctx?.message?.pushName,
-    ctx?.userName,
-    ctx?.userKey,
-  ]
-  for (const value of candidates) {
-    const name = normalizeStickerPackName(value)
-    if (name) return name
-  }
-  return normalizeStickerPackName(fallback) || DEFAULT_STICKER_PACK_NAME
+  return normalizeStickerPackName(stickerPackNameForCommand(ctx, fallback)) ||
+    normalizeStickerPackName(fallback) ||
+    DEFAULT_STICKER_PACK_NAME
 }
 function cleanEmojis(value) {
   const list = Array.isArray(value)

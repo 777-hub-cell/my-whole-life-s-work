@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -288,14 +287,48 @@ async function probeMediaFile(input) {
   }
 }
 
-function soundStickerAnimatedArgs(input, stickerOutput, audioOutput, {
+export function waveformFromPcm(input, barCount = 64) {
+  const pcm = Buffer.isBuffer(input) ? input : Buffer.from(input || [])
+  const samples = Math.floor(pcm.length / 2)
+  if (!Number.isInteger(barCount) || barCount < 1 || barCount > 256) {
+    throw new Error('Sound-sticker waveform bar count is invalid.')
+  }
+  if (!samples) throw new Error('NIGHT could not create a waveform from the soundtrack.')
+
+  const levels = new Float64Array(barCount)
+  let peak = 0
+  for (let bar = 0; bar < barCount; bar += 1) {
+    const start = Math.floor(bar * samples / barCount)
+    const end = Math.max(start + 1, Math.floor((bar + 1) * samples / barCount))
+    let energy = 0
+    let count = 0
+    for (let index = start; index < Math.min(end, samples); index += 1) {
+      const sample = pcm.readInt16LE(index * 2)
+      energy += sample * sample
+      count += 1
+    }
+    const rms = count ? Math.sqrt(energy / count) : 0
+    levels[bar] = rms
+    peak = Math.max(peak, rms)
+  }
+
+  const waveform = Buffer.alloc(barCount)
+  if (peak > 0) {
+    for (let index = 0; index < barCount; index += 1) {
+      waveform[index] = Math.max(0, Math.min(100, Math.round(levels[index] / peak * 100)))
+    }
+  }
+  return waveform
+}
+
+function soundStickerAnimatedArgs(input, stickerOutput, audioOutput, waveformOutput, {
   seconds,
   fps,
   quality,
   compressionLevel,
 }) {
-  // Decode the source once and write the animated WebP and mono Opus outputs
-  // from the same input pass.
+  // Decode the source once and write the animated WebP, mono Opus audio and
+  // low-rate PCM used for its 64-bar voice waveform in one FFmpeg pass.
   return [
     '-i', input,
     '-map', '0:v:0',
@@ -320,6 +353,14 @@ function soundStickerAnimatedArgs(input, stickerOutput, audioOutput, {
     '-application', 'audio',
     '-f', 'ogg',
     audioOutput,
+    '-map', '0:a:0',
+    '-t', Number(seconds).toFixed(3),
+    '-vn',
+    '-ac', '1',
+    '-ar', '8000',
+    '-c:a', 'pcm_s16le',
+    '-f', 's16le',
+    waveformOutput,
   ]
 }
 export function runFfmpeg(args, { timeoutMs = FFMPEG_TIMEOUT_MS } = {}) {
@@ -486,6 +527,7 @@ export async function mediaToSoundSticker(buffer, {
 
     const input = join(directory, 'input.bin')
     const audioOutput = join(directory, 'sound.ogg')
+    const waveformPcmOutput = join(directory, 'waveform.pcm')
     const stickerOutput = join(directory, 'sticker.webp')
     await writeFile(input, buffer)
 
@@ -500,9 +542,8 @@ export async function mediaToSoundSticker(buffer, {
       : 6
     const seconds = Math.max(0.5, Math.min(maximum, streamDuration || maximum))
 
-    // Produce animation and soundtrack together. One lower-cost fallback is
-    // allowed for an over-size sticker; there are no separate audio/video
-    // decode passes or four successive full video encodes.
+    // Produce all three assets in one decode pass. One lower-cost fallback
+    // is allowed for an over-size sticker; waveform extraction stays in sync.
     const profiles = [
       { fps: 12, quality: 56, compressionLevel: 2 },
       { fps: 8, quality: 36, compressionLevel: 1 },
@@ -512,6 +553,7 @@ export async function mediaToSoundSticker(buffer, {
         input,
         stickerOutput,
         audioOutput,
+        waveformPcmOutput,
         { ...profile, seconds },
       ))
       const [audioBytes, stickerBytes] = await Promise.all([
@@ -521,9 +563,10 @@ export async function mediaToSoundSticker(buffer, {
       if (audioBytes <= MAX_STICKER_BYTES && stickerBytes <= MAX_STICKER_BYTES) break
     }
 
-    const [audioBuffer, rawStickerBuffer] = await Promise.all([
+    const [audioBuffer, rawStickerBuffer, waveformPcm] = await Promise.all([
       readFile(audioOutput),
       readFile(stickerOutput),
+      readFile(waveformPcmOutput),
     ])
     if (audioBuffer.length < 8 || audioBuffer.toString('ascii', 0, 4) !== 'OggS') {
       throw new Error('NIGHT could not create a valid Ogg/Opus soundtrack for this sticker.')
@@ -539,12 +582,11 @@ export async function mediaToSoundSticker(buffer, {
       throw new Error('NIGHT could not create a valid animated WebP sticker.')
     }
 
-    const soundSha256 = createHash('sha256').update(audioBuffer).digest('base64')
+    const audioWaveform = waveformFromPcm(waveformPcm)
     const stickerBuffer = await applyStickerMetadata(rawStickerBuffer, {
       packName,
       publisher,
       emojis,
-      soundSha256,
     })
     if (stickerBuffer.length > MAX_STICKER_BYTES) {
       throw new Error('The sound sticker exceeds WhatsApp media limits after metadata is added.')
@@ -554,8 +596,8 @@ export async function mediaToSoundSticker(buffer, {
       stickerBuffer,
       audioBuffer,
       audioSeconds: seconds,
+      audioWaveform,
       audioMimetype: 'audio/ogg; codecs=opus',
-      soundSha256,
       isAnimated: true,
     }
   }))

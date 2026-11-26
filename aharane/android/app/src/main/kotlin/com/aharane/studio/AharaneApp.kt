@@ -930,7 +930,7 @@ fun AharaneApp(
         runCatching { repository.fileTree() }
             .onSuccess { fileDraft = it }
             .onFailure { failures += "Files draft: ${it.message ?: "unavailable"}" }
-        runCatching { WorkspaceSyncService.sync(repository, workspaceStore) }
+        runCatching { repository.allFiles() }
             .onSuccess {
                 serverFiles = it
                 workspaceRevision += 1
@@ -967,6 +967,20 @@ fun AharaneApp(
             .onFailure { failures += "Update status: ${it.message ?: "unavailable"}" }
 
         if (failures.isNotEmpty()) serverError = failures.joinToString(" · ")
+    }
+
+    // Cache source files after the inbox has started loading; large workspaces
+    // must never delay the first usable chat screen.
+    LaunchedEffect(authenticated, serverReachable, previewMode) {
+        if (!authenticated || previewMode || !serverReachable) return@LaunchedEffect
+        runCatching {
+            withContext(Dispatchers.IO) { WorkspaceSyncService.sync(repository, workspaceStore) }
+        }.onSuccess {
+            serverFiles = it
+            workspaceRevision += 1
+        }.onFailure {
+            serverError = it.message ?: "Offline workspace cache could not be refreshed."
+        }
     }
 
     LaunchedEffect(authenticated, previewMode) {

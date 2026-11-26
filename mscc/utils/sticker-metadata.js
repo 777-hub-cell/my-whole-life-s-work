@@ -11,27 +11,35 @@ function cleanText(value, fallback) {
 }
 
 function normalizeStickerPackName(value) {
-  return Array.from(String(value ?? '')
-    .replace(/[\\u0000-\\u001f\\u007f-\\u009f]/gu, ' ')
-    .replace(/\\s+/gu, ' ')
-    .trim())
-    .slice(0, 128)
-    .join('')
+  let result = ''
+  let pendingSpace = false
+  for (const character of String(value ?? '')) {
+    const code = character.codePointAt(0)
+    const whitespace = character.trim() === '' ||
+      code <= 0x1f || (code >= 0x7f && code <= 0x9f)
+    if (whitespace) {
+      if (result) pendingSpace = true
+      continue
+    }
+    if (pendingSpace) result += ' '
+    result += character
+    pendingSpace = false
+  }
+  return Array.from(result).slice(0, 128).join('')
 }
-
 export function stickerPackNameForCommand(ctx, fallback = DEFAULT_STICKER_PACK_NAME) {
   // The router has already resolved exactly .sticker or .s. Only its trailing
-  // raw text/args are a custom pack title; do not infer a name from the command
-  // token itself or change the publisher/author field.
-  const suppliedArgs = typeof ctx?.rawArgs === 'string'
-    ? ctx.rawArgs
-    : Array.isArray(ctx?.args)
-      ? ctx.args.join(' ')
-      : typeof ctx?.args === 'string'
-        ? ctx.args
-        : ''
-  const provided = normalizeStickerPackName(suppliedArgs)
-  if (provided) return provided
+  // raw text/args are a custom pack title; the publisher remains unchanged.
+  const rawName = normalizeStickerPackName(ctx?.rawArgs)
+  if (rawName) return rawName
+
+  const argsText = Array.isArray(ctx?.args)
+    ? ctx.args.join(' ')
+    : typeof ctx?.args === 'string'
+      ? ctx.args
+      : ''
+  const argsName = normalizeStickerPackName(argsText)
+  if (argsName) return argsName
 
   const candidates = [
     ctx?.senderName,

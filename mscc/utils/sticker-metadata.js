@@ -36,25 +36,41 @@ export function stickerMetadata({
   publisher = DEFAULT_STICKER_PUBLISHER,
   emojis = DEFAULT_STICKER_EMOJIS,
   packId,
+  soundSha256,
 } = {}) {
-  return {
+  const metadata = {
     'sticker-pack-id': cleanText(packId, randomBytes(32).toString('hex')),
     'sticker-pack-name': cleanText(packName, DEFAULT_STICKER_PACK_NAME),
     'sticker-pack-publisher': cleanText(publisher, DEFAULT_STICKER_PUBLISHER),
     emojis: cleanEmojis(emojis),
   }
+  if (typeof soundSha256 === 'string' && soundSha256.trim()) {
+    metadata['sound-sha256'] = soundSha256.trim()
+  }
+  return metadata
 }
 
 export function buildStickerExif(options = {}) {
   const metadata = stickerMetadata(options)
-  const header = Buffer.from([
-    0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00,
-    0x01, 0x00, 0x41, 0x57, 0x07, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x16, 0x00, 0x00, 0x00,
-  ])
   const json = Buffer.from(JSON.stringify(metadata), 'utf8')
+  // WhatsApp sound stickers use the big-endian TIFF "WA" field marker.
+  // Preserve the existing little-endian sticker metadata for ordinary stickers.
+  const soundSticker = Boolean(metadata['sound-sha256'])
+  const header = soundSticker
+    ? Buffer.from([
+        0x4d, 0x4d, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x08,
+        0x00, 0x01, 0x57, 0x41, 0x00, 0x07, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x1a, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+      ])
+    : Buffer.from([
+        0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x41, 0x57, 0x07, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x16, 0x00, 0x00, 0x00,
+      ])
   const exif = Buffer.concat([header, json])
-  exif.writeUIntLE(json.length, 14, 4)
+  if (soundSticker) exif.writeUInt32BE(json.length, 14)
+  else exif.writeUIntLE(json.length, 14, 4)
   return exif
 }
 
@@ -67,10 +83,12 @@ export async function readStickerMetadata(buffer) {
   const exif = image.exif
   if (!exif || exif.length < 22) return null
   const bytes = Buffer.from(exif)
-  const length = bytes.readUInt32LE(14)
-  if (!length || length > bytes.length - 22) return null
+  const bigEndian = bytes[0] === 0x4d && bytes[1] === 0x4d
+  const length = bigEndian ? bytes.readUInt32BE(14) : bytes.readUInt32LE(14)
+  const headerLength = 26
+  if (!length || length > bytes.length - headerLength) return null
   try {
-    const decoded = JSON.parse(bytes.subarray(22, 22 + length).toString('utf8'))
+    const decoded = JSON.parse(bytes.subarray(headerLength, headerLength + length).toString('utf8'))
     return decoded && typeof decoded === 'object' ? decoded : null
   } catch {
     return null

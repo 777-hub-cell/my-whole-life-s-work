@@ -104,6 +104,85 @@ private fun nodeGlyph(type: String): String = when {
     else -> "◆"
 }
 
+private fun commandBuilderPreviewLibrary(): List<VisualNodeCategory> = listOf(
+    VisualNodeCategory(
+        "Triggers and events",
+        listOf(
+            VisualNodeDefinition(
+                type = "trigger.command",
+                name = "Command trigger",
+                description = "Start this workflow when a permitted command is received.",
+                category = "Triggers and events",
+                inputs = emptyList(),
+                outputs = listOf(VisualSocket("next", "Next", "exec"))
+            )
+        )
+    ),
+    VisualNodeCategory(
+        "Messages",
+        listOf(
+            VisualNodeDefinition(
+                type = "message.sendText",
+                name = "Send text",
+                description = "Send a message to the chat that started this workflow.",
+                category = "Messages",
+                inputs = listOf(VisualSocket("in", "In", "exec"), VisualSocket("text", "Text", "string")),
+                outputs = listOf(VisualSocket("next", "Next", "exec"), VisualSocket("sent", "Sent message", "message"))
+            ),
+            VisualNodeDefinition(
+                type = "message.replyText",
+                name = "Reply to message",
+                description = "Reply to the triggering WhatsApp message with a quote.",
+                category = "Messages",
+                inputs = listOf(VisualSocket("in", "In", "exec"), VisualSocket("text", "Text", "string")),
+                outputs = listOf(VisualSocket("next", "Next", "exec"), VisualSocket("sent", "Sent message", "message"))
+            ),
+            VisualNodeDefinition(
+                type = "message.react",
+                name = "React to message",
+                description = "React to the triggering message with an emoji.",
+                category = "Messages",
+                inputs = listOf(VisualSocket("in", "In", "exec"), VisualSocket("emoji", "Emoji", "string")),
+                outputs = listOf(VisualSocket("next", "Next", "exec"))
+            )
+        )
+    ),
+    VisualNodeCategory(
+        "Conditions and comparisons",
+        listOf(
+            VisualNodeDefinition(
+                type = "condition.equals",
+                name = "Text equals",
+                description = "Compare two values and branch to YES or NO.",
+                category = "Conditions and comparisons",
+                inputs = listOf(VisualSocket("in", "In", "exec"), VisualSocket("left", "Left value", "string"), VisualSocket("right", "Right value", "string")),
+                outputs = listOf(VisualSocket("yes", "YES", "exec"), VisualSocket("no", "NO", "exec"))
+            )
+        )
+    ),
+    VisualNodeCategory(
+        "Flow control",
+        listOf(
+            VisualNodeDefinition(
+                type = "flow.delay",
+                name = "Wait",
+                description = "Pause this workflow run for a short interval.",
+                category = "Flow control",
+                inputs = listOf(VisualSocket("in", "In", "exec")),
+                outputs = listOf(VisualSocket("next", "Next", "exec"))
+            ),
+            VisualNodeDefinition(
+                type = "flow.end",
+                name = "End workflow",
+                description = "Stop this workflow run.",
+                category = "Flow control",
+                inputs = listOf(VisualSocket("in", "In", "exec")),
+                outputs = emptyList()
+            )
+        )
+    )
+)
+
 private data class ActiveSocket(val nodeId: String, val socketId: String, val type: String)
 
 internal const val WORKSPACE_CANVAS_PADDING_DP = 48f
@@ -120,14 +199,17 @@ fun VisualCommandBuilderScreen(
     repository: VisualCommandDataSource,
     connected: Boolean,
     onBack: () -> Unit,
-    onManageEngines: () -> Unit = {}
+    onManageEngines: () -> Unit = {},
+    previewMode: Boolean = false
 ) {
     val scope = rememberCoroutineScope()
     val workspaceScroll = rememberScrollState()
     val workspaceVerticalScroll = rememberScrollState()
     var account by remember { mutableStateOf("private") }
     var workflow by remember { mutableStateOf(VisualWorkflow.draft()) }
-    var library by remember { mutableStateOf<List<VisualNodeCategory>>(emptyList()) }
+    var library by remember(previewMode) {
+        mutableStateOf(if (previewMode) commandBuilderPreviewLibrary() else emptyList())
+    }
     var savedWorkflows by remember { mutableStateOf<List<VisualWorkflow>>(emptyList()) }
     var savedValidation by remember { mutableStateOf<Map<String, VisualWorkflowValidation>>(emptyMap()) }
     var validation by remember { mutableStateOf(VisualWorkflowValidation()) }
@@ -279,11 +361,15 @@ fun VisualCommandBuilderScreen(
         }
     }
 
-    LaunchedEffect(connected, account) {
+    LaunchedEffect(connected, account, previewMode) {
         if (connected) refresh()
-        else {
+        else if (!previewMode) {
             library = emptyList()
             savedWorkflows = emptyList()
+        } else {
+            library = commandBuilderPreviewLibrary()
+            savedWorkflows = emptyList()
+            notice = "Preview sample nodes · changes stay on this device."
         }
     }
 

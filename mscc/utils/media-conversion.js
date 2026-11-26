@@ -517,7 +517,7 @@ export async function mediaToSoundSticker(buffer, {
       }
     }
 
-    const stickerBuffer = await readFile(stickerOutput)
+    let stickerBuffer = await readFile(stickerOutput)
     if (stickerBuffer.length > MAX_STICKER_BYTES) {
       throw new Error('The animated sticker exceeds WhatsApp media limits. Try a shorter video.')
     }

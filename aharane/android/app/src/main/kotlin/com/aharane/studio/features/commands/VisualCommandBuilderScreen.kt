@@ -219,7 +219,7 @@ fun VisualCommandBuilderScreen(
     var category by remember { mutableStateOf("All") }
     var search by remember { mutableStateOf("") }
     var workspaceFraction by remember { mutableFloatStateOf(0.67f) }
-    var zoom by remember { mutableFloatStateOf(1f) }
+    var zoom by remember(previewMode) { mutableFloatStateOf(if (previewMode) 0.58f else 1f) }
     var workspaceViewportSize by remember { mutableStateOf(IntSize.Zero) }
     var workspaceCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val measuredNodeSizes = remember { mutableStateMapOf<String, IntSize>() }

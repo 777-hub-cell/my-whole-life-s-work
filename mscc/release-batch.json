@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-stickerinspect-public-chat-log-20261124",
+  "releaseId": "night-sticker-sound-pr91-20261126",
   "baseBranch": "mscc-azure",
-  "baseCommit": "da216fd05b06218224d16592b5e8461ffa3b4bc7",
+  "baseCommit": "9502c452cdb1007a63d43f93358b265445639892",
   "pullRequests": [
-    89
+    91
   ],
-  "preparedAt": "2026-11-24T16:50:00.000Z",
-  "notes": "Deploy the merged PR #89: make .stickerinspect available to any public sender and return the safe sticker/sound-sticker inspection report directly in WhatsApp chat."
+  "preparedAt": "2026-11-26T17:47:11.237Z",
+  "notes": "Release native sound-sticker support for .sticker from PR #91. Preserve video audio inside one WhatsApp sound-sticker message; silent videos remain animated stickers."
 }

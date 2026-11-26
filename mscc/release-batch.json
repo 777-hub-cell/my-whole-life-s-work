@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-sound-sticker-wire-fix-pr99-20261126",
+  "releaseId": "night-viewonce-media-guard-pr101-20261126",
   "baseBranch": "mscc-azure",
-  "baseCommit": "eaaded07d65652bcd90e62699bc284acec084cea",
+  "baseCommit": "322acc02ac2545d2fbb447ea7dc14dc4a1085ee5",
   "pullRequests": [
-    99
+    101
   ],
-  "preparedAt": "2026-11-26T20:05:40.966Z",
-  "notes": "Correct WhatsApp sound-sticker wire format: embed Opus AudioMessage directly in StickerMessage.audioMessage; use canonical little-endian sticker EXIF; add voice-style PTT duration/waveform; validate real FFmpeg fixtures and protocol encoding."
+  "preparedAt": "2026-11-26T21:12:41.020Z",
+  "notes": "Detect original View Once message wrappers before conversion, refuse to copy/download View Once media, provide sender-resend guidance, and keep regular quoted group media conversion working."
 }

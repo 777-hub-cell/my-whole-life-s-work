@@ -257,6 +257,14 @@ fun ConversationScreen(
             .toList()
     }
 
+    val recentStickers = remember(messages, conversation.key) {
+        messages.filter { it.kind == MessageKind.STICKER && it.key == conversation.key }
+            .takeLast(12).asReversed()
+    }
+    LaunchedEffect(stickerTrayOpen, recentStickers) {
+        if (stickerTrayOpen) recentStickers.forEach(onLoadMediaPreview)
+    }
+
     LaunchedEffect(search, selectedSearchDay, connected, conversation.key) {
         val query = search.trim()
         if (query.length >= 2) kotlinx.coroutines.delay(350)
@@ -812,8 +820,6 @@ fun ConversationScreen(
     }
 
     if (stickerTrayOpen) {
-        val recentStickers = messages.filter { it.kind == MessageKind.STICKER && it.key == conversation.key }
-            .takeLast(12).asReversed()
         Dialog(onDismissRequest = { stickerTrayOpen = false }) {
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
@@ -827,10 +833,28 @@ fun ConversationScreen(
                 } else {
                     recentStickers.forEach { sticker ->
                         Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
-                                .background(StudioPalette.Background).padding(horizontal = 10.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp))
+                                .background(StudioPalette.Background).padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
+                            val preview = mediaPreviews[mediaKey(sticker)]
+                            if (preview != null) {
+                                Image(
+                                    bitmap = preview,
+                                    contentDescription = "Recent sticker preview",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.size(58.dp).clip(RoundedCornerShape(8.dp))
+                                        .background(StudioPalette.Soft)
+                                )
+                            } else {
+                                Box(
+                                    Modifier.size(58.dp).clip(RoundedCornerShape(8.dp)).background(StudioPalette.Soft),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Outlined.Image, null, tint = StudioPalette.Accent, modifier = Modifier.size(25.dp))
+                                }
+                            }
                             Column(Modifier.weight(1f)) {
                                 Text(sticker.mediaFileName ?: "Sticker", color = StudioPalette.Ink, fontSize = 12.5.sp, maxLines = 1)
                                 Text("Recent sticker", color = StudioPalette.Muted, fontSize = 10.5.sp)

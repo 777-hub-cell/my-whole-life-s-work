@@ -255,6 +255,9 @@ export async function sendSoundSticker(sock, chat, {
     throw new Error('WhatsApp did not prepare the animated sticker.')
   }
 
+  // Retain the send timestamp on the StickerMessage, like native sticker sends.
+  stickerMessage.stickerSentTs = Date.now()
+
   const audioBytes = proto.Message.AudioMessage.encode(preparedAudio.audioMessage).finish()
   const unregister = registerPendingSoundSticker(stickerMessage, {
     audioBytes,

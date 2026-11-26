@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { proto } from '@itsliaaa/baileys'
 import {
+  attachSoundStickerMessageSecret,
   installSoundStickerCodec,
   registerPendingSoundSticker,
   scanProtobufFields,
@@ -17,7 +18,13 @@ const stickerMessage = proto.Message.StickerMessage.create({
   width: 512,
   height: 512,
 })
-const message = proto.Message.create({ stickerMessage })
+const secretFixture = Buffer.alloc(32, 0x5a)
+const secretContext = attachSoundStickerMessageSecret({}, secretFixture)
+assert.deepEqual(Buffer.from(secretContext.messageContextInfo.messageSecret), secretFixture)
+const message = proto.Message.create({
+  stickerMessage,
+  messageContextInfo: secretContext.messageContextInfo,
+})
 
 const plainBytes = proto.Message.encode(message).finish()
 assert.equal(
@@ -45,6 +52,9 @@ try {
   const wrappedMessage = futureProofFields.find(field => field.fieldNum === 1 && field.wireType === 2)
   assert.ok(wrappedMessage, 'audioStickerMessage must contain FutureProofMessage.message')
 
+  const decodedOuter = proto.Message.decode(encoded)
+  assert.deepEqual(Buffer.from(decodedOuter.messageContextInfo.messageSecret), secretFixture,
+    'the 32-byte message secret must survive the sound-sticker wrapper')
   const innerMessageFields = scanProtobufFields(wrappedMessage.value)
   const nestedSticker = innerMessageFields.find(field => field.fieldNum === 26 && field.wireType === 2)
   assert.ok(nestedSticker, 'the inner message must contain StickerMessage')

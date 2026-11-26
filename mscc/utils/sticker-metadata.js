@@ -10,7 +10,29 @@ function cleanText(value, fallback) {
   return text || fallback
 }
 
+function normalizeStickerPackName(value) {
+  return Array.from(String(value ?? '')
+    .replace(/[\\u0000-\\u001f\\u007f-\\u009f]/gu, ' ')
+    .replace(/\\s+/gu, ' ')
+    .trim())
+    .slice(0, 128)
+    .join('')
+}
+
 export function stickerPackNameForCommand(ctx, fallback = DEFAULT_STICKER_PACK_NAME) {
+  // The router has already resolved exactly .sticker or .s. Only its trailing
+  // raw text/args are a custom pack title; do not infer a name from the command
+  // token itself or change the publisher/author field.
+  const suppliedArgs = typeof ctx?.rawArgs === 'string'
+    ? ctx.rawArgs
+    : Array.isArray(ctx?.args)
+      ? ctx.args.join(' ')
+      : typeof ctx?.args === 'string'
+        ? ctx.args
+        : ''
+  const provided = normalizeStickerPackName(suppliedArgs)
+  if (provided) return provided
+
   const candidates = [
     ctx?.senderName,
     ctx?.message?.pushName,
@@ -18,12 +40,11 @@ export function stickerPackNameForCommand(ctx, fallback = DEFAULT_STICKER_PACK_N
     ctx?.userKey,
   ]
   for (const value of candidates) {
-    const text = String(value ?? '').trim()
-    if (text) return text.slice(0, 128)
+    const name = normalizeStickerPackName(value)
+    if (name) return name
   }
-  return fallback
+  return normalizeStickerPackName(fallback) || DEFAULT_STICKER_PACK_NAME
 }
-
 function cleanEmojis(value) {
   const list = Array.isArray(value)
     ? value.map(item => String(item ?? '').trim()).filter(Boolean)

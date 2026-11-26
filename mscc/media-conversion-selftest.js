@@ -156,6 +156,7 @@ try {
 
   const soundMeta = await readStickerMetadata(soundAssets.stickerBuffer)
   assert.equal(soundMeta?.['sticker-pack-name'], 'NIGHT sound test')
+  assert.equal(soundMeta?.['sticker-pack-publisher'], 'NIGHT')
   assert.equal(soundMeta?.['sound-sha256'], soundAssets.soundSha256,
     'WebP metadata must bind to the exact extracted Opus bytes')
 

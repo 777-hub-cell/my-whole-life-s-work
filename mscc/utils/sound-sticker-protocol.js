@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import {
   generateWAMessage,
   prepareWAMessageMedia,
@@ -9,6 +10,23 @@ const PENDING_TTL_MS = 60_000
 const MAX_PENDING = 32
 const pendingByObject = new WeakMap()
 const pendingByEncryptedHash = new Map()
+
+export function attachSoundStickerMessageSecret(message, secret = randomBytes(32)) {
+  if (!message || typeof message !== 'object') {
+    throw new Error('A WhatsApp message is required for a sound sticker.')
+  }
+  const bytes = Buffer.from(secret)
+  if (bytes.length !== 32) {
+    throw new Error('A sound-sticker message secret must contain exactly 32 bytes.')
+  }
+  message.messageContextInfo = {
+    ...(message.messageContextInfo && typeof message.messageContextInfo === 'object'
+      ? message.messageContextInfo
+      : {}),
+    messageSecret: bytes,
+  }
+  return message
+}
 
 /**
  * Small protobuf wire reader used by the focused self-test. It only returns
@@ -254,6 +272,8 @@ export async function sendSoundSticker(sock, chat, {
   if (!stickerMessage) {
     throw new Error('WhatsApp did not prepare the animated sticker.')
   }
+
+  attachSoundStickerMessageSecret(fullMessage.message)
 
   const audioBytes = proto.Message.AudioMessage.encode(preparedAudio.audioMessage).finish()
   const unregister = registerPendingSoundSticker(stickerMessage, {

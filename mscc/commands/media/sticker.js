@@ -52,6 +52,7 @@ export default {
       const sticker = await mediaToSticker(source.buffer, {
         animated: source.kind === 'video' ? true : source.animated,
         packName,
+        publisher: DEFAULT_STICKER_PUBLISHER,
       })
       await sock.sendMessage(chat, { sticker }, { quoted: ctx.message })
     } catch (error) {

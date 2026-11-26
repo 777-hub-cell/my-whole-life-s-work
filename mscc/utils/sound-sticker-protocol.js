@@ -10,6 +10,63 @@ const MAX_PENDING = 32
 const pendingByObject = new WeakMap()
 const pendingByEncryptedHash = new Map()
 
+/**
+ * Small protobuf wire reader used by the focused self-test. It only returns
+ * field numbers and raw values; it never decodes or logs media payloads.
+ */
+export function scanProtobufFields(input) {
+  const bytes = Buffer.isBuffer(input) ? input : Buffer.from(input || [])
+  const fields = []
+  let offset = 0
+
+  const readVarint = () => {
+    let value = 0
+    let shift = 0
+    for (let count = 0; offset < bytes.length && count < 10; count += 1) {
+      const byte = bytes[offset++]
+      value += (byte & 0x7f) * (2 ** shift)
+      if ((byte & 0x80) === 0) return value
+      shift += 7
+    }
+    throw new Error('Invalid protobuf varint in sound-sticker message.')
+  }
+
+  while (offset < bytes.length) {
+    const start = offset
+    const tag = readVarint()
+    const fieldNum = Math.floor(tag / 8)
+    const wireType = tag & 7
+    if (!fieldNum) throw new Error('Invalid protobuf field number in sound-sticker message.')
+
+    if (wireType === 0) {
+      const value = readVarint()
+      fields.push({ fieldNum, wireType, value, start, end: offset })
+    } else if (wireType === 1) {
+      if (offset + 8 > bytes.length) throw new Error('Truncated fixed64 protobuf field.')
+      const value = bytes.subarray(offset, offset + 8)
+      offset += 8
+      fields.push({ fieldNum, wireType, value, start, end: offset })
+    } else if (wireType === 2) {
+      const length = readVarint()
+      if (!Number.isSafeInteger(length) || length < 0 || offset + length > bytes.length) {
+        throw new Error('Truncated length-delimited protobuf field.')
+      }
+      const value = bytes.subarray(offset, offset + length)
+      offset += length
+      fields.push({ fieldNum, wireType, value, start, end: offset })
+    } else if (wireType === 5) {
+      if (offset + 4 > bytes.length) throw new Error('Truncated fixed32 protobuf field.')
+      const value = bytes.subarray(offset, offset + 4)
+      offset += 4
+      fields.push({ fieldNum, wireType, value, start, end: offset })
+    } else {
+      throw new Error(`Unsupported protobuf wire type ${wireType}.`)
+    }
+  }
+
+  return fields
+}
+
 function cloneWithout(source, omitted) {
   const clone = Object.create(Object.getPrototypeOf(source) || Object.prototype)
   for (const key of Object.keys(source || {})) {

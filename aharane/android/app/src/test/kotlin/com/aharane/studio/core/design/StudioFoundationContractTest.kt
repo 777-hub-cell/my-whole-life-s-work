@@ -17,15 +17,15 @@ class StudioFoundationContractTest {
         assertEquals(
             listOf(
                 MainDestination.HOME,
+                MainDestination.CHATS,
                 MainDestination.FILES,
                 MainDestination.ENVIRONMENT,
-                MainDestination.CHATS,
                 MainDestination.MORE
             ),
             MainDestination.entries
         )
         assertEquals(
-            listOf("Home", "Files", "ENV", "Chats", "More"),
+            listOf("Home", "Chats", "Files", "ENV", "More"),
             MainDestination.entries.map { it.label }
         )
     }

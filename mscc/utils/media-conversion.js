@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { downloadMediaMessage } from '@itsliaaa/baileys'
-import { contextInfo, messageMedia, quotedMessage } from './whatsapp/messages.js'
+import { contextInfo, findViewOnceMedia, messageMedia, quotedMessage } from './whatsapp/messages.js'
 import { normalizeJid } from './whatsapp/jid.js'
 import { applyStickerMetadata } from './sticker-metadata.js'
 
@@ -153,7 +153,32 @@ export function resolveCommandMedia(ctx, acceptedKinds = []) {
   return firstMedia
 }
 
+/**
+ * Locate a View Once image/video/audio without normalizing away its wrapper.
+ * This is detection only: the content is never unwrapped or downloaded.
+ */
+export function resolveCommandViewOnceMedia(ctx, acceptedKinds = []) {
+  const accepted = new Set(acceptedKinds.map(value => String(value)))
+  for (const target of commandCandidates(ctx)) {
+    const found = findViewOnceMedia(target?.message)
+    if (!found) continue
+
+    const kind = classifyMessageMedia(found)
+    if (accepted.size && !accepted.has(kind)) continue
+    return { target, found, kind }
+  }
+  return null
+}
+
 export async function downloadCommandMedia(ctx, acceptedKinds = []) {
+  // View Once media is intentionally temporary. Do not pass it through
+  // Baileys' ordinary media downloader or try to clear its viewOnce flag.
+  if (resolveCommandViewOnceMedia(ctx, acceptedKinds)) {
+    throw new Error(
+      'NIGHT cannot convert or copy View Once media. Ask the sender to resend it as a normal media message, then try again.',
+    )
+  }
+
   const resolved = resolveCommandMedia(ctx, acceptedKinds)
   if (!resolved || (acceptedKinds.length && !acceptedKinds.includes(resolved.kind))) return null
 

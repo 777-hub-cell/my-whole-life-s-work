@@ -16,6 +16,7 @@ const stickerMessage = proto.Message.StickerMessage.create({
   isAnimated: true,
   width: 512,
   height: 512,
+  stickerSentTs: 1795650000,
 })
 const message = proto.Message.create({ stickerMessage })
 
@@ -51,9 +52,11 @@ try {
 
   const stickerFields = scanProtobufFields(nestedSticker.value)
   const audioField = stickerFields.find(field => field.fieldNum === 26 && field.wireType === 2)
+  const sentAtField = stickerFields.find(field => field.fieldNum === 18 && field.wireType === 0)
   const emojiField = stickerFields.find(field => field.fieldNum === 25 && field.wireType === 2)
   const premiumField = stickerFields.find(field => field.fieldNum === 24 && field.wireType === 0)
   assert.ok(audioField, 'the sticker payload must carry its linked AudioMessage bytes')
+  assert.equal(sentAtField?.value, 1795650000, 'stickerSentTs must survive the sound-sticker envelope')
   assert.deepEqual(Buffer.from(audioField.value), audioBytes, 'sound bytes must not be lost during message encoding')
   assert.equal(emojiField?.value.toString('utf8'), '🔊')
   assert.equal(premiumField?.value, 0)

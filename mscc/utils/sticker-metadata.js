@@ -10,7 +10,22 @@ function cleanText(value, fallback) {
   return text || fallback
 }
 
+function normalizePackName(value) {
+  const normalized = String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f-\u009f]/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
+  return Array.from(normalized).slice(0, 128).join('')
+}
+
 export function stickerPackNameForCommand(ctx, fallback = DEFAULT_STICKER_PACK_NAME) {
+  // Command parsers expose the text after the command in rawArgs/args.
+  // A supplied pack name must not replace the sticker publisher/author.
+  const rawArgs = typeof ctx?.rawArgs === 'string' ? ctx.rawArgs : ''
+  const joinedArgs = Array.isArray(ctx?.args) ? ctx.args.join(' ') : ''
+  const provided = normalizePackName(rawArgs || joinedArgs)
+  if (provided) return provided
+
   const candidates = [
     ctx?.senderName,
     ctx?.message?.pushName,
@@ -18,10 +33,10 @@ export function stickerPackNameForCommand(ctx, fallback = DEFAULT_STICKER_PACK_N
     ctx?.userKey,
   ]
   for (const value of candidates) {
-    const text = String(value ?? '').trim()
-    if (text) return text.slice(0, 128)
+    const text = normalizePackName(value)
+    if (text) return text
   }
-  return fallback
+  return normalizePackName(fallback) || DEFAULT_STICKER_PACK_NAME
 }
 
 function cleanEmojis(value) {
@@ -69,8 +84,13 @@ export function buildStickerExif(options = {}) {
         0x00, 0x00, 0x16, 0x00, 0x00, 0x00,
       ])
   const exif = Buffer.concat([header, json])
-  if (soundSticker) exif.writeUInt32BE(json.length, 14)
-  else exif.writeUIntLE(json.length, 14, 4)
+  if (soundSticker) {
+    exif.writeUInt32BE(json.length, 14)
+    // WhatsApp reads the TIFF value offset to locate the JSON payload.
+    exif.writeUInt32BE(26, 18)
+  } else {
+    exif.writeUIntLE(json.length, 14, 4)
+  }
   return exif
 }
 
@@ -84,11 +104,14 @@ export async function readStickerMetadata(buffer) {
   if (!exif || exif.length < 22) return null
   const bytes = Buffer.from(exif)
   const bigEndian = bytes[0] === 0x4d && bytes[1] === 0x4d
-  const length = bigEndian ? bytes.readUInt32BE(14) : bytes.readUInt32LE(14)
   const headerLength = bigEndian ? 26 : 22
-  if (!length || length > bytes.length - headerLength) return null
+  if (bytes.length < headerLength) return null
+  const length = bigEndian ? bytes.readUInt32BE(14) : bytes.readUInt32LE(14)
+  const dataOffset = bigEndian ? bytes.readUInt32BE(18) : bytes.readUInt32LE(18)
+  if (!length || dataOffset < headerLength || dataOffset > bytes.length ||
+      length > bytes.length - dataOffset) return null
   try {
-    const decoded = JSON.parse(bytes.subarray(headerLength, headerLength + length).toString('utf8'))
+    const decoded = JSON.parse(bytes.subarray(dataOffset, dataOffset + length).toString('utf8'))
     return decoded && typeof decoded === 'object' ? decoded : null
   } catch {
     return null

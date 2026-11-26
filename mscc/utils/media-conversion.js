@@ -14,12 +14,17 @@ export const STICKER_CANVAS = 512
 export const STICKER_CORNER_RADIUS = 20
 const STICKER_CORNER_END = STICKER_CANVAS - STICKER_CORNER_RADIUS
 const STICKER_CORNER_RADIUS_SQUARED = STICKER_CORNER_RADIUS ** 2
+// Keep the same rounded-square mask with cheaper per-pixel edge calculations.
+const STICKER_EDGE_DISTANCE_X =
+  `if(lt(X,${STICKER_CORNER_RADIUS}),${STICKER_CORNER_RADIUS}-X,if(gt(X,${STICKER_CORNER_END}),X-${STICKER_CORNER_END},0))`
+const STICKER_EDGE_DISTANCE_Y =
+  `if(lt(Y,${STICKER_CORNER_RADIUS}),${STICKER_CORNER_RADIUS}-Y,if(gt(Y,${STICKER_CORNER_END}),Y-${STICKER_CORNER_END},0))`
 export const STICKER_FIT_FILTER =
   `scale=${STICKER_CANVAS}:${STICKER_CANVAS}:force_original_aspect_ratio=increase,` +
   `crop=${STICKER_CANVAS}:${STICKER_CANVAS},format=rgba,` +
   "geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':" +
-  `a='if(lte(pow(max(${STICKER_CORNER_RADIUS}-X,max(X-${STICKER_CORNER_END},0)),2)+` +
-  `pow(max(${STICKER_CORNER_RADIUS}-Y,max(Y-${STICKER_CORNER_END},0)),2),` +
+  `a='if(lte((${STICKER_EDGE_DISTANCE_X})*(${STICKER_EDGE_DISTANCE_X})+` +
+  `(${STICKER_EDGE_DISTANCE_Y})*(${STICKER_EDGE_DISTANCE_Y}),` +
   `${STICKER_CORNER_RADIUS_SQUARED}),alpha(X,Y),0)',setsar=1`
 
 const MAX_STICKER_BYTES = 900 * 1024
@@ -301,7 +306,7 @@ function soundStickerAnimatedArgs(input, output, { seconds, fps, quality }) {
     '-fps_mode', 'passthrough',
     '-pix_fmt', 'yuva420p',
     '-quality', String(quality),
-    '-compression_level', '6',
+    '-compression_level', '3',
     output,
   ]
 }
@@ -381,7 +386,7 @@ function animatedStickerArgs(input, output, { seconds, fps, quality }) {
     '-fps_mode', 'passthrough',
     '-pix_fmt', 'yuva420p',
     '-quality', String(quality),
-    '-compression_level', '6',
+    '-compression_level', '3',
     output,
   ]
 }
@@ -408,10 +413,10 @@ export async function mediaToSticker(buffer, { animated = false, packName, publi
 
     if (animated) {
       const profiles = [
-        { seconds: 6, fps: 15, quality: 72 },
-        { seconds: 5, fps: 12, quality: 52 },
-        { seconds: 4, fps: 10, quality: 40 },
-        { seconds: 3, fps: 8, quality: 30 },
+        { seconds: 6, fps: 12, quality: 58 },
+        { seconds: 6, fps: 10, quality: 46 },
+        { seconds: 5, fps: 8, quality: 36 },
+        { seconds: 4, fps: 6, quality: 28 },
       ]
 
       for (const profile of profiles) {
@@ -464,13 +469,24 @@ export async function mediaToSoundSticker(buffer, {
       : 6
     const seconds = Math.max(0.5, Math.min(maximum, streamDuration || maximum))
 
-    // Keep the audio separate from WebP. It is attached to StickerMessage
-    // field 26 by sound-sticker-protocol.js and sent in the same WA message.
-    await runFfmpeg([
+    // Decode the source once for both outputs. Previously the video was
+    // fully decoded once for Opus and again for the first WebP render.
+    const profiles = [
+      { fps: 12, quality: 60 },
+      { fps: 10, quality: 48 },
+      { fps: 8, quality: 38 },
+      { fps: 6, quality: 30 },
+    ]
+    const firstVideoArgs = soundStickerAnimatedArgs(input, stickerOutput, {
+      ...profiles[0],
+      seconds,
+    }).slice(2)
+
+    await runFfmpegWithFrameSyncFallback([
       '-i', input,
+      '-map', '0:a:0',
       '-t', seconds.toFixed(3),
       '-vn',
-      '-map', '0:a:0',
       '-ar', '48000',
       '-ac', '1',
       '-c:a', 'libopus',
@@ -479,6 +495,7 @@ export async function mediaToSoundSticker(buffer, {
       '-application', 'audio',
       '-f', 'ogg',
       audioOutput,
+      ...firstVideoArgs,
     ])
 
     const audioBuffer = await readFile(audioOutput)
@@ -489,25 +506,18 @@ export async function mediaToSoundSticker(buffer, {
       throw new Error('The sticker soundtrack exceeds WhatsApp media limits.')
     }
 
-    // Keep every animation profile at the soundtrack duration. Quality and
-    // frame rate may step down for size, but the video is never shortened
-    // independently of its audio.
-    const profiles = [
-      { fps: 15, quality: 72 },
-      { fps: 12, quality: 58 },
-      { fps: 10, quality: 44 },
-      { fps: 8, quality: 32 },
-    ]
-    let stickerBuffer = null
-    for (const profile of profiles) {
-      await runFfmpegWithFrameSyncFallback(soundStickerAnimatedArgs(input, stickerOutput, {
-        ...profile,
-        seconds,
-      }))
-      if (await fileSize(stickerOutput) <= MAX_STICKER_BYTES) break
+    // Retry only the visual if the first pass is above the sticker size limit.
+    if (await fileSize(stickerOutput) > MAX_STICKER_BYTES) {
+      for (const profile of profiles.slice(1)) {
+        await runFfmpegWithFrameSyncFallback(soundStickerAnimatedArgs(input, stickerOutput, {
+          ...profile,
+          seconds,
+        }))
+        if (await fileSize(stickerOutput) <= MAX_STICKER_BYTES) break
+      }
     }
 
-    stickerBuffer = await readFile(stickerOutput)
+    const stickerBuffer = await readFile(stickerOutput)
     if (stickerBuffer.length > MAX_STICKER_BYTES) {
       throw new Error('The animated sticker exceeds WhatsApp media limits. Try a shorter video.')
     }

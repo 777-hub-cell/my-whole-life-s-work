@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-sticker-fast-packname-pr93-20261126",
+  "releaseId": "night-sound-sticker-compat-pr97-20261126",
   "baseBranch": "mscc-azure",
-  "baseCommit": "b43a9381806c7a54f31b58a8baa5940394762779",
+  "baseCommit": "18fcb49d224ed370aca6fc63b4cceddca91532a9",
   "pullRequests": [
-    93
+    97
   ],
-  "preparedAt": "2026-11-26T18:55:30.057Z",
-  "notes": "Fix .sticker/.s video sound-sticker message compatibility and conversion speed; use text after .sticker or .s as the pack name while preserving the sender fallback and NIGHT publisher."
+  "preparedAt": "2026-11-26T19:25:00.000Z",
+  "notes": "Repair sound-sticker WebP EXIF JSON offset and complete AudioMessage metadata (ptt, duration, waveform); improve video sticker encoding speed; preserve .sticker/.s custom pack names and NIGHT publisher."
 }

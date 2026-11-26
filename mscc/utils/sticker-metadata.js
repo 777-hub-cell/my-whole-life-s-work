@@ -85,7 +85,7 @@ export async function readStickerMetadata(buffer) {
   const bytes = Buffer.from(exif)
   const bigEndian = bytes[0] === 0x4d && bytes[1] === 0x4d
   const length = bigEndian ? bytes.readUInt32BE(14) : bytes.readUInt32LE(14)
-  const headerLength = 26
+  const headerLength = bigEndian ? 26 : 22
   if (!length || length > bytes.length - headerLength) return null
   try {
     const decoded = JSON.parse(bytes.subarray(headerLength, headerLength + length).toString('utf8'))

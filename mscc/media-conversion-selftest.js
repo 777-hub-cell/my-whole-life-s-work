@@ -12,11 +12,24 @@ import {
   downloadMediaWithSocketHost,
   runFfmpeg,
   runFfmpegWithFrameSyncFallback,
+  waveformFromPcm,
   mediaToSoundSticker,
 } from './utils/media-conversion.js'
 import { readStickerMetadata } from './utils/sticker-metadata.js'
 
 assert.equal(STICKER_CANVAS, 512)
+
+const silencePcm = Buffer.alloc(64 * 2 * 2)
+assert.deepEqual(waveformFromPcm(silencePcm), Buffer.alloc(64),
+  'silence must produce a fixed-length zero waveform')
+const waveformFixture = Buffer.alloc(64 * 2 * 2)
+for (let index = 0; index < waveformFixture.length / 2; index += 1) {
+  waveformFixture.writeInt16LE(index % 16 === 0 ? 12000 : 2000, index * 2)
+}
+const fixtureWaveform = waveformFromPcm(waveformFixture)
+assert.equal(fixtureWaveform.length, 64)
+assert.ok([...fixtureWaveform].every(value => value >= 0 && value <= 100))
+assert.ok(fixtureWaveform.some(value => value > 0))
 assert.equal(STICKER_CORNER_RADIUS, 20, 'Nexia stickerUtils.js rounded-square radius is 20px, not 48/56px')
 assert.match(STICKER_FIT_FILTER, /scale=512:512:force_original_aspect_ratio=increase/)
 assert.match(STICKER_FIT_FILTER, /crop=512:512,format=rgba/)
@@ -153,12 +166,16 @@ try {
   assert.equal(soundAssets.audioBuffer.toString('ascii', 0, 4), 'OggS')
   assert.equal(soundAssets.isAnimated, true)
   assert.ok(soundAssets.audioSeconds > 0 && soundAssets.audioSeconds <= 2.1)
+  assert.ok(Buffer.isBuffer(soundAssets.audioWaveform))
+  assert.equal(soundAssets.audioWaveform.length, 64)
+  assert.ok([...soundAssets.audioWaveform].every(value => value <= 100))
+  assert.ok([...soundAssets.audioWaveform].some(value => value > 0))
 
   const soundMeta = await readStickerMetadata(soundAssets.stickerBuffer)
   assert.equal(soundMeta?.['sticker-pack-name'], 'NIGHT sound test')
   assert.equal(soundMeta?.['sticker-pack-publisher'], 'NIGHT')
-  assert.equal(soundMeta?.['sound-sha256'], soundAssets.soundSha256,
-    'WebP metadata must bind to the exact extracted Opus bytes')
+  assert.equal(soundMeta?.['sound-sha256'], undefined,
+    'sound metadata must not add an undocumented EXIF property')
 
   const silentVideoPath = join(soundFixtureDir, 'without-audio.mp4')
   await runFfmpeg([

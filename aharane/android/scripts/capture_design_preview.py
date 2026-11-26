@@ -224,6 +224,23 @@ def main():
     # Wait for the actual Home page instead of capturing the launch splash.
     assert_visible_texts(["Welcome back", "WhatsApp accounts"], timeout_seconds=25)
     capture("01-home.png")
+    if os.environ.get("AHARANE_COMMAND_BUILDER_ONLY") == "1":
+        scroll_until_label_visible("Visual command builder")
+        capture("01e-home-visual-command-builder-shortcut.png", 0.5)
+        tap_label("Visual command builder")
+        capture("01f-home-visual-command-builder.png", 2)
+        assert_visible_texts(["Command builder", "WORKSPACE", "NODE LIBRARY", "Search nodes", "Save"])
+        index = {
+            "file": "index.json",
+            "device": DEVICE_INFO.get("model", "Android emulator"),
+            "api_level": DEVICE_INFO.get("api_level", "unknown"),
+            "resolution": DEVICE_INFO.get("resolution", "unknown"),
+            "density": DEVICE_INFO.get("density", "unknown"),
+            "screens": SCREEN_INDEX.copy(),
+        }
+        (OUT / "index.json").write_text(json.dumps(index, indent=2), encoding="utf-8")
+        print("Captured the native Aharane command builder screen.")
+        return
     # The header's Preview status badge is not interactive. Open the Private
     # account's Preview action (the second visible Preview label).
     tap_label("Preview", occurrence=1)

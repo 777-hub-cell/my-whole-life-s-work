@@ -1736,6 +1736,7 @@ fun AharaneApp(
                     VisualCommandBuilderScreen(
                         repository = repository,
                         connected = connected,
+                        previewMode = previewMode,
                         onBack = { commandBuilderOpen = false; engineLibraryOpen = false },
                         onManageEngines = { engineLibraryOpen = true }
                     )

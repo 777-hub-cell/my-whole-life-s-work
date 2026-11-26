@@ -871,8 +871,8 @@ fun AharaneApp(
         if (uri != null && conversation != null) {
             connectionScope.launch {
                 try {
-                    require(!previewMode && localChatRepository != null) {
-                        "Local chat storage is unavailable."
+                    require(!previewMode) {
+                        "Preview mode cannot edit the local sticker tray."
                     }
                     val bytes = withContext(Dispatchers.IO) {
                         val input = context.contentResolver.openInputStream(uri)
@@ -2069,10 +2069,10 @@ fun AharaneApp(
                         }
                     },
                     onPickSticker = {
-                        if (!previewMode && localChatRepository != null) {
+                        if (!previewMode) {
                             chatStickerLauncher.launch(arrayOf("image/webp"))
                         } else {
-                            Toast.makeText(context, "Sign in to Aharane to add stickers to your tray.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Preview mode cannot edit the local sticker tray.", Toast.LENGTH_SHORT).show()
                         }
                     },
                     stickers = stickerEntries,

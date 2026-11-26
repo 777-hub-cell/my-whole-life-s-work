@@ -48,6 +48,9 @@ class VisualCommandBuilderScreenTest {
         compose.onNodeWithTag("visual-command-node-library")
             .performScrollToNode(hasTestTag("add-node-message.sendText"))
         compose.onNodeWithTag("add-node-message.sendText").performClick()
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag("node-config-field-text").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithTag("node-config-field-text").performTextClearance()
         compose.onNodeWithTag("node-config-field-text").performTextInput("Hello from the builder")
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
@@ -75,7 +78,7 @@ class VisualCommandBuilderScreenTest {
         compose.onNodeWithTag("node-config-field-command").assertTextEquals("welcome")
         compose.onNodeWithTag("workflow-node-count").assertTextEquals("3 nodes · 2 wires")
 
-        compose.onNodeWithText("Test safely").performClick()
+        compose.onNodeWithTag("workflow-test").performClick()
         compose.waitUntil(5_000) { source.safeTestCount == 1 }
         compose.onNodeWithText("Passed · no live WhatsApp actions were performed").assertIsDisplayed()
 
@@ -160,7 +163,7 @@ class VisualCommandBuilderScreenTest {
         compose.onNodeWithText("Connect to your Aharane server to load the WhatsApp node library.")
             .assertIsDisplayed()
         compose.onNodeWithTag("workflow-save").assertIsNotEnabled()
-        compose.onNodeWithText("Test safely").assertIsNotEnabled()
+        compose.onNodeWithTag("workflow-test").assertIsNotEnabled()
         assertEquals(0, source.createCount)
     }
 }

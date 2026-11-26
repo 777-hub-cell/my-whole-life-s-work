@@ -741,7 +741,7 @@ fun ConversationScreen(
                 StickerIcon,
                 "Open sticker tray",
                 enabled = !voiceRecording,
-                onClick = { recentStickerDialogOpen = !recentStickerDialogOpen }
+                onClick = { stickerTrayOpen = !stickerTrayOpen }
             )
             ConversationTool(
                 Icons.Outlined.AttachFile,

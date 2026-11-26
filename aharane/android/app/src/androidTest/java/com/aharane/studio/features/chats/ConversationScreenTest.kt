@@ -378,7 +378,7 @@ class ConversationScreenTest {
     }
 
     @Test
-    fun disconnectedComposerKeepsDraftButDisablesSendAndAttachments() {
+    fun disconnectedComposerKeepsDraftAndAllowsOfflineStickerBrowsing() {
         compose.setContent {
             AharaneTheme(themeMode = "light") {
                 ConversationScreen(
@@ -393,7 +393,9 @@ class ConversationScreenTest {
         compose.onNodeWithTag("conversation-composer").performTextInput("Draft stays on this phone")
         compose.onNodeWithTag("conversation-send").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Attach image, video, audio or document").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Open sticker tray").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Open sticker tray").assertIsEnabled().performClick()
+        compose.onNodeWithText("Stickers").assertIsDisplayed()
+        compose.onNodeWithText("Sign in to send stickers.").assertIsDisplayed()
         compose.onNodeWithTag("conversation-composer").assertTextEquals("Draft stays on this phone")
     }
 }

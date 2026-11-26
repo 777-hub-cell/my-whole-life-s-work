@@ -258,7 +258,7 @@ function runCapturedProcess(binary, args, { timeoutMs = 20_000, maxOutputBytes =
     })
     child.once('close', code => {
       if (code === 0) return finish()
-      const detail = stderr.trim().split(/\\r?\\n/).slice(-3).join(' | ')
+      const detail = stderr.trim().split(/\r?\n/).slice(-3).join(' | ')
       finish(new Error(detail || `ffprobe failed with code ${code}`))
     })
     const timer = setTimeout(() => {
@@ -444,6 +444,10 @@ export async function mediaToSoundSticker(buffer, {
   emojis = ['🔊'],
 } = {}) {
   return serializedConversion(() => withTempDir('sound-sticker', async directory => {
+    if (!Buffer.isBuffer(buffer) || !buffer.length || buffer.length > MAX_INPUT_BYTES) {
+      throw new Error('That video is empty or too large for sticker conversion.')
+    }
+
     const input = join(directory, 'input.bin')
     const audioOutput = join(directory, 'sound.ogg')
     const stickerOutput = join(directory, 'sticker.webp')

@@ -8,9 +8,10 @@ import {
 } from './utils/sound-sticker-protocol.js'
 
 installSoundStickerCodec()
-const patchedEncoder = proto.Message.encode
+const patchedEncoder = proto.Message.StickerMessage.encode
 installSoundStickerCodec()
-assert.equal(proto.Message.encode, patchedEncoder, 'installing the codec twice must be harmless')
+assert.equal(proto.Message.StickerMessage.encode, patchedEncoder,
+  'installing the codec twice must be harmless')
 
 const stickerMessage = proto.Message.StickerMessage.create({
   mimetype: 'image/webp',
@@ -33,7 +34,14 @@ assert.equal(
   'ordinary stickers must remain ordinary sticker messages',
 )
 
-const audioBytes = Buffer.from([0x4f, 0x67, 0x67, 0x53, 0x00, 0x01])
+const waveform = Buffer.alloc(64, 42)
+const audioFixture = proto.Message.AudioMessage.create({
+  mimetype: 'audio/ogg; codecs=opus',
+  ptt: true,
+  seconds: 2,
+  waveform,
+})
+const audioBytes = proto.Message.AudioMessage.encode(audioFixture).finish()
 const unregister = registerPendingSoundSticker(stickerMessage, {
   audioBytes,
   emojis: '🔊',
@@ -43,39 +51,37 @@ const unregister = registerPendingSoundSticker(stickerMessage, {
 try {
   const encoded = proto.Message.encode(message).finish()
   const outer = scanProtobufFields(encoded)
-  const soundFields = outer.filter(field => field.fieldNum === 134 && field.wireType === 2)
-  assert.equal(soundFields.length, 1, 'the outgoing message must contain one native audioStickerMessage envelope')
-  assert.equal(outer.some(field => field.fieldNum === 26), false,
-    'the sticker must be wrapped once, not duplicated beside the sound-sticker envelope')
-
-  const futureProofFields = scanProtobufFields(soundFields[0].value)
-  const wrappedMessage = futureProofFields.find(field => field.fieldNum === 1 && field.wireType === 2)
-  assert.ok(wrappedMessage, 'audioStickerMessage must contain FutureProofMessage.message')
+  const stickerFields = outer.filter(field => field.fieldNum === 26 && field.wireType === 2)
+  assert.equal(stickerFields.length, 1, 'the outgoing message must remain one normal top-level sticker message')
+  assert.equal(outer.some(field => field.fieldNum === 134), false,
+    'do not use the separate, undocumented audioStickerMessage wrapper')
 
   const decodedOuter = proto.Message.decode(encoded)
   assert.deepEqual(Buffer.from(decodedOuter.messageContextInfo.messageSecret), secretFixture,
-    'the 32-byte message secret must survive the sound-sticker wrapper')
-  const innerMessageFields = scanProtobufFields(wrappedMessage.value)
-  const nestedSticker = innerMessageFields.find(field => field.fieldNum === 26 && field.wireType === 2)
-  assert.ok(nestedSticker, 'the inner message must contain StickerMessage')
+    'the 32-byte message secret must survive normal sticker encoding')
 
-  const stickerFields = scanProtobufFields(nestedSticker.value)
-  const audioField = stickerFields.find(field => field.fieldNum === 26 && field.wireType === 2)
-  const emojiField = stickerFields.find(field => field.fieldNum === 25 && field.wireType === 2)
-  const premiumField = stickerFields.find(field => field.fieldNum === 24 && field.wireType === 0)
-  assert.ok(audioField, 'the sticker payload must carry its linked AudioMessage bytes')
-  assert.deepEqual(Buffer.from(audioField.value), audioBytes, 'sound bytes must not be lost during message encoding')
+  const stickerPayload = scanProtobufFields(stickerFields[0].value)
+  const audioField = stickerPayload.find(field => field.fieldNum === 26 && field.wireType === 2)
+  const emojiField = stickerPayload.find(field => field.fieldNum === 25 && field.wireType === 2)
+  const premiumField = stickerPayload.find(field => field.fieldNum === 24 && field.wireType === 0)
+  assert.ok(audioField, 'StickerMessage must directly contain its audioMessage field 26')
+  assert.deepEqual(Buffer.from(audioField.value), audioBytes, 'embedded audio bytes must be intact')
   assert.equal(emojiField?.value.toString('utf8'), '🔊')
   assert.equal(premiumField?.value, 0)
+
+  const decodedAudio = proto.Message.AudioMessage.decode(audioField.value)
+  assert.equal(decodedAudio.ptt, true)
+  assert.equal(Number(decodedAudio.seconds), 2)
+  assert.equal(Buffer.from(decodedAudio.waveform).length, 64)
+  assert.deepEqual(Buffer.from(decodedAudio.waveform), waveform)
 } finally {
   unregister()
 }
 
 const afterCleanup = proto.Message.encode(message).finish()
-assert.equal(
-  scanProtobufFields(afterCleanup).some(field => field.fieldNum === 134),
-  false,
-  'the pending audio attachment must be cleared after sending',
-)
+const afterCleanupFields = scanProtobufFields(afterCleanup)
+assert.equal(afterCleanupFields.some(field => field.fieldNum === 134), false)
+assert.equal(afterCleanupFields.filter(field => field.fieldNum === 26 && field.wireType === 2).length, 1,
+  'cleaning up the pending attachment must retain an ordinary sticker message')
 
 console.log('PASS native sound-sticker protobuf envelope, linked audio bytes, ordinary sticker compatibility and cleanup')

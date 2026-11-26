@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-sound-sticker-compat-pr97-20261126",
+  "releaseId": "night-sound-sticker-wire-fix-pr99-20261126",
   "baseBranch": "mscc-azure",
-  "baseCommit": "18fcb49d224ed370aca6fc63b4cceddca91532a9",
+  "baseCommit": "eaaded07d65652bcd90e62699bc284acec084cea",
   "pullRequests": [
-    97
+    99
   ],
-  "preparedAt": "2026-11-26T19:25:00.000Z",
-  "notes": "Repair sound-sticker WebP EXIF JSON offset and complete AudioMessage metadata (ptt, duration, waveform); improve video sticker encoding speed; preserve .sticker/.s custom pack names and NIGHT publisher."
+  "preparedAt": "2026-11-26T20:05:40.966Z",
+  "notes": "Correct WhatsApp sound-sticker wire format: embed Opus AudioMessage directly in StickerMessage.audioMessage; use canonical little-endian sticker EXIF; add voice-style PTT duration/waveform; validate real FFmpeg fixtures and protocol encoding."
 }

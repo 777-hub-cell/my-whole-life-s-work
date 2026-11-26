@@ -5,6 +5,7 @@ The launch flag is guarded by ApplicationInfo.FLAG_DEBUGGABLE. This script never
 contacts the Aharane server; sample content is absent from release launches.
 """
 import json
+import os
 import re
 import subprocess
 import time
@@ -246,6 +247,18 @@ def main():
     tap_label("Visual command builder")
     capture("01f-home-visual-command-builder.png", 2)
     assert_visible_texts(["Command builder", "WORKSPACE", "NODE LIBRARY", "Search nodes", "Save"])
+    if os.environ.get("AHARANE_COMMAND_BUILDER_ONLY") == "1":
+        index = {
+            "file": "index.json",
+            "device": DEVICE_INFO.get("model", "Android emulator"),
+            "api_level": DEVICE_INFO.get("api_level", "unknown"),
+            "resolution": DEVICE_INFO.get("resolution", "unknown"),
+            "density": DEVICE_INFO.get("density", "unknown"),
+            "screens": SCREEN_INDEX.copy(),
+        }
+        (OUT / "index.json").write_text(json.dumps(index, indent=2), encoding="utf-8")
+        print("Captured the native Aharane command builder screen.")
+        return
     back()
 
     tap_label("Chats")

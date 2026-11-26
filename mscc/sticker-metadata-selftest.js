@@ -7,6 +7,7 @@ import {
   readStickerMetadata,
   stickerMetadata,
   stickerPackNameForCommand,
+  stickerPackNameFromCommandArgs,
 } from './utils/sticker-metadata.js'
 import { takeStickerPackName } from './commands/media/take.js'
 
@@ -15,6 +16,12 @@ assert.equal(DEFAULT_STICKER_PUBLISHER, '『N I G H T』')
 assert.equal(DEFAULT_STICKER_PUBLISHER.includes('༺'), false)
 assert.equal(DEFAULT_STICKER_PUBLISHER.includes('༻'), false)
 assert.equal(stickerPackNameForCommand({ message:{ pushName:'Patrick' }, userKey:'234000000000' }), 'Patrick')
+assert.equal(stickerPackNameForCommand({ rawArgs:'My Favourite Pack', message:{ pushName:'Patrick' } }), 'Patrick')
+assert.equal(stickerPackNameFromCommandArgs({ rawArgs:'My Favourite Pack', message:{ pushName:'Patrick' } }), 'My Favourite Pack')
+assert.equal(stickerPackNameFromCommandArgs({ args:['Night', 'Collection'], message:{ pushName:'Patrick' } }), 'Night Collection')
+assert.equal(stickerPackNameFromCommandArgs({ rawArgs:'  My ' + String.fromCharCode(10) + '  Pack  ', message:{ pushName:'Patrick' } }), 'My Pack')
+assert.equal(stickerPackNameFromCommandArgs({ rawArgs:'   ', args:[], message:{ pushName:'Patrick' } }), 'Patrick')
+assert.equal(stickerPackNameFromCommandArgs({ rawArgs:'✨'.repeat(129) }).length, 128)
 assert.equal(stickerPackNameForCommand({ message:{}, userKey:'234000000000' }), '234000000000')
 
 const inside = DEFAULT_STICKER_PUBLISHER.slice(1, -1)

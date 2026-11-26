@@ -88,6 +88,13 @@ class EncryptedWorkspaceStore(context: Context) {
                     readOnly = entry.readOnly
                 )
             } else {
+                // Keep an offline payload only while its server metadata still matches.
+                // A changed or undated remote file must be fetched again before it is
+                // treated as the current offline copy.
+                val metadataUnchanged = old != null &&
+                    !old.modifiedAt.isNullOrBlank() &&
+                    old.modifiedAt == entry.modifiedAt &&
+                    old.sizeBytes == entry.sizeBytes
                 CachedWorkspaceFile(
                     name = entry.name,
                     path = entry.path,
@@ -95,9 +102,9 @@ class EncryptedWorkspaceStore(context: Context) {
                     sizeBytes = entry.sizeBytes,
                     modifiedAt = entry.modifiedAt,
                     readOnly = entry.readOnly,
-                    serverSha256 = old?.serverSha256.orEmpty(),
-                    language = old?.language.orEmpty(),
-                    hasContent = old?.hasContent == true && encryptedFile(entry.path).isFile
+                    serverSha256 = if (metadataUnchanged) old.serverSha256 else "",
+                    language = if (metadataUnchanged) old.language else "",
+                    hasContent = metadataUnchanged && old.hasContent && encryptedFile(entry.path).isFile
                 )
             }
         }
@@ -318,7 +325,10 @@ object WorkspaceSyncService {
 
         val remote = repository.allFiles()
         store.replaceRemoteTree(remote)
-        var remaining = MAX_TOTAL_BYTES
+        val cachedBytes = store.entries().asSequence()
+            .filter { !it.isDirectory && it.hasContent }
+            .sumOf { (it.sizeBytes ?: 0L).coerceAtLeast(0L) }
+        var remaining = (MAX_TOTAL_BYTES - cachedBytes).coerceAtLeast(0L)
         remote.asSequence()
             .filterNot { it.isDirectory }
             .filter { entry -> (entry.sizeBytes ?: 0L) in 0L..MAX_FILE_BYTES }

@@ -2463,6 +2463,7 @@ fun AharaneApp(
                 )
                 else -> HorizontalPager(
                     state = tabPagerState,
+                    userScrollEnabled = currentDestination != MainDestination.CHATS,
                     modifier = Modifier.fillMaxSize()
                 ) { page ->
                     val destination = MainDestination.entries[page]

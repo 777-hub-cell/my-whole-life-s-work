@@ -84,7 +84,7 @@ class StudioBottomNavigationTest {
     @Test
     fun bottomNavigationUsesTheApprovedFiveItemSequence() {
         assertEquals(
-            listOf("Home", "Chats", "Files", "ENV", "More"),
+            listOf("Home", "Files", "Chats", "ENV", "More"),
             MainDestination.entries.map { it.label }
         )
     }

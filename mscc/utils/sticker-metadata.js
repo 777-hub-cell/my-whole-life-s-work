@@ -19,13 +19,8 @@ function normalizePackName(value) {
 }
 
 export function stickerPackNameForCommand(ctx, fallback = DEFAULT_STICKER_PACK_NAME) {
-  // Command parsers expose the text after the command in rawArgs/args.
-  // A supplied pack name must not replace the sticker publisher/author.
-  const rawArgs = typeof ctx?.rawArgs === 'string' ? ctx.rawArgs : ''
-  const joinedArgs = Array.isArray(ctx?.args) ? ctx.args.join(' ') : ''
-  const provided = normalizePackName(rawArgs || joinedArgs)
-  if (provided) return provided
-
+  // Shared callers such as anime reactions keep the sender-name default;
+  // their args may contain mentions rather than a custom sticker-pack name.
   const candidates = [
     ctx?.senderName,
     ctx?.message?.pushName,
@@ -37,6 +32,15 @@ export function stickerPackNameForCommand(ctx, fallback = DEFAULT_STICKER_PACK_N
     if (text) return text
   }
   return normalizePackName(fallback) || DEFAULT_STICKER_PACK_NAME
+}
+
+export function stickerPackNameFromArgs(ctx, fallback = DEFAULT_STICKER_PACK_NAME) {
+  // Only the .sticker/.s command calls this helper: its trailing words are
+  // the pack name, while the configured publisher remains separate.
+  const rawArgs = typeof ctx?.rawArgs === 'string' ? ctx.rawArgs : ''
+  const joinedArgs = Array.isArray(ctx?.args) ? ctx.args.join(' ') : ''
+  const provided = normalizePackName(rawArgs || joinedArgs)
+  return provided || stickerPackNameForCommand(ctx, fallback)
 }
 
 function cleanEmojis(value) {

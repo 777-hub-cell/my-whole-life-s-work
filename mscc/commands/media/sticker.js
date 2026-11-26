@@ -6,7 +6,7 @@ import {
 import { sendSoundSticker } from '../../utils/sound-sticker-protocol.js'
 import {
   DEFAULT_STICKER_PUBLISHER,
-  stickerPackNameForCommand,
+  stickerPackNameFromArgs,
 } from '../../utils/sticker-metadata.js'
 
 export default {
@@ -27,7 +27,7 @@ export default {
       const sock = ctx.account?.sock
       if (!chat || !sock) throw new Error('WhatsApp connection is unavailable.')
 
-      const packName = stickerPackNameForCommand(ctx)
+      const packName = stickerPackNameFromArgs(ctx)
       if (source.kind === 'video') {
         const soundSticker = await mediaToSoundSticker(source.buffer, {
           packName,

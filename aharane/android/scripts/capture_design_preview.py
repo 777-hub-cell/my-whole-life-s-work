@@ -245,7 +245,7 @@ def main():
     capture("01e-home-visual-command-builder-shortcut.png")
     tap_label("Visual command builder")
     capture("01f-home-visual-command-builder.png", 2)
-    assert_visible_texts(["WORKSPACE", "NODE LIBRARY", "Test safely", "Search WhatsApp nodes"])
+    assert_visible_texts(["Command builder", "WORKSPACE", "NODE LIBRARY", "Search nodes", "Save"])
     back()
 
     tap_label("Chats")

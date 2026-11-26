@@ -296,7 +296,7 @@ fun ConversationScreen(
     BackHandler {
         when {
             recentStickerDialogOpen -> recentStickerDialogOpen = false
-            recentStickerDialogOpen -> recentStickerDialogOpen = false
+            stickerTrayOpen -> stickerTrayOpen = false
             moreOpen -> moreOpen = false
             actionMessage != null -> actionMessage = null
             forwardMessage != null -> forwardMessage = null
@@ -823,13 +823,13 @@ fun ConversationScreen(
                 )
             }
         }
-        if (recentStickerDialogOpen) {
+        if (stickerTrayOpen) {
             StickerTrayPanel(
                 stickers = stickers,
                 canSend = canQueueMedia && !voiceRecording,
                 onSend = { entry ->
                     onSendSticker(entry)
-                    recentStickerDialogOpen = false
+                    stickerTrayOpen = false
                 },
                 onAdd = onPickSticker,
                 onDelete = onDeleteSticker,

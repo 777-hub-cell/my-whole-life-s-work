@@ -624,6 +624,7 @@ fun ConversationScreen(
                             }
                             MessageBubble(
                             message = message,
+                            isGroup = conversation.isGroup,
                             appearance = appearance,
                             autoDownloadImages = autoDownloadImages,
                             autoDownloadVideoPreviews = autoDownloadVideoPreviews,
@@ -820,7 +821,7 @@ fun ConversationScreen(
     }
 
     if (stickerTrayOpen) {
-        Dialog(onDismissRequest = { stickerTrayOpen = false }) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { stickerTrayOpen = false }) {
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
                     .background(StudioPalette.Surface).padding(16.dp),
@@ -1373,6 +1374,7 @@ private fun ConversationDayDivider(timestamp: Long) {
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
+    isGroup: Boolean,
     appearance: ChatAppearance,
     autoDownloadImages: Boolean,
     autoDownloadVideoPreviews: Boolean,
@@ -1456,7 +1458,7 @@ private fun MessageBubble(
             horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start,
             verticalAlignment = Alignment.Bottom
         ) {
-        if (!outgoing && conversation.isGroup && appearance.showAvatars) {
+        if (!outgoing && isGroup && appearance.showAvatars) {
             Box(
                 Modifier.size(24.dp).clip(CircleShape).background(StudioPalette.Soft),
                 contentAlignment = Alignment.Center

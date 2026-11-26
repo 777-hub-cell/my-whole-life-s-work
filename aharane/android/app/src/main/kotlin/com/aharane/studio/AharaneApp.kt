@@ -1644,6 +1644,15 @@ fun AharaneApp(
     val sourceFileEntries = if (previewMode) {
         DesignPreviewFixtures.files.map { StudioFileEntry(it.name, it.path, it.isDirectory, it.sizeLabel) }
     } else {
+        val liveEntries = serverFiles.map { entry ->
+            StudioFileEntry(
+                name = entry.name,
+                path = entry.path,
+                isDirectory = entry.isDirectory,
+                sizeLabel = entry.sizeBytes?.let(::formatBytes),
+                modifiedLabel = entry.modifiedAt
+            )
+        }
         val cachedEntries = cachedWorkspaceEntries.map { entry ->
             StudioFileEntry(
                 name = entry.name,
@@ -1653,15 +1662,7 @@ fun AharaneApp(
                 modifiedLabel = entry.modifiedAt
             )
         }
-        (serverFiles + cachedEntries).distinctBy { it.path }.map { entry ->
-            StudioFileEntry(
-                name = entry.name,
-                path = entry.path,
-                isDirectory = entry.isDirectory,
-                sizeLabel = entry.sizeBytes?.let(::formatBytes),
-                modifiedLabel = entry.modifiedAt
-            )
-        }
+        (liveEntries + cachedEntries).distinctBy { it.path }
     }
     val studioFileEntries = sourceFileEntries + listOf(
         StudioFileEntry("Update packages", "Update packages", true)

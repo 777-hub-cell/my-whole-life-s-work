@@ -10,6 +10,8 @@ import {
   mediaIsAnimated,
   socketMediaDownloadOptions,
   downloadMediaWithSocketHost,
+  downloadCommandMedia,
+  resolveCommandViewOnceMedia,
   runFfmpeg,
   runFfmpegWithFrameSyncFallback,
   waveformFromPcm,
@@ -50,6 +52,108 @@ assert.equal(classifyMessageMedia({ key:'audioMessage', media:{ mimetype:'audio/
 assert.equal(mediaIsAnimated({ key:'videoMessage', media:{ mimetype:'video/mp4' } }), true)
 assert.equal(mediaIsAnimated({ key:'stickerMessage', media:{ mimetype:'image/webp', isAnimated:true } }), true)
 assert.equal(mediaIsAnimated({ key:'stickerMessage', media:{ mimetype:'image/webp', isAnimated:false } }), false)
+
+// View Once content is detected from the original quoted message wrapper.
+// The conversion path must reject it before invoking Baileys' media downloader.
+const viewOnceQuotedContext = {
+  key: {
+    remoteJid: '120363000000000000@g.us',
+    id: 'sticker-command-id',
+  },
+  message: {
+    extendedTextMessage: {
+      text: '.s',
+      contextInfo: {
+        stanzaId: 'view-once-image-id',
+        participant: '2348000000000@s.whatsapp.net',
+        quotedMessage: {
+          viewOnceMessageV2: {
+            message: {
+              imageMessage: {
+                mimetype: 'image/jpeg',
+                mediaKey: Buffer.alloc(32, 7),
+                fileEncSha256: Buffer.alloc(32, 8),
+                fileSha256: Buffer.alloc(32, 9),
+                directPath: '/view-once/image',
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+}
+const quotedViewOnce = resolveCommandViewOnceMedia(
+  { message: viewOnceQuotedContext },
+  ['image', 'video'],
+)
+assert.equal(quotedViewOnce?.kind, 'image')
+assert.equal(quotedViewOnce?.found.key, 'imageMessage')
+
+const directViewOnceContext = {
+  key: { remoteJid: '120363000000000000@g.us', id: 'view-once-video-id' },
+  message: {
+    ephemeralMessage: {
+      message: {
+        viewOnceMessageV2Extension: {
+          message: {
+            videoMessage: {
+              mimetype: 'video/mp4',
+              viewOnce: true,
+              mediaKey: Buffer.alloc(32, 3),
+            },
+          },
+        },
+      },
+    },
+  },
+}
+const directViewOnce = resolveCommandViewOnceMedia(
+  { message: directViewOnceContext },
+  ['image', 'video'],
+)
+assert.equal(directViewOnce?.kind, 'video')
+
+const ordinaryQuotedImage = {
+  key: { remoteJid: '120363000000000000@g.us', id: 'ordinary-command-id' },
+  message: {
+    extendedTextMessage: {
+      text: '.s',
+      contextInfo: {
+        stanzaId: 'ordinary-image-id',
+        participant: '2348000000000@s.whatsapp.net',
+        quotedMessage: {
+          imageMessage: {
+            mimetype: 'image/jpeg',
+            mediaKey: Buffer.alloc(32, 1),
+            directPath: '/ordinary/image',
+          },
+        },
+      },
+    },
+  },
+}
+assert.equal(
+  resolveCommandViewOnceMedia({ message: ordinaryQuotedImage }, ['image', 'video']),
+  null,
+  'ordinary group images must keep using the normal conversion path',
+)
+
+let viewOnceDownloadCalled = false
+await assert.rejects(
+  downloadCommandMedia({
+    message: viewOnceQuotedContext,
+    account: {
+      sock: {
+        async refreshMediaConn() {},
+        getMediaHost() { return 'media.whatsapp.net' },
+      },
+    },
+  }, ['image', 'video']),
+  /cannot convert or copy View Once media/i,
+)
+assert.equal(viewOnceDownloadCalled, false,
+  'the View Once guard must stop before the media downloader is invoked')
 
 // Media downloads must use the socket's current media_conn host, not
 // Baileys' hard-coded default CDN host. A transient fetch failure gets one

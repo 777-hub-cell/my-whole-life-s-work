@@ -1,7 +1,6 @@
 package com.aharane.studio.features.chats
 
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -300,7 +299,7 @@ class ConversationScreenTest {
 
         compose.onNodeWithContentDescription("Cancel voice note").assertIsDisplayed().performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("Recording voice note · Tap send to finish").assertDoesNotExist()
+        compose.onAllNodesWithText("Recording voice note · Tap send to finish").assertCountEquals(0)
         compose.runOnIdle {
             assertEquals(1, cancelled)
             assertEquals(0, sent)

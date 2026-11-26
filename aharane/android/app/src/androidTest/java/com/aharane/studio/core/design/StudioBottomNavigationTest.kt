@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -55,7 +56,7 @@ class StudioBottomNavigationTest {
             }
         }
 
-        compose.onNodeWithText("Aharane").assertDoesNotExist()
+        compose.onAllNodesWithText("Aharane").assertCountEquals(0)
         compose.onNodeWithText("Online").assertIsDisplayed()
 
         compose.runOnIdle { showBrand.value = true }

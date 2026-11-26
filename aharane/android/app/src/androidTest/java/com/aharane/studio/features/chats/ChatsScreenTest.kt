@@ -4,7 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -48,11 +49,11 @@ class ChatsScreenTest {
         }
 
         compose.onNodeWithText("Private contact").assertIsDisplayed()
-        compose.onNodeWithText("Public contact").assertDoesNotExist()
+        compose.onAllNodesWithText("Public contact").assertCountEquals(0)
         compose.onNodeWithContentDescription("Switch to Public WhatsApp").performClick()
         compose.waitForIdle()
         compose.onNodeWithText("Public contact").assertIsDisplayed()
-        compose.onNodeWithText("Private contact").assertDoesNotExist()
+        compose.onAllNodesWithText("Private contact").assertCountEquals(0)
         compose.onNodeWithContentDescription("Switch to Private WhatsApp").assertIsDisplayed()
     }
 
@@ -81,23 +82,23 @@ class ChatsScreenTest {
 
         compose.onNodeWithText("Unread person").assertIsDisplayed()
         compose.onNodeWithText("Project group").assertIsDisplayed()
-        compose.onNodeWithText("Archived person").assertDoesNotExist()
-        compose.onNodeWithText("Other account chat").assertDoesNotExist()
+        compose.onAllNodesWithText("Archived person").assertCountEquals(0)
+        compose.onAllNodesWithText("Other account chat").assertCountEquals(0)
 
         compose.onNodeWithText("Unread").performClick()
         compose.waitForIdle()
         compose.onNodeWithText("Unread person").assertIsDisplayed()
-        compose.onNodeWithText("Project group").assertDoesNotExist()
+        compose.onAllNodesWithText("Project group").assertCountEquals(0)
 
         compose.onNodeWithText("Groups").performClick()
         compose.waitForIdle()
         compose.onNodeWithText("Project group").assertIsDisplayed()
-        compose.onNodeWithText("Unread person").assertDoesNotExist()
+        compose.onAllNodesWithText("Unread person").assertCountEquals(0)
 
         compose.onNodeWithText("Archived").performClick()
         compose.waitForIdle()
         compose.onNodeWithText("Archived person").assertIsDisplayed()
-        compose.onNodeWithText("Project group").assertDoesNotExist()
+        compose.onAllNodesWithText("Project group").assertCountEquals(0)
     }
 
     @Test
@@ -120,7 +121,7 @@ class ChatsScreenTest {
         }
 
         compose.onNodeWithText("Long press contact").performTouchInput { swipeLeft() }
-        compose.onNodeWithText("Conversation actions").assertDoesNotExist()
+        compose.onAllNodesWithText("Conversation actions").assertCountEquals(0)
 
         compose.onNodeWithText("Long press contact").performTouchInput { longClick() }
         compose.onNodeWithText("Conversation actions").assertIsDisplayed()
@@ -149,8 +150,8 @@ class ChatsScreenTest {
 
         compose.onNodeWithText("Subscribed Channels").assertIsDisplayed()
         compose.onNodeWithText("Connect this WhatsApp session to view its subscribed Channels.").assertIsDisplayed()
-        compose.onNodeWithText("Ordinary conversation").assertDoesNotExist()
-        compose.onNodeWithText("Status").assertDoesNotExist()
+        compose.onAllNodesWithText("Ordinary conversation").assertCountEquals(0)
+        compose.onAllNodesWithText("Status").assertCountEquals(0)
     }
 }
 

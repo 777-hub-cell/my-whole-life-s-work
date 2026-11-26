@@ -1,10 +1,10 @@
 {
-  "releaseId": "night-sticker-sound-pr91-20261126",
+  "releaseId": "night-sticker-metadata-speed-pr94-20261126",
   "baseBranch": "mscc-azure",
-  "baseCommit": "9502c452cdb1007a63d43f93358b265445639892",
+  "baseCommit": "b43a9381806c7a54f31b58a8baa5940394762779",
   "pullRequests": [
-    91
+    94
   ],
-  "preparedAt": "2026-11-26T17:47:11.237Z",
-  "notes": "Release native sound-sticker support for .sticker from PR #91. Preserve video audio inside one WhatsApp sound-sticker message; silent videos remain animated stickers."
+  "preparedAt": "2026-11-26T18:57:32.163Z",
+  "notes": "Fix sound-sticker EXIF JSON offset and sticker timestamp; use trailing .sticker/.s args for pack name without changing publisher; reduce video sticker conversion work with combined first-pass audio/WebP encoding and faster animation settings."
 }

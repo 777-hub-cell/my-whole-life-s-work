@@ -144,6 +144,9 @@ fun ConversationScreen(
     onAttach: () -> Unit = {},
     onPickSticker: () -> Unit = {},
     onReuseSticker: (ChatMessage) -> Unit = {},
+    stickers: List<StickerEntry> = emptyList(),
+    onSendSticker: (StickerEntry) -> Unit = {},
+    onDeleteSticker: (StickerEntry) -> Unit = {},
     onRecordVoice: () -> Unit = {},
     canQueueMedia: Boolean = connected,
     voiceRecording: Boolean = false,
@@ -187,6 +190,7 @@ fun ConversationScreen(
     var selectedSearchDay by rememberSaveable { mutableStateOf<Long?>(null) }
     var moreOpen by remember { mutableStateOf(false) }
     var stickerTrayOpen by remember { mutableStateOf(false) }
+    var recentStickerDialogOpen by remember { mutableStateOf(false) }
     var pollCreateOpen by remember { mutableStateOf(false) }
     var pollQuestionDraft by rememberSaveable(conversation.key.account.apiValue, conversation.key.jid) { mutableStateOf("") }
     var pollOptionsDraft by remember { mutableStateOf(listOf("", "")) }
@@ -261,8 +265,8 @@ fun ConversationScreen(
         messages.filter { it.kind == MessageKind.STICKER && it.key == conversation.key }
             .takeLast(12).asReversed()
     }
-    LaunchedEffect(stickerTrayOpen, recentStickers) {
-        if (stickerTrayOpen) recentStickers.forEach(onLoadMediaPreview)
+    LaunchedEffect(recentStickerDialogOpen, recentStickers) {
+        if (recentStickerDialogOpen) recentStickers.forEach(onLoadMediaPreview)
     }
 
     LaunchedEffect(search, selectedSearchDay, connected, conversation.key) {
@@ -291,7 +295,8 @@ fun ConversationScreen(
     }
     BackHandler {
         when {
-            stickerTrayOpen -> stickerTrayOpen = false
+            recentStickerDialogOpen -> recentStickerDialogOpen = false
+            recentStickerDialogOpen -> recentStickerDialogOpen = false
             moreOpen -> moreOpen = false
             actionMessage != null -> actionMessage = null
             forwardMessage != null -> forwardMessage = null
@@ -733,10 +738,10 @@ fun ConversationScreen(
             horizontalArrangement = Arrangement.spacedBy(7.dp)
         ) {
             ConversationTool(
-                Icons.Outlined.Image,
+                StickerIcon,
                 "Open sticker tray",
-                enabled = canQueueMedia && !voiceRecording,
-                onClick = { stickerTrayOpen = true }
+                enabled = !voiceRecording,
+                onClick = { recentStickerDialogOpen = !recentStickerDialogOpen }
             )
             ConversationTool(
                 Icons.Outlined.AttachFile,
@@ -818,10 +823,23 @@ fun ConversationScreen(
                 )
             }
         }
+        if (recentStickerDialogOpen) {
+            StickerTrayPanel(
+                stickers = stickers,
+                canSend = canQueueMedia && !voiceRecording,
+                onSend = { entry ->
+                    onSendSticker(entry)
+                    recentStickerDialogOpen = false
+                },
+                onAdd = onPickSticker,
+                onDelete = onDeleteSticker,
+                onRecent = { recentStickerDialogOpen = true }
+            )
+        }
     }
 
-    if (stickerTrayOpen) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = { stickerTrayOpen = false }) {
+    if (recentStickerDialogOpen) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { recentStickerDialogOpen = false }) {
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
                     .background(StudioPalette.Surface).padding(16.dp),
@@ -861,7 +879,7 @@ fun ConversationScreen(
                                 Text("Recent sticker", color = StudioPalette.Muted, fontSize = 10.5.sp)
                             }
                             StudioActionButton("Send", compact = true, enabled = canQueueMedia, onClick = {
-                                stickerTrayOpen = false
+                                recentStickerDialogOpen = false
                                 onReuseSticker(sticker)
                             })
                         }
@@ -873,11 +891,11 @@ fun ConversationScreen(
                     primary = true,
                     enabled = canQueueMedia && !voiceRecording,
                     onClick = {
-                        stickerTrayOpen = false
+                        recentStickerDialogOpen = false
                         onPickSticker()
                     }
                 )
-                StudioActionButton("Close", modifier = Modifier.fillMaxWidth(), onClick = { stickerTrayOpen = false })
+                StudioActionButton("Close", modifier = Modifier.fillMaxWidth(), onClick = { recentStickerDialogOpen = false })
             }
         }
     }

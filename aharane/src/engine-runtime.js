@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { lookup as dnsLookup } from 'node:dns/promises'
 import https from 'node:https'
 import { isIP } from 'node:net'
+import { Worker } from 'node:worker_threads'
 import { validateEngineInputs, validateEngineManifest, validateEngineOutputs } from './engine-contract.js'
 
 // QuickJS is loaded lazily so the policy, limiter and error-contract code in this module can be
@@ -250,7 +251,7 @@ function createGuard(deadline, signal) {
  *
  * Failures throw EngineExecutionError with a stable `outcome` (see the class).
  */
-export async function executeCustomEngine(engine, inputValues, options = {}) {
+export async function executeCustomEngineInline(engine, inputValues, options = {}) {
   const signal = options.signal
   if (signal?.aborted) throw new EngineExecutionError('cancelled', 'The Engine run was cancelled.')
   let manifest, inputs, source
@@ -382,6 +383,132 @@ export async function executeCustomEngine(engine, inputValues, options = {}) {
   } finally {
     guard.dispose()
     try { context?.dispose() } catch { /* a context still suspended on a host call cannot be disposed cleanly */ }
+    release()
+  }
+}
+
+
+// The in-worker QuickJS deadline normally reports first. This main-thread backstop
+// can terminate a worker that gets stuck before QuickJS finishes starting.
+const WORKER_BACKSTOP_MS = 2_000
+const WORKER_RESOURCE_LIMITS = Object.freeze({
+  maxOldGenerationSizeMb: 128,
+  maxYoungGenerationSizeMb: 16,
+  stackSizeMb: 4,
+})
+
+/** Test doubles cannot cross a Worker boundary, so injected adapters stay inline. */
+export function engineIsolationFor(options = {}) {
+  if (options.isolation === 'inline') return 'inline'
+  if (options.quickjs || options.networkFetch || options.lookup) return 'inline'
+  return 'worker'
+}
+
+/** Run production Engines in a separately terminable thread. */
+export async function executeCustomEngine(engine, inputValues, options = {}) {
+  if (engineIsolationFor(options) === 'inline') {
+    return executeCustomEngineInline(engine, inputValues, options)
+  }
+
+  const signal = options.signal
+  if (signal?.aborted) {
+    throw new EngineExecutionError('cancelled', 'The Engine run was cancelled.')
+  }
+
+  let manifest
+  try {
+    manifest = validateEngineManifest(engine?.manifest || engine)
+    validateEngineInputs(manifest, inputValues)
+  } catch (error) {
+    throw new EngineExecutionError('input_invalid', String(error?.message || error).slice(0, 300))
+  }
+
+  const release = await (options.limiter || defaultLimiter).acquire(signal)
+  let worker = null
+  let onAbort = null
+  let backstop = null
+  try {
+    if (signal?.aborted) {
+      throw new EngineExecutionError('cancelled', 'The Engine run was cancelled.')
+    }
+    return await new Promise((resolve, reject) => {
+      let settled = false
+      const finish = (fn, value) => {
+        if (settled) return
+        settled = true
+        clearTimeout(backstop)
+        fn(value)
+      }
+      const timeoutError = () => new EngineExecutionError(
+        'timeout',
+        'Engine execution exceeded its ' + manifest.timeoutMs + ' ms time limit.'
+      )
+
+      try {
+        worker = new Worker(new URL('./engine-worker.js', import.meta.url), {
+          workerData: {
+            engine: { manifest: engine?.manifest || engine, code: engine?.code },
+            inputValues,
+          },
+          resourceLimits: WORKER_RESOURCE_LIMITS,
+          env: {},
+          stdout: false,
+          stderr: false,
+        })
+      } catch {
+        return finish(reject, new EngineExecutionError(
+          'infrastructure',
+          'The Engine sandbox is unavailable on this server.'
+        ))
+      }
+
+      worker.once('message', message => {
+        if (message?.ok) return finish(resolve, message.result)
+        const error = message?.error || {}
+        finish(reject, new EngineExecutionError(
+          error.outcome || 'infrastructure',
+          String(error.message || 'The Engine sandbox failed unexpectedly.').slice(0, 400),
+          { denials: Array.isArray(error.denials) ? error.denials : [] }
+        ))
+      })
+      worker.once('error', error => {
+        if (error?.code === 'ERR_WORKER_OUT_OF_MEMORY') {
+          return finish(reject, new EngineExecutionError(
+            'resource_exhausted',
+            'Engine execution exceeded its memory limit.'
+          ))
+        }
+        finish(reject, new EngineExecutionError(
+          'infrastructure',
+          'The Engine sandbox failed unexpectedly.'
+        ))
+      })
+      worker.once('exit', () => finish(reject, new EngineExecutionError(
+        'infrastructure',
+        'The Engine sandbox stopped unexpectedly.'
+      )))
+
+      if (signal) {
+        onAbort = () => finish(reject, new EngineExecutionError(
+          'cancelled',
+          'The Engine run was cancelled.'
+        ))
+        if (signal.aborted) onAbort()
+        else signal.addEventListener('abort', onAbort, { once: true })
+      }
+      if (!settled) {
+        backstop = setTimeout(
+          () => finish(reject, timeoutError()),
+          manifest.timeoutMs + WORKER_BACKSTOP_MS
+        )
+      }
+    })
+  } finally {
+    clearTimeout(backstop)
+    if (signal && onAbort) signal.removeEventListener('abort', onAbort)
+    if (worker) {
+      try { await worker.terminate() } catch { /* worker already exited */ }
+    }
     release()
   }
 }

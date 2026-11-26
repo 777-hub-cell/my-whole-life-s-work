@@ -82,6 +82,8 @@ import com.aharane.studio.core.navigation.MainDestination
 import com.aharane.studio.features.chats.ChatsScreen
 import com.aharane.studio.features.notes.EncryptedNotesStore
 import com.aharane.studio.features.chats.ConversationScreen
+import com.aharane.studio.features.chats.StickerEntry
+import com.aharane.studio.features.chats.StickerLibrary
 import com.aharane.studio.features.chats.validateWebpStickerPayload
 import com.aharane.studio.features.chats.MAX_WEBP_STICKER_BYTES
 import com.aharane.studio.features.commands.VisualCommandBuilderScreen
@@ -857,6 +859,11 @@ fun AharaneApp(
         }
     }
 
+    // Stickers are stored in this app's private files directory on this device.
+    val stickerLibrary = remember(context) { StickerLibrary(context.applicationContext) }
+    var stickerEntries by remember { mutableStateOf(emptyList<StickerEntry>()) }
+    LaunchedEffect(stickerLibrary) { stickerEntries = stickerLibrary.list() }
+
     val chatStickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -865,9 +872,8 @@ fun AharaneApp(
             connectionScope.launch {
                 try {
                     require(!previewMode && localChatRepository != null) {
-                        "Encrypted local chat storage is unavailable."
+                        "Local chat storage is unavailable."
                     }
-                    val selectedName = queryDisplayName(context, uri)
                     val bytes = withContext(Dispatchers.IO) {
                         val input = context.contentResolver.openInputStream(uri)
                             ?: error("Could not read the selected sticker.")
@@ -888,13 +894,14 @@ fun AharaneApp(
                         }
                     }
                     val invalidReason = validateWebpStickerPayload(bytes)
-                    require(invalidReason == null) { invalidReason ?: "Choose a valid WebP sticker." }
-                    val fileName = selectedName.takeIf { it.endsWith(".webp", ignoreCase = true) }
-                        ?: "sticker.webp"
-                    enqueueOutgoingMedia(conversation, bytes, "image/webp", fileName, "")
-                    Toast.makeText(context, "Sticker saved to the encrypted outbox.", Toast.LENGTH_SHORT).show()
+                    require(invalidReason == null) {
+                        invalidReason ?: "Choose a valid WebP sticker."
+                    }
+                    stickerLibrary.add(bytes)
+                    stickerEntries = stickerLibrary.list()
+                    Toast.makeText(context, "Sticker added to your tray.", Toast.LENGTH_SHORT).show()
                 } catch (error: Exception) {
-                    Toast.makeText(context, error.message ?: "Sticker could not be sent.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, error.message ?: "Sticker could not be added.", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -2062,10 +2069,36 @@ fun AharaneApp(
                         }
                     },
                     onPickSticker = {
-                        if (!previewMode && localChatRepository != null && connectionManager.hasSavedSession()) {
+                        if (!previewMode && localChatRepository != null) {
                             chatStickerLauncher.launch(arrayOf("image/webp"))
                         } else {
-                            Toast.makeText(context, "Sign in to Aharane to keep stickers in your encrypted outbox.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Sign in to Aharane to add stickers to your tray.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    stickers = stickerEntries,
+                    onSendSticker = { entry ->
+                        val target = activeConversation
+                        if (target != null && !previewMode && localChatRepository != null && connectionManager.hasSavedSession()) {
+                            connectionScope.launch {
+                                try {
+                                    val bytes = stickerLibrary.read(entry)
+                                    enqueueOutgoingMedia(target, bytes, "image/webp", entry.id + ".webp", "")
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Sticker could not be sent.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        } else {
+                            Toast.makeText(context, "Sign in to Aharane to send stickers.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onDeleteSticker = { entry ->
+                        connectionScope.launch {
+                            try {
+                                stickerLibrary.remove(entry)
+                                stickerEntries = stickerLibrary.list()
+                            } catch (error: Exception) {
+                                Toast.makeText(context, error.message ?: "Sticker could not be removed.", Toast.LENGTH_LONG).show()
+                            }
                         }
                     },
                     onReuseSticker = { sticker ->

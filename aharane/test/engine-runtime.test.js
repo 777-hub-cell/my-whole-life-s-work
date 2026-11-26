@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { executeCustomEngine } from '../src/engine-runtime.js'
+import { executeCustomEngine, engineIsolationFor } from '../src/engine-runtime.js'
 
 function makeEngine(manifest = {}, code = 'export async function run(inputs) { return { result: inputs.query.toUpperCase() } }') {
   return {
@@ -48,4 +48,30 @@ test('does not expose the network capability without permission', async () => {
   const engine = makeEngine({}, 'export function run(inputs, context) { return { result: typeof context.network.fetch } }')
   const result = await executeCustomEngine(engine, { query: 'x' })
   assert.equal(result.outputs.result, 'undefined')
+})
+
+
+test('production Engines use worker isolation while injected test doubles stay inline', () => {
+  assert.equal(engineIsolationFor(), 'worker')
+  assert.equal(engineIsolationFor({ isolation: 'inline' }), 'inline')
+  assert.equal(engineIsolationFor({ quickjs: {} }), 'inline')
+  assert.equal(engineIsolationFor({ networkFetch: async () => ({}) }), 'inline')
+  assert.equal(engineIsolationFor({ lookup: async () => [] }), 'inline')
+})
+
+test('a synchronous Engine loop can be cancelled without blocking the main event loop', async () => {
+  const controller = new AbortController()
+  const abortTimer = setTimeout(() => controller.abort(), 80)
+  try {
+    const engine = makeEngine(
+      { timeoutMs: 3_000 },
+      'export function run() { while (true) {} }'
+    )
+    await assert.rejects(
+      executeCustomEngine(engine, { query: 'x' }, { signal: controller.signal }),
+      error => error?.outcome === 'cancelled'
+    )
+  } finally {
+    clearTimeout(abortTimer)
+  }
 })

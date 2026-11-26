@@ -139,21 +139,21 @@ assert.equal(
   'ordinary group images must keep using the normal conversion path',
 )
 
-let viewOnceDownloadCalled = false
+let viewOnceMediaRefreshCalled = false
 await assert.rejects(
   downloadCommandMedia({
     message: viewOnceQuotedContext,
     account: {
       sock: {
-        async refreshMediaConn() {},
+        async refreshMediaConn() { viewOnceMediaRefreshCalled = true },
         getMediaHost() { return 'media.whatsapp.net' },
       },
     },
   }, ['image', 'video']),
   /cannot convert or copy View Once media/i,
 )
-assert.equal(viewOnceDownloadCalled, false,
-  'the View Once guard must stop before the media downloader is invoked')
+assert.equal(viewOnceMediaRefreshCalled, false,
+  'the View Once guard must stop before preparing a media download')
 
 // Media downloads must use the socket's current media_conn host, not
 // Baileys' hard-coded default CDN host. A transient fetch failure gets one

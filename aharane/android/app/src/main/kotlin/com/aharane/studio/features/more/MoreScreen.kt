@@ -1063,7 +1063,7 @@ private fun RowScope.LauncherIconOption(
     onClick: () -> Unit
 ) {
     Column(
-        Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+        Modifier.weight(1f).height(126.dp).clip(RoundedCornerShape(12.dp))
             .background(if (selected) StudioPalette.Soft else StudioPalette.Background)
             .border(
                 if (selected) 1.5.dp else 1.dp,
@@ -1071,13 +1071,27 @@ private fun RowScope.LauncherIconOption(
                 RoundedCornerShape(12.dp)
             )
             .clickable(onClick = onClick)
-            .padding(vertical = 12.dp, horizontal = 5.dp),
+            .padding(vertical = 8.dp, horizontal = 5.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(7.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Image(painterResource(iconRes), contentDescription = "$label Aharane app icon", modifier = Modifier.size(52.dp))
-        Text(label, color = if (selected) StudioPalette.Accent else StudioPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-        if (selected) Text("Selected", color = StudioPalette.Accent, fontSize = 10.sp)
+        val tileColor = when (label.lowercase()) {
+            "night" -> Color(0xFF101816)
+            "mono" -> Color(0xFF252B29)
+            else -> Color(0xFF0E7A5C)
+        }
+        Box(
+            Modifier.size(62.dp).clip(CircleShape).background(tileColor),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painterResource(iconRes),
+                contentDescription = "$label Aharane app icon",
+                modifier = Modifier.size(43.dp)
+            )
+        }
+        Text(label, color = if (selected) StudioPalette.Accent else StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+        Text(if (selected) "Selected" else " ", color = StudioPalette.Accent, fontSize = 10.sp, lineHeight = 12.sp)
     }
 }
 
@@ -1103,27 +1117,27 @@ private fun PreferenceSwitch(
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        Modifier.fillMaxWidth().defaultMinSize(minHeight = 58.dp)
+        Modifier.fillMaxWidth().defaultMinSize(minHeight = 68.dp)
             .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange)
-            .padding(vertical = 7.dp),
+            .padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, color = if (enabled) StudioPalette.Ink else StudioPalette.Muted, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
-            Text(description, color = StudioPalette.Muted, fontSize = 12.sp, lineHeight = 16.sp)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, color = if (enabled) StudioPalette.Ink else StudioPalette.Muted, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(description, color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 18.sp)
         }
-        Switch(
-            checked = checked,
-            onCheckedChange = null,
-            enabled = enabled,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
-                checkedTrackColor = StudioPalette.Accent,
-                uncheckedThumbColor = StudioPalette.Muted,
-                uncheckedTrackColor = StudioPalette.Line
+        Box(
+            Modifier.width(48.dp).height(28.dp).clip(CircleShape)
+                .background(if (checked && enabled) StudioPalette.Accent else StudioPalette.Line)
+                .padding(3.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Box(
+                Modifier.offset(x = if (checked) 20.dp else 0.dp).size(22.dp)
+                    .clip(CircleShape).background(Color.White)
             )
-        )
+        }
     }
 }
 
@@ -1153,13 +1167,13 @@ private fun StudioPreferenceSlider(
         onValueChangeFinished = onValueChangeFinished,
         valueRange = valueRange,
         steps = steps,
-        modifier = Modifier.fillMaxWidth().height(52.dp),
+        modifier = Modifier.fillMaxWidth().height(60.dp),
         colors = SliderDefaults.colors(
-            thumbColor = StudioPalette.Accent,
+            thumbColor = Color.White,
             activeTrackColor = StudioPalette.Accent,
             inactiveTrackColor = StudioPalette.Line,
-            activeTickColor = StudioPalette.Surface,
-            inactiveTickColor = StudioPalette.Muted.copy(alpha = 0.32f)
+            activeTickColor = StudioPalette.Accent.copy(alpha = 0.55f),
+            inactiveTickColor = StudioPalette.Muted.copy(alpha = 0.28f)
         )
     )
 }

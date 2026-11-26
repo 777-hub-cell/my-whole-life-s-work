@@ -60,6 +60,9 @@ import com.aharane.studio.core.network.AharaneApiException
 import com.aharane.studio.core.storage.EncryptedMediaCache
 import com.aharane.studio.core.storage.ChatSyncScheduler
 import com.aharane.studio.core.storage.LocalChatRepository
+import com.aharane.studio.core.storage.EncryptedWorkspaceStore
+import com.aharane.studio.core.storage.WorkspaceSyncService
+import com.aharane.studio.core.storage.WorkspaceSyncScheduler
 import com.aharane.studio.features.chats.ChatAppearanceStore
 import com.aharane.studio.core.notifications.AharaneNotificationScheduler
 import com.aharane.studio.core.network.AharaneRepository
@@ -139,6 +142,8 @@ fun AharaneApp(
     val repository = remember(connectionManager) { AharaneRepository(connectionManager) }
     val chatAppearanceStore = remember(context, previewMode) { ChatAppearanceStore(context.applicationContext, previewMode) }
     val encryptedMediaCache = remember(context) { EncryptedMediaCache(context.applicationContext) }
+    val workspaceStore = remember(context) { EncryptedWorkspaceStore(context.applicationContext) }
+    var workspaceRevision by remember { mutableIntStateOf(0) }
     var chatAppearanceRevision by remember { mutableIntStateOf(0) }
     var localChatRepository by remember { mutableStateOf<LocalChatRepository?>(null) }
     var localChatStorageError by remember { mutableStateOf("") }
@@ -162,7 +167,10 @@ fun AharaneApp(
         }
     }
 
-    var authenticated by remember(previewMode) { mutableStateOf(previewMode) }
+    val hasLocalSession = remember(connectionManager, previewMode) {
+        !previewMode && connectionManager.hasSavedSession()
+    }
+    var authenticated by remember(previewMode, hasLocalSession) { mutableStateOf(previewMode || hasLocalSession) }
     var restoringSession by remember(connectionManager, previewMode) {
         mutableStateOf(!previewMode && connectionManager.hasSavedSession())
     }
@@ -182,25 +190,24 @@ fun AharaneApp(
 
     LaunchedEffect(connectionManager, connectionUrl, restoringSession) {
         if (!restoringSession) return@LaunchedEffect
+        // A saved local session opens cached content immediately; network validation stays in the background.
+        authenticated = true
         connectionBusy = true
         try {
             if (connectionManager.restoreSession()) {
                 authenticated = true
+            } else if (connectionManager.api?.hasSavedSession() == true) {
+                // The encrypted session is still valid locally; don't perform a second
+                // network probe just because the server is temporarily unreachable.
+                authenticated = true
+                connectionError = "Offline access · showing content saved on this phone."
             } else {
                 val result = connectionManager.connect(connectionUrl)
                 val auth = result.optJSONObject("auth") ?: JSONObject()
                 serverVerified = true
                 setupRequired = auth.optBoolean("setupRequired")
                 connectionUrl = connectionManager.savedStudioUrl
-                if (connectionManager.api?.hasSavedSession() == true) {
-                    runCatching {
-                        connectionManager.api?.get("status")
-                        authenticated = true
-                    }.onFailure {
-                        authenticated = true
-                        connectionError = "Offline access · showing chats saved on this phone."
-                    }
-                }
+                authenticated = false
             }
         } catch (error: Exception) {
             if (connectionManager.hasSavedSession()) {
@@ -213,32 +220,6 @@ fun AharaneApp(
             restoringSession = false
             connectionBusy = false
         }
-    }
-
-    if (restoringSession) {
-        Box(
-            Modifier.fillMaxSize().background(StudioPalette.Background),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Image(
-                    painter = painterResource(com.aharane.studio.R.drawable.ic_aharane_brand),
-                    contentDescription = "Aharane logo",
-                    modifier = Modifier.size(76.dp)
-                )
-                Text("Aharane", color = StudioPalette.Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                androidx.compose.material3.CircularProgressIndicator(
-                    modifier = Modifier.size(22.dp),
-                    color = StudioPalette.Accent,
-                    strokeWidth = 2.dp
-                )
-                Text("Restoring your workspace…", color = StudioPalette.Muted, fontSize = 12.5.sp)
-            }
-        }
-        return
     }
 
     if (!authenticated) {
@@ -633,7 +614,7 @@ fun AharaneApp(
         isVoiceNote: Boolean = false,
         durationSeconds: Int = 0,
         quotedMessageId: String? = null
-    ) {
+    ): String {
         val local = localChatRepository ?: error("Encrypted offline chat storage is unavailable.")
         require(bytes.isNotEmpty() && bytes.size <= 24 * 1024 * 1024) {
             "WhatsApp attachments are limited to 24 MB in Aharane."
@@ -657,6 +638,7 @@ fun AharaneApp(
         }
         activeMessages = local.messages(conversation.key)
         mediaOutboxRevision += 1
+        return clientMessageId
     }
 
     fun stopAndSendVoiceNote() {
@@ -948,8 +930,11 @@ fun AharaneApp(
         runCatching { repository.fileTree() }
             .onSuccess { fileDraft = it }
             .onFailure { failures += "Files draft: ${it.message ?: "unavailable"}" }
-        runCatching { repository.allFiles() }
-            .onSuccess { serverFiles = it }
+        runCatching { WorkspaceSyncService.sync(repository, workspaceStore) }
+            .onSuccess {
+                serverFiles = it
+                workspaceRevision += 1
+            }
             .onFailure { failures += "Files: ${it.message ?: "unavailable"}" }
         runCatching { repository.chats(ChatAccount.PRIVATE) }
             .onSuccess {
@@ -1108,22 +1093,51 @@ fun AharaneApp(
             return
         }
         connectionScope.launch {
+            val cachedRecord = workspaceStore.file(path)
+            val cachedText = workspaceStore.readText(path)
             try {
-                val source = repository.previewFile(path)
-                val existingIndex = editorDocuments.indexOfFirst { it.path == path }
-                val document = StudioEditorDocument(
-                    path = source.path,
-                    content = source.content,
-                    languageLabel = source.language.replaceFirstChar { it.uppercase(Locale.ROOT) },
-                    sha256 = source.sha256
-                )
-                if (existingIndex >= 0) editorDocuments[existingIndex] = document
-                else editorDocuments.add(document)
+                val source = if (serverReachable) repository.previewFile(path) else null
+                if (source != null) {
+                    runCatching {
+                        workspaceStore.cacheRemoteText(source.path, source.content, source.sha256, source.language)
+                        workspaceRevision += 1
+                    }
+                    val document = StudioEditorDocument(
+                        path = source.path, content = source.content,
+                        languageLabel = source.language.replaceFirstChar { it.uppercase(Locale.ROOT) },
+                        sha256 = source.sha256
+                    )
+                    val index = editorDocuments.indexOfFirst { it.path == path }
+                    if (index >= 0) editorDocuments[index] = document else editorDocuments.add(document)
+                } else if (cachedText != null && cachedRecord != null) {
+                    val document = StudioEditorDocument(
+                        path = path, content = cachedText,
+                        languageLabel = cachedRecord.language.ifBlank { "Text" }.replaceFirstChar { it.uppercase(Locale.ROOT) },
+                        sha256 = cachedRecord.serverSha256
+                    )
+                    val index = editorDocuments.indexOfFirst { it.path == path }
+                    if (index >= 0) editorDocuments[index] = document else editorDocuments.add(document)
+                } else {
+                    error("This file has not been saved for offline use yet. Connect once to cache it.")
+                }
                 activeEditorPath = path
                 editorOpen = true
                 activeConversation = null
             } catch (error: Exception) {
-                Toast.makeText(context, error.message ?: "Could not open source file.", Toast.LENGTH_LONG).show()
+                if (cachedText != null && cachedRecord != null) {
+                    val document = StudioEditorDocument(
+                        path = path, content = cachedText,
+                        languageLabel = cachedRecord.language.ifBlank { "Text" }.replaceFirstChar { it.uppercase(Locale.ROOT) },
+                        sha256 = cachedRecord.serverSha256
+                    )
+                    val index = editorDocuments.indexOfFirst { it.path == path }
+                    if (index >= 0) editorDocuments[index] = document else editorDocuments.add(document)
+                    activeEditorPath = path
+                    editorOpen = true
+                    activeConversation = null
+                } else {
+                    Toast.makeText(context, error.message ?: "Could not open source file.", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -1422,9 +1436,9 @@ fun AharaneApp(
             )
         }
     }
-    LaunchedEffect(tabPagerState) {
+    LaunchedEffect(tabPagerState, activeConversation) {
         snapshotFlow { tabPagerState.settledPage }.collect { page ->
-            if (page in MainDestination.entries.indices) {
+            if (activeConversation == null && page in MainDestination.entries.indices) {
                 val name = MainDestination.entries[page].name
                 if (destinationName != name) destinationName = name
             }
@@ -1612,10 +1626,20 @@ fun AharaneApp(
         }
     }
     val currentChats = if (previewMode) DesignPreviewFixtures.conversations else chatsByAccount[selectedAccount].orEmpty()
+    val cachedWorkspaceEntries = remember(workspaceRevision) { workspaceStore.entries() }
     val sourceFileEntries = if (previewMode) {
         DesignPreviewFixtures.files.map { StudioFileEntry(it.name, it.path, it.isDirectory, it.sizeLabel) }
     } else {
-        serverFiles.map { entry ->
+        val cachedEntries = cachedWorkspaceEntries.map { entry ->
+            StudioFileEntry(
+                name = entry.name,
+                path = entry.path,
+                isDirectory = entry.isDirectory,
+                sizeLabel = entry.sizeBytes?.let(::formatBytes),
+                modifiedLabel = entry.modifiedAt
+            )
+        }
+        (serverFiles + cachedEntries).distinctBy { it.path }.map { entry ->
             StudioFileEntry(
                 name = entry.name,
                 path = entry.path,
@@ -1658,7 +1682,8 @@ fun AharaneApp(
             StudioHeader(
                 connected = connected,
                 preview = previewMode,
-                showBrand = currentDestination == MainDestination.HOME
+                showBrand = currentDestination == MainDestination.HOME,
+                showStatus = false
             )
         }
 
@@ -1723,7 +1748,7 @@ fun AharaneApp(
                     },
                     openDocuments = editorDocuments.toList(),
                     activeDocumentPath = activeEditorPath,
-                    availableFiles = if (previewMode) DesignPreviewFixtures.sourceFiles.keys.toList() else serverFiles.filterNot { it.isDirectory }.map { it.path },
+                    availableFiles = if (previewMode) DesignPreviewFixtures.sourceFiles.keys.toList() else (serverFiles.filterNot { it.isDirectory }.map { it.path } + cachedWorkspaceEntries.filterNot { it.isDirectory }.map { it.path }).distinct(),
                     editable = true,
                     lineNumbers = editorLineNumbers,
                     fontSizeSp = editorFontSize,
@@ -1749,16 +1774,24 @@ fun AharaneApp(
                             try {
                                 val index = editorDocuments.indexOfFirst { it.path == path }
                                 if (index < 0) return@CodeEditorScreen false
-                                val latestSha = repository.saveFile(path, content, editorDocuments[index].sha256)
-                                editorDocuments[index] = editorDocuments[index].copy(content = content, sha256 = latestSha)
-                                // The source write is already committed at this point. A secondary
-                                // directory refresh must not turn a successful save into "unsaved".
-                                runCatching { repository.fileTree() }
-                                    .onSuccess { fileDraft = it }
-                                    .onFailure {
-                                        serverError = it.message ?: "File saved, but the Files list could not refresh."
-                                    }
-                                true
+                                val document = editorDocuments[index]
+                                if (!serverReachable) {
+                                    workspaceStore.saveLocalText(path, content, document.sha256, document.languageLabel)
+                                    editorDocuments[index] = document.copy(content = content)
+                                    workspaceRevision += 1
+                                    WorkspaceSyncScheduler.enqueue(context)
+                                    serverError = "Saved securely on this phone · waiting for connection to sync."
+                                    true
+                                } else {
+                                    val latestSha = repository.saveFile(path, content, document.sha256)
+                                    workspaceStore.cacheRemoteText(path, content, latestSha, document.languageLabel)
+                                    workspaceRevision += 1
+                                    editorDocuments[index] = document.copy(content = content, sha256 = latestSha)
+                                    runCatching { repository.fileTree() }
+                                        .onSuccess { fileDraft = it }
+                                        .onFailure { serverError = it.message ?: "File saved, but the Files list could not refresh." }
+                                    true
+                                }
                             } catch (error: Exception) {
                                 serverError = error.message ?: "Could not save this file."
                                 false
@@ -2017,6 +2050,22 @@ fun AharaneApp(
                             chatStickerLauncher.launch(arrayOf("image/webp"))
                         } else {
                             Toast.makeText(context, "Sign in to Aharane to keep stickers in your encrypted outbox.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onReuseSticker = { sticker ->
+                        val target = activeConversation
+                        if (target != null && !previewMode && localChatRepository != null) {
+                            connectionScope.launch {
+                                try {
+                                    val bytes = obtainCachedOrRemoteMedia(target, sticker)
+                                    enqueueOutgoingMedia(
+                                        target, bytes, "image/webp",
+                                        sticker.mediaFileName ?: "sticker.webp"
+                                    )
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Sticker could not be reused.", Toast.LENGTH_LONG).show()
+                                }
+                            }
                         }
                     },
                     onRecordVoice = {

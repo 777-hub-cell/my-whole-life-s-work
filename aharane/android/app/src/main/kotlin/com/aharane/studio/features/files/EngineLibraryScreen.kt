@@ -20,6 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aharane.studio.core.design.StudioPalette
+import com.aharane.studio.core.design.StudioSearchField
+import com.aharane.studio.core.design.StudioActionButton
 import com.aharane.studio.core.network.AharaneRepository
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -217,12 +219,16 @@ fun EngineLibraryScreen(
                 }
             }
         } else {
-            OutlinedTextField(
-                value = search, onValueChange = { search = it },
-                label = { Text("Search Engines") },
-                modifier = Modifier.fillMaxWidth(), singleLine = true
+            StudioSearchField(
+                value = search,
+                onValueChange = { search = it },
+                placeholder = "Search Engines",
+                showIcon = true
             )
-            Button(
+            StudioActionButton(
+                "Create Engine",
+                modifier = Modifier.fillMaxWidth(),
+                primary = true,
                 enabled = connected,
                 onClick = {
                     editingId = null
@@ -230,9 +236,8 @@ fun EngineLibraryScreen(
                     inputs = "query:string"; outputs = "results:list"; allowedHosts = ""
                     code = "export async function run(inputs) {\n  return { results: [inputs.query] }\n}"
                     editorVisible = true; error = ""
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Create Engine") }
+                }
+            )
             LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 val visible = entries.filter { it.name.contains(search, true) || it.id.contains(search, true) }
                 if (visible.isEmpty()) {

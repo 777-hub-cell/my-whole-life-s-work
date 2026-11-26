@@ -11,6 +11,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -53,6 +55,8 @@ fun ConnectionScreen(
         Modifier.fillMaxSize().background(StudioPalette.Background)
             .windowInsetsPadding(WindowInsets.statusBars)
             .windowInsetsPadding(WindowInsets.navigationBars)
+            .imePadding()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 22.dp, vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -112,32 +116,33 @@ fun ConnectionScreen(
                 exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
                     shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 150 else 0))
             ) {
-                Spacer(Modifier.height(18.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Lock, null, tint = StudioPalette.Accent, modifier = Modifier.size(19.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Spacer(Modifier.height(5.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Lock, null, tint = StudioPalette.Accent, modifier = Modifier.size(19.dp))
+                        Text(
+                            "Studio password",
+                            color = StudioPalette.Ink,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
                     Text(
-                        "Studio password",
-                        color = StudioPalette.Ink,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(start = 8.dp)
+                        "Sign in with the password you created in Aharane Studio. It is used for this sign-in only and is not saved on this phone.",
+                        color = StudioPalette.Muted,
+                        fontSize = 12.5.sp,
+                        lineHeight = 18.sp
+                    )
+                    ConnectionField(
+                        label = "Password",
+                        value = password,
+                        placeholder = "Enter Studio password",
+                        keyboardType = KeyboardType.Password,
+                        password = true,
+                        onValueChange = onPasswordChange
                     )
                 }
-                Text(
-                    "Sign in with the password you created in Aharane Studio. It is used for this sign-in only and is not saved on this phone.",
-                    color = StudioPalette.Muted,
-                    fontSize = 12.5.sp,
-                    lineHeight = 18.sp,
-                    modifier = Modifier.padding(top = 6.dp, bottom = 10.dp)
-                )
-                ConnectionField(
-                    label = "Password",
-                    value = password,
-                    placeholder = "Enter Studio password",
-                    keyboardType = KeyboardType.Password,
-                    password = true,
-                    onValueChange = onPasswordChange
-                )
             }
 
             AnimatedVisibility(

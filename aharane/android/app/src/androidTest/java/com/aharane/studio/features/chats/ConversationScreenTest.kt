@@ -212,7 +212,7 @@ class ConversationScreenTest {
     }
 
     @Test
-    fun connectedComposerExposesStickerPickerWithoutSendingText() {
+    fun connectedComposerOpensStickerTrayBeforeImportingASticker() {
         var stickerPickerRequests = 0
         var sentMessages = 0
         compose.setContent {
@@ -227,10 +227,12 @@ class ConversationScreenTest {
                 )
             }
         }
-        compose.onNodeWithContentDescription("Choose a WebP sticker")
+        compose.onNodeWithContentDescription("Open sticker tray")
             .assertIsDisplayed()
             .assertIsEnabled()
             .performClick()
+        compose.onNodeWithText("Stickers").assertIsDisplayed()
+        compose.onNodeWithText("Import WebP sticker").performClick()
         compose.runOnIdle {
             assertEquals(1, stickerPickerRequests)
             assertEquals(0, sentMessages)

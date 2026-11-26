@@ -7,6 +7,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -95,6 +98,34 @@ class ChatsScreenTest {
         compose.waitForIdle()
         compose.onNodeWithText("Archived person").assertIsDisplayed()
         compose.onNodeWithText("Project group").assertDoesNotExist()
+    }
+
+    @Test
+    fun conversationActionsUseLongPressInsteadOfSwipe() {
+        val conversations = listOf(
+            summary(ChatAccount.PRIVATE, "2348000000008@s.whatsapp.net", "Long press contact")
+        )
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ChatsScreen(
+                    account = ChatAccount.PRIVATE,
+                    onAccountSelected = {},
+                    filter = ChatFilter.ALL,
+                    onFilterSelected = {},
+                    conversations = conversations,
+                    accountConnected = true,
+                    savedShowAvatars = true
+                )
+            }
+        }
+
+        compose.onNodeWithText("Long press contact").performTouchInput { swipeLeft() }
+        compose.onNodeWithText("Conversation actions").assertDoesNotExist()
+
+        compose.onNodeWithText("Long press contact").performTouchInput { longClick() }
+        compose.onNodeWithText("Conversation actions").assertIsDisplayed()
+        compose.onNodeWithText("Archive").assertIsDisplayed()
+        compose.onNodeWithText("Mute").assertIsDisplayed()
     }
 
     @Test

@@ -143,6 +143,7 @@ fun ConversationScreen(
     onSend: (String, ChatMessage?) -> Unit,
     onAttach: () -> Unit = {},
     onPickSticker: () -> Unit = {},
+    onReuseSticker: (ChatMessage) -> Unit = {},
     onRecordVoice: () -> Unit = {},
     canQueueMedia: Boolean = connected,
     voiceRecording: Boolean = false,
@@ -185,6 +186,7 @@ fun ConversationScreen(
     var search by rememberSaveable { mutableStateOf("") }
     var selectedSearchDay by rememberSaveable { mutableStateOf<Long?>(null) }
     var moreOpen by remember { mutableStateOf(false) }
+    var stickerTrayOpen by remember { mutableStateOf(false) }
     var pollCreateOpen by remember { mutableStateOf(false) }
     var pollQuestionDraft by rememberSaveable(conversation.key.account.apiValue, conversation.key.jid) { mutableStateOf("") }
     var pollOptionsDraft by remember { mutableStateOf(listOf("", "")) }
@@ -225,7 +227,7 @@ fun ConversationScreen(
     val contactAvatar by produceState<ImageBitmap?>(
         initialValue = null, conversation.key, connected
     ) {
-        if (connected) {
+        if (connected && conversation.isGroup) {
             val bytes = try {
                 onLoadAvatar(conversation)
             } catch (cancelled: CancellationException) {
@@ -281,6 +283,7 @@ fun ConversationScreen(
     }
     BackHandler {
         when {
+            stickerTrayOpen -> stickerTrayOpen = false
             moreOpen -> moreOpen = false
             actionMessage != null -> actionMessage = null
             forwardMessage != null -> forwardMessage = null
@@ -304,25 +307,22 @@ fun ConversationScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             ConversationTool(Icons.Outlined.ArrowBack, "Back to chats", onClick = onBack)
-            Box(
-                Modifier.padding(start = 2.dp, end = 10.dp).size(38.dp)
-                    .clip(CircleShape).background(StudioPalette.Soft),
-                contentAlignment = Alignment.Center
-            ) {
-                if (contactAvatar != null) {
-                    Image(
-                        bitmap = contactAvatar!!,
-                        contentDescription = "WhatsApp profile picture of " + conversation.title,
-                        modifier = Modifier.fillMaxSize().clip(CircleShape),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Text(
-                        conversation.title.trim().take(1).uppercase(),
-                        color = StudioPalette.Accent,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+            if (conversation.isGroup) {
+                Box(
+                    Modifier.padding(start = 2.dp, end = 10.dp).size(38.dp)
+                        .clip(CircleShape).background(StudioPalette.Soft),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (contactAvatar != null) {
+                        Image(
+                            bitmap = contactAvatar!!,
+                            contentDescription = "WhatsApp group picture of " + conversation.title,
+                            modifier = Modifier.fillMaxSize().clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Text("◎", color = StudioPalette.Accent, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
@@ -724,10 +724,10 @@ fun ConversationScreen(
             horizontalArrangement = Arrangement.spacedBy(7.dp)
         ) {
             ConversationTool(
-                Icons.Outlined.EmojiEmotions,
-                "Choose a WebP sticker",
+                Icons.Outlined.Image,
+                "Open sticker tray",
                 enabled = canQueueMedia && !voiceRecording,
-                onClick = onPickSticker
+                onClick = { stickerTrayOpen = true }
             )
             ConversationTool(
                 Icons.Outlined.AttachFile,
@@ -807,6 +807,52 @@ fun ConversationScreen(
                     tint = if ((hasDraft || voiceRecording) && connected) Color.White else StudioPalette.Muted,
                     modifier = Modifier.size(19.dp)
                 )
+            }
+        }
+    }
+
+    if (stickerTrayOpen) {
+        val recentStickers = messages.filter { it.kind == MessageKind.STICKER && it.key == conversation.key }
+            .takeLast(12).asReversed()
+        Dialog(onDismissRequest = { stickerTrayOpen = false }) {
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                    .background(StudioPalette.Surface).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                Text("Stickers", color = StudioPalette.Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                Text("Recently used in this conversation", color = StudioPalette.Muted, fontSize = 12.sp)
+                if (recentStickers.isEmpty()) {
+                    Text("Your recent stickers will appear here after you send one.", color = StudioPalette.Muted, fontSize = 13.sp)
+                } else {
+                    recentStickers.forEach { sticker ->
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+                                .background(StudioPalette.Background).padding(horizontal = 10.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(sticker.mediaFileName ?: "Sticker", color = StudioPalette.Ink, fontSize = 12.5.sp, maxLines = 1)
+                                Text("Recent sticker", color = StudioPalette.Muted, fontSize = 10.5.sp)
+                            }
+                            StudioActionButton("Send", compact = true, enabled = canQueueMedia, onClick = {
+                                stickerTrayOpen = false
+                                onReuseSticker(sticker)
+                            })
+                        }
+                    }
+                }
+                StudioActionButton(
+                    "Import WebP sticker",
+                    modifier = Modifier.fillMaxWidth(),
+                    primary = true,
+                    enabled = canQueueMedia && !voiceRecording,
+                    onClick = {
+                        stickerTrayOpen = false
+                        onPickSticker()
+                    }
+                )
+                StudioActionButton("Close", modifier = Modifier.fillMaxWidth(), onClick = { stickerTrayOpen = false })
             }
         }
     }
@@ -1386,7 +1432,7 @@ private fun MessageBubble(
             horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start,
             verticalAlignment = Alignment.Bottom
         ) {
-        if (!outgoing && appearance.showAvatars) {
+        if (!outgoing && conversation.isGroup && appearance.showAvatars) {
             Box(
                 Modifier.size(24.dp).clip(CircleShape).background(StudioPalette.Soft),
                 contentAlignment = Alignment.Center

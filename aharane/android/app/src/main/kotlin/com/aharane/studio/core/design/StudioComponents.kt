@@ -85,7 +85,8 @@ val LocalStudioRowScale = staticCompositionLocalOf { 1f }
 fun StudioHeader(
     connected: Boolean = false,
     preview: Boolean = false,
-    showBrand: Boolean = true
+    showBrand: Boolean = true,
+    showStatus: Boolean = true
 ) {
     val statusLabel = when {
         preview -> "Preview"
@@ -126,7 +127,7 @@ fun StudioHeader(
             }
         }
         Spacer(Modifier.weight(1f))
-        Row(
+        if (showStatus) Row(
             Modifier.heightIn(min = 36.dp)
                 .clip(RoundedCornerShape(99.dp))
                 .background(statusBackground)

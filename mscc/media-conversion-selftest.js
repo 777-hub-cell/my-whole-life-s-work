@@ -21,8 +21,12 @@ assert.equal(STICKER_CORNER_RADIUS, 20, 'Nexia stickerUtils.js rounded-square ra
 assert.match(STICKER_FIT_FILTER, /scale=512:512:force_original_aspect_ratio=increase/)
 assert.match(STICKER_FIT_FILTER, /crop=512:512,format=rgba/)
 assert.match(STICKER_FIT_FILTER, /geq=r='r\(X,Y\)':g='g\(X,Y\)':b='b\(X,Y\)'/)
-assert.ok(STICKER_FIT_FILTER.includes("pow(max(20-X,max(X-492,0)),2)+pow(max(20-Y,max(Y-492,0)),2),400),alpha(X,Y),0)"),
-  'Mask must match the exact Nexia stickerUtils.js 20px alpha expression')
+assert.ok(STICKER_FIT_FILTER.includes('if(lt(X,20),20-X,if(gt(X,492),X-492,0))'))
+assert.ok(STICKER_FIT_FILTER.includes('if(lt(Y,20),20-Y,if(gt(Y,492),Y-492,0))'))
+assert.ok(STICKER_FIT_FILTER.includes(')*('),
+  'Rounded corners should use direct multiplication for squared distances')
+assert.equal(STICKER_FIT_FILTER.includes('pow('), false,
+  'The rounded-corner mask must avoid pow() on every animation pixel')
 assert.doesNotMatch(STICKER_FIT_FILTER, /pad=/)
 assert.doesNotMatch(STICKER_FIT_FILTER, /color=0x00000000/)
 

@@ -7,6 +7,7 @@ import {
   readStickerMetadata,
   stickerMetadata,
   stickerPackNameForCommand,
+  stickerPackNameFromArgs,
 } from './utils/sticker-metadata.js'
 import { takeStickerPackName } from './commands/media/take.js'
 
@@ -16,6 +17,27 @@ assert.equal(DEFAULT_STICKER_PUBLISHER.includes('༺'), false)
 assert.equal(DEFAULT_STICKER_PUBLISHER.includes('༻'), false)
 assert.equal(stickerPackNameForCommand({ message:{ pushName:'Patrick' }, userKey:'234000000000' }), 'Patrick')
 assert.equal(stickerPackNameForCommand({ message:{}, userKey:'234000000000' }), '234000000000')
+assert.equal(stickerPackNameFromArgs({
+  rawArgs: 'My Favourite Pack',
+  senderName: 'Original Author',
+}), 'My Favourite Pack', 'text after .sticker/.s sets the pack name')
+assert.equal(stickerPackNameFromArgs({
+  args: ['My', 'Favourite', 'Pack'],
+  senderName: 'Original Author',
+}), 'My Favourite Pack', 'command arguments are joined into one pack name')
+assert.equal(stickerPackNameFromArgs({
+  rawArgs: '  Night   Collection  ',
+  message: { pushName: 'Original Author' },
+}), 'Night Collection', 'spaces are normalized but words are retained')
+assert.equal(stickerPackNameFromArgs({
+  rawArgs: '  ',
+  message: { pushName: 'Original Author' },
+}), 'Original Author', 'empty command text keeps the sender as default')
+assert.equal(stickerPackNameFromArgs({ rawArgs: 'N'.repeat(140) }).length, 128)
+assert.equal(stickerPackNameForCommand({
+  args: ['@Bob'],
+  senderName: 'Night User',
+}), 'Night User', 'shared reaction sticker callers must not treat mentions as pack names')
 
 const inside = DEFAULT_STICKER_PUBLISHER.slice(1, -1)
 assert.equal(inside, 'N I G H T')
@@ -79,6 +101,8 @@ const soundExif = buildStickerExif(soundMetadata)
 assert.equal(soundExif.subarray(0, 2).toString('ascii'), 'MM',
   'sound sticker EXIF must use the WhatsApp big-endian TIFF marker')
 const soundLength = soundExif.readUInt32BE(14)
+assert.equal(soundExif.readUInt32BE(18), 26,
+  'sound sticker EXIF must point to JSON at byte 26')
 const soundDecoded = JSON.parse(soundExif.subarray(26, 26 + soundLength).toString('utf8'))
 assert.equal(soundDecoded['sound-sha256'], soundMetadata.soundSha256)
 assert.deepEqual(soundDecoded.emojis, ['🔊'])

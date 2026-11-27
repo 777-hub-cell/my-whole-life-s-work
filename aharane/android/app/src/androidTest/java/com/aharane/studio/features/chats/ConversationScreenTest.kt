@@ -1,7 +1,6 @@
 package com.aharane.studio.features.chats
 
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -386,7 +385,7 @@ class ConversationScreenTest {
         assertEquals("Lunch?", created.first)
         assertEquals(listOf("Jollof rice", "Pasta"), created.second)
         assertEquals(1, created.third)
-        compose.onNodeWithTag("poll-create-submit").assertDoesNotExist()
+        assertTrue(compose.onAllNodesWithTag("poll-create-submit").fetchSemanticsNodes().isEmpty())
     }
 
     @Test

@@ -122,7 +122,8 @@ test('text-to-boolean output drives a typed custom choose node', async t => {
   const send = { id: 'send-result', type: 'message.sendText', x: 870, y: 70, config: {} }
   draft.nodes = [trigger, args, toBoolean, choose, send]
   draft.edges = [
-    { id: 'exec', from: trigger.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
+    { id: 'trigger-choose', from: trigger.id, fromSocket: 'next', to: choose.id, toSocket: 'in' },
+    { id: 'choose-send', from: choose.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
     { id: 'args-bool', from: args.id, fromSocket: 'value', to: toBoolean.id, toSocket: 'value' },
     { id: 'bool-condition', from: toBoolean.id, fromSocket: 'value', to: choose.id, toSocket: 'condition' },
     { id: 'choose-text', from: choose.id, fromSocket: 'result', to: send.id, toSocket: 'text' },
@@ -164,7 +165,8 @@ test('text-to-list output can be joined and used by a message node', async t => 
   const send = { id: 'send-result', type: 'message.sendText', x: 870, y: 70, config: {} }
   draft.nodes = [trigger, args, toList, join, send]
   draft.edges = [
-    { id: 'exec', from: trigger.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
+    { id: 'trigger-join', from: trigger.id, fromSocket: 'next', to: join.id, toSocket: 'in' },
+    { id: 'join-send', from: join.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
     { id: 'args-list', from: args.id, fromSocket: 'value', to: toList.id, toSocket: 'value' },
     { id: 'list-join', from: toList.id, fromSocket: 'value', to: join.id, toSocket: 'value' },
     { id: 'join-text', from: join.id, fromSocket: 'result', to: send.id, toSocket: 'text' },

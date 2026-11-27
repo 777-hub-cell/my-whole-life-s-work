@@ -2612,9 +2612,12 @@ fun AharaneApp(
                             connectionScope.launch {
                                 try {
                                     when (action) {
-                                        "pin" -> repository.setChatPreferences(chat.key.account, chat.key.jid, pinned = !chat.isPinned)
-                                        "mute" -> repository.setChatPreferences(chat.key.account, chat.key.jid, muted = !chat.isMuted)
-                                        "archive" -> repository.archive(chat, !chat.isArchived)
+                                        "pin" -> repository.setChatPreferences(chat.key.account, chat.key.jid, pinned = true)
+                                        "unpin" -> repository.setChatPreferences(chat.key.account, chat.key.jid, pinned = false)
+                                        "mute" -> repository.setChatPreferences(chat.key.account, chat.key.jid, muted = true)
+                                        "unmute" -> repository.setChatPreferences(chat.key.account, chat.key.jid, muted = false)
+                                        "archive" -> repository.archive(chat, true)
+                                        "unarchive" -> repository.archive(chat, false)
                                         "unread" -> repository.markUnread(chat)
                                     }
                                     chatsByAccount[chat.key.account] = repository.chats(chat.key.account)

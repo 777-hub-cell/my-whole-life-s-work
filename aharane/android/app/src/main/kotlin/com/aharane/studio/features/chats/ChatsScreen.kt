@@ -216,6 +216,9 @@ fun ChatsScreen(
     fun selectionKey(chat: ChatSummary) = chat.key.account.apiValue + ":" + chat.key.jid
     val selectedChats = accountConversations.filter { selectionKey(it) in selectedChatKeys }
     val selectionMode = selectedChatKeys.isNotEmpty()
+    val allSelectedArchived = selectedChats.isNotEmpty() && selectedChats.all { it.isArchived }
+    val allSelectedPinned = selectedChats.isNotEmpty() && selectedChats.all { it.isPinned }
+    val allSelectedMuted = selectedChats.isNotEmpty() && selectedChats.all { it.isMuted }
     fun toggleChatSelection(chat: ChatSummary) {
         val key = selectionKey(chat)
         selectedChatKeys = if (key in selectedChatKeys) selectedChatKeys - key else selectedChatKeys + key
@@ -258,9 +261,9 @@ fun ChatsScreen(
                     }
                     ChatHeaderButton(
                         Icons.Outlined.Archive,
-                        "Archive selected chats",
+                        if (allSelectedArchived) "Unarchive selected chats" else "Archive selected chats",
                         enabled = accountConnected
-                    ) { applySelectionAction("archive") }
+                    ) { applySelectionAction(if (allSelectedArchived) "unarchive" else "archive") }
                     Box {
                         ChatHeaderButton(
                             Icons.Outlined.MoreVert,
@@ -277,12 +280,12 @@ fun ChatsScreen(
                                 onClick = { applySelectionAction("unread") }
                             )
                             DropdownMenuItem(
-                                text = { Text("Pin selected") },
-                                onClick = { applySelectionAction("pin") }
+                                text = { Text(if (allSelectedPinned) "Unpin selected" else "Pin selected") },
+                                onClick = { applySelectionAction(if (allSelectedPinned) "unpin" else "pin") }
                             )
                             DropdownMenuItem(
-                                text = { Text("Mute selected") },
-                                onClick = { applySelectionAction("mute") }
+                                text = { Text(if (allSelectedMuted) "Unmute selected" else "Mute selected") },
+                                onClick = { applySelectionAction(if (allSelectedMuted) "unmute" else "mute") }
                             )
                         }
                     }

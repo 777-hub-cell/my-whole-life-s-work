@@ -1,11 +1,9 @@
 name: Aharane Native APK and Screenshots
 
 on:
-  push:
-    branches: [aharane/source-import-20261125]
-    paths:
-      - 'aharane/android/**'
-      - '.github/workflows/aharane-native-preview.yml'
+  # The main Aharane Android workflow already builds the debug APK and captures
+  # real emulator screenshots on every source push. Keep this duplicate preview
+  # workflow available only for deliberate manual captures.
   workflow_dispatch:
 
 permissions:

@@ -347,6 +347,7 @@ class ConversationScreenTest {
         var createdQuestion = ""
         var createdOptions: List<String> = emptyList()
         var createdSelectCount = 0
+        var createPollCallbackInvoked = false
         compose.setContent {
             AharaneTheme(themeMode = "light") {
                 ConversationScreen(
@@ -356,6 +357,7 @@ class ConversationScreenTest {
                     onBack = {},
                     onSend = { _, _ -> },
                     onCreatePoll = { question, options, count ->
+                        createPollCallbackInvoked = true
                         createdQuestion = question
                         createdOptions = options
                         createdSelectCount = count
@@ -379,6 +381,7 @@ class ConversationScreenTest {
         compose.onNodeWithTag("poll-question").assertTextEquals("Lunch?")
         compose.onNodeWithTag("poll-create-submit").assertIsEnabled().performClick()
         compose.runOnIdle {
+            assertEquals(true, createPollCallbackInvoked)
             assertEquals("Lunch?", createdQuestion)
             assertEquals(listOf("Jollof rice", "Pasta"), createdOptions)
             assertEquals(1, createdSelectCount)

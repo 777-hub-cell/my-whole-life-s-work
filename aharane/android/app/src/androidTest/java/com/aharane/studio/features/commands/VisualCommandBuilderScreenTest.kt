@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
@@ -158,12 +159,12 @@ class VisualCommandBuilderScreenTest {
         compose.waitUntil(10_000) {
             compose.onAllNodesWithTag("node-config-field-separator").fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithTag("node-config-field-separator").assertIsDisplayed()
+        compose.onNodeWithTag("node-config-field-separator").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("node-config-field-separator").performTextClearance()
         compose.onNodeWithTag("node-config-field-separator").performTextInput(";")
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         compose.waitForIdle()
-        compose.onNodeWithText("Apply").performClick()
+        compose.onNodeWithText("Apply").performScrollTo().performClick()
         assertTrue(compose.onAllNodesWithTag("node-card-value.toList").fetchSemanticsNodes().isNotEmpty())
     }
 

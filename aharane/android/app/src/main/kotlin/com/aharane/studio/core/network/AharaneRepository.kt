@@ -14,6 +14,23 @@ import com.aharane.studio.core.model.MessageDirection
 import com.aharane.studio.core.model.MessageKind
 import com.aharane.studio.core.model.MessageStatus
 
+/**
+ * Server-side media availability can describe the required account connection.
+ * The native chat already shows the account state in its header, so keep the
+ * attachment row focused on availability rather than repeating connection prompts.
+ */
+internal fun displayableMediaUnavailable(value: String?): String? {
+    val message = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val connectionRequired = Regex(
+        "(?i)(connect|pair|link).{0,100}(whatsapp|account)|(whatsapp|account).{0,100}(connect|pair|link)"
+    )
+    return if (connectionRequired.containsMatchIn(message)) {
+        "This attachment isn't available right now."
+    } else {
+        message
+    }
+}
+
 data class ServerAccountState(
     val id: ChatAccount,
     val state: String,
@@ -454,7 +471,7 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
                         mediaSizeBytes = row.optLong("size").takeIf { it > 0 },
                         mediaDurationSeconds = row.optLong("duration").takeIf { it > 0 },
                         viewOnceViewed = row.optBoolean("viewOnceViewed"),
-                        mediaUnavailable = row.optString("mediaUnavailable").takeIf { it.isNotBlank() },
+                        mediaUnavailable = displayableMediaUnavailable(row.optString("mediaUnavailable")),
                         isSystem = row.optBoolean("system"),
                         isStarred = row.optBoolean("starred"),
                         isVoiceNote = row.optBoolean("ptt"),
@@ -528,7 +545,7 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
                     mediaSizeBytes = row.optLong("size").takeIf { it > 0 },
                     mediaDurationSeconds = row.optLong("duration").takeIf { it > 0 },
                     viewOnceViewed = row.optBoolean("viewOnceViewed"),
-                    mediaUnavailable = row.optString("mediaUnavailable").takeIf { it.isNotBlank() },
+                    mediaUnavailable = displayableMediaUnavailable(row.optString("mediaUnavailable")),
                     isStarred = row.optBoolean("starred"),
                     isVoiceNote = row.optBoolean("ptt"),
                     replyToMessageId = row.optString("quotedMessageId").takeIf { it.isNotBlank() },

@@ -251,7 +251,7 @@ def main():
     tap_label("Pairing code")
     capture("01ab-whatsapp-pairing-code-choice.png")
     # The visible top Back control and the lower CTA share the same onBack handler.
-    tap_label("‹  Back")
+    tap_label("Close WhatsApp pairing", content_desc=True)
     tap_label("Configuration", scroll_to_find=True)
     capture("01b-configuration.png")
     tap_label("Edit config.js", scroll_to_find=True)

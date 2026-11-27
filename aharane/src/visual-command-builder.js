@@ -48,20 +48,20 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
     { type: 'message.react', name: 'React to message', description: 'React to the triggering message with an emoji.', ports: ports([execIn, { id: 'emoji', label: 'Emoji', type: 'string' }], [execOut]) },
     { type: 'message.editOriginal', name: 'Edit your triggering message', description: 'Edit the triggering message only when it was sent by this WhatsApp account.', ports: ports([execIn, { id: 'text', label: 'Replacement text', type: 'string' }], [execOut, { id: 'sent', label: 'Edited message', type: 'message' }]) },
     { type: 'message.deleteOriginal', name: 'Delete your triggering message', description: 'Delete the triggering message only when it was sent by this WhatsApp account.', ports: ports([execIn], [execOut]) },
-    { type: 'message.pinOriginal', name: 'Pin or unpin triggering message', description: 'Pin or unpin the triggering message in the current chat (account owner only).', ports: ports([execIn], [execOut]) },
+    { type: 'message.pinOriginal', name: 'Pin or unpin triggering message', description: 'Pin or unpin the triggering message in the current chat (account owner only).', ports: ports([execIn, { id: 'seconds', label: 'Duration in seconds', type: 'number' }], [execOut]) },
     { type: 'message.keepOriginal', name: 'Keep or unkeep triggering message', description: 'Keep or unkeep an eligible message in a disappearing chat (account owner only).', ports: ports([execIn], [execOut]) },
     { type: 'media.forwardOriginal', name: 'Forward original message', description: 'Forward the original WhatsApp message, except View Once content which remains one-time only.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Forwarded message', type: 'message' }]) },
-    { type: 'message.sendLocation', name: 'Send location', description: 'Send a WhatsApp location pin with validated coordinates.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Location message', type: 'message' }]) },
+    { type: 'message.sendLocation', name: 'Send location', description: 'Send a WhatsApp location pin with validated coordinates.', ports: ports([execIn, { id: 'latitude', label: 'Latitude', type: 'number' }, { id: 'longitude', label: 'Longitude', type: 'number' }, { id: 'name', label: 'Location label', type: 'string' }], [execOut, { id: 'sent', label: 'Location message', type: 'message' }]) },
   ] },
   { category: 'Contacts and chats', nodes: [
-    { type: 'contact.sendCard', name: 'Send contact card', description: 'Send a WhatsApp vCard using a display name and phone number.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Contact message', type: 'message' }]) },
+    { type: 'contact.sendCard', name: 'Send contact card', description: 'Send a WhatsApp vCard using a display name and phone number.', ports: ports([execIn, { id: 'name', label: 'Contact name', type: 'string' }, { id: 'phone', label: 'Phone number', type: 'string' }], [execOut, { id: 'sent', label: 'Contact message', type: 'message' }]) },
   ] },
   { category: 'Groups and participants', nodes: [
     { type: 'group.getInfo', name: 'Get group information', description: 'Read metadata for the group that triggered this workflow.', ports: ports([execIn], [execOut, { id: 'subject', label: 'Group name', type: 'string' }, { id: 'participantCount', label: 'Participants', type: 'number' }]) },
-    { type: 'group.updateSubject', name: 'Change group name', description: 'Change the current group name (Public Owner only).', ports: ports([execIn], [execOut]) },
-    { type: 'group.updateDescription', name: 'Change group description', description: 'Change the current group description (Public Owner only).', ports: ports([execIn], [execOut]) },
-    { type: 'group.participantsUpdate', name: 'Manage participants', description: 'Add, remove, promote or demote listed group participants (Public Owner only).', ports: ports([execIn], [execOut]) },
-    { type: 'group.settingUpdate', name: 'Change group settings', description: 'Set who can send messages or edit group information (Public Owner only).', ports: ports([execIn], [execOut]) },
+    { type: 'group.updateSubject', name: 'Change group name', description: 'Change the current group name (Public Owner only).', ports: ports([execIn, { id: 'subject', label: 'New group name', type: 'string' }], [execOut]) },
+    { type: 'group.updateDescription', name: 'Change group description', description: 'Change the current group description (Public Owner only).', ports: ports([execIn, { id: 'description', label: 'New description', type: 'string' }], [execOut]) },
+    { type: 'group.participantsUpdate', name: 'Manage participants', description: 'Add, remove, promote or demote listed group participants (Public Owner only).', ports: ports([execIn, { id: 'participants', label: 'Participant phone numbers', type: 'list' }], [execOut]) },
+    { type: 'group.settingUpdate', name: 'Change group settings', description: 'Set who can send messages or edit group information (Public Owner only).', ports: ports([execIn, { id: 'setting', label: 'Group setting', type: 'string' }], [execOut]) },
   ] },
   { category: 'Media and attachments', nodes: [
     { type: 'media.sendImage', name: 'Send image', description: 'Send an Engine-produced image to the triggering WhatsApp chat.', ports: ports([execIn, { id: 'image', label: 'Image', type: 'image' }, { id: 'caption', label: 'Caption', type: 'string' }], [execOut, { id: 'sent', label: 'Sent image', type: 'message' }]) },
@@ -74,13 +74,13 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
     { type: 'message.isViewOnce', name: 'Read View Once flag', description: 'Read whether the triggering message is View Once without downloading or exposing its content.', ports: ports([], [{ id: 'value', label: 'Is View Once', type: 'boolean' }]) },
   ] },
   { category: 'Chat privacy', nodes: [
-    { type: 'chat.setDisappearing', name: 'Set disappearing messages', description: 'Set the disappearing-message timer for the current Public group (account owner only).', ports: ports([execIn], [execOut]) },
+    { type: 'chat.setDisappearing', name: 'Set disappearing messages', description: 'Set the disappearing-message timer for the current Public group (account owner only).', ports: ports([execIn, { id: 'seconds', label: 'Timer in seconds', type: 'number' }], [execOut]) },
   ] },
   { category: 'Interactive messages', nodes: [
-    { type: 'message.sendButtons', name: 'Send buttons', description: 'Send up to three interactive reply buttons.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Interactive message', type: 'message' }]) },
+    { type: 'message.sendButtons', name: 'Send buttons', description: 'Send up to three interactive reply buttons.', ports: ports([execIn, { id: 'text', label: 'Prompt text', type: 'string' }, { id: 'buttons', label: 'Button rows (Label|id)', type: 'list' }], [execOut, { id: 'sent', label: 'Interactive message', type: 'message' }]) },
   ] },
   { category: 'Polls and reactions', nodes: [
-    { type: 'message.sendPoll', name: 'Create poll', description: 'Send a WhatsApp poll with two to twelve answer options.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Poll message', type: 'message' }]) },
+    { type: 'message.sendPoll', name: 'Create poll', description: 'Send a WhatsApp poll with two to twelve answer options.', ports: ports([execIn, { id: 'title', label: 'Poll question', type: 'string' }, { id: 'options', label: 'Answer options', type: 'list' }, { id: 'selectableCount', label: 'Selectable answers', type: 'number' }], [execOut, { id: 'sent', label: 'Poll message', type: 'message' }]) },
   ] },
   { category: 'Message information', nodes: [
     { type: 'message.text', name: 'Message text', description: 'Read the text of the triggering WhatsApp message.', ports: ports([], [{ id: 'value', label: 'Text', type: 'string' }]) },
@@ -105,26 +105,26 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
     { type: 'value.toList', name: 'Text to list', description: 'Split text into a trimmed list using a configurable separator (maximum 100 items).', ports: ports([{ id: 'value', label: 'Text', type: 'string' }, { id: 'separator', label: 'Separator', type: 'string' }], [{ id: 'value', label: 'List', type: 'list' }]) },
   ] },
   { category: 'Timing and scheduling', nodes: [
-    { type: 'flow.delay', name: 'Wait', description: 'Pause this workflow run for up to 10 seconds; this is not a persistent scheduled job.', ports: ports([execIn], [execOut]) },
+    { type: 'flow.delay', name: 'Wait', description: 'Pause this workflow run for up to 10 seconds; this is not a persistent scheduled job.', ports: ports([execIn, { id: 'milliseconds', label: 'Milliseconds', type: 'number' }], [execOut]) },
   ] },
   { category: 'Flow control', nodes: [
-    { type: 'flow.repeat', name: 'Repeat', description: 'Run a body a fixed number of times (maximum 10).', ports: ports([execIn], [{ id: 'body', label: 'Body', type: 'exec' }, { id: 'next', label: 'Next', type: 'exec' }]) },
+    { type: 'flow.repeat', name: 'Repeat', description: 'Run a body a fixed number of times (maximum 10).', ports: ports([execIn, { id: 'count', label: 'Repeat count', type: 'number' }], [{ id: 'body', label: 'Body', type: 'exec' }, { id: 'next', label: 'Next', type: 'exec' }]) },
     { type: 'flow.repeatEnd', name: 'End repeat body', description: 'Return to Repeat for its next iteration.', ports: ports([execIn], []) },
     { type: 'flow.end', name: 'End workflow', description: 'Stop this workflow run.', ports: ports([execIn], []) },
   ] },
   { category: 'Moderation and administration', nodes: [
-    { type: 'moderation.blockContact', name: 'Block contact', description: 'Block a contact on this WhatsApp account (Owner only).', ports: ports([execIn], [execOut]) },
-    { type: 'moderation.unblockContact', name: 'Unblock contact', description: 'Unblock a contact on this WhatsApp account (Owner only).', ports: ports([execIn], [execOut]) },
+    { type: 'moderation.blockContact', name: 'Block contact', description: 'Block a contact on this WhatsApp account (Owner only).', ports: ports([execIn, { id: 'phone', label: 'Phone number', type: 'string' }], [execOut]) },
+    { type: 'moderation.unblockContact', name: 'Unblock contact', description: 'Unblock a contact on this WhatsApp account (Owner only).', ports: ports([execIn, { id: 'phone', label: 'Phone number', type: 'string' }], [execOut]) },
   ] },
   { category: 'WhatsApp account and profile', nodes: [
-    { type: 'profile.updateName', name: 'Change profile name', description: 'Set this WhatsApp account profile name (Owner only).', ports: ports([execIn], [execOut]) },
-    { type: 'profile.updateStatus', name: 'Change profile status', description: 'Set this WhatsApp account status text (Owner only).', ports: ports([execIn], [execOut]) },
+    { type: 'profile.updateName', name: 'Change profile name', description: 'Set this WhatsApp account profile name (Owner only).', ports: ports([execIn, { id: 'name', label: 'Profile name', type: 'string' }], [execOut]) },
+    { type: 'profile.updateStatus', name: 'Change profile status', description: 'Set this WhatsApp account status text (Owner only).', ports: ports([execIn, { id: 'status', label: 'Profile status', type: 'string' }], [execOut]) },
   ] },
   { category: 'Newsletters', nodes: [
-    { type: 'newsletter.create', name: 'Create newsletter', description: 'Create a WhatsApp newsletter (Owner only).', ports: ports([execIn], [execOut, { id: 'newsletterJid', label: 'Newsletter JID', type: 'string' }]) },
-    { type: 'newsletter.follow', name: 'Follow newsletter', description: 'Follow a specified newsletter (Owner only).', ports: ports([execIn], [execOut]) },
-    { type: 'newsletter.unfollow', name: 'Unfollow newsletter', description: 'Unfollow a specified newsletter (Owner only).', ports: ports([execIn], [execOut]) },
-    { type: 'newsletter.publishText', name: 'Publish newsletter text', description: 'Publish text to a specified newsletter (Owner only).', ports: ports([execIn], [execOut, { id: 'sent', label: 'Published message', type: 'message' }]) },
+    { type: 'newsletter.create', name: 'Create newsletter', description: 'Create a WhatsApp newsletter (Owner only).', ports: ports([execIn, { id: 'name', label: 'Newsletter name', type: 'string' }, { id: 'description', label: 'Description', type: 'string' }], [execOut, { id: 'newsletterJid', label: 'Newsletter JID', type: 'string' }]) },
+    { type: 'newsletter.follow', name: 'Follow newsletter', description: 'Follow a specified newsletter (Owner only).', ports: ports([execIn, { id: 'newsletterJid', label: 'Newsletter JID', type: 'string' }], [execOut]) },
+    { type: 'newsletter.unfollow', name: 'Unfollow newsletter', description: 'Unfollow a specified newsletter (Owner only).', ports: ports([execIn, { id: 'newsletterJid', label: 'Newsletter JID', type: 'string' }], [execOut]) },
+    { type: 'newsletter.publishText', name: 'Publish newsletter text', description: 'Publish text to a specified newsletter (Owner only).', ports: ports([execIn, { id: 'newsletterJid', label: 'Newsletter JID', type: 'string' }, { id: 'text', label: 'Post text', type: 'string' }], [execOut, { id: 'sent', label: 'Published message', type: 'message' }]) },
   ] },
 ])
 
@@ -194,6 +194,10 @@ const OWNER_ONLY_NODES = new Set([
   'newsletter.create', 'newsletter.follow', 'newsletter.unfollow', 'newsletter.publishText',
 ])
 const textValue = (value, max = 2000) => String(value == null ? '' : value).slice(0, max)
+function listValue(value, maxItems = 50, maxLength = 200) {
+  const values = Array.isArray(value) ? value : textValue(value, 4000).split(/\\r?\\n|,/)
+  return values.slice(0, maxItems).map(item => textValue(item, maxLength).trim()).filter(Boolean)
+}
 const isExec = (node, socket) => definitions.get(node && node.type)?.ports.outputs.find(item => item.id === socket)?.type === 'exec'
 
 function isEnabled(value) {
@@ -840,7 +844,7 @@ async function executeWorkflowCore(input, options = {}) {
         } else if (node.type === 'message.pinOriginal') {
           const key = event.message?.key
           if (!key?.id) throw new Error('There is no triggering message to pin.')
-          const seconds = Number(node.config.seconds == null ? 86400 : node.config.seconds)
+          const seconds = Number(readInput(workflow, node, 'seconds', 'seconds', state) ?? 86400)
           if (![86400, 604800, 2592000].includes(seconds)) throw new Error('Pin duration must be 1, 7 or 30 days.')
           const type = node.config.action === 'unpin' ? 2 : 1
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: type === 2 ? 'Would unpin the triggering message.' : 'Would pin the triggering message for ' + seconds + ' seconds.' })
@@ -863,7 +867,7 @@ async function executeWorkflowCore(input, options = {}) {
           }
         } else if (node.type === 'chat.setDisappearing') {
           if (!isGroupJid(event.remoteJid) || workflow.account !== 'public') throw new Error('Disappearing-message settings are available only for Public group chats.')
-          const seconds = Number(node.config.seconds)
+          const seconds = Number(readInput(workflow, node, 'seconds', 'seconds', state))
           if (![0, 86400, 604800, 7776000].includes(seconds)) throw new Error('Choose a supported disappearing timer.')
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would set group disappearing timer to ' + seconds + ' seconds.' })
           else {
@@ -882,9 +886,9 @@ async function executeWorkflowCore(input, options = {}) {
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the reaction.' })
           }
         } else if (node.type === 'message.sendLocation') {
-          const latitude = Number(node.config.latitude)
-          const longitude = Number(node.config.longitude)
-          const name = textValue(node.config.name || 'Shared location', 100).replace(/[\r\n]/g, ' ').trim()
+          const latitude = Number(readInput(workflow, node, 'latitude', 'latitude', state))
+          const longitude = Number(readInput(workflow, node, 'longitude', 'longitude', state))
+          const name = textValue(readInput(workflow, node, 'name', 'name', state) || 'Shared location', 100).replace(/[\r\n]/g, ' ').trim()
           if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
             throw new Error('Location coordinates are outside the supported range.')
           }
@@ -899,8 +903,8 @@ async function executeWorkflowCore(input, options = {}) {
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the location.' })
           }
         } else if (node.type === 'contact.sendCard') {
-          const name = textValue(node.config.name, 80).replace(/[\r\n]/g, ' ').trim()
-          const phone = textValue(node.config.phone, 20).replace(/[\s()-]/g, '').replace(/^\+/, '')
+          const name = textValue(readInput(workflow, node, 'name', 'name', state), 80).replace(/[\r\n]/g, ' ').trim()
+          const phone = textValue(readInput(workflow, node, 'phone', 'phone', state), 20).replace(/[\s()-]/g, '').replace(/^\+/, '')
           if (!name || !/^[0-9]{7,15}$/.test(phone)) throw new Error('Contact name or phone number is invalid.')
           const vcard = 'BEGIN:VCARD\nVERSION:3.0\nFN:' + name + '\nTEL;type=CELL;type=VOICE;waid=' + phone + ':+'
             + phone + '\nEND:VCARD'
@@ -915,8 +919,8 @@ async function executeWorkflowCore(input, options = {}) {
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the contact card.' })
           }
         } else if (node.type === 'message.sendButtons') {
-          const messageText = textValue(node.config.text, 1000).trim()
-          const values = textValue(node.config.buttons, 1000).split(/\r?\n/).map(value => value.trim()).filter(Boolean)
+          const messageText = textValue(readInput(workflow, node, 'text', 'text', state), 1000).trim()
+          const values = listValue(readInput(workflow, node, 'buttons', 'buttons', state), 3, 100)
           const buttons = values.map(value => {
             const [label, id] = value.split('|').map(part => part.trim())
             return { text: label, id }
@@ -946,9 +950,9 @@ async function executeWorkflowCore(input, options = {}) {
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the forwarded message.' })
           }
         } else if (node.type === 'message.sendPoll') {
-          const title = textValue(node.config.title, 180).trim()
-          const values = textValue(node.config.options, 1000).split(/\r?\n/).map(value => value.trim()).filter(Boolean)
-          const selectableCount = Number(node.config.selectableCount == null ? 1 : node.config.selectableCount)
+          const title = textValue(readInput(workflow, node, 'title', 'title', state), 180).trim()
+          const values = listValue(readInput(workflow, node, 'options', 'options', state), 12, 120)
+          const selectableCount = Number(readInput(workflow, node, 'selectableCount', 'selectableCount', state) ?? 1)
           if (!title || values.length < 2 || values.length > 12 || new Set(values.map(value => value.toLowerCase())).size !== values.length) {
             throw new Error('A poll needs a question and 2 to 12 unique options.')
           }
@@ -976,7 +980,7 @@ async function executeWorkflowCore(input, options = {}) {
           trace.push({ nodeId: node.id, type: node.type, status: dryRun ? 'simulated' : 'success', message: dryRun ? 'Would read group information.' : 'Loaded group information.' })
         } else if (node.type === 'group.updateSubject') {
           if (!isGroupJid(event.remoteJid)) throw new Error('Changing a group name requires a group chat.')
-          const subject = textValue(node.config.subject, 100).trim()
+          const subject = textValue(readInput(workflow, node, 'subject', 'subject', state), 100).trim()
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would change group name to: ' + subject })
           else {
             await event.socket.groupUpdateSubject(event.remoteJid, subject)
@@ -984,7 +988,7 @@ async function executeWorkflowCore(input, options = {}) {
           }
         } else if (node.type === 'group.updateDescription') {
           if (!isGroupJid(event.remoteJid)) throw new Error('Changing a group description requires a group chat.')
-          const description = textValue(node.config.description, 512).trim()
+          const description = textValue(readInput(workflow, node, 'description', 'description', state), 512).trim()
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would change the group description.' })
           else {
             await event.socket.groupUpdateDescription(event.remoteJid, description)
@@ -993,8 +997,12 @@ async function executeWorkflowCore(input, options = {}) {
         } else if (node.type === 'group.participantsUpdate') {
           if (!isGroupJid(event.remoteJid)) throw new Error('Participant management requires a group chat.')
           const action = textValue(node.config.action, 16)
-          const phones = textValue(node.config.participants, 1000).split(/[\n,]+/).map(value => value.replace(/[\s()-]/g, '').replace(/^\+/, '')).filter(Boolean)
-          const participants = phones.map(phone => phone + '@s.whatsapp.net')
+          const phones = listValue(readInput(workflow, node, 'participants', 'participants', state), 50, 32)
+            .map(value => value.replace(/[\s()-]/g, '').replace(/^\+/, ''))
+          const participants = phones.map(phone => {
+            if (!/^[0-9]{7,15}$/.test(phone)) throw new Error('Participant phone numbers must contain 7 to 15 digits.')
+            return phone + '@s.whatsapp.net'
+          })
           if (dryRun) {
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would ' + action + ' ' + participants.length + ' participant(s).' })
           } else {
@@ -1007,14 +1015,14 @@ async function executeWorkflowCore(input, options = {}) {
           }
         } else if (node.type === 'group.settingUpdate') {
           if (!isGroupJid(event.remoteJid)) throw new Error('Changing group settings requires a group chat.')
-          const setting = textValue(node.config.setting, 24)
+          const setting = textValue(readInput(workflow, node, 'setting', 'setting', state), 24)
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would set group option: ' + setting })
           else {
             await event.socket.groupSettingUpdate(event.remoteJid, setting)
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the group setting.' })
           }
         } else if (node.type === 'moderation.blockContact' || node.type === 'moderation.unblockContact') {
-          const phone = textValue(node.config.phone, 20).replace(/[\s()-]/g, '').replace(/^\+/, '')
+          const phone = textValue(readInput(workflow, node, 'phone', 'phone', state), 20).replace(/[\s()-]/g, '').replace(/^\+/, '')
           if (!/^[0-9]{7,15}$/.test(phone)) throw new Error('The contact phone number is invalid.')
           const action = node.type === 'moderation.blockContact' ? 'block' : 'unblock'
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would ' + action + ' the contact.' })
@@ -1023,22 +1031,22 @@ async function executeWorkflowCore(input, options = {}) {
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: action === 'block' ? 'Contact blocked.' : 'Contact unblocked.' })
           }
         } else if (node.type === 'profile.updateName') {
-          const name = textValue(node.config.name, 80).trim()
+          const name = textValue(readInput(workflow, node, 'name', 'name', state), 80).trim()
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would update the profile name.' })
           else {
             await event.socket.updateProfileName(name)
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the profile name.' })
           }
         } else if (node.type === 'profile.updateStatus') {
-          const status = textValue(node.config.status, 139).trim()
+          const status = textValue(readInput(workflow, node, 'status', 'status', state), 139).trim()
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would update the profile status.' })
           else {
             await event.socket.updateProfileStatus(status)
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the profile status.' })
           }
         } else if (node.type === 'newsletter.create') {
-          const name = textValue(node.config.name, 100).trim()
-          const description = textValue(node.config.description, 512).trim()
+          const name = textValue(readInput(workflow, node, 'name', 'name', state), 100).trim()
+          const description = textValue(readInput(workflow, node, 'description', 'description', state), 512).trim()
           if (dryRun) {
             outputs.set(node.id, { newsletterJid: '12345678901@newsletter' })
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would create the newsletter.' })
@@ -1050,7 +1058,7 @@ async function executeWorkflowCore(input, options = {}) {
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'Newsletter created: ' + newsletterJid })
           }
         } else if (node.type === 'newsletter.follow' || node.type === 'newsletter.unfollow') {
-          const newsletterJid = textValue(node.config.newsletterJid, 80)
+          const newsletterJid = textValue(readInput(workflow, node, 'newsletterJid', 'newsletterJid', state), 80)
           if (!/^\d{5,25}@newsletter$/.test(newsletterJid)) throw new Error('The newsletter ID is invalid.')
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: node.type === 'newsletter.follow' ? 'Would follow the newsletter.' : 'Would unfollow the newsletter.' })
           else {
@@ -1061,7 +1069,7 @@ async function executeWorkflowCore(input, options = {}) {
           }
         } else if (node.type === 'newsletter.publishText') {
           const newsletterJid = textValue(node.config.newsletterJid, 80)
-          const text = textValue(node.config.text, 2000).trim()
+          const text = textValue(readInput(workflow, node, 'text', 'text', state), 2000).trim()
           if (!/^\d{5,25}@newsletter$/.test(newsletterJid) || !text) throw new Error('Newsletter ID or post text is invalid.')
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would publish text to the newsletter.' })
           else {
@@ -1140,7 +1148,7 @@ async function executeWorkflowCore(input, options = {}) {
           if (!bytes.length || bytes.length > 512 * 1024 || bytes.toString('base64').replace(/=+$/, '') !== raw.base64.replace(/=+$/, '')) {
             throw new Error('Media is empty, malformed or exceeds the 512 KiB Builder send limit.')
           }
-          const caption = textValue(node.config.caption, 1000)
+          const caption = textValue(readInput(workflow, node, 'caption', 'caption', state), 1000)
           const fileName = textValue(raw.fileName || node.config.fileName || 'attachment', 120).replace(/[\\/\r\n]/g, '_')
           const body = kind === 'image' ? { image: bytes, caption }
             : kind === 'video' ? { video: bytes, mimetype: mimeType, caption }
@@ -1188,7 +1196,7 @@ async function executeWorkflowCore(input, options = {}) {
             if (typeof event.socket?.sendMessage !== 'function') throw new Error('WhatsApp media sending is unavailable.')
             const sent = []
             for (const image of images) {
-              const response = await sendWhatsAppMessage(event.remoteJid, { image, caption: textValue(node.config.caption, 1000) })
+              const response = await sendWhatsAppMessage(event.remoteJid, { image, caption: textValue(readInput(workflow, node, 'caption', 'caption', state), 1000) })
               if (!response?.key?.id) throw new Error('WhatsApp did not confirm an image message.')
               sent.push(response)
             }
@@ -1245,12 +1253,12 @@ async function executeWorkflowCore(input, options = {}) {
           outputs.set(node.id, result)
           trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'Custom node evaluated: ' + definition.operator })
         } else if (node.type === 'flow.delay') {
-          const ms = Number(node.config.milliseconds == null ? 1000 : node.config.milliseconds)
+          const ms = Number(readInput(workflow, node, 'milliseconds', 'milliseconds', state) ?? 1000)
           if (!Number.isInteger(ms) || ms < 0 || ms > MAX_DELAY_MS) throw new Error('Wait duration is invalid.')
           if (!dryRun && ms) await abortableSleep(ms, options.signal)
           trace.push({ nodeId: node.id, type: node.type, status: dryRun ? 'simulated' : 'success', message: 'Waited ' + ms + ' ms.' })
         } else if (node.type === 'flow.repeat') {
-          const count = Number(node.config.count == null ? 2 : node.config.count)
+          const count = Number(readInput(workflow, node, 'count', 'count', state) ?? 2)
           const body = firstEdge(node, 'body')
           if (!body) throw new Error('Repeat body is not connected.')
           for (let index = 0; index < count && !terminated; index += 1) {

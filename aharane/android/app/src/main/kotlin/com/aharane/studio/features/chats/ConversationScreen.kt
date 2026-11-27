@@ -1338,27 +1338,32 @@ fun ConversationScreen(
                     normalizedOptions.map { it.lowercase(Locale.ROOT) }.distinct().size == normalizedOptions.size
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     StudioPaletteAction("Cancel") { pollCreateOpen = false }
-                    StudioActionButton(
+                    val canSubmitPoll = connected && pollQuestionDraft.isNotBlank() && validOptions
+                    Text(
                         "Create poll",
-                        modifier = Modifier.testTag("poll-create-submit"),
-                        compact = true,
-                        primary = true,
-                        enabled = connected && pollQuestionDraft.isNotBlank() && validOptions,
-                        onClick = {
-                            val submittedQuestion = latestPollQuestionDraft.value.trim()
-                            val submittedOptions = latestPollOptionsDraft.value.map(String::trim)
-                            val submittedOptionsAreValid = submittedOptions.size in 2..12 &&
-                                submittedOptions.all(String::isNotBlank) &&
-                                submittedOptions.map { it.lowercase(Locale.ROOT) }.distinct().size == submittedOptions.size
-                            if (connected && submittedQuestion.isNotBlank() && submittedOptionsAreValid) {
-                                latestOnCreatePoll.value(
-                                    submittedQuestion,
-                                    submittedOptions,
-                                    if (latestPollAllowMultiple.value) submittedOptions.size else 1
-                                )
-                                pollCreateOpen = false
+                        color = if (canSubmitPoll) MaterialTheme.colorScheme.onPrimary else StudioPalette.Muted,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .testTag("poll-create-submit")
+                            .clip(RoundedCornerShape(StudioFoundationContract.Layout.ControlRadius))
+                            .background(if (canSubmitPoll) StudioPalette.Accent else StudioPalette.Background)
+                            .clickable(enabled = canSubmitPoll) {
+                                // Read the live fields from the conversation composition,
+                                // not an animated child or an earlier Dialog callback.
+                                val question = pollQuestionDraft.trim()
+                                val options = pollOptionsDraft.map(String::trim)
+                                val multiple = pollAllowMultiple
+                                if (question.isNotBlank() && options.size in 2..12 &&
+                                    options.all(String::isNotBlank) &&
+                                    options.map { it.lowercase(Locale.ROOT) }.distinct().size == options.size
+                                ) {
+                                    onCreatePoll(question, options, if (multiple) options.size else 1)
+                                    keyboardController?.hide()
+                                    pollCreateOpen = false
+                                }
                             }
-                        }
+                            .padding(horizontal = 12.dp, vertical = 9.dp)
                     )
                 }
             }

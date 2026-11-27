@@ -17,7 +17,6 @@ class VisualCommandBuilderLayoutTest {
         assertEquals(secondBefore, workspaceNodeOffset(second))
         assertEquals(Offset(348f, 568f), workspaceNodeOffset(movedFirst))
     }
-}
 
     @Test
     fun zoomKeepsTheCanvasPointUnderTheFingersAtTheSameViewportPosition() {

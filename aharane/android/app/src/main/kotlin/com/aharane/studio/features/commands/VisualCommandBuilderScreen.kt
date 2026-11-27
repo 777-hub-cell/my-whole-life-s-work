@@ -20,7 +20,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -315,7 +314,7 @@ fun VisualCommandBuilderScreen(
         val nextZoom = (zoom * factor).coerceIn(WORKSPACE_MIN_ZOOM, WORKSPACE_MAX_ZOOM)
         if (nextZoom == zoom) return
         pendingZoomScroll = workspaceScrollForZoom(
-            Offset(workspaceScroll.value.toFloat(), workspaceVerticalScroll.value.toFloat()),
+            pendingZoomScroll ?: Offset(workspaceScroll.value.toFloat(), workspaceVerticalScroll.value.toFloat()),
             anchor,
             anchor,
             zoom,
@@ -889,7 +888,7 @@ fun VisualCommandBuilderScreen(
                     .clip(RoundedCornerShape(18.dp))
                     .background(CommandStudioPalette.Canvas)
                     .border(1.dp, Color(0xFF1D2926), RoundedCornerShape(18.dp))
-                    .pointerInput(zoom, workspaceScroll.value, workspaceVerticalScroll.value) {
+                    .pointerInput(Unit) {
                         awaitEachGesture {
                             awaitFirstDown(requireUnconsumed = false)
                             var previousDistance = 0f
@@ -906,7 +905,7 @@ fun VisualCommandBuilderScreen(
                                         val nextZoom = (zoom * (distance / previousDistance))
                                             .coerceIn(WORKSPACE_MIN_ZOOM, WORKSPACE_MAX_ZOOM)
                                         pendingZoomScroll = workspaceScrollForZoom(
-                                            Offset(workspaceScroll.value.toFloat(), workspaceVerticalScroll.value.toFloat()),
+                                            pendingZoomScroll ?: Offset(workspaceScroll.value.toFloat(), workspaceVerticalScroll.value.toFloat()),
                                             previousCentroid,
                                             centroid,
                                             zoom,

@@ -783,7 +783,10 @@ test('View Once text is sent with the View Once V2 wrapper; dry-run never sends'
   const sent = []
   const live = await executeVisualWorkflow(draft, {
     store,
-    context: context({ socket: { sendMessage: async (_jid, body) => { sent.push(body); return { key: { id: 'view-once-text-sent' } } } } }),
+    context: context({
+      messageText: '.one Ada',
+      socket: { sendMessage: async (_jid, body) => { sent.push(body); return { key: { id: 'view-once-text-sent' } } } },
+    }),
   })
   assert.equal(live.ok, true, live.error)
   assert.deepEqual(sent, [{ text: 'Only once', viewOnceV2: true }])

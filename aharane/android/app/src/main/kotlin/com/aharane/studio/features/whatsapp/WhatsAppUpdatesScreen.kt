@@ -1,8 +1,18 @@
 package com.aharane.studio.features.whatsapp
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -123,17 +133,35 @@ fun WhatsAppUpdatesScreen(
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp)
+            horizontalArrangement = Arrangement.spacedBy(9.dp)
         ) {
-            ChatAccount.entries.forEach { account ->
-                StudioActionButton(
-                    label = account.label,
-                    compact = true,
-                    primary = selectedAccount == account,
-                    onClick = { onAccountSelected(account) }
+            Box(
+                Modifier.size(40.dp).clip(CircleShape)
+                    .background(StudioPalette.Surface)
+                    .border(1.dp, StudioPalette.Line, CircleShape)
+                    .clickable {
+                        onAccountSelected(
+                            if (selectedAccount == ChatAccount.PRIVATE) ChatAccount.PUBLIC else ChatAccount.PRIVATE
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (selectedAccount == ChatAccount.PRIVATE) Icons.Outlined.Lock else Icons.Outlined.Public,
+                    contentDescription = if (selectedAccount == ChatAccount.PRIVATE) "Switch to Public WhatsApp" else "Switch to Private WhatsApp",
+                    tint = StudioPalette.Accent,
+                    modifier = Modifier.size(19.dp)
                 )
             }
-            Spacer(Modifier.weight(1f))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    selectedAccount.label + " WhatsApp",
+                    color = StudioPalette.Ink,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text("Switch account", color = StudioPalette.Muted, fontSize = 10.5.sp)
+            }
             StudioActionButton(
                 label = if (loading) "Loading…" else "Refresh",
                 compact = true,
@@ -159,7 +187,7 @@ fun WhatsAppUpdatesScreen(
             loading -> StudioLoadingState("Loading Channels…")
             chosenChannel.isNotBlank() -> {
                 StudioActionButton(
-                    label = "All subscribed Channels",
+                    label = "Close channel updates",
                     compact = true,
                     onClick = { chosenChannel = ""; updateRows = emptyList() }
                 )
@@ -189,12 +217,36 @@ fun WhatsAppUpdatesScreen(
             )
             else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                 items(channelRows, key = { it.optString("jid") }) { row ->
-                    StudioRow(
-                        title = row.optString("name").ifBlank { "Channel" },
-                        subtitle = row.optString("description"),
-                        trailing = "›",
-                        onClick = { openChannel(row) }
-                    )
+                    Row(
+                        Modifier.fillMaxWidth().background(StudioPalette.Surface)
+                            .clickable { openChannel(row) }
+                            .padding(horizontal = 13.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(11.dp)
+                    ) {
+                        Box(
+                            Modifier.size(40.dp).clip(CircleShape).background(StudioPalette.Soft),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Outlined.Public, contentDescription = "Channel", tint = StudioPalette.Accent)
+                        }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(
+                                row.optString("name").ifBlank { "Channel" },
+                                color = StudioPalette.Ink,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1
+                            )
+                            Text(
+                                row.optString("description").ifBlank { "Channel" },
+                                color = StudioPalette.Muted,
+                                fontSize = 12.sp,
+                                maxLines = 1
+                            )
+                        }
+                        Text("›", color = StudioPalette.Muted, fontSize = 22.sp)
+                    }
                     StudioDivider()
                 }
             }

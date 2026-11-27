@@ -332,7 +332,7 @@ fun ConversationScreen(
                     if (contactAvatar != null) {
                         Image(
                             bitmap = contactAvatar!!,
-                            contentDescription = "WhatsApp group picture of " + conversation.title,
+                            contentDescription = (if (conversation.isGroup) "WhatsApp group picture of " else "WhatsApp profile picture of ") + conversation.title,
                             modifier = Modifier.fillMaxSize().clip(CircleShape),
                             contentScale = ContentScale.Crop
                         )

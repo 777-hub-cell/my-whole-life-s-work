@@ -138,12 +138,15 @@ class VisualCommandBuilderScreenTest {
             }
         }
         compose.waitUntil(5_000) { source.readCount > 0 }
-        // Search should reveal matches beyond the four compact default rows.
-        compose.waitUntil(15_000) {
+        // Conversion nodes are intentionally hidden from the compact default rows.
+        // Search first, then wait for the filtered result to become available.
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag("node-library-search").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("node-library-search").performTextInput("Text to number")
+        compose.waitUntil(10_000) {
             compose.onAllNodesWithTag("add-node-value.toNumber").fetchSemanticsNodes().isNotEmpty()
         }
-
-        compose.onNodeWithTag("node-library-search").performTextInput("Text to number")
         compose.onNodeWithTag("add-node-value.toNumber").performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("Apply").fetchSemanticsNodes().isNotEmpty()

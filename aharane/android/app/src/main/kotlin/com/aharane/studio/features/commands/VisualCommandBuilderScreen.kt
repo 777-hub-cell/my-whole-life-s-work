@@ -1803,15 +1803,7 @@ private fun CustomNodeManagerDialog(
     var description by remember { mutableStateOf("") }
     var operation by remember { mutableStateOf("uppercase") }
     var confirmDelete by remember { mutableStateOf<String?>(null) }
-    val operations = listOf(
-        "uppercase" to "Uppercase",
-        "concat" to "Combine text",
-        "contains" to "Contains text",
-        "add" to "Add numbers",
-        "and" to "Boolean AND",
-        "split" to "Split into list",
-        "join" to "Join list"
-    )
+    val operations = CustomNodeOperatorCatalog.operators
     fun typedInput(id: String, type: String): JSONObject =
         JSONObject().put("id", id).put("label", id.replaceFirstChar { it.uppercase() }).put("type", type)
 
@@ -1870,31 +1862,37 @@ private fun CustomNodeManagerDialog(
                 )
             }
             Text("Operation", color = CommandStudioPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            operations.forEach { (id, label) ->
+            operations.forEach { spec ->
                 Row(
-                    Modifier.fillMaxWidth().clickable { operation = id }.padding(vertical = 3.dp),
+                    Modifier.fillMaxWidth().clickable { operation = spec.id }.padding(vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    androidx.compose.material3.RadioButton(selected = operation == id, onClick = { operation = id })
-                    Text(label, color = CommandStudioPalette.Ink, fontSize = 13.sp)
+                    androidx.compose.material3.RadioButton(
+                        selected = operation == spec.id,
+                        onClick = { operation = spec.id }
+                    )
+                    Text(spec.label, color = CommandStudioPalette.Ink, fontSize = 13.sp)
                 }
             }
             val valid = Regex("^[a-z][a-z0-9_-]{0,47}$").matches(identifier) && name.isNotBlank()
             CommandActionButton("Create executable node", modifier = Modifier.fillMaxWidth(), enabled = valid, onClick = {
-                val (inputs, outputType) = when (operation) {
-                    "uppercase" -> listOf(typedInput("value", "string")) to "string"
-                    "concat" -> listOf(typedInput("value", "string"), typedInput("other", "string")) to "string"
-                    "contains" -> listOf(typedInput("value", "string"), typedInput("other", "string")) to "boolean"
-                    "add" -> listOf(typedInput("value", "number"), typedInput("other", "number")) to "number"
-                    "and" -> listOf(typedInput("value", "boolean"), typedInput("other", "boolean")) to "boolean"
-                    "split" -> listOf(typedInput("value", "string"), typedInput("other", "string")) to "list"
-                    else -> listOf(typedInput("value", "list"), typedInput("other", "string")) to "string"
+                val selected = CustomNodeOperatorCatalog.find(operation)
+                    ?: CustomNodeOperatorCatalog.operators.first()
+                val inputs = JSONArray().apply {
+                    selected.inputs.forEach { port ->
+                        put(
+                            JSONObject()
+                                .put("id", port.id)
+                                .put("label", port.label)
+                                .put("type", port.type)
+                        )
+                    }
                 }
                 onCreate(
                     JSONObject().put("id", identifier).put("name", name)
                         .put("description", description).put("category", "My nodes")
-                        .put("version", 1).put("operator", operation)
-                        .put("inputs", JSONArray(inputs)).put("outputType", outputType)
+                        .put("version", 1).put("operator", selected.id)
+                        .put("inputs", inputs).put("outputType", selected.outputType)
                 )
             })
             CommandActionButton("Close", modifier = Modifier.fillMaxWidth(), primary = false, onClick = onDismiss)

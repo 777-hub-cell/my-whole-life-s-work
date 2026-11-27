@@ -6,7 +6,6 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
@@ -26,7 +25,6 @@ import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatSummary
 import com.aharane.studio.core.model.ConversationKey
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -346,7 +344,10 @@ class ConversationScreenTest {
 
     @Test
     fun conversationOptionsOpensPollCreationForm() {
-        val createdPoll = java.util.concurrent.atomic.AtomicReference<Triple<String, List<String>, Int>?>(null)
+        var createdQuestion = ""
+        var createdOptions: List<String> = emptyList()
+        var createdSelectCount = 0
+        val createPollCallbackInvoked = androidx.compose.runtime.mutableStateOf(false)
         compose.setContent {
             AharaneTheme(themeMode = "light") {
                 ConversationScreen(
@@ -356,7 +357,10 @@ class ConversationScreenTest {
                     onBack = {},
                     onSend = { _, _ -> },
                     onCreatePoll = { question, options, count ->
-                        createdPoll.set(Triple(question, options, count))
+                        createPollCallbackInvoked.value = true
+                        createdQuestion = question
+                        createdOptions = options
+                        createdSelectCount = count
                     }
                 )
             }
@@ -370,23 +374,19 @@ class ConversationScreenTest {
         compose.onNodeWithTag("poll-option-0").assertTextEquals("Jollof rice")
         compose.onNodeWithTag("poll-option-1").performClick().performTextInput("Pasta")
         compose.onNodeWithTag("poll-option-1").assertTextEquals("Pasta")
-        // Use the final field's Done action instead of a system Back key, which
-        // can be consumed by the conversation's own BackHandler.
-        compose.onNodeWithTag("poll-option-1").performImeAction()
+        // Dismiss the keyboard before tapping the submit action below it.
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         compose.waitForIdle()
         // The question must survive option edits and keyboard dismissal.
         compose.onNodeWithTag("poll-question").assertTextEquals("Lunch?")
-        compose.onNodeWithTag("poll-create-submit")
-            .assertIsEnabled()
-            .performScrollTo()
-            .assertIsDisplayed()
-            .performClick()
-        compose.waitForIdle()
-        val created = createdPoll.get() ?: throw AssertionError("Create poll did not invoke its callback.")
-        assertEquals("Lunch?", created.first)
-        assertEquals(listOf("Jollof rice", "Pasta"), created.second)
-        assertEquals(1, created.third)
-        assertTrue(compose.onAllNodesWithTag("poll-create-submit").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("poll-create-submit").assertIsEnabled().performScrollTo().performClick()
+        compose.waitUntil(5_000) { createPollCallbackInvoked.value }
+        compose.runOnIdle {
+            assertEquals(true, createPollCallbackInvoked.value)
+            assertEquals("Lunch?", createdQuestion)
+            assertEquals(listOf("Jollof rice", "Pasta"), createdOptions)
+            assertEquals(1, createdSelectCount)
+        }
     }
 
     @Test

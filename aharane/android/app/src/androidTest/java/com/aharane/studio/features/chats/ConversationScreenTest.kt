@@ -6,7 +6,6 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
@@ -373,9 +372,10 @@ class ConversationScreenTest {
         compose.onNodeWithTag("poll-option-0").assertTextEquals("Jollof rice")
         compose.onNodeWithTag("poll-option-1").performClick().performTextInput("Pasta")
         compose.onNodeWithTag("poll-option-1").assertTextEquals("Pasta")
-        // Dismiss the IME before tapping the submit action below it.
-        compose.onNodeWithTag("poll-option-1").performImeAction()
-        compose.onNodeWithTag("poll-create-submit").performClick()
+        // Dismiss the keyboard before tapping the submit action below it.
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
+        compose.onNodeWithTag("poll-create-submit").assertIsEnabled().performClick()
         compose.runOnIdle {
             assertEquals("Lunch?", createdQuestion)
             assertEquals(listOf("Jollof rice", "Pasta"), createdOptions)

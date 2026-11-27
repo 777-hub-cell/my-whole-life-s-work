@@ -317,6 +317,7 @@ fun ConversationScreen(
         when {
             recentStickerDialogOpen -> recentStickerDialogOpen = false
             stickerTrayOpen -> stickerTrayOpen = false
+            pollCreateOpen -> pollCreateOpen = false
             moreOpen -> moreOpen = false
             actionMessage != null -> actionMessage = null
             forwardMessage != null -> forwardMessage = null
@@ -1333,32 +1334,35 @@ fun ConversationScreen(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     StudioPaletteAction("Cancel") { pollCreateOpen = false }
                     val canSubmitPoll = connected && pollQuestionDraft.isNotBlank() && validOptions
-                    Text(
-                        "Create poll",
-                        color = if (canSubmitPoll) MaterialTheme.colorScheme.onPrimary else StudioPalette.Muted,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .testTag("poll-create-submit")
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (canSubmitPoll) StudioPalette.Accent else StudioPalette.Background)
-                            .clickable(enabled = canSubmitPoll) {
-                                // Read the live fields from the conversation composition,
-                                // not an animated child or an earlier Dialog callback.
-                                val question = pollQuestionDraft.trim()
-                                val options = pollOptionsDraft.map(String::trim)
-                                val multiple = pollAllowMultiple
-                                if (question.isNotBlank() && options.size in 2..12 &&
-                                    options.all(String::isNotBlank) &&
-                                    options.map { it.lowercase(Locale.ROOT) }.distinct().size == options.size
-                                ) {
-                                    onCreatePoll(question, options, if (multiple) options.size else 1)
-                                    keyboardController?.hide()
-                                    pollCreateOpen = false
-                                }
+                    androidx.compose.material3.Button(
+                        onClick = {
+                            // Read the live fields from the conversation composition,
+                            // not an animated child or an earlier Dialog callback.
+                            val question = pollQuestionDraft.trim()
+                            val options = pollOptionsDraft.map(String::trim)
+                            val multiple = pollAllowMultiple
+                            if (question.isNotBlank() && options.size in 2..12 &&
+                                options.all(String::isNotBlank) &&
+                                options.map { it.lowercase(Locale.ROOT) }.distinct().size == options.size
+                            ) {
+                                onCreatePoll(question, options, if (multiple) options.size else 1)
+                                keyboardController?.hide()
+                                pollCreateOpen = false
                             }
-                            .padding(horizontal = 12.dp, vertical = 9.dp)
-                    )
+                        },
+                        enabled = canSubmitPoll,
+                        modifier = Modifier.testTag("poll-create-submit"),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 9.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = StudioPalette.Accent,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            disabledContainerColor = StudioPalette.Background,
+                            disabledContentColor = StudioPalette.Muted
+                        )
+                    ) {
+                        Text("Create poll", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
         }

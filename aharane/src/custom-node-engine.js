@@ -28,7 +28,10 @@ const operators = {
   length: a => Array.isArray(a) ? a.length : String(a).length,
   split: (a, b) => String(a).split(String(b)).slice(0, 100),
   join: (a, b) => { if (!Array.isArray(a)) throw new Error('Join requires a list.'); return a.slice(0, 100).join(String(b)) },
-  choose: (a, b, params) => Boolean(a) ? b : params.other,
+  // The third input is the false branch. Keep params.other as a compatibility
+  // fallback for older custom nodes created before the third typed port existed.
+  choose: (condition, whenTrue, whenFalse, params) =>
+    Boolean(condition) ? whenTrue : (whenFalse === undefined ? params?.other : whenFalse),
 }
 const clone = input => structuredClone(input)
 
@@ -82,7 +85,9 @@ export function runCustomNode(definition, inputs = {}, settings = {}) {
   }
   const values = node.inputs.map(port => inputs[port.id])
   const parameters = { ...node.parameters, ...settings }
-  const result = operators[node.operator](values[0], values[1], parameters)
+  const result = node.operator === 'choose'
+    ? operators.choose(values[0], values[1], values[2], parameters)
+    : operators[node.operator](values[0], values[1], parameters)
   if (!checkType(result, node.outputType)) throw new Error('Custom node result does not match declared type ' + node.outputType + '.')
   return { result }
 }

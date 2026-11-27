@@ -142,7 +142,7 @@ fun EngineLibraryScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = { if (editorVisible) editorVisible = false else onBack() }) {
-                Text(if (editorVisible) "Engines" else "Back")
+                Text(if (editorVisible) "Engines" else "Close")
             }
             Spacer(Modifier.weight(1f))
             Text(if (editorVisible) "Engine code" else "Engines", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = StudioPalette.Ink)

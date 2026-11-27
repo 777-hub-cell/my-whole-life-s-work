@@ -1,7 +1,6 @@
 package com.aharane.studio.features.commands
 
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasTestTag
@@ -140,7 +139,7 @@ class VisualCommandBuilderScreenTest {
         compose.onNodeWithTag("node-library-search").performTextInput("Text to number")
         compose.onNodeWithTag("add-node-value.toNumber").performClick()
         compose.onNodeWithText("Apply").performClick()
-        compose.onNodeWithTag("node-card-value.toNumber").assertExists()
+        assertTrue(compose.onAllNodesWithTag("node-card-value.toNumber").fetchSemanticsNodes().isNotEmpty())
 
         compose.onNodeWithTag("node-library-search").performTextClearance()
         compose.onNodeWithTag("node-library-search").performTextInput("Text to list")
@@ -151,7 +150,7 @@ class VisualCommandBuilderScreenTest {
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         compose.waitForIdle()
         compose.onNodeWithText("Apply").performClick()
-        compose.onNodeWithTag("node-card-value.toList").assertExists()
+        assertTrue(compose.onAllNodesWithTag("node-card-value.toList").fetchSemanticsNodes().isNotEmpty())
     }
 
     @Test

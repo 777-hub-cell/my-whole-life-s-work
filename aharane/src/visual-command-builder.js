@@ -1268,6 +1268,7 @@ async function executeWorkflowCore(input, options = {}) {
           trace.push({ nodeId: node.id, type: node.type, status: dryRun ? 'simulated' : 'success', message: 'Waited ' + ms + ' ms.' })
         } else if (node.type === 'flow.repeat') {
           const count = Number(readInput(workflow, node, 'count', 'count', state) ?? 2)
+          if (!Number.isInteger(count) || count < 1 || count > MAX_REPEAT) throw new Error('Repeat count must be a whole number from 1 to ' + MAX_REPEAT + '.')
           const body = firstEdge(node, 'body')
           if (!body) throw new Error('Repeat body is not connected.')
           for (let index = 0; index < count && !terminated; index += 1) {

@@ -67,6 +67,7 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
+import kotlin.math.roundToInt
 
 private object CommandStudioPalette {
     val Background = Color(0xFF090E0D)

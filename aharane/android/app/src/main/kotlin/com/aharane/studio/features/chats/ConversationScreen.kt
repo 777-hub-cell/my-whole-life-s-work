@@ -205,12 +205,6 @@ fun ConversationScreen(
     var pollOptionsDraft by remember(conversation.key.account.apiValue, conversation.key.jid) { mutableStateOf(listOf("", "")) }
     var pollAllowMultiple by remember(conversation.key.account.apiValue, conversation.key.jid) { mutableStateOf(false) }
     val pollQuestionFocusRequester = remember { FocusRequester() }
-    // The dialog runs in a separate window; keep its submit action bound to
-    // the newest parent draft and callback across window/IME recompositions.
-    val latestPollQuestionDraft = rememberUpdatedState(pollQuestionDraft)
-    val latestPollOptionsDraft = rememberUpdatedState(pollOptionsDraft)
-    val latestPollAllowMultiple = rememberUpdatedState(pollAllowMultiple)
-    val latestOnCreatePoll = rememberUpdatedState(onCreatePoll)
     var actionMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var aiReplyMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var aiReplyTone by rememberSaveable { mutableStateOf("Natural") }
@@ -1346,7 +1340,7 @@ fun ConversationScreen(
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier
                             .testTag("poll-create-submit")
-                            .clip(RoundedCornerShape(StudioFoundationContract.Layout.ControlRadius))
+                            .clip(RoundedCornerShape(10.dp))
                             .background(if (canSubmitPoll) StudioPalette.Accent else StudioPalette.Background)
                             .clickable(enabled = canSubmitPoll) {
                                 // Read the live fields from the conversation composition,

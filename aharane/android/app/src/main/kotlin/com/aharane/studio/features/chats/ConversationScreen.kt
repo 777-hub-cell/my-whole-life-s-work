@@ -1545,7 +1545,6 @@ private fun MessageBubble(
     }
     val outgoing = message.direction == MessageDirection.OUTGOING
     val swipeOffset = remember(message.messageId) { ComposeAnimatable(0f) }
-    val swipeScope = rememberCoroutineScope()
     val swipeThreshold = with(LocalDensity.current) { 64.dp.toPx() }
     val swipeLimit = with(LocalDensity.current) { 98.dp.toPx() }
     val motionEnabled = LocalStudioMotionEnabled.current
@@ -1569,28 +1568,33 @@ private fun MessageBubble(
             Modifier.fillMaxWidth()
                 .offset { IntOffset(swipeOffset.value.roundToInt(), 0) }
                 .pointerInput(message.messageId, swipeThreshold, swipeLimit, motionEnabled) {
-                    detectHorizontalDragGestures(
-                        onDragEnd = {
-                            val activated = swipeOffset.value >= swipeThreshold
-                            if (activated) onReply()
-                            swipeScope.launch {
-                                if (motionEnabled) swipeOffset.animateTo(0f, spring(stiffness = 650f))
-                                else swipeOffset.snapTo(0f)
+                    // Keep drag animations inside the pointer-input lifetime. A remembered
+                    // composition scope can already be cancelled when a lazy message row
+                    // leaves composition at the end of a swipe.
+                    kotlinx.coroutines.coroutineScope {
+                        detectHorizontalDragGestures(
+                            onDragEnd = {
+                                val activated = swipeOffset.value >= swipeThreshold
+                                if (activated) onReply()
+                                launch {
+                                    if (motionEnabled) swipeOffset.animateTo(0f, spring(stiffness = 650f))
+                                    else swipeOffset.snapTo(0f)
+                                }
+                            },
+                            onDragCancel = {
+                                launch {
+                                    if (motionEnabled) swipeOffset.animateTo(0f, spring(stiffness = 650f))
+                                    else swipeOffset.snapTo(0f)
+                                }
+                            },
+                            onHorizontalDrag = { change, dragAmount ->
+                                change.consume()
+                                launch {
+                                    swipeOffset.snapTo((swipeOffset.value + dragAmount).coerceIn(0f, swipeLimit))
+                                }
                             }
-                        },
-                        onDragCancel = {
-                            swipeScope.launch {
-                                if (motionEnabled) swipeOffset.animateTo(0f, spring(stiffness = 650f))
-                                else swipeOffset.snapTo(0f)
-                            }
-                        },
-                        onHorizontalDrag = { change, dragAmount ->
-                            change.consume()
-                            swipeScope.launch {
-                                swipeOffset.snapTo((swipeOffset.value + dragAmount).coerceIn(0f, swipeLimit))
-                            }
-                        }
-                    )
+                        )
+                    }
                 },
             horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start,
             verticalAlignment = Alignment.Bottom

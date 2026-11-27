@@ -109,6 +109,15 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Locale
 
+private fun userFacingServerError(message: String): String {
+    if (message.contains("left the composition", ignoreCase = true) &&
+        message.contains("coroutine", ignoreCase = true)
+    ) {
+        return "A chat action was interrupted while the conversation changed. Please try again."
+    }
+    return message
+}
+
 @Composable
 fun AharaneApp(
     connectionManager: AharaneConnectionManager,
@@ -1733,7 +1742,7 @@ fun AharaneApp(
 
         if (serverError.isNotBlank() && connected) {
             Text(
-                serverError,
+                userFacingServerError(serverError),
                 color = StudioPalette.Bad,
                 fontSize = 11.5.sp,
                 modifier = Modifier.fillMaxWidth().background(StudioPalette.Surface).padding(horizontal = 14.dp, vertical = 5.dp)

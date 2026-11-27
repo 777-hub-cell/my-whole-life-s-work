@@ -27,6 +27,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -87,21 +93,14 @@ private fun nodeAccent(category: String): Color = when {
     else -> CommandStudioPalette.Accent
 }
 
-private fun nodeGlyph(type: String): String = when {
-    type.startsWith("trigger.") -> "⚡"
-    type.startsWith("message.") -> "✉"
-    type.startsWith("contact.") -> "☎"
-    type.startsWith("group.") -> "♟"
-    type.startsWith("moderation.") -> "⊘"
-    type.startsWith("condition.") -> "◇"
-    type.startsWith("variable.") || type.startsWith("counter.") -> "＄"
-    type.startsWith("flow.") -> "⏱"
-    type.startsWith("media.") -> "▧"
-    type.startsWith("profile.") -> "◎"
-    type.startsWith("newsletter.") -> "◉"
-    type.startsWith("engine.") -> "⚙"
-    type.startsWith("custom.") -> "✦"
-    else -> "◆"
+private fun nodeIconResource(type: String): Int = when {
+    type.startsWith("trigger.") -> com.aharane.studio.R.drawable.ic_node_trigger
+    type.startsWith("message.") || type.startsWith("newsletter.") -> com.aharane.studio.R.drawable.ic_node_message
+    type.startsWith("contact.") || type.startsWith("group.") || type.startsWith("profile.") -> com.aharane.studio.R.drawable.ic_node_people
+    type.startsWith("moderation.") -> com.aharane.studio.R.drawable.ic_node_shield
+    type.startsWith("condition.") || type.startsWith("flow.") -> com.aharane.studio.R.drawable.ic_node_flow
+    type.startsWith("media.") -> com.aharane.studio.R.drawable.ic_node_media
+    else -> com.aharane.studio.R.drawable.ic_node_tools
 }
 
 private fun commandBuilderPreviewLibrary(): List<VisualNodeCategory> = listOf(
@@ -642,14 +641,6 @@ fun VisualCommandBuilderScreen(
         Modifier.fillMaxSize().background(CommandStudioPalette.Background).navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "‹  More",
-                color = CommandStudioPalette.Accent,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clickable(onClick = onBack).padding(vertical = 8.dp)
-            )
-            Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f)) {
                 Text("Command builder", color = CommandStudioPalette.Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -708,52 +699,82 @@ fun VisualCommandBuilderScreen(
             }
         }
 
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 7.dp).horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        Column(
+            Modifier.fillMaxWidth().padding(vertical = 7.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
-                Modifier.clip(RoundedCornerShape(999.dp)).background(CommandStudioPalette.Background)
-                    .border(1.dp, CommandStudioPalette.Line, RoundedCornerShape(999.dp)).padding(3.dp),
-                verticalAlignment = Alignment.CenterVertically
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp)
             ) {
-                CommandSegment("Private", selected = account == "private", onClick = { if (account != "private") switchAccount() })
-                CommandSegment("Public", selected = account == "public", onClick = { if (account != "public") switchAccount() })
-            }
-            Row(
-                Modifier.clip(RoundedCornerShape(999.dp)).background(CommandStudioPalette.Background)
-                    .border(1.dp, CommandStudioPalette.Line, RoundedCornerShape(999.dp)).padding(3.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CommandSegment("Active", selected = workflow.enabled, onClick = {
-                    if (!workflow.enabled) scope.launch { saveAndActivate() }
-                })
-                CommandSegment("Paused", selected = !workflow.enabled, onClick = {
-                    if (workflow.enabled) {
-                        scope.launch {
-                            saving = true
-                            try {
-                                val response = repository.updateVisualCommand(workflow.id, workflow.copy(enabled = false).toJson())
-                                val row = response.optJSONObject("workflow") ?: workflow.copy(enabled = false).toJson()
-                                workflow = VisualWorkflow.fromJson(row)
-                                savedWorkflows = savedWorkflows.filterNot { it.id == workflow.id } + workflow
-                                notice = "Command paused."
-                            } catch (error: Exception) {
-                                notice = error.message ?: "Command could not be paused."
-                            } finally { saving = false }
+                CommandHeaderIcon(
+                    icon = if (account == "private") Icons.Outlined.Lock else Icons.Outlined.Public,
+                    description = if (account == "private") "Switch to Public WhatsApp" else "Switch to Private WhatsApp",
+                    enabled = !saving,
+                    onClick = { if (account != "private") switchAccount() else switchAccount() }
+                )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        if (account == "private") "Private WhatsApp" else "Public WhatsApp",
+                        color = CommandStudioPalette.Ink,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text("Switch account", color = CommandStudioPalette.Muted, fontSize = 10.5.sp)
+                }
+                CommandHeaderIcon(
+                    icon = if (workflow.enabled) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                    description = if (workflow.enabled) "Pause command" else "Activate command",
+                    enabled = connected && !saving,
+                    onClick = {
+                        if (!workflow.enabled) {
+                            scope.launch { saveAndActivate() }
+                        } else if (!saving) {
+                            scope.launch {
+                                saving = true
+                                try {
+                                    val response = repository.updateVisualCommand(
+                                        workflow.id, workflow.copy(enabled = false).toJson()
+                                    )
+                                    val row = response.optJSONObject("workflow")
+                                        ?: workflow.copy(enabled = false).toJson()
+                                    workflow = VisualWorkflow.fromJson(row)
+                                    savedWorkflows = savedWorkflows.filterNot { it.id == workflow.id } + workflow
+                                    notice = "Command paused."
+                                } catch (error: Exception) {
+                                    notice = error.message ?: "Command could not be paused."
+                                } finally { saving = false }
+                            }
                         }
                     }
-                })
+                )
+                Text(
+                    if (workflow.enabled) "Active" else "Paused",
+                    color = if (workflow.enabled) CommandStudioPalette.Accent else CommandStudioPalette.Muted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
-            CommandActionButton(
-                "Load",
-                compact = true,
-                enabled = connected && savedWorkflows.isNotEmpty(),
-                modifier = Modifier.testTag("workflow-load"),
-                onClick = { showLoad = true }
-            )
-            CommandActionButton("Engine library", compact = true, enabled = connected, onClick = onManageEngines)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                CommandActionButton(
+                    "Saved commands",
+                    modifier = Modifier.weight(1f).testTag("workflow-load"),
+                    compact = true,
+                    enabled = connected && savedWorkflows.isNotEmpty(),
+                    onClick = { showLoad = true }
+                )
+                CommandActionButton(
+                    "Engine library",
+                    modifier = Modifier.weight(1f),
+                    compact = true,
+                    enabled = connected,
+                    onClick = onManageEngines
+                )
+            }
         }
 
         val hasValidation = validation.errors.isNotEmpty() || validation.warnings.isNotEmpty()
@@ -988,7 +1009,11 @@ fun VisualCommandBuilderScreen(
                 }
             )
             Spacer(Modifier.height(8.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp), contentPadding = PaddingValues(bottom = 7.dp)) {
+            LazyColumn(
+                Modifier.fillMaxWidth().heightIn(max = 124.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                contentPadding = PaddingValues(bottom = 7.dp)
+            ) {
                 item { CategoryChip("All", category == "All") { category = "All" } }
                 items(library) { group ->
                     CategoryChip(group.name, category == group.name) { category = group.name }
@@ -1014,13 +1039,13 @@ fun VisualCommandBuilderScreen(
                     }
                 }
             } else {
-                LazyRow(
+                LazyColumn(
                     Modifier.fillMaxSize().testTag("visual-command-node-library"),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 6.dp, end = 3.dp)
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                    contentPadding = PaddingValues(bottom = 8.dp)
                 ) {
-                    items(visibleNodes, key = { it.type }) { definition ->
-                        LibraryNodeChip(definition, connected) { addNode(definition) }
+                    items(visibleNodes.take(4), key = { it.type }) { definition ->
+                        LibraryNodeRow(definition, connected) { addNode(definition) }
                     }
                 }
             }
@@ -1166,6 +1191,30 @@ fun VisualCommandBuilderScreen(
 }
 
 @Composable
+private fun CommandHeaderIcon(
+    icon: ImageVector,
+    description: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Box(
+        Modifier.size(40.dp)
+            .clip(CircleShape)
+            .background(CommandStudioPalette.Surface)
+            .border(1.dp, CommandStudioPalette.Line, CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon,
+            contentDescription = description,
+            tint = if (enabled) CommandStudioPalette.Accent else CommandStudioPalette.Muted,
+            modifier = Modifier.size(19.dp)
+        )
+    }
+}
+
+@Composable
 private fun CommandActionButton(
     label: String,
     modifier: Modifier = Modifier,
@@ -1225,24 +1274,34 @@ private fun CommandSegment(label: String, selected: Boolean, onClick: () -> Unit
 
 @Composable
 private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier.clip(RoundedCornerShape(999.dp))
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
             .background(if (selected) CommandStudioPalette.Soft else CommandStudioPalette.Background)
             .border(
                 1.dp,
-                if (selected) CommandStudioPalette.Accent.copy(alpha = 0.7f) else CommandStudioPalette.Line,
-                RoundedCornerShape(999.dp)
+                if (selected) CommandStudioPalette.Accent.copy(alpha = 0.5f) else CommandStudioPalette.Line,
+                RoundedCornerShape(10.dp)
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = 11.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             label,
             color = if (selected) CommandStudioPalette.Ink else CommandStudioPalette.Muted,
             fontSize = 11.5.sp,
             fontWeight = FontWeight.SemiBold,
-            maxLines = 1
+            modifier = Modifier.weight(1f)
         )
+        if (selected) {
+            Icon(
+                painter = painterResource(com.aharane.studio.R.drawable.ic_node_flow),
+                contentDescription = "Selected category",
+                tint = CommandStudioPalette.Accent,
+                modifier = Modifier.size(15.dp)
+            )
+        }
     }
 }
 
@@ -1264,7 +1323,12 @@ private fun LibraryNodeChip(node: VisualNodeDefinition, enabled: Boolean, onAdd:
                     Modifier.size(25.dp).clip(RoundedCornerShape(8.dp)).background(accent.copy(alpha = 0.17f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(nodeGlyph(node.type), color = accent, fontSize = 13.sp)
+                    Icon(
+                        painter = painterResource(nodeIconResource(node.type)),
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(15.dp)
+                    )
                 }
                 Text(
                     node.category.uppercase(),
@@ -1317,7 +1381,12 @@ private fun LibraryNodeRow(node: VisualNodeDefinition, enabled: Boolean, onAdd: 
             Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(accent.copy(alpha = 0.17f)),
             contentAlignment = Alignment.Center
         ) {
-            Text(nodeGlyph(node.type), color = accent, fontSize = 16.sp)
+            Icon(
+                painter = painterResource(nodeIconResource(node.type)),
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(19.dp)
+            )
         }
         Spacer(Modifier.width(9.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -1389,7 +1458,12 @@ private fun NodeCard(
         ) {
             Box(Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(accent.copy(alpha = 0.2f)),
                 contentAlignment = Alignment.Center) {
-                Text(nodeGlyph(node.type), color = accent, fontSize = 17.sp)
+                Icon(
+                    painter = painterResource(nodeIconResource(node.type)),
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(19.dp)
+                )
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 if (definition.category.isNotBlank()) {
@@ -1418,11 +1492,9 @@ private fun NodeCard(
                 .padding(horizontal = 10.dp, vertical = 9.dp)
         )
         if (definition.inputs.isNotEmpty()) {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 7.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 7.dp, vertical = 2.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 definition.inputs.forEach { socket ->
                     SocketAction(socket, false, "socket-" + node.type + "-in-" + socket.id,
@@ -1431,11 +1503,10 @@ private fun NodeCard(
             }
         }
         if (definition.outputs.isNotEmpty()) {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 7.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 7.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalAlignment = Alignment.End
             ) {
                 definition.outputs.forEach { socket ->
                     SocketAction(socket, true, "socket-" + node.type + "-out-" + socket.id,

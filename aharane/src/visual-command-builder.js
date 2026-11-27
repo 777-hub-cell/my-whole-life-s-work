@@ -643,7 +643,9 @@ export function convertTextToBoolean(value) {
 export function convertTextToList(value, separator = ',') {
   const source = String(value ?? '')
   const delimiter = String(separator ?? '').trim() || ','
-  return source.split(delimiter).slice(0, 100).map(item => item.trim()).filter(Boolean)
+  const items = source.split(delimiter).map(item => item.trim()).filter(Boolean)
+  if (items.length > 100) throw new Error('Text-to-list conversion is limited to 100 items.')
+  return items
 }
 
 function resolveSource(workflow, edge, context) {

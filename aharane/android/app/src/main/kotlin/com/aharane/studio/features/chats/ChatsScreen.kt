@@ -609,7 +609,7 @@ private fun ChatListRow(
     val rowScale = LocalStudioRowScale.current
     // WhatsApp-style inbox: show each contact or group picture in the chat list.
     // Conversation message rows intentionally do not repeat the contact avatar.
-    val showProfileAvatar = showAvatar
+    val showProfileAvatar = true
     val profilePicture by produceState<ImageBitmap?>(
         initialValue = null, chat.key, connected, showProfileAvatar
     ) {
@@ -648,7 +648,7 @@ private fun ChatListRow(
                 if (profilePicture != null) {
                     Image(
                         bitmap = profilePicture!!,
-                        contentDescription = "WhatsApp group picture of " + chat.title,
+                        contentDescription = "WhatsApp profile picture of " + chat.title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize().clip(CircleShape)
                     )

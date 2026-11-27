@@ -137,15 +137,27 @@ class VisualCommandBuilderScreenTest {
             }
         }
         compose.waitUntil(5_000) { source.readCount > 0 }
+        compose.waitUntil(15_000) {
+            compose.onAllNodesWithTag("add-node-value.toNumber").fetchSemanticsNodes().isNotEmpty()
+        }
 
         compose.onNodeWithTag("node-library-search").performTextInput("Text to number")
         compose.onNodeWithTag("add-node-value.toNumber").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Apply").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithText("Apply").performClick()
         assertTrue(compose.onAllNodesWithTag("node-card-value.toNumber").fetchSemanticsNodes().isNotEmpty())
 
         compose.onNodeWithTag("node-library-search").performTextClearance()
         compose.onNodeWithTag("node-library-search").performTextInput("Text to list")
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("add-node-value.toList").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithTag("add-node-value.toList").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("node-config-field-separator").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithTag("node-config-field-separator").assertIsDisplayed()
         compose.onNodeWithTag("node-config-field-separator").performTextClearance()
         compose.onNodeWithTag("node-config-field-separator").performTextInput(";")

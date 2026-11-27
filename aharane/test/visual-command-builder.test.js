@@ -9,6 +9,9 @@ import {
   executeVisualWorkflow,
   normalizeWorkflow,
   validateWorkflow,
+  VISUAL_NODE_LIBRARY,
+  registerEngineNode,
+  unregisterEngineNode,
 } from '../src/visual-command-builder.js'
 
 async function makeStore(t) {
@@ -756,4 +759,155 @@ test('message triggers can be found only for their selected account', async t =>
   await store.save(draft)
   assert.equal(store.findMessageTriggers('public').length, 1)
   assert.equal(store.findMessageTriggers('private').length, 0)
+})
+
+
+test('node palette exposes general media and View Once categories', () => {
+  const categories = new Map(VISUAL_NODE_LIBRARY.map(group => [group.category, group.nodes.map(node => node.type)]))
+  assert.ok(categories.get('Media and attachments').includes('media.sendMedia'))
+  assert.ok(categories.get('View Once').includes('message.sendViewOnceText'))
+  assert.ok(categories.get('View Once').includes('media.sendViewOnce'))
+  assert.ok(categories.get('View Once').includes('message.isViewOnce'))
+  assert.ok(categories.get('Conditions and comparisons').includes('condition.isViewOnce'))
+})
+
+test('View Once text is sent with the View Once V2 wrapper; dry-run never sends', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  trigger.config.command = 'one'
+  const send = { id: 'view-once-text', type: 'message.sendViewOnceText', x: 280, y: 100, config: { text: 'Only once' } }
+  draft.nodes = [trigger, send]
+  draft.edges = [{ id: 'vo-text-edge', from: trigger.id, fromSocket: 'next', to: send.id, toSocket: 'in' }]
+  assert.equal(validateWorkflow(draft).valid, true, JSON.stringify(validateWorkflow(draft).errors))
+  const sent = []
+  const live = await executeVisualWorkflow(draft, {
+    store,
+    context: context({ socket: { sendMessage: async (_jid, body) => { sent.push(body); return { key: { id: 'view-once-text-sent' } } } } }),
+  })
+  assert.equal(live.ok, true, live.error)
+  assert.deepEqual(sent, [{ text: 'Only once', viewOnceV2: true }])
+  let calls = 0
+  const dry = await executeVisualWorkflow(draft, {
+    store, dryRun: true,
+    context: context({ socket: { sendMessage: async () => { calls += 1; throw new Error('dry run must not send') } } }),
+  })
+  assert.equal(dry.ok, true, dry.error)
+  assert.equal(calls, 0)
+})
+
+test('View Once condition recognises message wrappers without downloading media', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const condition = { id: 'view-once-condition', type: 'condition.isViewOnce', x: 270, y: 100, config: {} }
+  const yes = { id: 'yes-end', type: 'flow.end', x: 530, y: 35, config: {} }
+  const no = { id: 'no-end', type: 'flow.end', x: 530, y: 180, config: {} }
+  draft.nodes = [trigger, condition, yes, no]
+  draft.edges = [
+    { id: 'vo-condition-in', from: trigger.id, fromSocket: 'next', to: condition.id, toSocket: 'in' },
+    { id: 'vo-condition-yes', from: condition.id, fromSocket: 'yes', to: yes.id, toSocket: 'in' },
+    { id: 'vo-condition-no', from: condition.id, fromSocket: 'no', to: no.id, toSocket: 'in' },
+  ]
+  const result = await executeVisualWorkflow(draft, {
+    store, dryRun: true,
+    context: context({
+      message: {
+        key: { id: 'received-vo', remoteJid: '2348012345678@s.whatsapp.net', fromMe: false },
+        message: { viewOnceMessageV2: { message: { imageMessage: { mimetype: 'image/jpeg' } } } },
+      },
+    }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.match(result.trace.find(item => item.type === 'condition.isViewOnce').message, /YES branch selected/i)
+})
+
+test('View Once media sends Engine media with the View Once wrapper', async t => {
+  const { store } = await makeStore(t)
+  const manifest = {
+    id: 'vo_image_source', name: 'View Once test image source', version: 1, entryPoint: 'run',
+    inputs: [], outputs: [{ id: 'media', type: 'media' }],
+    permissions: [], allowedHosts: [], timeoutMs: 5000, maxResults: 1,
+  }
+  registerEngineNode(manifest)
+  t.after(() => unregisterEngineNode('vo_image_source'))
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const engine = { id: 'engine-source', type: 'engine.vo_image_source', x: 270, y: 90, config: { engineVersion: '1' } }
+  const send = { id: 'send-vo-image', type: 'media.sendViewOnce', x: 540, y: 90, config: { kind: 'image', caption: 'Once' } }
+  draft.nodes = [trigger, engine, send]
+  draft.edges = [
+    { id: 'engine-exec', from: trigger.id, fromSocket: 'next', to: engine.id, toSocket: 'in' },
+    { id: 'send-exec', from: engine.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
+    { id: 'engine-media', from: engine.id, fromSocket: 'media', to: send.id, toSocket: 'media' },
+  ]
+  assert.equal(validateWorkflow(draft).valid, true, JSON.stringify(validateWorkflow(draft).errors))
+  const sent = []
+  const pixel = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/pYcAAAAASUVORK5CYII='
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({ socket: { sendMessage: async (_jid, body) => { sent.push(body); return { key: { id: 'sent-view-once-image' } } } } }),
+    runEngine: async () => ({ outputs: { media: { mimeType: 'image/png', base64: pixel } } }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].viewOnceV2, true)
+  assert.ok(Buffer.isBuffer(sent[0].image))
+  assert.equal(sent[0].caption, 'Once')
+})
+
+test('View Once message content cannot be forwarded by a Builder workflow', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const forward = { id: 'forward-vo', type: 'media.forwardOriginal', x: 270, y: 100, config: {} }
+  draft.nodes = [trigger, forward]
+  draft.edges = [{ id: 'forward-vo-edge', from: trigger.id, fromSocket: 'next', to: forward.id, toSocket: 'in' }]
+  let calls = 0
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({
+      message: {
+        key: { id: 'view-once-to-forward', remoteJid: '2348012345678@s.whatsapp.net', fromMe: false },
+        message: { viewOnceMessage: { message: { videoMessage: { mimetype: 'video/mp4' } } } },
+      },
+      socket: { sendMessage: async () => { calls += 1; return { key: { id: 'should-not-send' } } } },
+    }),
+  })
+  assert.equal(result.ok, false)
+  assert.match(result.error, /View Once content cannot be forwarded/i)
+  assert.equal(calls, 0)
+})
+
+test('generic media node sends Engine-produced video using the correct WhatsApp payload', async t => {
+  const { store } = await makeStore(t)
+  const manifest = {
+    id: 'video_source', name: 'Video source', version: 1, entryPoint: 'run',
+    inputs: [], outputs: [{ id: 'media', type: 'media' }],
+    permissions: [], allowedHosts: [], timeoutMs: 5000, maxResults: 1,
+  }
+  registerEngineNode(manifest)
+  t.after(() => unregisterEngineNode('video_source'))
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const engine = { id: 'engine-video', type: 'engine.video_source', x: 270, y: 90, config: { engineVersion: '1' } }
+  const send = { id: 'send-video', type: 'media.sendMedia', x: 540, y: 90, config: { kind: 'video', caption: 'Clip' } }
+  draft.nodes = [trigger, engine, send]
+  draft.edges = [
+    { id: 'engine-video-exec', from: trigger.id, fromSocket: 'next', to: engine.id, toSocket: 'in' },
+    { id: 'send-video-exec', from: engine.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
+    { id: 'engine-video-media', from: engine.id, fromSocket: 'media', to: send.id, toSocket: 'media' },
+  ]
+  const sent = []
+  const videoBytes = Buffer.from('small synthetic video bytes').toString('base64')
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({ socket: { sendMessage: async (_jid, body) => { sent.push(body); return { key: { id: 'sent-video' } } } } }),
+    runEngine: async () => ({ outputs: { media: { mimeType: 'video/mp4', base64: videoBytes } } }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.equal(sent.length, 1)
+  assert.ok(Buffer.isBuffer(sent[0].video))
+  assert.equal(sent[0].mimetype, 'video/mp4')
+  assert.equal(sent[0].caption, 'Clip')
 })

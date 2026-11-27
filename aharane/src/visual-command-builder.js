@@ -46,7 +46,11 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
     { type: 'message.sendText', name: 'Send text', description: 'Send text to the chat that triggered this workflow.', ports: ports([execIn, { id: 'text', label: 'Text', type: 'string' }], [execOut, { id: 'sent', label: 'Sent message', type: 'message' }]) },
     { type: 'message.replyText', name: 'Reply to message', description: 'Reply to the triggering WhatsApp message with a quote.', ports: ports([execIn, { id: 'text', label: 'Text', type: 'string' }], [execOut, { id: 'sent', label: 'Sent message', type: 'message' }]) },
     { type: 'message.react', name: 'React to message', description: 'React to the triggering message with an emoji.', ports: ports([execIn, { id: 'emoji', label: 'Emoji', type: 'string' }], [execOut]) },
-    { type: 'media.forwardOriginal', name: 'Forward original message', description: 'Forward the original WhatsApp message, including media it already contains.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Forwarded message', type: 'message' }]) },
+    { type: 'message.editOriginal', name: 'Edit your triggering message', description: 'Edit the triggering message only when it was sent by this WhatsApp account.', ports: ports([execIn, { id: 'text', label: 'Replacement text', type: 'string' }], [execOut, { id: 'sent', label: 'Edited message', type: 'message' }]) },
+    { type: 'message.deleteOriginal', name: 'Delete your triggering message', description: 'Delete the triggering message only when it was sent by this WhatsApp account.', ports: ports([execIn], [execOut]) },
+    { type: 'message.pinOriginal', name: 'Pin or unpin triggering message', description: 'Pin or unpin the triggering message in the current chat (account owner only).', ports: ports([execIn], [execOut]) },
+    { type: 'message.keepOriginal', name: 'Keep or unkeep triggering message', description: 'Keep or unkeep an eligible message in a disappearing chat (account owner only).', ports: ports([execIn], [execOut]) },
+    { type: 'media.forwardOriginal', name: 'Forward original message', description: 'Forward the original WhatsApp message, except View Once content which remains one-time only.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Forwarded message', type: 'message' }]) },
     { type: 'message.sendLocation', name: 'Send location', description: 'Send a WhatsApp location pin with validated coordinates.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Location message', type: 'message' }]) },
   ] },
   { category: 'Contacts and chats', nodes: [
@@ -62,6 +66,15 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
   { category: 'Media and attachments', nodes: [
     { type: 'media.sendImage', name: 'Send image', description: 'Send an Engine-produced image to the triggering WhatsApp chat.', ports: ports([execIn, { id: 'image', label: 'Image', type: 'image' }, { id: 'caption', label: 'Caption', type: 'string' }], [execOut, { id: 'sent', label: 'Sent image', type: 'message' }]) },
     { type: 'media.sendImages', name: 'Send image results', description: 'Send a bounded number of Engine-produced images to the triggering WhatsApp chat.', ports: ports([execIn, { id: 'images', label: 'Images', type: 'list' }, { id: 'caption', label: 'Caption', type: 'string' }], [execOut, { id: 'sent', label: 'Sent messages', type: 'list' }]) },
+    { type: 'media.sendMedia', name: 'Send media', description: 'Send an Engine-produced image, video, audio file, document or sticker.', ports: ports([execIn, { id: 'media', label: 'Media', type: 'media' }, { id: 'caption', label: 'Caption', type: 'string' }], [execOut, { id: 'sent', label: 'Sent media', type: 'message' }]) },
+  ] },
+  { category: 'View Once', nodes: [
+    { type: 'message.sendViewOnceText', name: 'Send View Once text', description: 'Send text using WhatsApp View Once text wrapping. Availability depends on WhatsApp enabling this beta feature for the account.', ports: ports([execIn, { id: 'text', label: 'Text', type: 'string' }], [execOut, { id: 'sent', label: 'Sent View Once text', type: 'message' }]) },
+    { type: 'media.sendViewOnce', name: 'Send View Once media', description: 'Send an Engine-produced photo, video or audio message using WhatsApp View Once.', ports: ports([execIn, { id: 'media', label: 'Media', type: 'media' }, { id: 'caption', label: 'Caption', type: 'string' }], [execOut, { id: 'sent', label: 'Sent View Once media', type: 'message' }]) },
+    { type: 'message.isViewOnce', name: 'Read View Once flag', description: 'Read whether the triggering message is View Once without downloading or exposing its content.', ports: ports([], [{ id: 'value', label: 'Is View Once', type: 'boolean' }]) },
+  ] },
+  { category: 'Chat privacy', nodes: [
+    { type: 'chat.setDisappearing', name: 'Set disappearing messages', description: 'Set the disappearing-message timer for the current Public group (account owner only).', ports: ports([execIn], [execOut]) },
   ] },
   { category: 'Interactive messages', nodes: [
     { type: 'message.sendButtons', name: 'Send buttons', description: 'Send up to three interactive reply buttons.', ports: ports([execIn], [execOut, { id: 'sent', label: 'Interactive message', type: 'message' }]) },
@@ -80,6 +93,7 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
     { type: 'condition.contains', name: 'Text contains', description: 'Check whether text contains another value.', ports: ports([execIn, { id: 'text', label: 'Text', type: 'string' }, { id: 'search', label: 'Search for', type: 'string' }], [{ id: 'yes', label: 'YES', type: 'exec' }, { id: 'no', label: 'NO', type: 'exec' }]) },
     { type: 'condition.isOwner', name: 'Is account owner', description: 'Check the authenticated Private Owner or Public Owner.', ports: ports([execIn], [{ id: 'yes', label: 'YES', type: 'exec' }, { id: 'no', label: 'NO', type: 'exec' }]) },
     { type: 'condition.isGroupAdmin', name: 'Is group admin', description: 'Check the triggering Public group participant against actual WhatsApp group metadata.', ports: ports([execIn], [{ id: 'yes', label: 'YES', type: 'exec' }, { id: 'no', label: 'NO', type: 'exec' }]) },
+    { type: 'condition.isViewOnce', name: 'Is View Once message', description: 'Branch without downloading or exposing the View Once content.', ports: ports([execIn], [{ id: 'yes', label: 'YES', type: 'exec' }, { id: 'no', label: 'NO', type: 'exec' }]) },
   ] },
   { category: 'Variables and counters', nodes: [
     { type: 'variable.set', name: 'Set variable', description: 'Set a temporary text variable for this workflow run.', ports: ports([execIn, { id: 'value', label: 'Value', type: 'string' }], [execOut]) },
@@ -170,6 +184,7 @@ export function currentVisualNodeLibrary() {
 }
 const triggerTypes = new Set(['trigger.command', 'trigger.message'])
 const OWNER_ONLY_NODES = new Set([
+  'message.pinOriginal', 'message.keepOriginal', 'chat.setDisappearing',
   'group.updateSubject', 'group.updateDescription', 'group.participantsUpdate', 'group.settingUpdate',
   'moderation.blockContact', 'moderation.unblockContact',
   'profile.updateName', 'profile.updateStatus',
@@ -180,6 +195,24 @@ const isExec = (node, socket) => definitions.get(node && node.type)?.ports.outpu
 
 function isEnabled(value) {
   return value === true || value === 'true' || value === 1 || value === '1'
+}
+
+const VIEW_ONCE_WRAPPERS = ['viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension']
+
+function isViewOnceMessage(message) {
+  let current = message?.message || message || {}
+  for (let depth = 0; depth < 8 && current && typeof current === 'object'; depth++) {
+    if (VIEW_ONCE_WRAPPERS.some(key => current[key]?.message)) return true
+    for (const key of ['imageMessage', 'videoMessage', 'audioMessage', 'extendedTextMessage']) {
+      if (current[key]?.viewOnce === true) return true
+    }
+    const next = current.ephemeralMessage?.message ||
+      current.documentWithCaptionMessage?.message ||
+      current.editedMessage?.message
+    if (!next) break
+    current = next
+  }
+  return false
 }
 
 function messageContextInfo(message) {
@@ -325,8 +358,25 @@ export function validateWorkflow(input) {
       const chatScope = textValue(config.chatScope, 16) || 'direct'
       if (!['direct', 'groups', 'both'].includes(chatScope)) issue(node.id, 'error', 'The message-event chat scope is invalid.', 'Choose direct chats, groups, or both.')
     }
-    if (['message.sendText', 'message.replyText'].includes(node.type) && !textValue(config.text).trim() && !inputEdge(workflow, node.id, 'text')) {
+    if (['message.sendText', 'message.replyText', 'message.sendViewOnceText', 'message.editOriginal'].includes(node.type) && !textValue(config.text).trim() && !inputEdge(workflow, node.id, 'text')) {
       issue(node.id, 'error', 'Message text is required.', 'Enter text or connect a text output.')
+    }
+    if (['media.sendMedia', 'media.sendViewOnce'].includes(node.type)) {
+      if (!inputEdge(workflow, node.id, 'media')) issue(node.id, 'error', 'Media input is not connected.', 'Connect a media output from an Engine.')
+      const kind = textValue(config.kind, 16) || 'image'
+      const allowedKinds = node.type === 'media.sendViewOnce'
+        ? ['image', 'video', 'audio']
+        : ['image', 'video', 'audio', 'document', 'sticker']
+      if (!allowedKinds.includes(kind)) issue(node.id, 'error', 'The media type is not supported.', 'Choose one of: ' + allowedKinds.join(', ') + '.')
+    }
+    if (node.type === 'message.pinOriginal' && ![86400, 604800, 2592000].includes(Number(config.seconds == null ? 86400 : config.seconds))) {
+      issue(node.id, 'error', 'The pin duration is invalid.', 'Choose 86400, 604800 or 2592000 seconds.')
+    }
+    if (node.type === 'message.keepOriginal' && !['keep', 'unkeep'].includes(textValue(config.action, 12) || 'keep')) {
+      issue(node.id, 'error', 'The keep action is invalid.', 'Choose keep or unkeep.')
+    }
+    if (node.type === 'chat.setDisappearing' && ![0, 86400, 604800, 7776000].includes(Number(config.seconds))) {
+      issue(node.id, 'error', 'The disappearing timer is invalid.', 'Choose 0, 86400, 604800 or 7776000 seconds.')
     }
     if (node.type === 'message.react' && !textValue(config.emoji, 24).trim() && !inputEdge(workflow, node.id, 'emoji')) {
       issue(node.id, 'error', 'A reaction emoji is required.', 'Enter an emoji or connect a text output.')
@@ -573,6 +623,7 @@ function resolveSource(workflow, edge, context) {
   if (sourceNode.type === 'message.sender') return context.event.sender || ''
   if (sourceNode.type === 'message.arguments') return context.event.rawArgs || ''
   if (sourceNode.type === 'message.quotedText') return quotedMessageText(context.event.message)
+  if (sourceNode.type === 'message.isViewOnce') return isViewOnceMessage(context.event.message)
   if (sourceNode.type === 'variable.get') return context.variables[textValue(sourceNode.config.key, 48)] ?? ''
   if (sourceNode.type === 'value.toText') {
     const valueEdge = inputEdge(workflow, sourceNode.id, 'value')
@@ -712,18 +763,78 @@ async function executeWorkflowCore(input, options = {}) {
           const owner = workflow.account === 'private' ? event.privateControl === true : event.isPublicOwner === true
           if (!owner) throw new Error('This operation is restricted to the authenticated account owner.')
         }
-        if (node.type === 'message.sendText' || node.type === 'message.replyText') {
+        if (node.type === 'message.sendText' || node.type === 'message.replyText' || node.type === 'message.sendViewOnceText') {
           const value = textValue(readInput(workflow, node, 'text', 'text', state))
           if (!value.trim()) throw new Error('Message text is empty.')
+          const payload = node.type === 'message.sendViewOnceText' ? { text: value, viewOnceV2: true } : { text: value }
           if (dryRun) {
-            trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would send: ' + value.slice(0, 160) })
-            outputs.set(node.id, { sent: { simulated: true, text: value } })
+            trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: node.type === 'message.sendViewOnceText'
+              ? 'Would send View Once text (requires WhatsApp beta support on this account).'
+              : 'Would send: ' + value.slice(0, 160) })
+            outputs.set(node.id, { sent: { simulated: true, text: value, viewOnce: node.type === 'message.sendViewOnceText' } })
           } else {
-            const sent = await sendWhatsAppMessage(event.remoteJid, { text: value },
+            const sent = await sendWhatsAppMessage(event.remoteJid, payload,
               node.type === 'message.replyText' ? { quoted: event.message } : undefined)
             if (!sent?.key?.id) throw new Error('WhatsApp did not return a sent message.')
             outputs.set(node.id, { sent })
-            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the message.' })
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: node.type === 'message.sendViewOnceText'
+              ? 'WhatsApp accepted the View Once text wrapper. Recipient support remains a phased beta rollout.'
+              : 'WhatsApp accepted the message.' })
+          }
+        } else if (node.type === 'message.editOriginal') {
+          const key = event.message?.key
+          const value = textValue(readInput(workflow, node, 'text', 'text', state))
+          if (!key?.id || key.fromMe !== true || !value.trim()) throw new Error('Only a non-empty edit to a message sent by this WhatsApp account is allowed.')
+          if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would edit the triggering message.' })
+          else {
+            const sent = await sendWhatsAppMessage(event.remoteJid, { text: value, edit: key })
+            if (!sent?.key?.id) throw new Error('WhatsApp did not confirm the edit.')
+            outputs.set(node.id, { sent })
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the edit.' })
+          }
+        } else if (node.type === 'message.deleteOriginal') {
+          const key = event.message?.key
+          if (!key?.id || key.fromMe !== true) throw new Error('Only a message sent by this WhatsApp account can be deleted by this node.')
+          if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would delete the triggering account-owned message.' })
+          else {
+            const sent = await sendWhatsAppMessage(event.remoteJid, { delete: key })
+            if (!sent?.key?.id) throw new Error('WhatsApp did not confirm the delete.')
+            outputs.set(node.id, { sent })
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the delete.' })
+          }
+        } else if (node.type === 'message.pinOriginal') {
+          const key = event.message?.key
+          if (!key?.id) throw new Error('There is no triggering message to pin.')
+          const seconds = Number(node.config.seconds == null ? 86400 : node.config.seconds)
+          if (![86400, 604800, 2592000].includes(seconds)) throw new Error('Pin duration must be 1, 7 or 30 days.')
+          const type = node.config.action === 'unpin' ? 2 : 1
+          if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: type === 2 ? 'Would unpin the triggering message.' : 'Would pin the triggering message for ' + seconds + ' seconds.' })
+          else {
+            const sent = await sendWhatsAppMessage(event.remoteJid, { pin: key, time: seconds, type })
+            if (!sent?.key?.id) throw new Error('WhatsApp did not confirm the pin action.')
+            outputs.set(node.id, { sent })
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: type === 2 ? 'Message unpinned.' : 'Message pinned.' })
+          }
+        } else if (node.type === 'message.keepOriginal') {
+          const key = event.message?.key
+          if (!key?.id || isViewOnceMessage(event.message)) throw new Error('There is no eligible message to keep.')
+          const type = (node.config.action || 'keep') === 'unkeep' ? 2 : 1
+          if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: type === 2 ? 'Would unkeep the triggering message.' : 'Would keep the triggering message.' })
+          else {
+            const sent = await sendWhatsAppMessage(event.remoteJid, { keep: key, type })
+            if (!sent?.key?.id) throw new Error('WhatsApp did not confirm the keep action.')
+            outputs.set(node.id, { sent })
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: type === 2 ? 'Message unkept.' : 'Message kept.' })
+          }
+        } else if (node.type === 'chat.setDisappearing') {
+          if (!isGroupJid(event.remoteJid) || workflow.account !== 'public') throw new Error('Disappearing-message settings are available only for Public group chats.')
+          const seconds = Number(node.config.seconds)
+          if (![0, 86400, 604800, 7776000].includes(seconds)) throw new Error('Choose a supported disappearing timer.')
+          if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would set group disappearing timer to ' + seconds + ' seconds.' })
+          else {
+            await sendWhatsAppMessage(event.remoteJid, { disappearingMessagesInChat: seconds })
+            outputs.set(node.id, { updated: true, seconds })
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'Disappearing-message timer updated.' })
           }
         } else if (node.type === 'message.react') {
           const emoji = textValue(readInput(workflow, node, 'emoji', 'emoji', state), 24).trim()
@@ -790,6 +901,7 @@ async function executeWorkflowCore(input, options = {}) {
           }
         } else if (node.type === 'media.forwardOriginal') {
           if (!event.message?.key?.id || !event.message?.message) throw new Error('There is no original message to forward.')
+          if (isViewOnceMessage(event.message)) throw new Error('View Once content cannot be forwarded by a workflow. Open it in the conversation viewer using its normal one-time flow.')
           if (dryRun) {
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would forward the original message and its supported media.' })
           } else {
@@ -923,6 +1035,12 @@ async function executeWorkflowCore(input, options = {}) {
             outputs.set(node.id, { sent })
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: 'WhatsApp accepted the newsletter post.' })
           }
+        } else if (node.type === 'condition.isViewOnce') {
+          const matched = isViewOnceMessage(event.message)
+          next = firstEdge(node, matched ? 'yes' : 'no')
+          trace.push({ nodeId: node.id, type: node.type, status: 'success', message: matched
+            ? 'YES branch selected: triggering message is View Once.'
+            : 'NO branch selected: triggering message is not View Once.' })
         } else if (node.type === 'condition.equals') {
           const left = textValue(readInput(workflow, node, 'left', 'left', state))
           const right = textValue(readInput(workflow, node, 'right', 'right', state))
@@ -964,6 +1082,50 @@ async function executeWorkflowCore(input, options = {}) {
           counters[key] = value
           outputs.set(node.id, { value })
           trace.push({ nodeId: node.id, type: node.type, status: dryRun ? 'simulated' : 'success', message: key + ': ' + value })
+        } else if (node.type === 'media.sendMedia' || node.type === 'media.sendViewOnce') {
+          const raw = readInput(workflow, node, 'media', 'media', state)
+          const kind = textValue(node.config.kind, 16) || 'image'
+          const isViewOnce = node.type === 'media.sendViewOnce'
+          const allowedKinds = isViewOnce ? ['image', 'video', 'audio'] : ['image', 'video', 'audio', 'document', 'sticker']
+          if (!allowedKinds.includes(kind)) throw new Error('Unsupported media type: ' + kind)
+          if (!raw || typeof raw !== 'object' || typeof raw.base64 !== 'string' ||
+              !/^[A-Za-z0-9+/]+={0,2}$/.test(raw.base64) || raw.base64.length > 700000) {
+            throw new Error('Engine media must contain bounded base64 data and a MIME type.')
+          }
+          const mimeType = textValue(raw.mimeType, 100).toLowerCase()
+          const expected = {
+            image: /^image\/(?:jpeg|png|webp|gif)$/,
+            video: /^video\/mp4$/,
+            audio: /^audio\/(?:mpeg|mp4|ogg|opus|aac|webm)$/,
+            document: /^(?:application\/(?:pdf|zip|vnd\.openxmlformats-officedocument\.[a-z.]+)|text\/(?:plain|csv))$/,
+            sticker: /^image\/webp$/,
+          }
+          if (!expected[kind].test(mimeType)) throw new Error('Media MIME type does not match the selected ' + kind + ' type.')
+          const bytes = Buffer.from(raw.base64, 'base64')
+          if (!bytes.length || bytes.length > 512 * 1024 || bytes.toString('base64').replace(/=+$/, '') !== raw.base64.replace(/=+$/, '')) {
+            throw new Error('Media is empty, malformed or exceeds the 512 KiB Builder send limit.')
+          }
+          const caption = textValue(node.config.caption, 1000)
+          const fileName = textValue(raw.fileName || node.config.fileName || 'attachment', 120).replace(/[\\/\r\n]/g, '_')
+          const body = kind === 'image' ? { image: bytes, caption }
+            : kind === 'video' ? { video: bytes, mimetype: mimeType, caption }
+              : kind === 'audio' ? { audio: bytes, mimetype: mimeType, ptt: node.config.voiceNote === 'true' }
+                : kind === 'sticker' ? { sticker: bytes }
+                  : { document: bytes, mimetype: mimeType, fileName, caption }
+          if (isViewOnce) body.viewOnceV2 = true
+          if (dryRun) {
+            trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: isViewOnce
+              ? 'Would send ' + kind + ' using the View Once V2 wrapper.'
+              : 'Would send ' + kind + ' media.' })
+            outputs.set(node.id, { sent: { simulated: true, kind, viewOnce: isViewOnce } })
+          } else {
+            const sent = await sendWhatsAppMessage(event.remoteJid, body)
+            if (!sent?.key?.id) throw new Error('WhatsApp did not confirm the media message.')
+            outputs.set(node.id, { sent })
+            trace.push({ nodeId: node.id, type: node.type, status: 'success', message: isViewOnce
+              ? 'WhatsApp accepted the View Once media message.'
+              : 'WhatsApp accepted the media message.' })
+          }
         } else if (node.type === 'media.sendImage' || node.type === 'media.sendImages') {
           const key = node.type === 'media.sendImage' ? 'image' : 'images'
           const raw = readInput(workflow, node, key, key, state)

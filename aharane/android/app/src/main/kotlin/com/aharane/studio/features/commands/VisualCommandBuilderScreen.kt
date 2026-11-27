@@ -148,6 +148,40 @@ private fun commandBuilderPreviewLibrary(): List<VisualNodeCategory> = listOf(
         )
     ),
     VisualNodeCategory(
+        "Media and attachments",
+        listOf(
+            VisualNodeDefinition(
+                type = "media.sendMedia",
+                name = "Send media",
+                description = "Send an Engine-produced image, video, audio file, document or sticker.",
+                category = "Media and attachments",
+                inputs = listOf(VisualSocket("in", "In", "exec"), VisualSocket("media", "Media", "media"), VisualSocket("caption", "Caption", "string")),
+                outputs = listOf(VisualSocket("next", "Next", "exec"), VisualSocket("sent", "Sent media", "message"))
+            )
+        )
+    ),
+    VisualNodeCategory(
+        "View Once",
+        listOf(
+            VisualNodeDefinition(
+                type = "message.sendViewOnceText",
+                name = "Send View Once text",
+                description = "Send text using the phased WhatsApp View Once text beta.",
+                category = "View Once",
+                inputs = listOf(VisualSocket("in", "In", "exec"), VisualSocket("text", "Text", "string")),
+                outputs = listOf(VisualSocket("next", "Next", "exec"), VisualSocket("sent", "Sent View Once text", "message"))
+            ),
+            VisualNodeDefinition(
+                type = "media.sendViewOnce",
+                name = "Send View Once media",
+                description = "Send an Engine-produced photo, video or audio message with View Once.",
+                category = "View Once",
+                inputs = listOf(VisualSocket("in", "In", "exec"), VisualSocket("media", "Media", "media"), VisualSocket("caption", "Caption", "string")),
+                outputs = listOf(VisualSocket("next", "Next", "exec"), VisualSocket("sent", "Sent View Once media", "message"))
+            )
+        )
+    ),
+    VisualNodeCategory(
         "Conditions and comparisons",
         listOf(
             VisualNodeDefinition(
@@ -469,6 +503,13 @@ fun VisualCommandBuilderScreen(
             "trigger.message" -> mapOf("chatScope" to "direct", "maxMessagesPerRun" to "10")
             "message.sendText", "message.replyText" -> mapOf("text" to "Hello, {{sender}}!")
             "message.react" -> mapOf("emoji" to "👍")
+            "message.sendViewOnceText" -> mapOf("text" to "This message can be opened once.")
+            "media.sendViewOnce" -> mapOf("kind" to "image", "caption" to "")
+            "media.sendMedia" -> mapOf("kind" to "image", "caption" to "")
+            "message.editOriginal" -> mapOf("text" to "Updated message")
+            "message.pinOriginal" -> mapOf("seconds" to "86400", "action" to "pin")
+            "message.keepOriginal" -> mapOf("action" to "keep")
+            "chat.setDisappearing" -> mapOf("seconds" to "86400")
             "message.sendPoll" -> mapOf("title" to "Quick question?", "options" to "Option A\nOption B", "selectableCount" to "1")
             "message.sendLocation" -> mapOf("latitude" to "6.5244", "longitude" to "3.3792", "name" to "Lagos")
             "contact.sendCard" -> mapOf("name" to "Contact name", "phone" to "2348012345678")
@@ -1413,6 +1454,14 @@ private fun nodeSummary(node: VisualNode): String = when (node.type) {
     "trigger.message" -> "On authorized incoming message"
     "message.sendText", "message.replyText" -> node.config["text"].orEmpty().ifBlank { "Connect text input" }
     "message.react" -> "React " + node.config["emoji"].orEmpty()
+    "message.sendViewOnceText" -> "View Once text"
+    "media.sendViewOnce" -> "View Once " + node.config["kind"].orEmpty()
+    "media.sendMedia" -> "Send " + node.config["kind"].orEmpty()
+    "message.editOriginal" -> "Edit triggering message"
+    "message.deleteOriginal" -> "Delete triggering message"
+    "message.pinOriginal" -> (node.config["action"] ?: "pin").replaceFirstChar { it.uppercase() } + " triggering message"
+    "message.keepOriginal" -> (node.config["action"] ?: "keep").replaceFirstChar { it.uppercase() } + " triggering message"
+    "chat.setDisappearing" -> "Timer " + node.config["seconds"].orEmpty() + " seconds"
     "message.sendPoll" -> "Poll: " + node.config["title"].orEmpty()
     "media.forwardOriginal" -> "Forward original message and media"
     "group.getInfo" -> "Group metadata"
@@ -1508,6 +1557,14 @@ private fun NodeConfigurationDialog(
         "newsletter.publishText" -> listOf("newsletterJid" to "Newsletter JID", "text" to "Post text")
         "message.sendText", "message.replyText" -> listOf("text" to "Message text")
         "message.react" -> listOf("emoji" to "Emoji")
+        "message.sendViewOnceText" -> listOf("text" to "View Once text (beta; requires account rollout)")
+        "media.sendViewOnce" -> listOf("kind" to "Media type (image/video/audio)", "caption" to "Caption (optional)")
+        "media.sendMedia" -> listOf("kind" to "Media type (image/video/audio/document/sticker)", "caption" to "Caption (optional)")
+        "message.editOriginal" -> listOf("text" to "Replacement text")
+        "message.deleteOriginal" -> emptyList()
+        "message.pinOriginal" -> listOf("action" to "Action (pin/unpin)", "seconds" to "Duration in seconds (86400/604800/2592000)")
+        "message.keepOriginal" -> listOf("action" to "Action (keep/unkeep)")
+        "chat.setDisappearing" -> listOf("seconds" to "Timer seconds (0/86400/604800/7776000)")
         "message.sendPoll" -> listOf("title" to "Poll question", "options" to "Options, one per line", "selectableCount" to "Selectable answers (1–12)")
         "message.sendLocation" -> listOf("latitude" to "Latitude (-90 to 90)", "longitude" to "Longitude (-180 to 180)", "name" to "Location label")
         "contact.sendCard" -> listOf("name" to "Contact display name", "phone" to "Phone number")

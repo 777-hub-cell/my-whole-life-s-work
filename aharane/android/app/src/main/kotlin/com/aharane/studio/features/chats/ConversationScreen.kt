@@ -205,6 +205,12 @@ fun ConversationScreen(
     var pollOptionsDraft by remember(conversation.key.account.apiValue, conversation.key.jid) { mutableStateOf(listOf("", "")) }
     var pollAllowMultiple by remember(conversation.key.account.apiValue, conversation.key.jid) { mutableStateOf(false) }
     val pollQuestionFocusRequester = remember { FocusRequester() }
+    // The dialog runs in a separate window; keep its submit action bound to
+    // the newest parent draft and callback across window/IME recompositions.
+    val latestPollQuestionDraft = rememberUpdatedState(pollQuestionDraft)
+    val latestPollOptionsDraft = rememberUpdatedState(pollOptionsDraft)
+    val latestPollAllowMultiple = rememberUpdatedState(pollAllowMultiple)
+    val latestOnCreatePoll = rememberUpdatedState(onCreatePoll)
     var actionMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var aiReplyMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var aiReplyTone by rememberSaveable { mutableStateOf("Natural") }
@@ -1339,12 +1345,19 @@ fun ConversationScreen(
                         primary = true,
                         enabled = connected && pollQuestionDraft.isNotBlank() && validOptions,
                         onClick = {
-                            onCreatePoll(
-                                pollQuestionDraft.trim(),
-                                normalizedOptions,
-                                if (pollAllowMultiple) normalizedOptions.size else 1
-                            )
-                            pollCreateOpen = false
+                            val submittedQuestion = latestPollQuestionDraft.value.trim()
+                            val submittedOptions = latestPollOptionsDraft.value.map(String::trim)
+                            val submittedOptionsAreValid = submittedOptions.size in 2..12 &&
+                                submittedOptions.all(String::isNotBlank) &&
+                                submittedOptions.map { it.lowercase(Locale.ROOT) }.distinct().size == submittedOptions.size
+                            if (connected && submittedQuestion.isNotBlank() && submittedOptionsAreValid) {
+                                latestOnCreatePoll.value(
+                                    submittedQuestion,
+                                    submittedOptions,
+                                    if (latestPollAllowMultiple.value) submittedOptions.size else 1
+                                )
+                                pollCreateOpen = false
+                            }
                         }
                     )
                 }

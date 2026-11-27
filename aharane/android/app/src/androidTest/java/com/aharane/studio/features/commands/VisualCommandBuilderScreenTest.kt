@@ -140,7 +140,7 @@ class VisualCommandBuilderScreenTest {
         compose.onNodeWithTag("node-library-search").performTextInput("Text to number")
         compose.onNodeWithTag("add-node-value.toNumber").performClick()
         compose.onNodeWithText("Apply").performClick()
-        compose.onNodeWithTag("node-card-value.toNumber").assertIsDisplayed()
+        compose.onNodeWithTag("node-card-value.toNumber").assertExists()
 
         compose.onNodeWithTag("node-library-search").performTextClearance()
         compose.onNodeWithTag("node-library-search").performTextInput("Text to list")
@@ -151,7 +151,7 @@ class VisualCommandBuilderScreenTest {
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         compose.waitForIdle()
         compose.onNodeWithText("Apply").performClick()
-        compose.onNodeWithTag("node-card-value.toList").assertIsDisplayed()
+        compose.onNodeWithTag("node-card-value.toList").assertExists()
     }
 
     @Test

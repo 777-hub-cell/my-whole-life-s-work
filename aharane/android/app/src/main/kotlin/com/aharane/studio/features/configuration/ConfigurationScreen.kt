@@ -140,19 +140,10 @@ fun ConfigurationScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         item {
-            Text(
-                "‹  Back to Home",
-                color = StudioPalette.Accent,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onBack).padding(vertical = 6.dp)
-            )
-            Spacer(Modifier.height(9.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "Configuration",

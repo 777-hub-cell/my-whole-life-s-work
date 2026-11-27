@@ -64,7 +64,7 @@ fun EnvironmentScreen(
         item {
             StudioPageTitle(
                 "ENV",
-                "Managed environment values for the Private and Public accounts. Command prefixes are fixed by Aharane.",
+                "Live settings for both WhatsApp accounts, plus variables discovered from the server source. Runtime references are read-only; secret values stay masked.",
                 compact = true
             )
             if (previewMode) {
@@ -89,12 +89,23 @@ fun EnvironmentScreen(
                             verticalArrangement = Arrangement.spacedBy(7.dp)
                         ) {
                             Text(
-                                item.key + if (item.readOnly) " · Fixed" else "",
+                                item.key + when {
+                                    item.valueType == "runtime" -> " · Runtime reference"
+                                    item.readOnly -> " · Fixed"
+                                    else -> ""
+                                },
                                 color = StudioPalette.Ink,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 fontFamily = FontFamily.Monospace
                             )
+                            if (item.valueType == "runtime") {
+                                Text(
+                                    "Detected in current source · read-only",
+                                    color = StudioPalette.Muted,
+                                    fontSize = 10.5.sp
+                                )
+                            }
                             if (item.secret) {
                                 Text(
                                     item.value,

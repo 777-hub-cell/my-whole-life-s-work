@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -259,8 +260,24 @@ internal const val WORKSPACE_CANVAS_PADDING_DP = 48f
 // Single source of truth for node-card width: fit-to-screen and canvas-extent maths previously
 // assumed 206 dp while the card is drawn 236 dp wide, which clipped the right-most node.
 internal const val NODE_CARD_WIDTH_DP = 236f
-internal const val WORKSPACE_MIN_ZOOM = 0.35f
-internal const val WORKSPACE_MAX_ZOOM = 1.8f
+internal const val WORKSPACE_MIN_ZOOM = 0.25f
+internal const val WORKSPACE_MAX_ZOOM = 2.8f
+
+internal fun workspaceScrollForZoom(
+    scrollOffset: Offset,
+    previousAnchor: Offset,
+    nextAnchor: Offset,
+    oldZoom: Float,
+    newZoom: Float
+): Offset {
+    val safeOldZoom = oldZoom.coerceAtLeast(0.001f)
+    val contentX = (scrollOffset.x + previousAnchor.x) / safeOldZoom
+    val contentY = (scrollOffset.y + previousAnchor.y) / safeOldZoom
+    return Offset(
+        (contentX * newZoom - nextAnchor.x).coerceAtLeast(0f),
+        (contentY * newZoom - nextAnchor.y).coerceAtLeast(0f)
+    )
+}
 internal fun workspaceNodeOffset(node: VisualNode): Offset =
     Offset(node.x + WORKSPACE_CANVAS_PADDING_DP, node.y + WORKSPACE_CANVAS_PADDING_DP)
 
@@ -288,10 +305,33 @@ fun VisualCommandBuilderScreen(
     var pendingSocket by remember { mutableStateOf<ActiveSocket?>(null) }
     var category by remember { mutableStateOf("All") }
     var search by remember { mutableStateOf("") }
-    var workspaceFraction by remember { mutableFloatStateOf(0.67f) }
+    var workspaceFraction by remember { mutableFloatStateOf(0.54f) }
     var zoom by remember(previewMode) { mutableFloatStateOf(if (previewMode) 0.58f else 1f) }
     var workspaceViewportSize by remember { mutableStateOf(IntSize.Zero) }
+    var pendingZoomScroll by remember { mutableStateOf<Offset?>(null) }
     var workspaceCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+
+    fun zoomAround(factor: Float, anchor: Offset = Offset(workspaceViewportSize.width / 2f, workspaceViewportSize.height / 2f)) {
+        val nextZoom = (zoom * factor).coerceIn(WORKSPACE_MIN_ZOOM, WORKSPACE_MAX_ZOOM)
+        if (nextZoom == zoom) return
+        pendingZoomScroll = workspaceScrollForZoom(
+            Offset(workspaceScroll.value.toFloat(), workspaceVerticalScroll.value.toFloat()),
+            anchor,
+            anchor,
+            zoom,
+            nextZoom
+        )
+        zoom = nextZoom
+    }
+
+    LaunchedEffect(zoom, pendingZoomScroll) {
+        val target = pendingZoomScroll ?: return@LaunchedEffect
+        withFrameNanos { }
+        withFrameNanos { }
+        workspaceScroll.scrollTo(target.x.roundToInt().coerceIn(0, workspaceScroll.maxValue))
+        workspaceVerticalScroll.scrollTo(target.y.roundToInt().coerceIn(0, workspaceVerticalScroll.maxValue))
+        pendingZoomScroll = null
+    }
     val measuredNodeSizes = remember { mutableStateMapOf<String, IntSize>() }
     val measuredSocketPositions = remember { mutableStateMapOf<String, Offset>() }
     val density = LocalDensity.current
@@ -306,7 +346,7 @@ fun VisualCommandBuilderScreen(
     var showCustomManager by remember { mutableStateOf(false) }
     var customNodes by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var showDelete by remember { mutableStateOf(false) }
-    var libraryExpanded by remember { mutableStateOf(false) }
+    var libraryExpanded by remember { mutableStateOf(true) }
     var showMoreActions by remember { mutableStateOf(false) }
     var undo by remember { mutableStateOf<List<VisualWorkflow>>(emptyList()) }
     var redo by remember { mutableStateOf<List<VisualWorkflow>>(emptyList()) }
@@ -843,28 +883,52 @@ fun VisualCommandBuilderScreen(
                 Spacer(Modifier.weight(1f))
                 Text(workflow.nodes.size.toString() + " nodes · " + workflow.edges.size + " wires", color = CommandStudioPalette.Muted, fontSize = 10.5.sp, modifier = Modifier.testTag("workflow-node-count"))
             }
-            Box(Modifier.fillMaxSize().onSizeChanged { workspaceViewportSize = it }.clip(RoundedCornerShape(18.dp)).background(CommandStudioPalette.Canvas).border(1.dp, Color(0xFF1D2926), RoundedCornerShape(18.dp))) {
-                Box(
-                    Modifier.horizontalScroll(workspaceScroll).verticalScroll(workspaceVerticalScroll).testTag("workflow-workspace").pointerInput(Unit) {
+            Box(
+                Modifier.fillMaxSize()
+                    .onSizeChanged { workspaceViewportSize = it }
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(CommandStudioPalette.Canvas)
+                    .border(1.dp, Color(0xFF1D2926), RoundedCornerShape(18.dp))
+                    .pointerInput(zoom, workspaceScroll.value, workspaceVerticalScroll.value) {
                         awaitEachGesture {
                             awaitFirstDown(requireUnconsumed = false)
-                            var lastDistance = 0f
+                            var previousDistance = 0f
+                            var previousCentroid = Offset.Zero
                             do {
-                                val event = awaitPointerEvent(PointerEventPass.Main)
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
                                 val pressed = event.changes.filter { it.pressed }
                                 if (pressed.size >= 2) {
-                                    val distance = (pressed[0].position - pressed[1].position).getDistance()
-                                    if (lastDistance > 0f && distance > 0f) {
-                                        zoom = (zoom * (distance / lastDistance)).coerceIn(WORKSPACE_MIN_ZOOM, WORKSPACE_MAX_ZOOM)
+                                    val first = pressed[0].position
+                                    val second = pressed[1].position
+                                    val centroid = (first + second) / 2f
+                                    val distance = (first - second).getDistance()
+                                    if (previousDistance > 0f && distance > 0f) {
+                                        val nextZoom = (zoom * (distance / previousDistance))
+                                            .coerceIn(WORKSPACE_MIN_ZOOM, WORKSPACE_MAX_ZOOM)
+                                        pendingZoomScroll = workspaceScrollForZoom(
+                                            Offset(workspaceScroll.value.toFloat(), workspaceVerticalScroll.value.toFloat()),
+                                            previousCentroid,
+                                            centroid,
+                                            zoom,
+                                            nextZoom
+                                        )
+                                        zoom = nextZoom
                                     }
-                                    lastDistance = distance
+                                    previousDistance = distance
+                                    previousCentroid = centroid
                                     event.changes.forEach { if (it.pressed) it.consume() }
                                 } else {
-                                    lastDistance = 0f
+                                    previousDistance = 0f
+                                    previousCentroid = Offset.Zero
                                 }
                             } while (event.changes.any { it.pressed })
                         }
                     }
+            ) {
+                Box(
+                    Modifier.horizontalScroll(workspaceScroll)
+                        .verticalScroll(workspaceVerticalScroll)
+                        .testTag("workflow-workspace")
                 ) {
                     // A stable origin prevents dragging one node from shifting every other node.
                     val canvasOriginX = WORKSPACE_CANVAS_PADDING_DP
@@ -874,8 +938,8 @@ fun VisualCommandBuilderScreen(
                         node.y + (measuredNodeSizes[node.id]?.height?.let { with(density) { it.toDp().value } } ?: 132f)
                     } ?: 180f
                     // Extra blank canvas makes one-finger panning useful on a phone.
-                    val canvasWidth = maxOf(1600.dp, (canvasOriginX + maxNodeRight + 48f).dp)
-                    val canvasHeight = maxOf(1200.dp, (canvasOriginY + maxNodeBottom + 48f).dp)
+                    val canvasWidth = maxOf(2600.dp, (canvasOriginX + maxNodeRight + 48f).dp)
+                    val canvasHeight = maxOf(1900.dp, (canvasOriginY + maxNodeBottom + 48f).dp)
                     // Outer box owns scaled scroll dimensions; inner box preserves
                     // unscaled coordinates for socket measurements.
                     Box(Modifier.width(canvasWidth * zoom).height(canvasHeight * zoom)) {
@@ -980,10 +1044,10 @@ fun VisualCommandBuilderScreen(
                     WorkspaceToolButton("Fit workspace", enabled = true, onClick = ::fitWorkspace) {
                         Text("Fit", color = CommandStudioPalette.Ink, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    WorkspaceToolButton("Zoom out", enabled = zoom > WORKSPACE_MIN_ZOOM, onClick = { zoom = (zoom - 0.1f).coerceIn(WORKSPACE_MIN_ZOOM, WORKSPACE_MAX_ZOOM) }) {
+                    WorkspaceToolButton("Zoom out", enabled = zoom > WORKSPACE_MIN_ZOOM, onClick = { zoomAround(0.9f) }) {
                         Text("−", color = CommandStudioPalette.Ink, fontSize = 19.sp)
                     }
-                    WorkspaceToolButton("Zoom in", enabled = zoom < WORKSPACE_MAX_ZOOM, onClick = { zoom = (zoom + 0.1f).coerceIn(WORKSPACE_MIN_ZOOM, WORKSPACE_MAX_ZOOM) }) {
+                    WorkspaceToolButton("Zoom in", enabled = zoom < WORKSPACE_MAX_ZOOM, onClick = { zoomAround(1.1f) }) {
                         Text("+", color = CommandStudioPalette.Ink, fontSize = 17.sp)
                     }
                 }
@@ -1048,13 +1112,14 @@ fun VisualCommandBuilderScreen(
                 }
             )
             Spacer(Modifier.height(8.dp))
-            LazyColumn(
-                Modifier.fillMaxWidth().heightIn(max = 124.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                contentPadding = PaddingValues(bottom = 7.dp)
+            LazyRow(
+                Modifier.fillMaxWidth().height(42.dp).testTag("node-library-categories"),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                contentPadding = PaddingValues(horizontal = 2.dp)
             ) {
                 item { CategoryChip("All", category == "All") { category = "All" } }
-                items(library) { group ->
+                items(library, key = { it.name }) { group ->
                     CategoryChip(group.name, category == group.name) { category = group.name }
                 }
             }
@@ -1316,31 +1381,33 @@ private fun CommandSegment(label: String, selected: Boolean, onClick: () -> Unit
 @Composable
 private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+        Modifier.widthIn(min = 62.dp)
+            .clip(RoundedCornerShape(999.dp))
             .background(if (selected) CommandStudioPalette.Soft else CommandStudioPalette.Background)
             .border(
                 1.dp,
                 if (selected) CommandStudioPalette.Accent.copy(alpha = 0.5f) else CommandStudioPalette.Line,
-                RoundedCornerShape(10.dp)
+                RoundedCornerShape(999.dp)
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 11.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 13.dp, vertical = 8.dp)
+            .testTag("node-library-category-" + label.lowercase().replace(" ", "-")),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
     ) {
         Text(
             label,
             color = if (selected) CommandStudioPalette.Ink else CommandStudioPalette.Muted,
             fontSize = 11.5.sp,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.weight(1f)
+            maxLines = 1
         )
         if (selected) {
             Icon(
                 painter = painterResource(com.aharane.studio.R.drawable.ic_node_flow),
-                contentDescription = "Selected category",
+                contentDescription = null,
                 tint = CommandStudioPalette.Accent,
-                modifier = Modifier.size(15.dp)
+                modifier = Modifier.size(13.dp)
             )
         }
     }

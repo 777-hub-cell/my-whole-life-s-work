@@ -18,3 +18,20 @@ class VisualCommandBuilderLayoutTest {
         assertEquals(Offset(348f, 568f), workspaceNodeOffset(movedFirst))
     }
 }
+
+    @Test
+    fun zoomKeepsTheCanvasPointUnderTheFingersAtTheSameViewportPosition() {
+        val oldScroll = Offset(380f, 210f)
+        val oldAnchor = Offset(150f, 260f)
+        val newAnchor = Offset(188f, 292f)
+        val oldZoom = 1.1f
+        val newZoom = 1.65f
+
+        val newScroll = workspaceScrollForZoom(oldScroll, oldAnchor, newAnchor, oldZoom, newZoom)
+
+        val contentPointBefore = (oldScroll + oldAnchor) / oldZoom
+        val contentPointAfter = (newScroll + newAnchor) / newZoom
+        assertEquals(contentPointBefore.x, contentPointAfter.x, 0.001f)
+        assertEquals(contentPointBefore.y, contentPointAfter.y, 0.001f)
+    }
+}

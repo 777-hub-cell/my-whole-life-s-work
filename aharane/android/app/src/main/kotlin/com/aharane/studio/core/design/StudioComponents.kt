@@ -669,6 +669,9 @@ fun StudioCircularDial(
     val fraction = ((current - valueRange.start) / span).coerceIn(0f, 1f)
     val latestChange by rememberUpdatedState(onValueChange)
     val latestFinished by rememberUpdatedState(onValueChangeFinished)
+    // Read theme colours during composition; Canvas drawing callbacks are not composable.
+    val trackColor = StudioPalette.Line
+    val activeColor = StudioPalette.Accent
 
     fun updateFromPoint(point: Offset, width: Float, height: Float) {
         val dx = point.x - width / 2f
@@ -714,7 +717,7 @@ fun StudioCircularDial(
             val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
             val arcSize = Size(diameter, diameter)
             drawArc(
-                color = StudioPalette.Line,
+                color = trackColor,
                 startAngle = 135f,
                 sweepAngle = 270f,
                 useCenter = false,
@@ -723,7 +726,7 @@ fun StudioCircularDial(
                 style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = StrokeCap.Round)
             )
             drawArc(
-                color = StudioPalette.Accent,
+                color = activeColor,
                 startAngle = 135f,
                 sweepAngle = 270f * fraction,
                 useCenter = false,
@@ -739,7 +742,7 @@ fun StudioCircularDial(
                 center.y + sin(angle) * radius
             )
             drawCircle(Color.White, radius = 5.dp.toPx(), center = thumb)
-            drawCircle(StudioPalette.Accent, radius = 3.dp.toPx(), center = thumb)
+            drawCircle(activeColor, radius = 3.dp.toPx(), center = thumb)
         }
         Text(
             valueText,

@@ -20,9 +20,9 @@ permissions:
   actions: read
 
 concurrency:
-  # Keep an updated source-import build from waiting behind a stale emulator job.
-  group: aharane-android-${{ github.ref }}-${{ github.run_id }}
-  cancel-in-progress: false
+  # Only the newest verification run for this branch should consume Android runners.
+  group: aharane-android-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   server-workflow-tests:

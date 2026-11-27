@@ -1260,7 +1260,9 @@ fun ConversationScreen(
     if (pollCreateOpen) {
         androidx.compose.ui.window.Dialog(onDismissRequest = { pollCreateOpen = false }) {
             Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                Modifier.fillMaxWidth().heightIn(max = 560.dp)
+                    .verticalScroll(rememberScrollState())
+                    .clip(RoundedCornerShape(18.dp))
                     .background(StudioPalette.Surface).padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {

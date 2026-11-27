@@ -77,7 +77,8 @@ data class ChatMessage(
     val pollOptions: List<String> = emptyList(),
     val pollSelectableCount: Int = 1,
     val pollVoteCounts: Map<String, Int> = emptyMap(),
-    val pollMyVotes: List<String> = emptyList()
+    val pollMyVotes: List<String> = emptyList(),
+    val isSystem: Boolean = false
 ) {
     init {
         require(messageId.isNotBlank())

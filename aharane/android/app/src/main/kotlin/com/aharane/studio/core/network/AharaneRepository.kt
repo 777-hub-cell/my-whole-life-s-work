@@ -455,6 +455,7 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
                         mediaDurationSeconds = row.optLong("duration").takeIf { it > 0 },
                         viewOnceViewed = row.optBoolean("viewOnceViewed"),
                         mediaUnavailable = row.optString("mediaUnavailable").takeIf { it.isNotBlank() },
+                        isSystem = row.optBoolean("system"),
                         isStarred = row.optBoolean("starred"),
                         isVoiceNote = row.optBoolean("ptt"),
                         replyToMessageId = row.optString("quotedMessageId").takeIf { it.isNotBlank() },

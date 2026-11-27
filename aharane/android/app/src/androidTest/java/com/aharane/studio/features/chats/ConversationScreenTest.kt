@@ -410,6 +410,56 @@ class ConversationScreenTest {
         compose.onNodeWithText("Sign in to send stickers.").assertIsDisplayed()
         compose.onNodeWithTag("conversation-composer").assertTextEquals("Draft stays on this phone")
     }
+    @Test
+    fun emptyConversationShowsHelpfulEmptyStateInsteadOfBlankSurface() {
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = testConversation(),
+                    messages = emptyList(),
+                    connected = true,
+                    onBack = {},
+                    onSend = { _, _ -> }
+                )
+            }
+        }
+        compose.onNodeWithTag("conversation-empty-state").assertIsDisplayed()
+        compose.onNodeWithText("Messages from this conversation will appear here.").assertIsDisplayed()
+    }
+
+    @Test
+    fun groupMembershipEventsRenderAsCenteredSystemMessages() {
+        val conversation = testConversation().copy(
+            key = com.aharane.studio.core.model.ConversationKey(
+                ChatAccount.PRIVATE, "120363000000000001@g.us"
+            ),
+            title = "Project group",
+            isGroup = true
+        )
+        val message = com.aharane.studio.core.model.ChatMessage(
+            key = conversation.key,
+            messageId = "group-left",
+            direction = com.aharane.studio.core.model.MessageDirection.INCOMING,
+            kind = com.aharane.studio.core.model.MessageKind.TEXT,
+            text = "Quarantine Scope left the group.",
+            timestampMillis = 1_765_000_000_000L,
+            isSystem = true
+        )
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                ConversationScreen(
+                    conversation = conversation,
+                    messages = listOf(message),
+                    connected = true,
+                    onBack = {},
+                    onSend = { _, _ -> }
+                )
+            }
+        }
+        compose.onNodeWithTag("system-message-group-left").assertIsDisplayed()
+        compose.onNodeWithText("Quarantine Scope left the group.").assertIsDisplayed()
+    }
+
 }
 
 private fun testIncomingMessage() = com.aharane.studio.core.model.ChatMessage(

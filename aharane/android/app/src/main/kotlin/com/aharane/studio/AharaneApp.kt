@@ -1590,8 +1590,16 @@ fun AharaneApp(
                 return stored
             }
         }
-        if (!connected) error("Attachment could not be loaded.")
-        val bytes = repository.mediaBytes(conversation, message)
+        if (!connected) error("This attachment is not available on this device right now.")
+        val bytes = try {
+            repository.mediaBytes(conversation, message)
+        } catch (failure: Exception) {
+            val detail = failure.message.orEmpty()
+            if (Regex("(?i)(connect|pair|link).{0,50}(whatsapp|account)|(whatsapp|account).{0,50}(connect|pair|link)").containsMatchIn(detail)) {
+                throw IllegalStateException("This attachment is not available on this device right now.")
+            }
+            throw failure
+        }
         val cacheWrite = runCatching {
             val localRepository = local ?: error("Local media storage is unavailable.")
             val record = withContext(Dispatchers.IO) {

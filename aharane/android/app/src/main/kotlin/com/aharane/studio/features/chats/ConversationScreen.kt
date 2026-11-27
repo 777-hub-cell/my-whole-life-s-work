@@ -38,6 +38,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.Close
@@ -335,34 +336,37 @@ fun ConversationScreen(
         Modifier.fillMaxSize().background(StudioPalette.Background).navigationBarsPadding().imePadding()
     ) {
         Row(
-            Modifier.fillMaxWidth().height(58.dp)
+            Modifier.fillMaxWidth().height(70.dp)
                 .background(StudioPalette.Surface)
-                .border(width = 0.5.dp, color = StudioPalette.Line),
+                .border(width = 0.5.dp, color = StudioPalette.Line)
+                .padding(horizontal = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             ConversationTool(Icons.Outlined.ArrowBack, "Back to chats", onClick = onBack)
             Box(
-                    Modifier.padding(start = 2.dp, end = 10.dp).size(38.dp)
-                        .clip(CircleShape).background(StudioPalette.Soft),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (contactAvatar != null) {
-                        Image(
-                            bitmap = contactAvatar!!,
-                            contentDescription = (if (conversation.isGroup) "WhatsApp group picture of " else "WhatsApp profile picture of ") + conversation.title,
-                            modifier = Modifier.fillMaxSize().clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Text(
-                            conversation.title.trim().take(1).uppercase().ifBlank { "?" },
-                            color = StudioPalette.Accent,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                Modifier.padding(start = 2.dp, end = 11.dp).size(44.dp)
+                    .clip(CircleShape)
+                    .background(StudioPalette.Soft)
+                    .border(1.dp, StudioPalette.Accent.copy(alpha = 0.24f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                if (contactAvatar != null) {
+                    Image(
+                        bitmap = contactAvatar!!,
+                        contentDescription = (if (conversation.isGroup) "WhatsApp group picture of " else "WhatsApp profile picture of ") + conversation.title,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Text(
+                        conversation.title.trim().take(1).uppercase().ifBlank { "?" },
+                        color = StudioPalette.Accent,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
                     conversation.title,
                     color = StudioPalette.Ink,
@@ -372,13 +376,30 @@ fun ConversationScreen(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    if (conversation.isGroup) "Group conversation" else conversation.key.account.label + " account",
-                    color = StudioPalette.Muted,
-                    fontSize = 11.5.sp,
-                    lineHeight = 15.sp,
-                    maxLines = 1
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(
+                        Modifier.clip(RoundedCornerShape(999.dp))
+                            .background(StudioPalette.Soft)
+                            .padding(horizontal = 7.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            if (conversation.isGroup) "GROUP" else "DIRECT",
+                            color = StudioPalette.Accent,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+                    Text(
+                        conversation.key.account.label + " account" +
+                            if (conversation.isGroup) " · Group chat" else " · " + conversation.key.jid.substringBefore('@'),
+                        color = StudioPalette.Muted,
+                        fontSize = 10.5.sp,
+                        lineHeight = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             ConversationTool(
                 Icons.Outlined.Image,
@@ -601,10 +622,28 @@ fun ConversationScreen(
             }
             if (visible.isEmpty()) {
                 Column(
-                    Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
+                    Modifier.align(Alignment.Center)
+                        .padding(horizontal = 26.dp)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(StudioPalette.Surface.copy(alpha = 0.94f))
+                        .border(1.dp, StudioPalette.Line, RoundedCornerShape(20.dp))
+                        .padding(horizontal = 22.dp, vertical = 24.dp)
+                        .testTag("conversation-empty-state"),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(7.dp)
+                    verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
+                    Box(
+                        Modifier.size(48.dp).clip(CircleShape).background(StudioPalette.Soft),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Outlined.ChatBubbleOutline,
+                            contentDescription = null,
+                            tint = StudioPalette.Accent,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                     Text(
                         if (search.isBlank()) "No messages yet" else "No matching messages",
                         color = StudioPalette.Ink,
@@ -616,7 +655,8 @@ fun ConversationScreen(
                         else "Try another word or clear the search.",
                         color = StudioPalette.Muted,
                         fontSize = 13.sp,
-                        lineHeight = 19.sp
+                        lineHeight = 19.sp,
+                        textAlign = TextAlign.Center
                     )
                 }
             } else {
@@ -1482,6 +1522,26 @@ private fun MessageBubble(
     onOpenLocation: () -> Unit,
     onVotePoll: (List<String>) -> Unit
 ) {
+    if (message.isSystem) {
+        Box(
+            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                message.text,
+                color = StudioPalette.Muted,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.clip(RoundedCornerShape(999.dp))
+                    .background(StudioPalette.Surface.copy(alpha = 0.94f))
+                    .border(1.dp, StudioPalette.Line.copy(alpha = 0.8f), RoundedCornerShape(999.dp))
+                    .padding(horizontal = 12.dp, vertical = 7.dp)
+                    .testTag("system-message-" + message.messageId)
+            )
+        }
+        return
+    }
     val outgoing = message.direction == MessageDirection.OUTGOING
     val swipeOffset = remember(message.messageId) { ComposeAnimatable(0f) }
     val swipeScope = rememberCoroutineScope()

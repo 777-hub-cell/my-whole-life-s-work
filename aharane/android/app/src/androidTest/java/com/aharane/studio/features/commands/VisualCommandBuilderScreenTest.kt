@@ -144,10 +144,15 @@ class VisualCommandBuilderScreenTest {
             compose.onAllNodesWithTag("node-library-search").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("node-library-search").performTextInput("Text to number")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithTag("add-node-value.toNumber").fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithTag("add-node-value.toNumber").performClick()
+        compose.onNodeWithTag("add-node-value.toNumber")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("Apply").fetchSemanticsNodes().isNotEmpty()
         }
@@ -156,10 +161,15 @@ class VisualCommandBuilderScreenTest {
 
         compose.onNodeWithTag("node-library-search").performTextClearance()
         compose.onNodeWithTag("node-library-search").performTextInput("Text to list")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithTag("add-node-value.toList").fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithTag("add-node-value.toList").performClick()
+        compose.onNodeWithTag("add-node-value.toList")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithTag("node-config-field-separator").fetchSemanticsNodes().isNotEmpty()
         }

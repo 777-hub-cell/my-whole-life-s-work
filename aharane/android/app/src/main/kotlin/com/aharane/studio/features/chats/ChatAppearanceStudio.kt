@@ -24,7 +24,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -807,10 +806,13 @@ private fun ValueSlider(
     label: String, value: Float, range: ClosedFloatingPointRange<Float>,
     suffix: String, multiplier: Float = 1f, onChange: (Float) -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(label, color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.weight(1f))
             Text(
                 String.format(java.util.Locale.ROOT, "%.1f %s", value * multiplier, suffix),
                 color = StudioPalette.Accent,
@@ -818,16 +820,11 @@ private fun ValueSlider(
                 fontWeight = FontWeight.SemiBold
             )
         }
-        Slider(
-            value = value.coerceIn(range),
+        com.aharane.studio.core.design.StudioCircularDial(
+            value = value,
             onValueChange = onChange,
             valueRange = range,
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            colors = androidx.compose.material3.SliderDefaults.colors(
-                thumbColor = StudioPalette.Accent,
-                activeTrackColor = StudioPalette.Accent,
-                inactiveTrackColor = StudioPalette.Line
-            )
+            valueText = String.format(java.util.Locale.ROOT, "%.1f", value * multiplier)
         )
     }
 }

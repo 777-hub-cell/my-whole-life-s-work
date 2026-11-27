@@ -65,6 +65,124 @@ test('text conversion helpers are strict, bounded and deterministic', () => {
   assert.equal(convertTextToList(Array.from({ length: 140 }, (_, index) => String(index)).join(','), ',').length, 100)
 })
 
+test('text-to-number and number-to-text nodes compose in a real workflow', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const args = { id: 'args', type: 'message.arguments', x: 230, y: 70, config: {} }
+  const toNumber = { id: 'to-number', type: 'value.toNumber', x: 440, y: 70, config: {} }
+  const toText = { id: 'to-text', type: 'value.toText', x: 650, y: 70, config: {} }
+  const send = { id: 'send-result', type: 'message.sendText', x: 870, y: 70, config: {} }
+  draft.nodes = [trigger, args, toNumber, toText, send]
+  draft.edges = [
+    { id: 'exec', from: trigger.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
+    { id: 'args-number', from: args.id, fromSocket: 'value', to: toNumber.id, toSocket: 'value' },
+    { id: 'number-text', from: toNumber.id, fromSocket: 'value', to: toText.id, toSocket: 'value' },
+    { id: 'text-send', from: toText.id, fromSocket: 'value', to: send.id, toSocket: 'text' },
+  ]
+  const validation = validateWorkflow(draft)
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors))
+  const sent = []
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({
+      rawArgs: ' 42.75 ',
+      socket: { sendMessage: async (_to, body) => { sent.push(body.text); return { key: { id: 'converted-number' } } } },
+    }),
+  })
+  assert.equal(result.ok, true, JSON.stringify(result))
+  assert.deepEqual(sent, ['42.75'])
+})
+
+test('text-to-boolean output drives a typed custom choose node', async t => {
+  const { store } = await makeStore(t)
+  await store.saveCustomNode({
+    id: 'choose-route',
+    name: 'Choose route',
+    version: 1,
+    operator: 'choose',
+    inputs: [
+      { id: 'condition', label: 'Condition', type: 'boolean' },
+      { id: 'yes', label: 'When true', type: 'string' },
+      { id: 'no', label: 'When false', type: 'string' },
+    ],
+    outputType: 'string',
+  })
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const args = { id: 'args', type: 'message.arguments', x: 230, y: 70, config: {} }
+  const toBoolean = { id: 'to-boolean', type: 'value.toBoolean', x: 440, y: 70, config: {} }
+  const choose = {
+    id: 'choose',
+    type: 'custom.choose-route',
+    x: 650,
+    y: 70,
+    config: { nodeVersion: '1', yes: 'TRUE branch', no: 'FALSE branch' },
+  }
+  const send = { id: 'send-result', type: 'message.sendText', x: 870, y: 70, config: {} }
+  draft.nodes = [trigger, args, toBoolean, choose, send]
+  draft.edges = [
+    { id: 'exec', from: trigger.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
+    { id: 'args-bool', from: args.id, fromSocket: 'value', to: toBoolean.id, toSocket: 'value' },
+    { id: 'bool-condition', from: toBoolean.id, fromSocket: 'value', to: choose.id, toSocket: 'condition' },
+    { id: 'choose-text', from: choose.id, fromSocket: 'result', to: send.id, toSocket: 'text' },
+  ]
+  const validation = validateWorkflow(draft)
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors))
+  const sent = []
+  for (const rawArgs of ['yes', 'off']) {
+    const result = await executeVisualWorkflow(draft, {
+      store,
+      context: context({
+        rawArgs,
+        socket: { sendMessage: async (_to, body) => { sent.push(body.text); return { key: { id: 'converted-boolean' } } } },
+      }),
+    })
+    assert.equal(result.ok, true, JSON.stringify(result))
+  }
+  assert.deepEqual(sent, ['TRUE branch', 'FALSE branch'])
+})
+
+test('text-to-list output can be joined and used by a message node', async t => {
+  const { store } = await makeStore(t)
+  await store.saveCustomNode({
+    id: 'join-list',
+    name: 'Join list',
+    version: 1,
+    operator: 'join',
+    inputs: [
+      { id: 'value', label: 'List', type: 'list' },
+      { id: 'other', label: 'Separator', type: 'string' },
+    ],
+    outputType: 'string',
+  })
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const args = { id: 'args', type: 'message.arguments', x: 230, y: 70, config: {} }
+  const toList = { id: 'to-list', type: 'value.toList', x: 440, y: 70, config: { separator: ';' } }
+  const join = { id: 'join', type: 'custom.join-list', x: 650, y: 70, config: { nodeVersion: '1', other: ' | ' } }
+  const send = { id: 'send-result', type: 'message.sendText', x: 870, y: 70, config: {} }
+  draft.nodes = [trigger, args, toList, join, send]
+  draft.edges = [
+    { id: 'exec', from: trigger.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
+    { id: 'args-list', from: args.id, fromSocket: 'value', to: toList.id, toSocket: 'value' },
+    { id: 'list-join', from: toList.id, fromSocket: 'value', to: join.id, toSocket: 'value' },
+    { id: 'join-text', from: join.id, fromSocket: 'result', to: send.id, toSocket: 'text' },
+  ]
+  const validation = validateWorkflow(draft)
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors))
+  const sent = []
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({
+      rawArgs: 'alpha; beta ;gamma',
+      socket: { sendMessage: async (_to, body) => { sent.push(body.text); return { key: { id: 'converted-list' } } } },
+    }),
+  })
+  assert.equal(result.ok, true, JSON.stringify(result))
+  assert.deepEqual(sent, ['alpha | beta | gamma'])
+})
+
 test('new workflow draft has one connected command trigger and reply', () => {
   const draft = createWorkflowDraft('private')
   const validation = validateWorkflow(draft)

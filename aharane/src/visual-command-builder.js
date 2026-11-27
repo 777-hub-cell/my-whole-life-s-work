@@ -376,13 +376,13 @@ export function validateWorkflow(input) {
         : ['image', 'video', 'audio', 'document', 'sticker']
       if (!allowedKinds.includes(kind)) issue(node.id, 'error', 'The media type is not supported.', 'Choose one of: ' + allowedKinds.join(', ') + '.')
     }
-    if (node.type === 'message.pinOriginal' && ![86400, 604800, 2592000].includes(Number(config.seconds == null ? 86400 : config.seconds))) {
+    if (node.type === 'message.pinOriginal' && !inputEdge(workflow, node.id, 'seconds') && ![86400, 604800, 2592000].includes(Number(config.seconds == null ? 86400 : config.seconds))) {
       issue(node.id, 'error', 'The pin duration is invalid.', 'Choose 86400, 604800 or 2592000 seconds.')
     }
     if (node.type === 'message.keepOriginal' && !['keep', 'unkeep'].includes(textValue(config.action, 12) || 'keep')) {
       issue(node.id, 'error', 'The keep action is invalid.', 'Choose keep or unkeep.')
     }
-    if (node.type === 'chat.setDisappearing' && ![0, 86400, 604800, 7776000].includes(Number(config.seconds))) {
+    if (node.type === 'chat.setDisappearing' && !inputEdge(workflow, node.id, 'seconds') && ![0, 86400, 604800, 7776000].includes(Number(config.seconds))) {
       issue(node.id, 'error', 'The disappearing timer is invalid.', 'Choose 0, 86400, 604800 or 7776000 seconds.')
     }
     if (node.type === 'message.react' && !textValue(config.emoji, 24).trim() && !inputEdge(workflow, node.id, 'emoji')) {
@@ -391,62 +391,62 @@ export function validateWorkflow(input) {
     if (node.type === 'message.sendLocation') {
       const latitude = Number(config.latitude)
       const longitude = Number(config.longitude)
-      if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90) issue(node.id, 'error', 'Latitude is invalid.', 'Enter a coordinate between -90 and 90.')
-      if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180) issue(node.id, 'error', 'Longitude is invalid.', 'Enter a coordinate between -180 and 180.')
+      if (!inputEdge(workflow, node.id, 'latitude') && (!Number.isFinite(latitude) || latitude < -90 || latitude > 90)) issue(node.id, 'error', 'Latitude is invalid.', 'Enter a coordinate between -90 and 90.')
+      if (!inputEdge(workflow, node.id, 'longitude') && (!Number.isFinite(longitude) || longitude < -180 || longitude > 180)) issue(node.id, 'error', 'Longitude is invalid.', 'Enter a coordinate between -180 and 180.')
     }
     if (node.type === 'contact.sendCard') {
-      if (!textValue(config.name, 80).trim() || /[\r\n]/.test(textValue(config.name, 80))) issue(node.id, 'error', 'A valid contact name is required.', 'Enter a single-line display name.')
-      if (!/^\+?[0-9]{7,15}$/.test(textValue(config.phone, 20).replace(/[\s()-]/g, ''))) issue(node.id, 'error', 'The contact phone number is invalid.', 'Use 7 to 15 digits, optionally beginning with +.')
+      if (!inputEdge(workflow, node.id, 'name') && (!textValue(config.name, 80).trim() || /[\r\n]/.test(textValue(config.name, 80)))) issue(node.id, 'error', 'A valid contact name is required.', 'Enter a single-line display name.')
+      if (!inputEdge(workflow, node.id, 'phone') && !/^\+?[0-9]{7,15}$/.test(textValue(config.phone, 20).replace(/[\s()-]/g, ''))) issue(node.id, 'error', 'The contact phone number is invalid.', 'Use 7 to 15 digits, optionally beginning with +.')
     }
     if (node.type === 'group.getInfo' || node.type === 'group.updateSubject' || node.type === 'group.updateDescription' ||
         node.type === 'group.participantsUpdate' || node.type === 'group.settingUpdate') {
       if (workflow.account !== 'public') issue(node.id, 'error', 'Group nodes are available only on the Public account.', 'Use the Public account and a group-enabled command trigger.')
     }
-    if (node.type === 'group.updateSubject' && !textValue(config.subject, 100).trim()) issue(node.id, 'error', 'A group name is required.', 'Enter the new group subject.')
-    if (node.type === 'group.updateDescription' && !textValue(config.description, 512).trim()) issue(node.id, 'error', 'A group description is required.', 'Enter the new group description.')
+    if (node.type === 'group.updateSubject' && !inputEdge(workflow, node.id, 'subject') && !textValue(config.subject, 100).trim()) issue(node.id, 'error', 'A group name is required.', 'Enter the new group subject.')
+    if (node.type === 'group.updateDescription' && !inputEdge(workflow, node.id, 'description') && !textValue(config.description, 512).trim()) issue(node.id, 'error', 'A group description is required.', 'Enter the new group description.')
     if (node.type === 'group.participantsUpdate') {
       const action = textValue(config.action, 16)
       if (!['add', 'remove', 'promote', 'demote'].includes(action)) issue(node.id, 'error', 'The participant action is invalid.', 'Choose add, remove, promote, or demote.')
       const phones = textValue(config.participants, 1000).split(/[\n,]+/).map(value => value.replace(/[\s()-]/g, '').replace(/^\+/, '')).filter(Boolean)
-      if (!phones.length || phones.length > 50 || phones.some(phone => !/^[0-9]{7,15}$/.test(phone))) {
+      if (!inputEdge(workflow, node.id, 'participants') && (!phones.length || phones.length > 50 || phones.some(phone => !/^[0-9]{7,15}$/.test(phone)))) {
         issue(node.id, 'error', 'Participant numbers are invalid.', 'Enter 1 to 50 phone numbers, one per line, using 7 to 15 digits.')
       }
     }
-    if (node.type === 'group.settingUpdate' && !['announcement', 'not_announcement', 'locked', 'unlocked'].includes(textValue(config.setting, 24))) {
+    if (node.type === 'group.settingUpdate' && !inputEdge(workflow, node.id, 'setting') && !['announcement', 'not_announcement', 'locked', 'unlocked'].includes(textValue(config.setting, 24))) {
       issue(node.id, 'error', 'The group setting is invalid.', 'Choose announcement, not_announcement, locked, or unlocked.')
     }
     if (['moderation.blockContact', 'moderation.unblockContact'].includes(node.type)) {
       const phone = textValue(config.phone, 20).replace(/[\s()-]/g, '').replace(/^\+/, '')
-      if (!/^[0-9]{7,15}$/.test(phone)) issue(node.id, 'error', 'The contact number is invalid.', 'Use a phone number containing 7 to 15 digits.')
+      if (!inputEdge(workflow, node.id, 'phone') && !/^[0-9]{7,15}$/.test(phone)) issue(node.id, 'error', 'The contact number is invalid.', 'Use a phone number containing 7 to 15 digits.')
     }
-    if (node.type === 'profile.updateName' && !textValue(config.name, 80).trim()) issue(node.id, 'error', 'A profile name is required.', 'Enter the WhatsApp account name.')
-    if (node.type === 'profile.updateStatus' && !textValue(config.status, 139).trim()) issue(node.id, 'error', 'A profile status is required.', 'Enter the account status text.')
-    if (node.type === 'newsletter.create' && !textValue(config.name, 100).trim()) issue(node.id, 'error', 'A newsletter name is required.', 'Enter a newsletter name.')
+    if (node.type === 'profile.updateName' && !inputEdge(workflow, node.id, 'name') && !textValue(config.name, 80).trim()) issue(node.id, 'error', 'A profile name is required.', 'Enter the WhatsApp account name.')
+    if (node.type === 'profile.updateStatus' && !inputEdge(workflow, node.id, 'status') && !textValue(config.status, 139).trim()) issue(node.id, 'error', 'A profile status is required.', 'Enter the account status text.')
+    if (node.type === 'newsletter.create' && !inputEdge(workflow, node.id, 'name') && !textValue(config.name, 100).trim()) issue(node.id, 'error', 'A newsletter name is required.', 'Enter a newsletter name.')
     if (['newsletter.follow', 'newsletter.unfollow', 'newsletter.publishText'].includes(node.type) &&
-        !/^\d{5,25}@newsletter$/.test(textValue(config.newsletterJid, 80))) {
+        !inputEdge(workflow, node.id, 'newsletterJid') && !/^\d{5,25}@newsletter$/.test(textValue(config.newsletterJid, 80))) {
       issue(node.id, 'error', 'The newsletter ID is invalid.', 'Use the WhatsApp newsletter JID ending in @newsletter.')
     }
-    if (node.type === 'newsletter.publishText' && !textValue(config.text, 2000).trim()) {
+    if (node.type === 'newsletter.publishText' && !inputEdge(workflow, node.id, 'text') && !textValue(config.text, 2000).trim()) {
       issue(node.id, 'error', 'Newsletter post text is required.', 'Enter the text to publish.')
     }
     if (node.type === 'message.sendButtons') {
       const buttons = textValue(config.buttons, 1000).split(/\r?\n/).map(value => value.trim()).filter(Boolean)
       const parsed = buttons.map(value => value.split('|').map(part => part.trim()))
-      if (!textValue(config.text, 1000).trim()) issue(node.id, 'error', 'Button message text is required.', 'Enter the prompt shown above the buttons.')
-      if (parsed.length < 1 || parsed.length > 3 || parsed.some(parts => parts.length !== 2 || !parts[0] || !/^[a-zA-Z0-9_.#-]{1,64}$/.test(parts[1]))) {
+      if (!inputEdge(workflow, node.id, 'text') && !textValue(config.text, 1000).trim()) issue(node.id, 'error', 'Button message text is required.', 'Enter the prompt shown above the buttons.')
+      if (!inputEdge(workflow, node.id, 'buttons') && (parsed.length < 1 || parsed.length > 3 || parsed.some(parts => parts.length !== 2 || !parts[0] || !/^[a-zA-Z0-9_.#-]{1,64}$/.test(parts[1])))) {
         issue(node.id, 'error', 'Button configuration is invalid.', 'Add 1 to 3 lines in Label|id format; each id must be unique and use letters, numbers, dots, underscores or hyphens.')
       }
-      if (new Set(parsed.map(parts => parts[1]?.toLowerCase())).size !== parsed.length) issue(node.id, 'error', 'Button IDs must be unique.', 'Give each button a different ID.')
+      if (!inputEdge(workflow, node.id, 'buttons') && new Set(parsed.map(parts => parts[1]?.toLowerCase())).size !== parsed.length) issue(node.id, 'error', 'Button IDs must be unique.', 'Give each button a different ID.')
     }
     if (node.type === 'message.sendPoll') {
       const options = textValue(config.options, 1000).split(/\r?\n/).map(value => value.trim()).filter(Boolean)
       const uniqueOptions = new Set(options.map(value => value.toLocaleLowerCase()))
-      if (!textValue(config.title, 180).trim()) issue(node.id, 'error', 'A poll question is required.', 'Enter a short poll question.')
-      if (options.length < 2 || options.length > 12 || uniqueOptions.size !== options.length) {
+      if (!inputEdge(workflow, node.id, 'title') && !textValue(config.title, 180).trim()) issue(node.id, 'error', 'A poll question is required.', 'Enter a short poll question.')
+      if (!inputEdge(workflow, node.id, 'options') && (options.length < 2 || options.length > 12 || uniqueOptions.size !== options.length)) {
         issue(node.id, 'error', 'A poll needs 2 to 12 unique options.', 'Put one unique answer on each line.')
       }
       const selectable = Number(config.selectableCount == null ? 1 : config.selectableCount)
-      if (!Number.isInteger(selectable) || selectable < 1 || selectable > Math.max(options.length, 1)) {
+      if (!inputEdge(workflow, node.id, 'selectableCount') && (!Number.isInteger(selectable) || selectable < 1 || selectable > Math.max(options.length, 1))) {
         issue(node.id, 'error', 'The selectable answer count is invalid.', 'Choose a whole number from 1 up to the number of poll options.')
       }
     }
@@ -496,11 +496,11 @@ export function validateWorkflow(input) {
     }
     if (node.type === 'flow.delay') {
       const ms = Number(config.milliseconds == null ? 1000 : config.milliseconds)
-      if (!Number.isInteger(ms) || ms < 0 || ms > MAX_DELAY_MS) issue(node.id, 'error', 'Wait duration is outside the supported range.', 'Choose a whole number from 0 to 10000 milliseconds.')
+      if (!inputEdge(workflow, node.id, 'milliseconds') && (!Number.isInteger(ms) || ms < 0 || ms > MAX_DELAY_MS)) issue(node.id, 'error', 'Wait duration is outside the supported range.', 'Choose a whole number from 0 to 10000 milliseconds.')
     }
     if (node.type === 'flow.repeat') {
       const count = Number(config.count == null ? 2 : config.count)
-      if (!Number.isInteger(count) || count < 1 || count > MAX_REPEAT) issue(node.id, 'error', 'Repeat count is outside the supported range.', 'Choose a whole number from 1 to 10.')
+      if (!inputEdge(workflow, node.id, 'count') && (!Number.isInteger(count) || count < 1 || count > MAX_REPEAT)) issue(node.id, 'error', 'Repeat count is outside the supported range.', 'Choose a whole number from 1 to 10.')
       if (!outputEdges(workflow, node.id, 'next').length) issue(node.id, 'warning', 'Nothing runs after this repeat.', 'Connect Next to another action if needed.')
     }
     if (node.type === 'condition.equals') {

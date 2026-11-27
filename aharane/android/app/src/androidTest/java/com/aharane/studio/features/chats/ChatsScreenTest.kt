@@ -14,6 +14,8 @@ import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
+import org.junit.Assert.assertEquals
 import com.aharane.studio.core.design.AharaneTheme
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatFilter
@@ -102,10 +104,12 @@ class ChatsScreenTest {
     }
 
     @Test
-    fun conversationActionsUseLongPressInsteadOfSwipe() {
+    fun longPressEntersMultiSelectAndBulkArchiveAppliesToEverySelectedChat() {
         val conversations = listOf(
-            summary(ChatAccount.PRIVATE, "2348000000008@s.whatsapp.net", "Long press contact")
+            summary(ChatAccount.PRIVATE, "2348000000008@s.whatsapp.net", "First contact"),
+            summary(ChatAccount.PRIVATE, "2348000000009@s.whatsapp.net", "Second contact")
         )
+        val actions = mutableListOf<Pair<String, String>>()
         compose.setContent {
             AharaneTheme(themeMode = "light") {
                 ChatsScreen(
@@ -115,18 +119,28 @@ class ChatsScreenTest {
                     onFilterSelected = {},
                     conversations = conversations,
                     accountConnected = true,
-                    savedShowAvatars = true
+                    savedShowAvatars = true,
+                    onChatAction = { chat, action -> actions += chat.key.jid to action }
                 )
             }
         }
 
-        compose.onNodeWithText("Long press contact").performTouchInput { swipeLeft() }
-        compose.onAllNodesWithText("Conversation actions").assertCountEquals(0)
+        compose.onNodeWithText("First contact").performTouchInput { longClick() }
+        compose.onNodeWithTag("chat-selection-count").assertIsDisplayed()
+        compose.onNodeWithText("1 selected").assertIsDisplayed()
+        compose.onNodeWithText("Second contact").performClick()
+        compose.onNodeWithText("2 selected").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Archive selected chats").performClick()
 
-        compose.onNodeWithText("Long press contact").performTouchInput { longClick() }
-        compose.onNodeWithText("Conversation actions").assertIsDisplayed()
-        compose.onNodeWithText("Archive").assertIsDisplayed()
-        compose.onNodeWithText("Mute").assertIsDisplayed()
+        compose.waitForIdle()
+        assertEquals(
+            listOf(
+                "2348000000008@s.whatsapp.net" to "archive",
+                "2348000000009@s.whatsapp.net" to "archive"
+            ),
+            actions
+        )
+        compose.onAllNodesWithText("selected").assertCountEquals(0)
     }
 
     @Test

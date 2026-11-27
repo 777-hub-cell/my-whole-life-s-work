@@ -49,7 +49,9 @@ class VisualCommandBuilderScreenTest {
         compose.onNodeWithTag("visual-command-node-library")
             .performScrollToNode(hasTestTag("add-node-message.sendText"))
         compose.onNodeWithTag("add-node-message.sendText").performClick()
-        compose.waitUntil(5_000) {
+        // The dialog is composed after the newly added node enters the canvas.
+        // Allow a little more time on slower CI emulators before declaring a UI regression.
+        compose.waitUntil(15_000) {
             compose.onAllNodesWithTag("node-config-field-text").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("node-config-field-text").performTextClearance()

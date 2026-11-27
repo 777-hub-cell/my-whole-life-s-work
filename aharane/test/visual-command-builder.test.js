@@ -793,7 +793,10 @@ test('View Once text is sent with the View Once V2 wrapper; dry-run never sends'
   let calls = 0
   const dry = await executeVisualWorkflow(draft, {
     store, dryRun: true,
-    context: context({ socket: { sendMessage: async () => { calls += 1; throw new Error('dry run must not send') } } }),
+    context: context({
+      messageText: '.one Ada',
+      socket: { sendMessage: async () => { calls += 1; throw new Error('dry run must not send') } },
+    }),
   })
   assert.equal(dry.ok, true, dry.error)
   assert.equal(calls, 0)

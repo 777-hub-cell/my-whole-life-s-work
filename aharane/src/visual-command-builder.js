@@ -195,7 +195,7 @@ const OWNER_ONLY_NODES = new Set([
 ])
 const textValue = (value, max = 2000) => String(value == null ? '' : value).slice(0, max)
 function listValue(value, maxItems = 50, maxLength = 200) {
-  const values = Array.isArray(value) ? value : textValue(value, 4000).split(/\\r?\\n|,/)
+  const values = Array.isArray(value) ? value : textValue(value, 4000).split(/\r?\n|,/)
   return values.slice(0, maxItems).map(item => textValue(item, maxLength).trim()).filter(Boolean)
 }
 const isExec = (node, socket) => definitions.get(node && node.type)?.ports.outputs.find(item => item.id === socket)?.type === 'exec'

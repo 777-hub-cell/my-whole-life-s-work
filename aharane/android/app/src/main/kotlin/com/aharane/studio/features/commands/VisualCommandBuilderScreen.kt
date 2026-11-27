@@ -1804,9 +1804,6 @@ private fun CustomNodeManagerDialog(
     var operation by remember { mutableStateOf("uppercase") }
     var confirmDelete by remember { mutableStateOf<String?>(null) }
     val operations = CustomNodeOperatorCatalog.operators
-    fun typedInput(id: String, type: String): JSONObject =
-        JSONObject().put("id", id).put("label", id.replaceFirstChar { it.uppercase() }).put("type", type)
-
     Dialog(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth().heightIn(max = 620.dp)

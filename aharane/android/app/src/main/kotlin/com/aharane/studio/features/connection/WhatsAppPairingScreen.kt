@@ -189,7 +189,7 @@ fun WhatsAppPairingScreen(
                 ) { showQr ->
                     if (showQr) {
                         PairingInfoPanel {
-                    Text("On your phone, open WhatsApp → Linked devices → Link a device. Scan the QR code below.", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
+                    Text("Your QR code appears below. Use the steps above to scan it from your phone.", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
                     Box(
                         Modifier.fillMaxWidth().heightIn(min = 236.dp)
                             .clip(RoundedCornerShape(12.dp))
@@ -223,7 +223,7 @@ fun WhatsAppPairingScreen(
                 }
             } else {
                 PairingInfoPanel {
-                    Text("On the phone you want to link, open WhatsApp → Linked devices → Link with phone number.", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
+                    Text("Enter the pairing code on the phone you want to link, following the steps above.", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
                     if (pairingCode.isBlank()) {
                         Text("A code is only requested when you tap the button below.", color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                     } else {

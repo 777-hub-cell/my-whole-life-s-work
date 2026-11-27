@@ -379,7 +379,7 @@ class ConversationScreenTest {
         compose.waitForIdle()
         // The question must survive option edits and keyboard dismissal.
         compose.onNodeWithTag("poll-question").assertTextEquals("Lunch?")
-        compose.onNodeWithTag("poll-create-submit").assertIsEnabled().performClick()
+        compose.onNodeWithTag("poll-create-submit").assertIsEnabled().performScrollTo().performClick()
         compose.runOnIdle {
             assertEquals(true, createPollCallbackInvoked)
             assertEquals("Lunch?", createdQuestion)

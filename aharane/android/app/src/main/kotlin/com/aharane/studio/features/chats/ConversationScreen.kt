@@ -64,6 +64,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
@@ -221,6 +223,15 @@ fun ConversationScreen(
     }
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    val pollQuestionFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(pollCreateOpen) {
+        if (pollCreateOpen) {
+            // Wait until the poll dialog's text field is attached before requesting focus.
+            withFrameNanos { }
+            pollQuestionFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
     val wallpaperBrush = when (appearance.wallpaper) {
         "solid", "default" -> Brush.linearGradient(listOf(appearanceColor(appearance.wallpaperColor), appearanceColor(appearance.wallpaperColor)))
         "gradient" -> Brush.linearGradient(listOf(appearanceColor(appearance.gradientStart), appearanceColor(appearance.gradientEnd)))
@@ -1255,7 +1266,8 @@ fun ConversationScreen(
                     singleLine = false,
                     maxLines = 3,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = StudioPalette.Ink),
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+                    modifier = Modifier.focusRequester(pollQuestionFocusRequester)
+                        .fillMaxWidth().clip(RoundedCornerShape(9.dp))
                         .background(StudioPalette.Background).border(1.dp, StudioPalette.Line, RoundedCornerShape(9.dp))
                         .padding(horizontal = 11.dp, vertical = 12.dp).testTag("poll-question"),
                     decorationBox = { inner ->

@@ -95,11 +95,14 @@ export const VISUAL_NODE_LIBRARY = Object.freeze([
     { type: 'condition.isGroupAdmin', name: 'Is group admin', description: 'Check the triggering Public group participant against actual WhatsApp group metadata.', ports: ports([execIn], [{ id: 'yes', label: 'YES', type: 'exec' }, { id: 'no', label: 'NO', type: 'exec' }]) },
     { type: 'condition.isViewOnce', name: 'Is View Once message', description: 'Branch without downloading or exposing the View Once content.', ports: ports([execIn], [{ id: 'yes', label: 'YES', type: 'exec' }, { id: 'no', label: 'NO', type: 'exec' }]) },
   ] },
-  { category: 'Variables and counters', nodes: [
+  { category: 'Variables and conversions', nodes: [
     { type: 'variable.set', name: 'Set variable', description: 'Set a temporary text variable for this workflow run.', ports: ports([execIn, { id: 'value', label: 'Value', type: 'string' }], [execOut]) },
     { type: 'variable.get', name: 'Get variable', description: 'Read a variable set earlier in this run.', ports: ports([], [{ id: 'value', label: 'Value', type: 'string' }]) },
     { type: 'counter.increment', name: 'Increment counter', description: 'Increase a persistent counter for this command.', ports: ports([execIn], [execOut, { id: 'value', label: 'Count', type: 'number' }]) },
     { type: 'value.toText', name: 'Number to text', description: 'Convert a numeric output, such as a counter, into text.', ports: ports([{ id: 'value', label: 'Number', type: 'number' }], [{ id: 'value', label: 'Text', type: 'string' }]) },
+    { type: 'value.toNumber', name: 'Text to number', description: 'Convert numeric text into a finite number; invalid or empty values fail safely.', ports: ports([{ id: 'value', label: 'Text', type: 'string' }], [{ id: 'value', label: 'Number', type: 'number' }]) },
+    { type: 'value.toBoolean', name: 'Text to boolean', description: 'Convert true/false, yes/no, on/off or 1/0 text into a boolean.', ports: ports([{ id: 'value', label: 'Text', type: 'string' }], [{ id: 'value', label: 'Boolean', type: 'boolean' }]) },
+    { type: 'value.toList', name: 'Text to list', description: 'Split text into a trimmed list using a configurable separator (maximum 100 items).', ports: ports([{ id: 'value', label: 'Text', type: 'string' }, { id: 'separator', label: 'Separator', type: 'string' }], [{ id: 'value', label: 'List', type: 'list' }]) },
   ] },
   { category: 'Timing and scheduling', nodes: [
     { type: 'flow.delay', name: 'Wait', description: 'Pause this workflow run for up to 10 seconds; this is not a persistent scheduled job.', ports: ports([execIn], [execOut]) },
@@ -449,8 +452,10 @@ export function validateWorkflow(input) {
     if (node.type === 'variable.set' && !textValue(config.value).trim() && !inputEdge(workflow, node.id, 'value')) {
       issue(node.id, 'error', 'A variable value is required.', 'Enter a value or connect a text output.')
     }
-    if (node.type === 'value.toText' && !inputEdge(workflow, node.id, 'value')) {
-      issue(node.id, 'error', 'The number input is not connected.', 'Connect a numeric output, such as Increment counter.')
+    if (['value.toText', 'value.toNumber', 'value.toBoolean', 'value.toList'].includes(node.type) &&
+        !inputEdge(workflow, node.id, 'value')) {
+      const expected = node.type === 'value.toText' ? 'numeric output' : 'text output'
+      issue(node.id, 'error', 'The conversion input is not connected.', 'Connect a ' + expected + ' to the Value input.')
     }
     if (node.type.startsWith('custom.')) {
       const definition = customDefinitions.get(node.type)
@@ -614,6 +619,27 @@ function resolveTemplate(value, context) {
     return ''
   })
 }
+export function convertTextToNumber(value) {
+  const source = String(value ?? '').trim()
+  if (!source) throw new Error('Cannot convert empty text to a number.')
+  const number = Number(source)
+  if (!Number.isFinite(number)) throw new Error('Text is not a finite number.')
+  return number
+}
+
+export function convertTextToBoolean(value) {
+  const source = String(value ?? '').trim().toLowerCase()
+  if (['true', 't', 'yes', 'y', '1', 'on'].includes(source)) return true
+  if (['false', 'f', 'no', 'n', '0', 'off'].includes(source)) return false
+  throw new Error('Text must be true/false, yes/no, on/off or 1/0.')
+}
+
+export function convertTextToList(value, separator = ',') {
+  const source = String(value ?? '')
+  const delimiter = String(separator ?? '').trim() || ','
+  return source.split(delimiter).slice(0, 100).map(item => item.trim()).filter(Boolean)
+}
+
 function resolveSource(workflow, edge, context) {
   const sourceNode = context.nodes.get(edge.from)
   if (!sourceNode) return undefined
@@ -625,10 +651,19 @@ function resolveSource(workflow, edge, context) {
   if (sourceNode.type === 'message.quotedText') return quotedMessageText(context.event.message)
   if (sourceNode.type === 'message.isViewOnce') return isViewOnceMessage(context.event.message)
   if (sourceNode.type === 'variable.get') return context.variables[textValue(sourceNode.config.key, 48)] ?? ''
-  if (sourceNode.type === 'value.toText') {
+  if (sourceNode.type === 'value.toText' || sourceNode.type === 'value.toNumber' ||
+      sourceNode.type === 'value.toBoolean' || sourceNode.type === 'value.toList') {
     const valueEdge = inputEdge(workflow, sourceNode.id, 'value')
-    const numeric = valueEdge ? resolveSource(workflow, valueEdge, context) : undefined
-    return numeric === undefined ? '' : String(numeric)
+    const value = valueEdge ? resolveSource(workflow, valueEdge, context) : undefined
+    if (value === undefined || value === null) return ''
+    if (sourceNode.type === 'value.toText') return String(value)
+    if (sourceNode.type === 'value.toNumber') return convertTextToNumber(value)
+    if (sourceNode.type === 'value.toBoolean') return convertTextToBoolean(value)
+    const separatorEdge = inputEdge(workflow, sourceNode.id, 'separator')
+    const separatorValue = separatorEdge
+      ? resolveSource(workflow, separatorEdge, context)
+      : sourceNode.config.separator
+    return convertTextToList(value, separatorValue)
   }
   return undefined
 }

@@ -365,7 +365,7 @@ fun ChatsScreen(
                 ) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
-                            if (selectedChannel == null) "Channels" else channelRows.firstOrNull { it.first == selectedChannel }?.second ?: "Channel",
+                            if (selectedChannel == null) "Subscribed Channels" else channelRows.firstOrNull { it.first == selectedChannel }?.second ?: "Channel",
                             fontSize = 15.sp, color = StudioPalette.Ink, fontWeight = FontWeight.SemiBold
                         )
                         Text(

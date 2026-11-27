@@ -34,6 +34,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AttachFile
@@ -83,6 +85,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import com.aharane.studio.core.design.AharaneInstrumentSans
@@ -1284,6 +1287,15 @@ fun ConversationScreen(
                                 pollOptionsDraft = pollOptionsDraft.toMutableList().also { it[index] = value.take(100) }
                             },
                             singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                imeAction = if (index == pollOptionsDraft.lastIndex) ImeAction.Done else ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                }
+                            ),
                             textStyle = MaterialTheme.typography.bodyMedium.copy(color = StudioPalette.Ink),
                             modifier = Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
                                 .background(StudioPalette.Background).border(1.dp, StudioPalette.Line, RoundedCornerShape(8.dp))

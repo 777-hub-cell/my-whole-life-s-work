@@ -13,9 +13,9 @@ class VisualCommandBuilderLayoutTest {
 
         val movedFirst = first.copy(x = 300f, y = 520f)
 
-        assertEquals(Offset(306f, 158f), secondBefore)
+        assertEquals(Offset(2_458f, 2_310f), secondBefore)
         assertEquals(secondBefore, workspaceNodeOffset(second))
-        assertEquals(Offset(348f, 568f), workspaceNodeOffset(movedFirst))
+        assertEquals(Offset(2_500f, 2_720f), workspaceNodeOffset(movedFirst))
     }
 
     @Test

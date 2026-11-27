@@ -256,7 +256,7 @@ private fun commandBuilderPreviewLibrary(): List<VisualNodeCategory> = listOf(
 
 private data class ActiveSocket(val nodeId: String, val socketId: String, val type: String)
 
-internal const val WORKSPACE_CANVAS_PADDING_DP = 48f
+internal const val WORKSPACE_CANVAS_PADDING_DP = 2200f
 // Single source of truth for node-card width: fit-to-screen and canvas-extent maths previously
 // assumed 206 dp while the card is drawn 236 dp wide, which clipped the right-most node.
 internal const val NODE_CARD_WIDTH_DP = 236f
@@ -310,6 +310,7 @@ fun VisualCommandBuilderScreen(
     var workspaceViewportSize by remember { mutableStateOf(IntSize.Zero) }
     var pendingZoomScroll by remember { mutableStateOf<Offset?>(null) }
     var workspaceCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var autoFitWorkflowId by remember { mutableStateOf<String?>(null) }
 
     fun zoomAround(factor: Float, anchor: Offset = Offset(workspaceViewportSize.width / 2f, workspaceViewportSize.height / 2f)) {
         val nextZoom = (zoom * factor).coerceIn(WORKSPACE_MIN_ZOOM, WORKSPACE_MAX_ZOOM)
@@ -331,6 +332,18 @@ fun VisualCommandBuilderScreen(
         workspaceScroll.scrollTo(target.x.roundToInt().coerceIn(0, workspaceScroll.maxValue))
         workspaceVerticalScroll.scrollTo(target.y.roundToInt().coerceIn(0, workspaceVerticalScroll.maxValue))
         pendingZoomScroll = null
+    }
+
+    // Centre each newly opened draft or saved workflow in the open canvas once
+    // the viewport has real dimensions. Editing nodes never steals the viewport.
+    LaunchedEffect(workflow.id, workspaceViewportSize) {
+        if (workspaceViewportSize.width > 0 &&
+            workspaceViewportSize.height > 0 &&
+            autoFitWorkflowId != workflow.id
+        ) {
+            autoFitWorkflowId = workflow.id
+            fitWorkspace()
+        }
     }
     val measuredNodeSizes = remember { mutableStateMapOf<String, IntSize>() }
     val measuredSocketPositions = remember { mutableStateMapOf<String, Offset>() }
@@ -397,11 +410,31 @@ fun VisualCommandBuilderScreen(
             val graphHeightPx = with(density) { (bottom - top + 96f).coerceAtLeast(180f).dp.toPx() }
             val availableWidth = (workspaceViewportSize.width - with(density) { 32.dp.toPx() }).coerceAtLeast(1f)
             val availableHeight = (workspaceViewportSize.height - with(density) { 32.dp.toPx() }).coerceAtLeast(1f)
-            zoom = minOf(availableWidth / graphWidthPx, availableHeight / graphHeightPx).coerceIn(WORKSPACE_MIN_ZOOM, WORKSPACE_MAX_ZOOM)
+            val fittedZoom = minOf(availableWidth / graphWidthPx, availableHeight / graphHeightPx)
+                .coerceIn(WORKSPACE_MIN_ZOOM, WORKSPACE_MAX_ZOOM)
+            zoom = fittedZoom
+            val graphCenterX = with(density) {
+                (WORKSPACE_CANVAS_PADDING_DP + (left + right) / 2f).dp.toPx()
+            } * fittedZoom
+            val graphCenterY = with(density) {
+                (WORKSPACE_CANVAS_PADDING_DP + (top + bottom) / 2f).dp.toPx()
+            } * fittedZoom
+            scope.launch {
+                // Wait for the enlarged, scaled canvas to publish its new scroll bounds.
+                withFrameNanos { }
+                withFrameNanos { }
+                workspaceScroll.scrollTo(
+                    (graphCenterX - workspaceViewportSize.width / 2f).roundToInt()
+                        .coerceIn(0, workspaceScroll.maxValue)
+                )
+                workspaceVerticalScroll.scrollTo(
+                    (graphCenterY - workspaceViewportSize.height / 2f).roundToInt()
+                        .coerceIn(0, workspaceVerticalScroll.maxValue)
+                )
+            }
         } else {
             zoom = 0.78f
         }
-        scope.launch { workspaceScroll.scrollTo(0); workspaceVerticalScroll.scrollTo(0) }
     }
 
     fun useSaved(row: JSONObject) {
@@ -938,8 +971,10 @@ fun VisualCommandBuilderScreen(
                         node.y + (measuredNodeSizes[node.id]?.height?.let { with(density) { it.toDp().value } } ?: 132f)
                     } ?: 180f
                     // Extra blank canvas makes one-finger panning useful on a phone.
-                    val canvasWidth = maxOf(2600.dp, (canvasOriginX + maxNodeRight + 48f).dp)
-                    val canvasHeight = maxOf(1900.dp, (canvasOriginY + maxNodeBottom + 48f).dp)
+                    // The graph is centred inside a broad virtual workspace, leaving
+                    // generous room to pan on every side instead of reaching an edge quickly.
+                    val canvasWidth = maxOf(5200.dp, (canvasOriginX + maxNodeRight + WORKSPACE_CANVAS_PADDING_DP).dp)
+                    val canvasHeight = maxOf(5200.dp, (canvasOriginY + maxNodeBottom + WORKSPACE_CANVAS_PADDING_DP).dp)
                     // Outer box owns scaled scroll dimensions; inner box preserves
                     // unscaled coordinates for socket measurements.
                     Box(Modifier.width(canvasWidth * zoom).height(canvasHeight * zoom)) {

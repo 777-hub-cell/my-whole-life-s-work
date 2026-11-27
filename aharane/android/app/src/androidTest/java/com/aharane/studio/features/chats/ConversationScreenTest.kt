@@ -375,6 +375,8 @@ class ConversationScreenTest {
         // Dismiss the keyboard before tapping the submit action below it.
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         compose.waitForIdle()
+        // The question must survive option edits and keyboard dismissal.
+        compose.onNodeWithTag("poll-question").assertTextEquals("Lunch?")
         compose.onNodeWithTag("poll-create-submit").assertIsEnabled().performClick()
         compose.runOnIdle {
             assertEquals("Lunch?", createdQuestion)

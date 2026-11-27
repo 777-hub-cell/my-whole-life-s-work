@@ -15,8 +15,8 @@ const IGNORED_DIRECTORIES = new Set([
   '.git', 'node_modules', 'test', 'tests', '__tests__', 'fixtures',
   'dist', 'build', 'coverage', '.next', '.cache', 'vendor',
 ])
-const PROCESS_ENV = /\\bprocess\\s*\\.\\s*env\\s*(?:\\.\\s*([A-Z_][A-Z0-9_]*)|\\[\\s*['"]([A-Z_][A-Z0-9_]*)['"]\\s*\\])/g
-const PASSED_ENV = /\\benv\\s*\\.\\s*([A-Z_][A-Z0-9_]*)\\b/g
+const PROCESS_ENV = /\bprocess\s*\.\s*env\s*(?:\.\s*([A-Z_][A-Z0-9_]*)|\[\s*['"]([A-Z_][A-Z0-9_]*)['"]\s*\])/g
+const PASSED_ENV = /\benv\s*\.\s*([A-Z_][A-Z0-9_]*)\b/g
 const SECRET_NAME = /(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|PRIVATE|COOKIE|SIGNING|CERT)/i
 
 async function collectSourceFiles(directory) {

@@ -17,7 +17,7 @@ const IGNORED_DIRECTORIES = new Set([
 ])
 const PROCESS_ENV = /\bprocess\s*\.\s*env\s*(?:\.\s*([A-Z_][A-Z0-9_]*)|\[\s*['"]([A-Z_][A-Z0-9_]*)['"]\s*\])/g
 const PASSED_ENV = /\benv\s*\.\s*([A-Z_][A-Z0-9_]*)\b/g
-const SECRET_NAME = /(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|PRIVATE|COOKIE|SIGNING|CERT)/i
+const SECRET_NAME = /(KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIAL|PRIVATE|COOKIE|SIGNING|CERT|DSN|DATABASE|DB_URL|CONNECTION|AUTH|ENCRYPTION|PEM|WEBHOOK|URL|URI)/i
 
 async function collectSourceFiles(directory) {
   let entries

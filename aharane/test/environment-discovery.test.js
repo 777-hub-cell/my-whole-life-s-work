@@ -16,6 +16,8 @@ test('environment keys are discovered from current executable source and sorted'
       "const port = process.env.AHARANE_PORT",
       "const token = process.env['AHARANE_ADMIN_TOKEN']",
       "const aiKey = env.GROQ_API_KEY",
+      "const databaseUrl = process.env.AHARANE_DATABASE_URL",
+      "const webhookUrl = process.env.AHARANE_WEBHOOK_URL",
     ].join('\n'))
     await writeFile(join(root, 'commands', 'ping.js'), "const mode = process.env.AHARANE_RUNTIME_MODE")
     await writeFile(join(root, 'test', 'ignored.test.js'), "const bad = process.env.TEST_ONLY_SECRET")
@@ -26,20 +28,28 @@ test('environment keys are discovered from current executable source and sorted'
       AHARANE_ADMIN_TOKEN: 'never-return-this',
       GROQ_API_KEY: 'never-return-this-either',
       AHARANE_RUNTIME_MODE: 'production',
+      AHARANE_DATABASE_URL: 'postgres://user:password@host/db',
+      AHARANE_WEBHOOK_URL: 'https://example.invalid/webhook?token=private',
     })
     assert.deepEqual(rows.map(row => row.key), [
       'AHARANE_ADMIN_TOKEN',
       'AHARANE_PORT',
       'AHARANE_RUNTIME_MODE',
       'GROQ_API_KEY',
-    ])
+      'AHARANE_DATABASE_URL',
+      'AHARANE_WEBHOOK_URL',
+    ].sort((a, b) => a.localeCompare(b)))
     const adminToken = rows.find(row => row.key === 'AHARANE_ADMIN_TOKEN')
     assert.equal(adminToken.value, 'Configured')
+    assert.equal(rows.find(row => row.key === 'AHARANE_DATABASE_URL').value, 'Configured')
+    assert.equal(rows.find(row => row.key === 'AHARANE_WEBHOOK_URL').value, 'Configured')
     assert.equal(adminToken.secret, true)
     assert.equal(adminToken.readOnly, true)
     assert.equal(rows.find(row => row.key === 'GROQ_API_KEY').value, 'Configured')
     assert.equal(rows.find(row => row.key === 'AHARANE_PORT').value, '8790')
     assert.equal(JSON.stringify(rows).includes('never-return-this'), false)
+    assert.equal(JSON.stringify(rows).includes('postgres://user'), false)
+    assert.equal(JSON.stringify(rows).includes('token=private'), false)
     assert.equal(rows.some(row => row.key.includes('TEST_ONLY') || row.key.includes('DEPENDENCY_ONLY')), false)
   } finally {
     await rm(root, { recursive: true, force: true })

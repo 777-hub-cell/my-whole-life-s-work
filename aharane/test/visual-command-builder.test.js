@@ -62,7 +62,11 @@ test('text conversion helpers are strict, bounded and deterministic', () => {
   assert.equal(convertTextToBoolean('off'), false)
   assert.throws(() => convertTextToBoolean('maybe'), /true\/false/i)
   assert.deepEqual(convertTextToList('red ; blue ;; green', ';'), ['red', 'blue', 'green'])
-  assert.equal(convertTextToList(Array.from({ length: 140 }, (_, index) => String(index)).join(','), ',').length, 100)
+  assert.equal(convertTextToList(Array.from({ length: 100 }, (_, index) => String(index)).join(',')).length, 100)
+  assert.throws(
+    () => convertTextToList(Array.from({ length: 140 }, (_, index) => String(index)).join(',')),
+    /limited to 100 items/i
+  )
 })
 
 test('text-to-number and number-to-text nodes compose in a real workflow', async t => {

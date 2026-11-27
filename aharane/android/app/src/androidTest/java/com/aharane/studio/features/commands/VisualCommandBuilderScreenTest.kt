@@ -1,6 +1,7 @@
 package com.aharane.studio.features.commands
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasTestTag
@@ -90,6 +91,40 @@ class VisualCommandBuilderScreenTest {
             ?.optJSONObject(0)?.optJSONObject("config")?.optString("command"))
         assertEquals("Hello from the builder", source.savedWorkflow()?.optJSONArray("nodes")
             ?.optJSONObject(2)?.optJSONObject("config")?.optString("text"))
+    }
+
+    @Test
+    fun customNodeManagerExposesTheCompleteSafeTypedOperatorSet() {
+        val source = FakeVisualCommandDataSource()
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                VisualCommandBuilderScreen(repository = source, connected = true, onBack = {})
+            }
+        }
+        compose.waitUntil(5_000) { source.readCount > 0 }
+
+        compose.onNodeWithTag("custom-node-manager").performClick()
+        listOf(
+            "Uppercase",
+            "Lowercase",
+            "Trim whitespace",
+            "Combine text",
+            "Contains text",
+            "Compare text",
+            "Text length",
+            "Split text into a list",
+            "Join a list into text",
+            "Add numbers",
+            "Subtract numbers",
+            "Multiply numbers",
+            "Divide numbers",
+            "Boolean AND",
+            "Boolean OR",
+            "Boolean NOT",
+            "Choose between two text values"
+        ).forEach { label ->
+            compose.onNodeWithText(label).assertExists()
+        }
     }
 
     @Test

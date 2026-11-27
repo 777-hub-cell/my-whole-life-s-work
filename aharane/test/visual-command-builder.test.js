@@ -10,6 +10,9 @@ import {
   normalizeWorkflow,
   validateWorkflow,
   VISUAL_NODE_LIBRARY,
+  convertTextToNumber,
+  convertTextToBoolean,
+  convertTextToList,
   registerEngineNode,
   unregisterEngineNode,
 } from '../src/visual-command-builder.js'
@@ -38,6 +41,29 @@ function context(overrides = {}) {
     ...overrides,
   }
 }
+
+test('node library exposes text, number, boolean and list conversions', () => {
+  const nodes = VISUAL_NODE_LIBRARY.flatMap(category => category.nodes)
+  const conversions = new Map(nodes.filter(node => node.type.startsWith('value.')).map(node => [node.type, node]))
+  assert.deepEqual([...conversions.keys()].sort(), [
+    'value.toBoolean', 'value.toList', 'value.toNumber', 'value.toText',
+  ])
+  assert.equal(conversions.get('value.toNumber').ports.inputs[0].type, 'string')
+  assert.equal(conversions.get('value.toNumber').ports.outputs[0].type, 'number')
+  assert.equal(conversions.get('value.toBoolean').ports.outputs[0].type, 'boolean')
+  assert.equal(conversions.get('value.toList').ports.outputs[0].type, 'list')
+})
+
+test('text conversion helpers are strict, bounded and deterministic', () => {
+  assert.equal(convertTextToNumber('  -12.5  '), -12.5)
+  assert.throws(() => convertTextToNumber(''), /empty text/i)
+  assert.throws(() => convertTextToNumber('Infinity'), /finite number/i)
+  assert.equal(convertTextToBoolean('YES'), true)
+  assert.equal(convertTextToBoolean('off'), false)
+  assert.throws(() => convertTextToBoolean('maybe'), /true\/false/i)
+  assert.deepEqual(convertTextToList('red ; blue ;; green', ';'), ['red', 'blue', 'green'])
+  assert.equal(convertTextToList(Array.from({ length: 140 }, (_, index) => String(index)).join(','), ',').length, 100)
+})
 
 test('new workflow draft has one connected command trigger and reply', () => {
   const draft = createWorkflowDraft('private')

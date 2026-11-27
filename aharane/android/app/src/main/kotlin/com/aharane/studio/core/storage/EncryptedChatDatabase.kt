@@ -81,7 +81,8 @@ data class ChatMessageRow(
     @ColumnInfo(defaultValue = "'[]'") val pollOptionsJson: String = "[]",
     @ColumnInfo(defaultValue = "1") val pollSelectableCount: Int = 1,
     @ColumnInfo(defaultValue = "'{}'") val pollVoteCountsJson: String = "{}",
-    @ColumnInfo(defaultValue = "'[]'") val pollMyVotesJson: String = "[]"
+    @ColumnInfo(defaultValue = "'[]'") val pollMyVotesJson: String = "[]",
+    @ColumnInfo(defaultValue = "0") val isSystem: Boolean = false
 )
 
 @Entity(
@@ -245,7 +246,7 @@ interface ChatDao {
 
 @Database(
     entities = [ChatConversationRow::class, ChatMessageRow::class, ChatOutgoingMessageRow::class, ChatOutgoingMediaRow::class],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class AharaneChatDatabase : RoomDatabase() {
@@ -266,6 +267,12 @@ class EncryptedChatDatabase private constructor(
                 database.execSQL("ALTER TABLE chat_messages ADD COLUMN pollSelectableCount INTEGER NOT NULL DEFAULT 1")
                 database.execSQL("ALTER TABLE chat_messages ADD COLUMN pollVoteCountsJson TEXT NOT NULL DEFAULT '{}' ")
                 database.execSQL("ALTER TABLE chat_messages ADD COLUMN pollMyVotesJson TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE chat_messages ADD COLUMN isSystem INTEGER NOT NULL DEFAULT 0")
             }
         }
 
@@ -356,7 +363,7 @@ class EncryptedChatDatabase private constructor(
             val factory = SupportOpenHelperFactory(passphrase)
             val db = Room.databaseBuilder(context.applicationContext, AharaneChatDatabase::class.java, file.absolutePath)
                 .openHelperFactory(factory)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .build()
             try {
                 // Force the encrypted open now. A bad or missing key fails closed here.

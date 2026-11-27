@@ -390,7 +390,8 @@ private fun ChatMessage.toRow() = ChatMessageRow(
     pollOptionsJson = JSONArray(pollOptions).toString(),
     pollSelectableCount = pollSelectableCount.coerceAtLeast(1),
     pollVoteCountsJson = JSONObject(pollVoteCounts).toString(),
-    pollMyVotesJson = JSONArray(pollMyVotes).toString()
+    pollMyVotesJson = JSONArray(pollMyVotes).toString(),
+    isSystem = isSystem
 )
 
 private fun ChatMessageRow.toModel() = ChatMessage(
@@ -422,5 +423,6 @@ private fun ChatMessageRow.toModel() = ChatMessage(
     pollMyVotes = runCatching {
         val values = JSONArray(pollMyVotesJson)
         List(values.length()) { values.optString(it) }.filter(String::isNotBlank)
-    }.getOrDefault(emptyList())
+    }.getOrDefault(emptyList()),
+    isSystem = isSystem
 )

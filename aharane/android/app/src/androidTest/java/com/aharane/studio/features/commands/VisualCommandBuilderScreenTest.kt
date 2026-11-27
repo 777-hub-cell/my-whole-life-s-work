@@ -148,6 +148,8 @@ class VisualCommandBuilderScreenTest {
         compose.onNodeWithTag("node-config-field-separator").assertIsDisplayed()
         compose.onNodeWithTag("node-config-field-separator").performTextClearance()
         compose.onNodeWithTag("node-config-field-separator").performTextInput(";")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
         compose.onNodeWithText("Apply").performClick()
         compose.onNodeWithTag("node-card-value.toList").assertIsDisplayed()
     }

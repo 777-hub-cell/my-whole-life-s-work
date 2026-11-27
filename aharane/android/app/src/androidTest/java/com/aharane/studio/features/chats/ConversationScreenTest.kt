@@ -366,9 +366,12 @@ class ConversationScreenTest {
 
         compose.onNodeWithContentDescription("Conversation options").performClick()
         compose.onNodeWithText("Create poll").performClick()
-        compose.onNodeWithTag("poll-question").performTextInput("Lunch?")
-        compose.onNodeWithTag("poll-option-0").performTextInput("Jollof rice")
-        compose.onNodeWithTag("poll-option-1").performTextInput("Pasta")
+        compose.onNodeWithTag("poll-question").performClick().performTextInput("Lunch?")
+        compose.onNodeWithTag("poll-question").assertTextEquals("Lunch?")
+        compose.onNodeWithTag("poll-option-0").performClick().performTextInput("Jollof rice")
+        compose.onNodeWithTag("poll-option-0").assertTextEquals("Jollof rice")
+        compose.onNodeWithTag("poll-option-1").performClick().performTextInput("Pasta")
+        compose.onNodeWithTag("poll-option-1").assertTextEquals("Pasta")
         compose.onNodeWithTag("poll-create-submit").performClick()
         compose.runOnIdle {
             assertEquals("Lunch?", createdQuestion)

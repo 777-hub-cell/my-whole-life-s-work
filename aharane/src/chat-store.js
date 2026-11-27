@@ -488,13 +488,17 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     })
   }
 
-  async function recordMessage({ sessionId, message, socket } = {}) {
+  async function recordMessage({ sessionId, message, socket, systemText = '' } = {}) {
     const account = accountId(sessionId)
     const key = message?.key || {}
     const jid = safeJid(key.remoteJid)
     const id = String(key.id || '').slice(0, 256)
-    if (!jid || !id || !message?.message) return null
-    const extracted = messageContent(message)
+    const normalizedSystemText = String(systemText || '').trim().slice(0, 1200)
+    const isSystem = normalizedSystemText.length > 0
+    if (!jid || !id || (!message?.message && !isSystem)) return null
+    const extracted = isSystem
+      ? { type: 'text', text: normalizedSystemText, mimeType: '', fileName: '', size: 0, duration: 0, ptt: false, media: false, viewOnce: false }
+      : messageContent(message)
     const ts = timestamp(message.messageTimestamp)
     const fromMe = key.fromMe === true
     const directionKnown = typeof key.fromMe === 'boolean'
@@ -513,6 +517,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     const record = {
       id, jid, fromMe, directionKnown, participant: String(key.participant || ''),
       pushName: String(message.pushName || '').slice(0, 120),
+      system: isSystem,
       timestamp: ts, type: extracted.type, text: extracted.text,
       mimeType: extracted.mimeType, fileName: extracted.fileName ? safeName(extracted.fileName) : '',
       size: extracted.size, duration: extracted.duration || 0, ptt: extracted.ptt === true,
@@ -605,6 +610,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       return {
         id: row.id, jid: row.jid, fromMe: row.fromMe, participant: row.participant,
         pushName: row.pushName, timestamp: row.timestamp, type: row.type, text: row.text,
+        system: row.system === true,
         pollOptions,
         pollSelectableCount: Math.max(1, Number(row.pollSelectableCount) || 1),
         pollVoteCounts: Object.fromEntries(pollOptions.map(option => [option, Number(counts[optionHash(option)]) || 0])),

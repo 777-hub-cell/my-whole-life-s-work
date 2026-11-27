@@ -836,3 +836,28 @@ test('poll options and privacy-preserving vote totals persist and replace a vote
     )
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
+
+test('group service events are retained as readable system messages without a WhatsApp message body', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-system-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '120363000000000001@g.us'
+    await store.recordMessage({
+      sessionId: 'public',
+      message: {
+        key: { id: 'group-left-1', remoteJid: jid, fromMe: false, participant: '2348012345678@s.whatsapp.net' },
+        messageTimestamp: 1765000000,
+        messageStubType: 30,
+      },
+      systemText: 'Quarantine Scope left the group.',
+    })
+    const rows = await store.getMessages('public', jid)
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].text, 'Quarantine Scope left the group.')
+    assert.equal(rows[0].system, true)
+    assert.equal(rows[0].mediaUrl, '')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

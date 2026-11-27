@@ -42,12 +42,14 @@ import {
   invokeEngine,
 } from './engine-invocation.js'
 import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, normalizeChatVisibility, normalizeChatAppearance, isChatVisible, envView } from './studio-settings.js'
+import { discoverEnvironmentRows } from './environment-discovery.js'
 import { createActivityStore } from './activity-store.js'
 import { createAiReplyService } from './ai-reply.js'
 import { createVisualCommandStore, normalizeWorkflow, assertSupportedWorkflowSchema, exportWorkflow, importWorkflow, validateWorkflow, executeVisualWorkflow, currentVisualNodeLibrary, registerEngineNode, unregisterEngineNode } from './visual-command-builder.js'
 
 const APP_NAME = 'Aharane'
 const PROCESS_STARTED_AT = Date.now()
+const SOURCE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const PRIVATE_COMMAND_PREFIX = '.'
 const PUBLIC_COMMAND_PREFIX = '!'
@@ -1112,15 +1114,46 @@ function markMessageSeen(id) {
 
 const whatsappDiscovery = createWhatsAppDiscovery()
 
+const GROUP_MEMBER_STUB_ACTIONS = new Map([
+  [WAMessageStubType.GROUP_PARTICIPANT_LEAVE, 'left the group'],
+  [WAMessageStubType.GROUP_PARTICIPANT_REMOVE, 'was removed from the group'],
+  [WAMessageStubType.GROUP_PARTICIPANT_ADD, 'was added to the group'],
+  [WAMessageStubType.GROUP_PARTICIPANT_PROMOTE, 'was made a group admin'],
+  [WAMessageStubType.GROUP_PARTICIPANT_DEMOTE, 'is no longer a group admin'],
+].filter(([stubType]) => stubType != null))
+
+function groupSystemNotificationText(message) {
+  if (!String(message?.key?.remoteJid || '').endsWith('@g.us')) return ''
+  const action = GROUP_MEMBER_STUB_ACTIONS.get(message?.messageStubType)
+  if (!action) return ''
+  const parameter = String(message?.messageStubParameters?.[0] || '').trim()
+  const parameterName = parameter && !parameter.includes('@') && !/^\+?\d{7,}$/.test(parameter)
+    ? parameter
+    : ''
+  const participantName = String(message?.pushName || parameterName || 'A participant').trim().slice(0, 80)
+  return participantName + ' ' + action + '.'
+}
+
 async function handleMessages(sessionId, currentSocket, event) {
   if (!isSafeMessageUpsert(event)) return
   for (const message of event.messages) {
-    if (!message?.message || !message.key?.id) continue
+    if (!message?.key?.id) continue
 
     const remoteJid = String(message.key?.remoteJid || '')
     if (remoteJid === 'status@broadcast') {
       continue // Status is excluded from Aharane and is never stored or exposed.
     }
+    const systemText = groupSystemNotificationText(message)
+    if (systemText) {
+      const shouldPersistSystem = remoteJid.endsWith('@g.us') &&
+        isPrivateVisibleChatJid(remoteJid) &&
+        (sessionId === 'private' || (sessionId === 'public' && message.key.fromMe !== true))
+      if (shouldPersistSystem) {
+        await chatStore.recordMessage({ sessionId, message, socket: currentSocket, systemText })
+      }
+      continue
+    }
+    if (!message.message) continue
     const pollUpdate = findPollUpdate(message)
     if (pollUpdate) {
       const shouldPersistPoll = sessionId === 'private'
@@ -2239,12 +2272,25 @@ function authorizedChat(accountId, jid) {
   }
   return true
 }
-app.get('/api/env', requireAdmin, (_req, res) => {
-  res.json({ ok: true, env: [...envView(studioSettings), ...aiReplyService.environmentRows()], owners: {
-    privateOwnerNumber: ownerConfig.privateOwnerNumber,
-    publicOwnerNumber: ownerConfig.publicOwnerNumber,
-    allowedPublicSenders: ownerConfig.allowedPublicSenders,
-  } })
+async function currentEnvironmentRows() {
+  const managed = envView(studioSettings)
+  const aiRows = aiReplyService.environmentRows()
+  const existingKeys = new Set([...managed, ...aiRows].map(row => row.key))
+  const discovered = await discoverEnvironmentRows(SOURCE_ROOT, process.env)
+  return [...managed, ...aiRows, ...discovered.filter(row => !existingKeys.has(row.key))]
+}
+
+app.get('/api/env', requireAdmin, async (_req, res) => {
+  try {
+    res.json({ ok: true, env: await currentEnvironmentRows(), owners: {
+      privateOwnerNumber: ownerConfig.privateOwnerNumber,
+      publicOwnerNumber: ownerConfig.publicOwnerNumber,
+      allowedPublicSenders: ownerConfig.allowedPublicSenders,
+    } })
+  } catch (error) {
+    logger.warn({ event: 'environment.discovery-failed', error: String(error?.message || error).slice(0, 180) })
+    res.status(500).json({ ok: false, error: 'Could not inspect the current server environment.' })
+  }
 })
 app.put('/api/env', requireAdmin, async (req, res) => {
   try {
@@ -2271,7 +2317,7 @@ app.put('/api/env', requireAdmin, async (req, res) => {
       if (socket?.sendPresenceUpdate) await socket.sendPresenceUpdate(studioSettings[accountId].alwaysOnline ? 'available' : 'unavailable').catch(() => {})
     }
     publishStudioEvent('settings.updated', { private: true, public: true })
-    res.json({ ok: true, env: [...envView(studioSettings), ...aiReplyService.environmentRows()], settings: studioSettings })
+    res.json({ ok: true, env: await currentEnvironmentRows(), settings: studioSettings })
   } catch (error) {
     res.status(400).json({ ok: false, error: String(error?.message || 'Could not save the managed environment settings.') })
   }

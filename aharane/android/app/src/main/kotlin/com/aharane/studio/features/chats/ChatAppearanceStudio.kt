@@ -624,7 +624,7 @@ fun ChatAppearanceStudioScreen(
             SegmentRow(listOf("Compact", "Comfortable", "Spacious"), appearance.density.replaceFirstChar { it.uppercase() }) {
                 change("density", it.lowercase())
             }
-            ToggleSetting("Show avatars", appearance.showAvatars) { change("showAvatars", it.toString()) }
+            ToggleSetting("Show group sender avatars", appearance.showAvatars) { change("showAvatars", it.toString()) }
             ToggleSetting("Show sender labels", appearance.showSenderLabels) { change("showSenderLabels", it.toString()) }
             ToggleSetting("Group consecutive messages", appearance.groupMessages) { change("groupMessages", it.toString()) }
             ToggleSetting("Show timestamps", appearance.showTimestamps) { change("showTimestamps", it.toString()) }

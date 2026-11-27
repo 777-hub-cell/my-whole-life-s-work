@@ -194,6 +194,43 @@ private fun commandBuilderPreviewLibrary(): List<VisualNodeCategory> = listOf(
         )
     ),
     VisualNodeCategory(
+        "Variables and conversions",
+        listOf(
+            VisualNodeDefinition(
+                type = "value.toText",
+                name = "Number to text",
+                description = "Convert a numeric output, such as a counter, into text.",
+                category = "Variables and conversions",
+                inputs = listOf(VisualSocket("value", "Number", "number")),
+                outputs = listOf(VisualSocket("value", "Text", "string"))
+            ),
+            VisualNodeDefinition(
+                type = "value.toNumber",
+                name = "Text to number",
+                description = "Convert numeric text into a finite number; invalid or empty values fail safely.",
+                category = "Variables and conversions",
+                inputs = listOf(VisualSocket("value", "Text", "string")),
+                outputs = listOf(VisualSocket("value", "Number", "number"))
+            ),
+            VisualNodeDefinition(
+                type = "value.toBoolean",
+                name = "Text to boolean",
+                description = "Convert true/false, yes/no, on/off or 1/0 text into a boolean.",
+                category = "Variables and conversions",
+                inputs = listOf(VisualSocket("value", "Text", "string")),
+                outputs = listOf(VisualSocket("value", "Boolean", "boolean"))
+            ),
+            VisualNodeDefinition(
+                type = "value.toList",
+                name = "Text to list",
+                description = "Split text into a trimmed list using a configurable separator.",
+                category = "Variables and conversions",
+                inputs = listOf(VisualSocket("value", "Text", "string"), VisualSocket("separator", "Separator", "string")),
+                outputs = listOf(VisualSocket("value", "List", "list"))
+            )
+        )
+    ),
+    VisualNodeCategory(
         "Flow control",
         listOf(
             VisualNodeDefinition(
@@ -531,6 +568,7 @@ fun VisualCommandBuilderScreen(
             "flow.repeat" -> mapOf("count" to "2")
             "media.sendImage" -> mapOf("caption" to "")
             "media.sendImages" -> mapOf("caption" to "", "limit" to "10")
+            "value.toList" -> mapOf("separator" to ",")
             else -> when {
                 definition.type.startsWith("custom.") -> mapOf("nodeVersion" to definition.version.toString())
                 definition.type.startsWith("engine.") -> mapOf("engineVersion" to definition.version.toString())
@@ -1000,7 +1038,8 @@ fun VisualCommandBuilderScreen(
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp))
                     .background(CommandStudioPalette.Background)
                     .border(1.dp, CommandStudioPalette.Line, RoundedCornerShape(13.dp))
-                    .heightIn(min = 44.dp).padding(horizontal = 13.dp, vertical = 12.dp),
+                    .heightIn(min = 44.dp).padding(horizontal = 13.dp, vertical = 12.dp)
+                    .testTag("node-library-search"),
                 decorationBox = { inner ->
                     Box {
                         if (search.isBlank()) Text("⌕  Search nodes", color = CommandStudioPalette.Muted, fontSize = 14.sp)
@@ -1560,6 +1599,9 @@ private fun nodeSummary(node: VisualNode): String = when (node.type) {
     "variable.get" -> "Get " + node.config["key"].orEmpty()
     "counter.increment" -> "Counter " + node.config["key"].orEmpty()
     "value.toText" -> "Convert number to text"
+    "value.toNumber" -> "Convert text to number"
+    "value.toBoolean" -> "Convert text to boolean"
+    "value.toList" -> "Split text using " + node.config["separator"].orEmpty().ifBlank { "," }
     "flow.delay" -> "Wait " + node.config["milliseconds"].orEmpty() + " ms"
     "flow.repeat" -> "Repeat " + node.config["count"].orEmpty() + " times"
     "flow.repeatEnd" -> "Return to Repeat"
@@ -1648,6 +1690,7 @@ private fun NodeConfigurationDialog(
         "flow.repeat" -> listOf("count" to "Repeat count (1–10)")
         "media.sendImage" -> listOf("caption" to "Image caption (optional)")
         "media.sendImages" -> listOf("caption" to "Image caption (optional)", "limit" to "Maximum messages (1–20)")
+        "value.toList" -> listOf("separator" to "List separator (default comma)")
         else -> if (node.type.startsWith("custom.") || node.type.startsWith("engine.")) definition?.inputs
             ?.filter { it.type != "exec" }?.map { it.id to (it.label + " (" + it.type + ")") }.orEmpty()
         else emptyList()

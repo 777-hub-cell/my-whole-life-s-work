@@ -199,6 +199,12 @@ fun ConversationScreen(
     var stickerTrayOpen by remember { mutableStateOf(false) }
     var recentStickerDialogOpen by remember { mutableStateOf(false) }
     var pollCreateOpen by remember { mutableStateOf(false) }
+    // Keep poll drafts in the conversation composition rather than the Dialog
+    // window so IME/window-inset recompositions cannot reset text before submit.
+    var pollQuestionDraft by remember(conversation.key.account.apiValue, conversation.key.jid) { mutableStateOf("") }
+    var pollOptionsDraft by remember(conversation.key.account.apiValue, conversation.key.jid) { mutableStateOf(listOf("", "")) }
+    var pollAllowMultiple by remember(conversation.key.account.apiValue, conversation.key.jid) { mutableStateOf(false) }
+    val pollQuestionFocusRequester = remember { FocusRequester() }
     var actionMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var aiReplyMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var aiReplyTone by rememberSaveable { mutableStateOf("Natural") }
@@ -223,6 +229,14 @@ fun ConversationScreen(
     }
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    LaunchedEffect(pollCreateOpen) {
+        if (pollCreateOpen) {
+            // Wait for the Dialog field to attach before moving focus into it.
+            withFrameNanos { }
+            pollQuestionFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
     val wallpaperBrush = when (appearance.wallpaper) {
         "solid", "default" -> Brush.linearGradient(listOf(appearanceColor(appearance.wallpaperColor), appearanceColor(appearance.wallpaperColor)))
         "gradient" -> Brush.linearGradient(listOf(appearanceColor(appearance.gradientStart), appearanceColor(appearance.gradientEnd)))
@@ -1244,17 +1258,6 @@ fun ConversationScreen(
 
     if (pollCreateOpen) {
         androidx.compose.ui.window.Dialog(onDismissRequest = { pollCreateOpen = false }) {
-            // Keep the draft with the dialog itself so edits and the submit action
-            // always read the same state instance across window recompositions.
-            var pollQuestionDraft by remember { mutableStateOf("") }
-            var pollOptionsDraft by remember { mutableStateOf(listOf("", "")) }
-            var pollAllowMultiple by remember { mutableStateOf(false) }
-            val pollQuestionFocusRequester = remember { FocusRequester() }
-            LaunchedEffect(Unit) {
-                withFrameNanos { }
-                pollQuestionFocusRequester.requestFocus()
-                keyboardController?.show()
-            }
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
                     .background(StudioPalette.Surface).padding(18.dp),
@@ -1370,6 +1373,9 @@ fun ConversationScreen(
                 if (connected) {
                     StudioPaletteAction("Create poll") {
                         moreOpen = false
+                        pollQuestionDraft = ""
+                        pollOptionsDraft = listOf("", "")
+                        pollAllowMultiple = false
                         pollCreateOpen = true
                     }
                 } else {

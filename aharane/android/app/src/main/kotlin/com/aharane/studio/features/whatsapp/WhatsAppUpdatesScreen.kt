@@ -110,7 +110,7 @@ fun WhatsAppUpdatesScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            StudioActionButton(label = "Back", compact = true, onClick = onBack)
+            StudioActionButton(label = "Close", compact = true, onClick = onBack)
             Column(Modifier.weight(1f)) {
                 StudioPageTitle(
                     title = "Channels",

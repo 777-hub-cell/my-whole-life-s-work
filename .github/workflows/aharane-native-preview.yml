@@ -12,6 +12,11 @@ permissions:
   contents: read
   actions: read
 
+concurrency:
+  # Keep only the newest native preview build for this branch.
+  group: aharane-native-preview-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   debug-apk:
     name: Build installable Aharane debug APK

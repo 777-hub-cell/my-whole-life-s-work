@@ -4,18 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.ProgressBarRangeInfo
-import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
@@ -52,11 +41,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.delay
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
-import kotlin.math.PI
-import kotlin.math.roundToInt
 import com.aharane.studio.core.design.*
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatSummary
@@ -1175,88 +1159,13 @@ private fun StudioPreferenceSlider(
     steps: Int = 0,
     onValueChangeFinished: () -> Unit = {}
 ) {
-    val current = value.coerceIn(valueRange)
-    val span = (valueRange.endInclusive - valueRange.start).coerceAtLeast(0.0001f)
-    val fraction = ((current - valueRange.start) / span).coerceIn(0f, 1f)
-
-    fun updateFromPoint(point: Offset, width: Float, height: Float) {
-        val dx = point.x - width / 2f
-        val dy = point.y - height / 2f
-        val angle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
-        val progress = ((angle - 135f + 360f) % 360f).coerceIn(0f, 270f) / 270f
-        val raw = valueRange.start + span * progress
-        val next = if (steps > 0) {
-            val divisions = steps + 1
-            val tick = ((raw - valueRange.start) / span * divisions).roundToInt()
-            valueRange.start + span * tick / divisions
-        } else raw
-        onValueChange(next.coerceIn(valueRange))
-    }
-
-    Box(
-        Modifier.size(68.dp)
-            .semantics {
-                progressBarRangeInfo = ProgressBarRangeInfo(current, valueRange, steps)
-            }
-            .pointerInput(valueRange, steps) {
-                detectTapGestures { point ->
-                    updateFromPoint(point, size.width.toFloat(), size.height.toFloat())
-                    onValueChangeFinished()
-                }
-            }
-            .pointerInput(valueRange, steps) {
-                detectDragGestures(
-                    onDragStart = { point ->
-                        updateFromPoint(point, size.width.toFloat(), size.height.toFloat())
-                    },
-                    onDragEnd = onValueChangeFinished
-                ) { change, _ ->
-                    updateFromPoint(change.position, size.width.toFloat(), size.height.toFloat())
-                    change.consume()
-                }
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(Modifier.fillMaxSize()) {
-            val stroke = 5.dp.toPx()
-            val diameter = size.minDimension - stroke * 2
-            val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
-            val arcSize = Size(diameter, diameter)
-            drawArc(
-                color = StudioPalette.Line,
-                startAngle = 135f,
-                sweepAngle = 270f,
-                useCenter = false,
-                topLeft = topLeft,
-                size = arcSize,
-                style = Stroke(stroke, cap = StrokeCap.Round)
-            )
-            drawArc(
-                color = StudioPalette.Accent,
-                startAngle = 135f,
-                sweepAngle = 270f * fraction,
-                useCenter = false,
-                topLeft = topLeft,
-                size = arcSize,
-                style = Stroke(stroke, cap = StrokeCap.Round)
-            )
-            val angle = (135f + 270f * fraction) * (PI.toFloat() / 180f)
-            val radius = diameter / 2f
-            val center = Offset(size.width / 2f, size.height / 2f)
-            val thumb = Offset(
-                center.x + cos(angle) * radius,
-                center.y + sin(angle) * radius
-            )
-            drawCircle(Color.White, radius = 5.dp.toPx(), center = thumb)
-            drawCircle(StudioPalette.Accent, radius = 3.dp.toPx(), center = thumb)
-        }
-        Text(
-            current.roundToInt().toString(),
-            color = StudioPalette.Ink,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-    }
+    StudioCircularDial(
+        value = value,
+        onValueChange = onValueChange,
+        valueRange = valueRange,
+        steps = steps,
+        onValueChangeFinished = onValueChangeFinished
+    )
 }
 
 @Composable

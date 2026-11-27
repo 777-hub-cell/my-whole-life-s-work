@@ -1065,7 +1065,9 @@ fun VisualCommandBuilderScreen(
                     if (connected) "No verified nodes match this search." else "Connect to your Aharane server to load the WhatsApp node library.",
                     color = CommandStudioPalette.Muted, fontSize = 12.sp, modifier = Modifier.padding(7.dp)
                 )
-            } else if (libraryExpanded) {
+            } else if (libraryExpanded || search.isNotBlank()) {
+                // Searching should reveal all matching nodes even while the compact
+                // library is collapsed; otherwise valid matches beyond the first four vanish.
                 LazyColumn(
                     Modifier.fillMaxSize().testTag("visual-command-node-library"),
                     verticalArrangement = Arrangement.spacedBy(7.dp),

@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.core.content.FileProvider
@@ -439,6 +440,7 @@ fun AharaneApp(
     var mediaTitle by remember { mutableStateOf("") }
     var sharedMediaFile by remember { mutableStateOf<File?>(null) }
     var mediaMessageError by remember { mutableStateOf("") }
+    var mediaVideoFile by remember { mutableStateOf<File?>(null) }
     var viewOnceVideoFile by remember { mutableStateOf<File?>(null) }
     var inlineMediaPreviews by remember { mutableStateOf<Map<String, androidx.compose.ui.graphics.ImageBitmap>>(emptyMap()) }
     var inlineMediaPreviewErrors by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -2160,15 +2162,35 @@ fun AharaneApp(
                                     val target = activeConversation ?: return@launch
                                     val bytes = obtainCachedOrRemoteMedia(target, message)
                                     val mime = message.mediaMimeType.orEmpty()
-                                    if (mime.startsWith("image/")) {
-                                        showImageBytes(
-                                            bytes,
-                                            message.mediaFileName.orEmpty(),
-                                            onBitmap = { mediaTitle = message.mediaFileName.orEmpty(); mediaImage = it; mediaMessageError = "" },
-                                            onError = { mediaTitle = message.mediaFileName.orEmpty(); mediaMessageError = it }
-                                        )
-                                    } else {
-                                        openExternalAttachment(bytes, message.mediaFileName ?: "attachment", mime)
+                                    when {
+                                        mime.startsWith("image/") -> {
+                                            mediaVideoFile?.delete()
+                                            mediaVideoFile = null
+                                            showImageBytes(
+                                                bytes,
+                                                message.mediaFileName.orEmpty(),
+                                                onBitmap = {
+                                                    mediaTitle = message.mediaFileName.orEmpty()
+                                                    mediaImage = it
+                                                    mediaMessageError = ""
+                                                },
+                                                onError = {
+                                                    mediaTitle = message.mediaFileName.orEmpty()
+                                                    mediaMessageError = it
+                                                }
+                                            )
+                                        }
+                                        mime.startsWith("video/") -> {
+                                            mediaImage = null
+                                            mediaMessageError = ""
+                                            mediaTitle = message.mediaFileName.orEmpty().ifBlank { "Video" }
+                                            mediaVideoFile?.delete()
+                                            mediaVideoFile = withContext(Dispatchers.IO) {
+                                                File.createTempFile("aharane-chat-media-", ".mp4", context.cacheDir)
+                                                    .apply { writeBytes(bytes) }
+                                            }
+                                        }
+                                        else -> openExternalAttachment(bytes, message.mediaFileName ?: "attachment", mime)
                                     }
                                 } catch (error: Exception) {
                                     serverError = error.message ?: "Media could not be opened."
@@ -3296,16 +3318,14 @@ fun AharaneApp(
         DisposableEffect(videoFile) {
             onDispose { videoFile.delete() }
         }
-        Dialog(onDismissRequest = {
-            videoFile.delete()
-            viewOnceVideoFile = null
-        }) {
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                    .background(StudioPalette.Surface).padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text("View-once video", color = StudioPalette.Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        Dialog(
+            onDismissRequest = {
+                videoFile.delete()
+                viewOnceVideoFile = null
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
                 AndroidView(
                     factory = { viewContext ->
                         VideoView(viewContext).apply {
@@ -3315,37 +3335,117 @@ fun AharaneApp(
                             setOnPreparedListener { it.start() }
                         }
                     },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 420.dp)
+                    modifier = Modifier.fillMaxSize()
                 )
-                StudioActionButton("Close", compact = true, primary = true, onClick = {
-                    videoFile.delete()
-                    viewOnceVideoFile = null
-                })
+                Row(
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                        .statusBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "View-once video",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    StudioActionButton("Close", compact = true, primary = true, onClick = {
+                        videoFile.delete()
+                        viewOnceVideoFile = null
+                    })
+                }
+            }
+        }
+    }
+
+    if (mediaVideoFile != null) {
+        val videoFile = mediaVideoFile!!
+        DisposableEffect(videoFile) {
+            onDispose { videoFile.delete() }
+        }
+        Dialog(
+            onDismissRequest = {
+                mediaVideoFile = null
+                mediaTitle = ""
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
+                AndroidView(
+                    factory = { viewContext ->
+                        VideoView(viewContext).apply {
+                            val player = this
+                            setMediaController(MediaController(viewContext).also { it.setAnchorView(player) })
+                            setVideoPath(videoFile.absolutePath)
+                            setOnPreparedListener { it.start() }
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+                Row(
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                        .statusBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        mediaTitle.ifBlank { "Video" },
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1
+                    )
+                    StudioActionButton("Close", compact = true, primary = true, onClick = {
+                        mediaVideoFile = null
+                        mediaTitle = ""
+                    })
+                }
             }
         }
     }
 
     if (mediaImage != null || mediaMessageError.isNotBlank()) {
-        Dialog(onDismissRequest = { mediaImage = null; mediaTitle = ""; mediaMessageError = "" }) {
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                    .background(StudioPalette.Surface).padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(9.dp)
-            ) {
-                Text(mediaTitle, color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Dialog(
+            onDismissRequest = { mediaImage = null; mediaTitle = ""; mediaMessageError = "" },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
                 if (mediaImage != null) {
                     Image(
                         bitmap = mediaImage!!,
                         contentDescription = mediaTitle,
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp)
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize().padding(top = 58.dp, bottom = 20.dp)
                     )
                 }
-                if (mediaMessageError.isNotBlank()) Text(mediaMessageError, color = StudioPalette.Bad, fontSize = 12.5.sp)
-                StudioActionButton("Close", compact = true, primary = true, onClick = {
-                    mediaImage = null
-                    mediaTitle = ""
-                    mediaMessageError = ""
-                })
+                Row(
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                        .statusBarsPadding().background(Color.Black.copy(alpha = 0.42f))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        mediaTitle.ifBlank { "Photo" },
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1
+                    )
+                    StudioActionButton("Close", compact = true, primary = true, onClick = {
+                        mediaImage = null
+                        mediaTitle = ""
+                        mediaMessageError = ""
+                    })
+                }
+                if (mediaMessageError.isNotBlank()) {
+                    Text(
+                        mediaMessageError,
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        modifier = Modifier.align(Alignment.Center).padding(20.dp)
+                    )
+                }
             }
         }
     }

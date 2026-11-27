@@ -1338,19 +1338,14 @@ fun ConversationScreen(
                     val canSubmitPoll = connected && pollQuestionDraft.isNotBlank() && validOptions
                     androidx.compose.material3.Button(
                         onClick = {
-                            // Read the live fields from the conversation composition,
-                            // not an animated child or an earlier Dialog callback.
+                            // The button is enabled only when these same live values
+                            // pass validation; keep submission and enabled state in sync.
                             val question = pollQuestionDraft.trim()
                             val options = pollOptionsDraft.map(String::trim)
-                            val multiple = pollAllowMultiple
-                            if (question.isNotBlank() && options.size in 2..12 &&
-                                options.all(String::isNotBlank) &&
-                                options.map { it.lowercase(Locale.ROOT) }.distinct().size == options.size
-                            ) {
-                                onCreatePoll(question, options, if (multiple) options.size else 1)
-                                keyboardController?.hide()
-                                pollCreateOpen = false
-                            }
+                            onCreatePoll(question, options, if (pollAllowMultiple) options.size else 1)
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                            pollCreateOpen = false
                         },
                         enabled = canSubmitPoll,
                         modifier = Modifier.testTag("poll-create-submit"),

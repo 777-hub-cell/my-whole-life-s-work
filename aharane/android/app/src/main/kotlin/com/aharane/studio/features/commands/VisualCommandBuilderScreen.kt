@@ -712,7 +712,7 @@ fun VisualCommandBuilderScreen(
                     icon = if (account == "private") Icons.Outlined.Lock else Icons.Outlined.Public,
                     description = if (account == "private") "Switch to Public WhatsApp" else "Switch to Private WhatsApp",
                     enabled = !saving,
-                    onClick = switchAccount
+                    onClick = { switchAccount() }
                 )
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(

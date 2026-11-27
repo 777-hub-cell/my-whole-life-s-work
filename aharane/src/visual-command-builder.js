@@ -196,7 +196,9 @@ const OWNER_ONLY_NODES = new Set([
 const textValue = (value, max = 2000) => String(value == null ? '' : value).slice(0, max)
 function listValue(value, maxItems = 50, maxLength = 200) {
   const values = Array.isArray(value) ? value : textValue(value, 4000).split(/\r?\n|,/)
-  return values.slice(0, maxItems).map(item => textValue(item, maxLength).trim()).filter(Boolean)
+  const cleaned = values.map(item => textValue(item, maxLength).trim()).filter(Boolean)
+  if (cleaned.length > maxItems) throw new Error('This input accepts at most ' + maxItems + ' list items.')
+  return cleaned
 }
 const isExec = (node, socket) => definitions.get(node && node.type)?.ports.outputs.find(item => item.id === socket)?.type === 'exec'
 
@@ -981,6 +983,7 @@ async function executeWorkflowCore(input, options = {}) {
         } else if (node.type === 'group.updateSubject') {
           if (!isGroupJid(event.remoteJid)) throw new Error('Changing a group name requires a group chat.')
           const subject = textValue(readInput(workflow, node, 'subject', 'subject', state), 100).trim()
+          if (!subject) throw new Error('A group name is required.')
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would change group name to: ' + subject })
           else {
             await event.socket.groupUpdateSubject(event.remoteJid, subject)
@@ -989,6 +992,7 @@ async function executeWorkflowCore(input, options = {}) {
         } else if (node.type === 'group.updateDescription') {
           if (!isGroupJid(event.remoteJid)) throw new Error('Changing a group description requires a group chat.')
           const description = textValue(readInput(workflow, node, 'description', 'description', state), 512).trim()
+          if (!description) throw new Error('A group description is required.')
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would change the group description.' })
           else {
             await event.socket.groupUpdateDescription(event.remoteJid, description)
@@ -1003,6 +1007,7 @@ async function executeWorkflowCore(input, options = {}) {
             if (!/^[0-9]{7,15}$/.test(phone)) throw new Error('Participant phone numbers must contain 7 to 15 digits.')
             return phone + '@s.whatsapp.net'
           })
+          if (!participants.length) throw new Error('At least one group participant is required.')
           if (dryRun) {
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would ' + action + ' ' + participants.length + ' participant(s).' })
           } else {
@@ -1016,6 +1021,7 @@ async function executeWorkflowCore(input, options = {}) {
         } else if (node.type === 'group.settingUpdate') {
           if (!isGroupJid(event.remoteJid)) throw new Error('Changing group settings requires a group chat.')
           const setting = textValue(readInput(workflow, node, 'setting', 'setting', state), 24)
+          if (!['announcement', 'not_announcement', 'locked', 'unlocked'].includes(setting)) throw new Error('The group setting is invalid.')
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would set group option: ' + setting })
           else {
             await event.socket.groupSettingUpdate(event.remoteJid, setting)
@@ -1032,6 +1038,7 @@ async function executeWorkflowCore(input, options = {}) {
           }
         } else if (node.type === 'profile.updateName') {
           const name = textValue(readInput(workflow, node, 'name', 'name', state), 80).trim()
+          if (!name) throw new Error('A profile name is required.')
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would update the profile name.' })
           else {
             await event.socket.updateProfileName(name)
@@ -1039,6 +1046,7 @@ async function executeWorkflowCore(input, options = {}) {
           }
         } else if (node.type === 'profile.updateStatus') {
           const status = textValue(readInput(workflow, node, 'status', 'status', state), 139).trim()
+          if (!status) throw new Error('A profile status is required.')
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would update the profile status.' })
           else {
             await event.socket.updateProfileStatus(status)
@@ -1047,6 +1055,7 @@ async function executeWorkflowCore(input, options = {}) {
         } else if (node.type === 'newsletter.create') {
           const name = textValue(readInput(workflow, node, 'name', 'name', state), 100).trim()
           const description = textValue(readInput(workflow, node, 'description', 'description', state), 512).trim()
+          if (!name) throw new Error('A newsletter name is required.')
           if (dryRun) {
             outputs.set(node.id, { newsletterJid: '12345678901@newsletter' })
             trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would create the newsletter.' })
@@ -1068,7 +1077,7 @@ async function executeWorkflowCore(input, options = {}) {
             trace.push({ nodeId: node.id, type: node.type, status: 'success', message: node.type === 'newsletter.follow' ? 'Newsletter followed.' : 'Newsletter unfollowed.' })
           }
         } else if (node.type === 'newsletter.publishText') {
-          const newsletterJid = textValue(node.config.newsletterJid, 80)
+          const newsletterJid = textValue(readInput(workflow, node, 'newsletterJid', 'newsletterJid', state), 80)
           const text = textValue(readInput(workflow, node, 'text', 'text', state), 2000).trim()
           if (!/^\d{5,25}@newsletter$/.test(newsletterJid) || !text) throw new Error('Newsletter ID or post text is invalid.')
           if (dryRun) trace.push({ nodeId: node.id, type: node.type, status: 'simulated', message: 'Would publish text to the newsletter.' })

@@ -101,7 +101,7 @@ fun NotesScreen(store: EncryptedNotesStore, onBack: () -> Unit) {
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(onClick = { if (selectedId != null) exitEditor() else onBack() }) {
-                Text("Back")
+                Text("Close")
             }
             Text(
                 if (selectedId == null) "Notes" else "Edit note",

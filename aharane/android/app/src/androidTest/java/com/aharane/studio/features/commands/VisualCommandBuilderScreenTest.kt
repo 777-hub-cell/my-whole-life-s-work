@@ -138,6 +138,8 @@ class VisualCommandBuilderScreenTest {
             }
         }
         compose.waitUntil(5_000) { source.readCount > 0 }
+        // The compact phone library intentionally shows four nodes until expanded.
+        compose.onNodeWithTag("library-expand-toggle").performClick()
         compose.waitUntil(15_000) {
             compose.onAllNodesWithTag("add-node-value.toNumber").fetchSemanticsNodes().isNotEmpty()
         }

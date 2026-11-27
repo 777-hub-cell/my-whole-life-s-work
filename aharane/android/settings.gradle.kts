@@ -11,6 +11,20 @@ pluginManagement {
     }
     repositories {
         google()
+        // Route KSP artifacts only through Maven Central's Google-hosted mirror.
+        // Gradle sticks to the repository that supplied module metadata, so
+        // excluding KSP from the Plugin Portal avoids its intermittent missing-JAR response.
+        exclusiveContent {
+            forRepository {
+                maven {
+                    name = "KspCentralMirror"
+                    url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+                }
+            }
+            filter {
+                includeGroup("com.google.devtools.ksp")
+            }
+        }
         maven { url = uri("https://repo1.maven.org/maven2") }
         // Mirror before canonical Central, to withstand HTTP 429 throttling.
         maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }

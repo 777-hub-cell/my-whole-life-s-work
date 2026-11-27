@@ -12,6 +12,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 
@@ -217,6 +219,8 @@ fun ConversationScreen(
             }.getOrNull()
         }
     }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     val wallpaperBrush = when (appearance.wallpaper) {
         "solid", "default" -> Brush.linearGradient(listOf(appearanceColor(appearance.wallpaperColor), appearanceColor(appearance.wallpaperColor)))
         "gradient" -> Brush.linearGradient(listOf(appearanceColor(appearance.gradientStart), appearanceColor(appearance.gradientEnd)))
@@ -231,7 +235,7 @@ fun ConversationScreen(
     val contactAvatar by produceState<ImageBitmap?>(
         initialValue = null, conversation.key, connected
     ) {
-        if (connected && conversation.isGroup) {
+        if (connected) {
             val bytes = try {
                 onLoadAvatar(conversation)
             } catch (cancelled: CancellationException) {
@@ -320,8 +324,7 @@ fun ConversationScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             ConversationTool(Icons.Outlined.ArrowBack, "Back to chats", onClick = onBack)
-            if (conversation.isGroup) {
-                Box(
+            Box(
                     Modifier.padding(start = 2.dp, end = 10.dp).size(38.dp)
                         .clip(CircleShape).background(StudioPalette.Soft),
                     contentAlignment = Alignment.Center
@@ -334,10 +337,14 @@ fun ConversationScreen(
                             contentScale = ContentScale.Crop
                         )
                     } else {
-                        Text("◎", color = StudioPalette.Accent, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            conversation.title.trim().take(1).uppercase().ifBlank { "?" },
+                            color = StudioPalette.Accent,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
-            }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(
                     conversation.title,
@@ -639,7 +646,11 @@ fun ConversationScreen(
                             reply = message.replyToMessageId?.let { id -> messages.firstOrNull { it.messageId == id && it.key == conversation.key } },
                             onReply = { replyTo = message },
                             onRetryOutgoing = { onRetryOutgoingMessage(message) },
-                            onOpenMedia = { onOpenMedia(message) },
+                            onOpenMedia = {
+                                keyboardController?.hide()
+                                focusManager.clearFocus()
+                                onOpenMedia(message)
+                            },
                             onKeepOffline = { onKeepMediaOffline(message) },
                             onViewOnce = { onViewOnce(message) },
                             onStar = { actionMessage = message },
@@ -743,43 +754,54 @@ fun ConversationScreen(
                 enabled = !voiceRecording,
                 onClick = { stickerTrayOpen = !stickerTrayOpen }
             )
-            ConversationTool(
-                Icons.Outlined.AttachFile,
-                "Attach image, video, audio or document",
-                enabled = canQueueMedia && !voiceRecording,
-                onClick = onAttach
-            )
             Box(
                 Modifier.weight(1f).defaultMinSize(minHeight = 44.dp)
                     .clip(RoundedCornerShape(22.dp))
                     .background(StudioPalette.Background)
                     .border(1.dp, StudioPalette.Line, RoundedCornerShape(22.dp))
-                    .padding(horizontal = 15.dp, vertical = 11.dp),
+                    .padding(start = 15.dp, end = 5.dp, top = 5.dp, bottom = 5.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
-                BasicTextField(
-                    cursorBrush = SolidColor(StudioPalette.Accent),
-                    value = draft,
-                    onValueChange = { draft = it },
-                    modifier = Modifier.fillMaxWidth().testTag("conversation-composer"),
-                    enabled = !voiceRecording,
-                    minLines = 1,
-                    maxLines = 4,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(
-                        color = StudioPalette.Ink,
-                        lineHeight = 19.sp
-                    ),
-                    decorationBox = { inner ->
-                        Box {
-                            if (draft.isEmpty()) Text(
-                                "Message",
-                                color = StudioPalette.Muted,
-                                fontSize = 14.sp
-                            )
-                            inner()
-                        }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        Modifier.weight(1f).padding(vertical = 6.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        BasicTextField(
+                            cursorBrush = SolidColor(StudioPalette.Accent),
+                            value = draft,
+                            onValueChange = { draft = it },
+                            modifier = Modifier.fillMaxWidth().testTag("conversation-composer"),
+                            enabled = !voiceRecording,
+                            minLines = 1,
+                            maxLines = 4,
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                color = StudioPalette.Ink,
+                                lineHeight = 19.sp
+                            ),
+                            decorationBox = { inner ->
+                                Box {
+                                    if (draft.isEmpty()) Text(
+                                        "Message",
+                                        color = StudioPalette.Muted,
+                                        fontSize = 14.sp
+                                    )
+                                    inner()
+                                }
+                            }
+                        )
                     }
-                )
+                    ConversationTool(
+                        Icons.Outlined.AttachFile,
+                        "Attach image, video, audio or document",
+                        enabled = canQueueMedia && !voiceRecording,
+                        onClick = onAttach
+                    )
+                }
             }
             val hasDraft = draft.isNotBlank()
             Box(
@@ -932,10 +954,6 @@ fun ConversationScreen(
                         aiReplyLoading = false
                         actionMessage = null
                     }
-                }
-                StudioPaletteAction("Reply") {
-                    replyTo = selected
-                    actionMessage = null
                 }
                 StudioPaletteAction(if (selected.isStarred) "Remove star" else "Star message") {
                     onStarMessage(selected)
@@ -1495,10 +1513,10 @@ private fun MessageBubble(
             Modifier.widthIn(max = 310.dp)
                 .clip(
                     RoundedCornerShape(
-                        topStart = if (groupedWithPrevious) 5.dp else appearance.bubbleRadius.dp,
-                        topEnd = if (groupedWithPrevious) 5.dp else appearance.bubbleRadius.dp,
-                        bottomEnd = if (outgoing) 5.dp else appearance.bubbleRadius.dp,
-                        bottomStart = if (outgoing) appearance.bubbleRadius.dp else 5.dp
+                        topStart = if (groupedWithPrevious) 9.dp else maxOf(appearance.bubbleRadius.dp, 17.dp),
+                        topEnd = if (groupedWithPrevious) 9.dp else maxOf(appearance.bubbleRadius.dp, 17.dp),
+                        bottomEnd = if (outgoing) 8.dp else maxOf(appearance.bubbleRadius.dp, 17.dp),
+                        bottomStart = if (outgoing) maxOf(appearance.bubbleRadius.dp, 17.dp) else 8.dp
                     )
                 )
                 .background(bubble)

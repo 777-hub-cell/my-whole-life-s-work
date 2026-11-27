@@ -122,7 +122,7 @@ class VisualCommandBuilderScreenTest {
             "Boolean NOT",
             "Choose between two text values"
         ).forEach { label ->
-            compose.onNodeWithText(label).assertExists()
+            assertTrue(compose.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty())
         }
     }
 

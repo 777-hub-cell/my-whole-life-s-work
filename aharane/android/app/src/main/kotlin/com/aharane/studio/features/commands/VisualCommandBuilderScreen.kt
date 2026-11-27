@@ -988,10 +988,18 @@ fun VisualCommandBuilderScreen(
                         Canvas(Modifier.fillMaxSize()) {
                             val gridStep = 26.dp.toPx()
                             val dotRadius = 1.15.dp.toPx()
-                            var y = gridStep
-                            while (y < size.height) {
-                                var x = gridStep
-                                while (x < size.width) {
+                            // The virtual workspace is intentionally large. Draw only
+                            // the dots currently visible through the viewport instead
+                            // of traversing the entire 5,200 dp canvas on each redraw.
+                            val safeZoom = zoom.coerceAtLeast(0.001f)
+                            val visibleLeft = workspaceScroll.value / safeZoom
+                            val visibleTop = workspaceVerticalScroll.value / safeZoom
+                            val visibleRight = (visibleLeft + workspaceViewportSize.width / safeZoom).coerceAtMost(size.width)
+                            val visibleBottom = (visibleTop + workspaceViewportSize.height / safeZoom).coerceAtMost(size.height)
+                            var y = (visibleTop / gridStep).toInt() * gridStep
+                            while (y <= visibleBottom) {
+                                var x = (visibleLeft / gridStep).toInt() * gridStep
+                                while (x <= visibleRight) {
                                     drawCircle(Color(0xFF2A3A35), radius = dotRadius, center = Offset(x, y))
                                     x += gridStep
                                 }

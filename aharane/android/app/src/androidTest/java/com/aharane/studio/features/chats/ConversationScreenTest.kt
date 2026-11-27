@@ -91,7 +91,7 @@ class ConversationScreenTest {
         compose.onNodeWithTag("ai-reply-instruction").performTextInput("Keep it warm and brief.")
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         compose.waitForIdle()
-        compose.onNodeWithText("Generate reply").performClick()
+        compose.onNodeWithText("Generate reply").performScrollTo().assertIsDisplayed().performClick()
         compose.waitUntil(timeoutMillis = 5_000) {
             compose.onAllNodesWithTag("ai-reply-draft").fetchSemanticsNodes().isNotEmpty()
         }

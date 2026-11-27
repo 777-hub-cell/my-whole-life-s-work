@@ -159,6 +159,8 @@ fun WhatsAppPairingScreen(
                 ) { onSelectMethod("qr") }
             }
 
+            PairingSteps(method = method)
+
             if (previewMode) {
                 PairingInfoPanel {
                     Text(
@@ -180,7 +182,6 @@ fun WhatsAppPairingScreen(
                         )
                     }
                 }
-                PairingSteps(method = method)
                 Crossfade(
                     targetState = method == "qr",
                     animationSpec = tween(if (LocalStudioMotionEnabled.current) 200 else 0),

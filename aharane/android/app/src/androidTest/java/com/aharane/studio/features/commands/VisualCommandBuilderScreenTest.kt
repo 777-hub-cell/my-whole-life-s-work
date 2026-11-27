@@ -128,6 +128,31 @@ class VisualCommandBuilderScreenTest {
     }
 
     @Test
+    fun conversionNodesCanBeSearchedAddedAndConfigured() {
+        val source = FakeVisualCommandDataSource()
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                VisualCommandBuilderScreen(repository = source, connected = true, onBack = {})
+            }
+        }
+        compose.waitUntil(5_000) { source.readCount > 0 }
+
+        compose.onNodeWithTag("node-library-search").performTextInput("Text to number")
+        compose.onNodeWithTag("add-node-value.toNumber").performClick()
+        compose.onNodeWithText("Apply").performClick()
+        compose.onNodeWithTag("node-card-value.toNumber").assertIsDisplayed()
+
+        compose.onNodeWithTag("node-library-search").performTextClearance()
+        compose.onNodeWithTag("node-library-search").performTextInput("Text to list")
+        compose.onNodeWithTag("add-node-value.toList").performClick()
+        compose.onNodeWithTag("node-config-field-separator").assertIsDisplayed()
+        compose.onNodeWithTag("node-config-field-separator").performTextClearance()
+        compose.onNodeWithTag("node-config-field-separator").performTextInput(";")
+        compose.onNodeWithText("Apply").performClick()
+        compose.onNodeWithTag("node-card-value.toList").assertIsDisplayed()
+    }
+
+    @Test
     fun canvasHasMeasuredBoundsAndNodesAreVisibleInsideIt() {
         val source = FakeVisualCommandDataSource()
         compose.setContent {
@@ -260,15 +285,25 @@ private class FakeVisualCommandDataSource : VisualCommandDataSource {
         JSONObject().put("valid", true).put("errors", JSONArray()).put("warnings", JSONArray())
 
     private fun nodeLibrary(): JSONArray {
-        fun socket(id: String, label: String) =
-            JSONObject().put("id", id).put("label", label).put("type", "exec")
+        fun socket(id: String, label: String, type: String = "exec") =
+            JSONObject().put("id", id).put("label", label).put("type", type)
         fun definition(type: String, name: String, inputs: JSONArray, outputs: JSONArray) =
             JSONObject().put("type", type).put("name", name).put("description", name)
                 .put("ports", JSONObject().put("inputs", inputs).put("outputs", outputs))
         val trigger = definition("trigger.command", "Command trigger", JSONArray(), JSONArray().put(socket("next", "Next")))
         val reply = definition("message.replyText", "Reply text", JSONArray().put(socket("in", "In")), JSONArray().put(socket("next", "Next")))
         val sendText = definition("message.sendText", "Send text", JSONArray().put(socket("in", "In")), JSONArray().put(socket("next", "Next")))
+        val toNumber = definition(
+            "value.toNumber", "Text to number",
+            JSONArray().put(socket("value", "Text", "string")),
+            JSONArray().put(socket("value", "Number", "number"))
+        )
+        val toList = definition(
+            "value.toList", "Text to list",
+            JSONArray().put(socket("value", "Text", "string")).put(socket("separator", "Separator", "string")),
+            JSONArray().put(socket("value", "List", "list"))
+        )
         return JSONArray().put(JSONObject().put("category", "Starter nodes")
-            .put("nodes", JSONArray().put(trigger).put(reply).put(sendText)))
+            .put("nodes", JSONArray().put(trigger).put(reply).put(sendText).put(toNumber).put(toList)))
     }
 }

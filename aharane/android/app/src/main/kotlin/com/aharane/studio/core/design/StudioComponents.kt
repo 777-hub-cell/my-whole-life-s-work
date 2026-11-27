@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.platform.testTag
@@ -624,33 +625,128 @@ fun StudioColorWheel(
             drawCircle(selectedColor, radius = 8.dp.toPx(), center = marker)
             drawCircle(selectedColor, radius = radius * .25f, center = center)
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Saturation", color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.weight(1f))
-            Text("${(saturation * 100).toInt()}%", color = StudioPalette.Muted, fontSize = 12.sp)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text("Saturation", color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                StudioCircularDial(
+                    value = saturation,
+                    valueRange = 0f..1f,
+                    valueText = "${(saturation * 100).toInt()}%",
+                    onValueChange = { emit(nextSaturation = it) },
+                    modifier = Modifier.size(68.dp)
+                )
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text("Brightness", color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                StudioCircularDial(
+                    value = brightness,
+                    valueRange = 0f..1f,
+                    valueText = "${(brightness * 100).toInt()}%",
+                    onValueChange = { emit(nextBrightness = it) },
+                    modifier = Modifier.size(68.dp)
+                )
+            }
         }
-        Slider(
-            value = saturation,
-            onValueChange = { emit(nextSaturation = it) },
-            colors = SliderDefaults.colors(
-                thumbColor = StudioPalette.Accent,
-                activeTrackColor = StudioPalette.Accent,
-                inactiveTrackColor = StudioPalette.Line
+    }
+}
+
+@Composable
+fun StudioCircularDial(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    modifier: Modifier = Modifier,
+    valueText: String = value.toInt().toString(),
+    steps: Int = 0,
+    onValueChangeFinished: () -> Unit = {}
+) {
+    val current = value.coerceIn(valueRange)
+    val span = (valueRange.endInclusive - valueRange.start).coerceAtLeast(0.0001f)
+    val fraction = ((current - valueRange.start) / span).coerceIn(0f, 1f)
+    val latestChange by rememberUpdatedState(onValueChange)
+    val latestFinished by rememberUpdatedState(onValueChangeFinished)
+
+    fun updateFromPoint(point: Offset, width: Float, height: Float) {
+        val dx = point.x - width / 2f
+        val dy = point.y - height / 2f
+        val angle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
+        val progress = ((angle - 135f + 360f) % 360f).coerceIn(0f, 270f) / 270f
+        val raw = valueRange.start + span * progress
+        val next = if (steps > 0) {
+            val divisions = steps + 1
+            val tick = ((raw - valueRange.start) / span * divisions).toInt()
+            valueRange.start + span * tick / divisions
+        } else raw
+        latestChange(next.coerceIn(valueRange))
+    }
+
+    Box(
+        modifier.size(68.dp)
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(current, valueRange, steps)
+            }
+            .pointerInput(valueRange, steps) {
+                detectTapGestures { point ->
+                    updateFromPoint(point, size.width.toFloat(), size.height.toFloat())
+                    latestFinished()
+                }
+            }
+            .pointerInput(valueRange, steps) {
+                detectDragGestures(
+                    onDragStart = { point ->
+                        updateFromPoint(point, size.width.toFloat(), size.height.toFloat())
+                    },
+                    onDragEnd = { latestFinished() }
+                ) { change, _ ->
+                    updateFromPoint(change.position, size.width.toFloat(), size.height.toFloat())
+                    change.consume()
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val stroke = 5.dp.toPx()
+            val diameter = size.minDimension - stroke * 2
+            val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
+            val arcSize = Size(diameter, diameter)
+            drawArc(
+                color = StudioPalette.Line,
+                startAngle = 135f,
+                sweepAngle = 270f,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = StrokeCap.Round)
             )
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Brightness", color = StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.weight(1f))
-            Text("${(brightness * 100).toInt()}%", color = StudioPalette.Muted, fontSize = 12.sp)
+            drawArc(
+                color = StudioPalette.Accent,
+                startAngle = 135f,
+                sweepAngle = 270f * fraction,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = StrokeCap.Round)
+            )
+            val angle = (135f + 270f * fraction) * (PI.toFloat() / 180f)
+            val radius = diameter / 2f
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val thumb = Offset(
+                center.x + cos(angle) * radius,
+                center.y + sin(angle) * radius
+            )
+            drawCircle(Color.White, radius = 5.dp.toPx(), center = thumb)
+            drawCircle(StudioPalette.Accent, radius = 3.dp.toPx(), center = thumb)
         }
-        Slider(
-            value = brightness,
-            onValueChange = { emit(nextBrightness = it) },
-            colors = SliderDefaults.colors(
-                thumbColor = StudioPalette.Accent,
-                activeTrackColor = StudioPalette.Accent,
-                inactiveTrackColor = StudioPalette.Line
-            )
+        Text(
+            valueText,
+            color = StudioPalette.Ink,
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1
         )
     }
 }

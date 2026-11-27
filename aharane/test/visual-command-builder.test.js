@@ -1226,3 +1226,44 @@ test('media caption can be connected from command arguments instead of fixed nod
   assert.equal(sent.length, 1)
   assert.equal(sent[0].caption, 'Caption supplied at runtime')
 })
+
+
+test('Repeat consumes a connected numeric count and enforces the execution bound', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const args = { id: 'repeat-args', type: 'message.arguments', x: 220, y: 80, config: {} }
+  const toNumber = { id: 'repeat-count', type: 'value.toNumber', x: 430, y: 80, config: {} }
+  const repeat = { id: 'repeat', type: 'flow.repeat', x: 650, y: 80, config: { count: '2' } }
+  const send = { id: 'send', type: 'message.sendText', x: 870, y: 30, config: { text: 'Repeated' } }
+  const repeatEnd = { id: 'repeat-end', type: 'flow.repeatEnd', x: 1090, y: 30, config: {} }
+  const end = { id: 'end', type: 'flow.end', x: 870, y: 200, config: {} }
+  draft.nodes = [trigger, args, toNumber, repeat, send, repeatEnd, end]
+  draft.edges = [
+    { id: 'exec-repeat', from: trigger.id, fromSocket: 'next', to: repeat.id, toSocket: 'in' },
+    { id: 'repeat-body', from: repeat.id, fromSocket: 'body', to: send.id, toSocket: 'in' },
+    { id: 'send-repeat-end', from: send.id, fromSocket: 'next', to: repeatEnd.id, toSocket: 'in' },
+    { id: 'repeat-next', from: repeat.id, fromSocket: 'next', to: end.id, toSocket: 'in' },
+    { id: 'args-number', from: args.id, fromSocket: 'value', to: toNumber.id, toSocket: 'value' },
+    { id: 'number-count', from: toNumber.id, fromSocket: 'value', to: repeat.id, toSocket: 'count' },
+  ]
+  const validation = validateWorkflow(draft)
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors))
+  const sent = []
+  const run = rawArgs => executeVisualWorkflow(draft, {
+    store,
+    context: context({
+      rawArgs,
+      messageText: '.hello ' + rawArgs,
+      socket: { sendMessage: async (_jid, body) => { sent.push(body.text); return { key: { id: 'repeat-' + sent.length } } } },
+    }),
+  })
+  const valid = await run('3')
+  assert.equal(valid.ok, true, valid.error)
+  assert.equal(sent.length, 3)
+  sent.length = 0
+  const invalid = await run('11')
+  assert.equal(invalid.ok, false)
+  assert.match(invalid.error, /Repeat count must be a whole number/i)
+  assert.equal(sent.length, 0)
+})

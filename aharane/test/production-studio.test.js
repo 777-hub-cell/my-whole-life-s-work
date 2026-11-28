@@ -510,7 +510,7 @@ test('web Builder and Engine Library use native Home and Files entry points, not
 
 test('Builder node configuration preserves typed values and command aliases', async () => {
   const workspace = await read('../control-centre/web-workspace.js')
-  assert.ok(workspace.includes("aliases:[],chatScope:'direct',maxMessagesPerRun:10,requireQuoted:false,requireReply:false"))
+  assert.ok(workspace.includes("'trigger.command':{command:'hello',aliases:'',chatScope:'direct',maxMessagesPerRun:'10',requireQuoted:'false',requireReply:'false'}"))
   assert.ok(workspace.includes("type==='boolean'?target.checked:type==='number'?(target.value===''?'':Number(target.value)):target.value"))
   assert.ok(workspace.includes("config.aliases=(Array.isArray(config.aliases)?config.aliases:String(config.aliases||'').split("))
   assert.ok(workspace.includes(".map(value=>String(value).trim()).filter(Boolean)"))

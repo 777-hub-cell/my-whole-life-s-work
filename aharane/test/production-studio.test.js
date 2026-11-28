@@ -534,3 +534,11 @@ test('web workspace declares only one renderer and one Builder event handler', a
   assert.equal((workspace.match(/function bindBuilder\\(\\)\\{/g) || []).length, 1)
   assert.ok(workspace.includes('if(button.dataset.wbScope){W.configDraft.chatScope=button.dataset.wbScope;renderWorkspace();return}'))
 })
+
+test('Builder creates mobile-friendly vertical nodes and handles empty data attributes', async () => {
+  const workspace = await read('../control-centre/web-workspace.js')
+  const css = await read('../control-centre/styles.css')
+  assert.ok(workspace.includes("columns=viewportWidth<700?1:3"))
+  assert.ok(workspace.includes("if(button.hasAttribute('data-wb-socket')){connectSockets(button);return}"))
+  assert.ok(css.includes('.wb-viewport{min-height:370px}'))
+})

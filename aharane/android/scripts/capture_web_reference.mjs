@@ -157,6 +157,8 @@ try {
   const inputSocket = page.locator(".wb-node-card").nth(1).locator("[data-wb-socket][data-direction='in']").first();
   await outputSocket.click();
   await inputSocket.click();
+  await page.waitForFunction(() => document.querySelectorAll("#wb-wires path").length === 1, null, { timeout: 5000 });
+  if (await page.locator("#wb-wires path").count() !== 1) throw new Error("Builder did not draw the expected typed connection.");
   await shot("04-command-canvas-connected-nodes");
   await page.locator(".wb-top-actions [data-wb-manage-engines]").click();
   await page.waitForSelector("[data-engine-open='text_transform']", { timeout: 15000 });

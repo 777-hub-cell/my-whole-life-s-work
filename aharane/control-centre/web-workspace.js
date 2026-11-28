@@ -137,8 +137,8 @@ function switchBuilderAccount(account){
 function addNode(type){
  if(type==='trigger.message'&&W.account==='private'){note('Private commands are triggered only from the owner self-chat. Message-event triggers are Public only.','error');return}
  const definition=def(type);if(!definition){note('That node is not in the verified node library.','error');return}
- const index=W.draft.nodes.length;
- const node={id:uid(),type,x:85+(index%3)*305,y:90+Math.floor(index/3)*230,config:{}};
+ const index=W.draft.nodes.length,viewportWidth=document.getElementById('wb-viewport')?.clientWidth||window.innerWidth,columns=viewportWidth<700?1:3,column=index%columns,row=Math.floor(index/columns);
+ const node={id:uid(),type,x:columns===1?70:85+column*305,y:90+row*(columns===1?180:230),config:{}};
  if(type==='trigger.command')Object.assign(node.config,{command:'newcommand',aliases:[],chatScope:'direct',maxMessagesPerRun:10,requireQuoted:false,requireReply:false});
  if(type==='trigger.message')Object.assign(node.config,{chatScope:'direct',maxMessagesPerRun:10});
  if(type==='flow.repeat')node.config.count=2;
@@ -353,7 +353,7 @@ function bindBuilder(){
   if(button.hasAttribute('data-wb-delete-node')){deleteConfiguredNode();return}
   if(button.hasAttribute('data-wb-disconnect')){const id=W.configNodeId;W.draft.edges=W.draft.edges.filter(edge=>edge.from!==id&&edge.to!==id);W.configNodeId=null;W.configDraft=null;W.pendingSocket=null;markDirty();renderWorkspace();return}
   if(button.dataset.wbRemoveEdge){W.draft.edges=W.draft.edges.filter(edge=>edge.id!==button.dataset.wbRemoveEdge);markDirty();renderWorkspace();return}
-  if(button.dataset.wbSocket){connectSockets(button);return}
+  if(button.hasAttribute('data-wb-socket')){connectSockets(button);return}
   if(button.hasAttribute('data-wb-new')){if(W.dirty&&!confirm('Discard unsaved command changes and create a new command?'))return;W.draft=newDraft(W.account);W.isNew=true;W.dirty=false;W.validation=null;W.testResult=null;W.selectedNodeId=null;W.message='';renderWorkspace();return}
   if(button.hasAttribute('data-wb-fit')){fitCanvas();return}
   if(button.dataset.wbZoom){W.zoom=Math.min(1.5,Math.max(.28,W.zoom+(button.dataset.wbZoom==='+'?.1:-.1)));updateZoom();requestAnimationFrame(drawWires);return}

@@ -159,6 +159,20 @@ try {
   await inputSocket.click();
   await page.waitForFunction(() => document.querySelectorAll("#wb-wires path").length === 1, null, { timeout: 5000 });
   if (await page.locator("#wb-wires path").count() !== 1) throw new Error("Builder did not draw the expected typed connection.");
+  const splitter = page.locator("[data-wb-resize]");
+  const splitterBox = await splitter.boundingBox();
+  if (!splitterBox) throw new Error("The Builder canvas/library resize handle is not visible.");
+  const beforeCanvasHeight = await page.locator(".wb-canvas-section").evaluate(el => el.getBoundingClientRect().height);
+  await page.mouse.move(splitterBox.x + splitterBox.width / 2, splitterBox.y + splitterBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(splitterBox.x + splitterBox.width / 2, splitterBox.y + splitterBox.height / 2 + 42, { steps: 6 });
+  await page.mouse.up();
+  const afterCanvasHeight = await page.locator(".wb-canvas-section").evaluate(el => el.getBoundingClientRect().height);
+  if (Math.abs(afterCanvasHeight - beforeCanvasHeight) < 20) {
+    throw new Error("Dragging the Builder divider did not resize the canvas.");
+  }
+  await page.locator("[data-wb-fit]").click();
+  await page.evaluate(() => window.scrollTo(0, 0));
   await shot("04-command-canvas-connected-nodes");
   await page.locator(".wb-top-actions [data-wb-manage-engines]").click();
   await page.waitForSelector("[data-engine-open='text_transform']", { timeout: 15000 });
@@ -189,6 +203,8 @@ try {
   await page.locator("[data-wb-add='trigger.command']").click();
   await page.locator("[data-wb-add='message.sendText']").click();
   await page.waitForSelector(".wb-node-card");
+  await page.locator("[data-wb-fit]").click();
+  await page.evaluate(() => window.scrollTo(0, 0));
   await shot("10-desktop-command-canvas");
   await page.locator(".wb-node-card").first().click();
   await shot("11-desktop-node-configuration");

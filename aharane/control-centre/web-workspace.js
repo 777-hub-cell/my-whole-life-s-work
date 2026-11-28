@@ -19,7 +19,7 @@ const W={
  editorName:'',editorId:'',editorVersion:'1',editorInputs:'query:string',
  editorOutputs:'results:list',editorHosts:'',
  editorCode:'export async function run(inputs) {\n  return { results: [inputs.query] }\n}',
- engineTestInputs:'{}',engineResult:null
+ engineTestInputs:'{}',engineResult:null,workspaceFraction:.52,resizing:null
 };
 const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const clone=v=>JSON.parse(JSON.stringify(v));
@@ -249,9 +249,16 @@ function renderBuilderPage(){
  '<div class="wb-workflow-strip"><div><span class="wb-live-dot"></span><span>'+(W.account==='private'?'Private self-chat':'Public WhatsApp')+'</span><span class="wb-dot-sep">·</span><span>'+nodes.length+' nodes</span><span class="wb-dot-sep">·</span><span>'+edges.length+' connections</span><span class="wb-dot-sep">·</span><span>'+(W.dirty?'Unsaved changes':'Saved')+'</span></div><label class="wb-workflow-name"><span>COMMAND NAME</span><input id="wb-name" value="'+esc(workflow.name)+'" maxlength="80" placeholder="Name this command"></label><label class="wb-enabled"><input id="wb-enabled" type="checkbox" '+(workflow.enabled?'checked':'')+'><span>Enabled</span></label></div>'+status+
  '<div class="wb-builder-layout"><section class="wb-canvas-section"><div class="wb-section-toolbar"><div><small>WORKSPACE</small><b>Build your flow</b></div><span class="wb-hint">Drag nodes · tap sockets to connect · tap a node to configure</span><div class="wb-canvas-tools"><button type="button" data-wb-fit>Fit</button><button type="button" data-wb-zoom="-" title="Zoom out">−</button><span id="wb-zoom-label">'+Math.round(W.zoom*100)+'%</span><button type="button" data-wb-zoom="+" title="Zoom in">＋</button></div></div>'+
  '<div class="wb-viewport" id="wb-viewport"><div class="wb-world-frame" id="wb-world-frame"><div class="wb-world" id="wb-world"><svg class="wb-wires" id="wb-wires" viewBox="0 0 2400 1800" preserveAspectRatio="none"></svg>'+(nodes.length?nodes.map(renderNode).join(''):'<div class="wb-canvas-empty"><span>⌘</span><b>Your command starts here</b><p>Add a trigger from the Node Library, then connect it to actions. Select a node to configure it.</p></div>')+'</div></div><div class="wb-canvas-help">Pan around the canvas · drag a node to arrange your command</div></div>'+
- (W.pendingSocket?'<div class="wb-connect-banner">Choose a compatible '+(W.pendingSocket.direction==='out'?'input':'output')+' socket to finish this connection. <button type="button" data-wb-cancel-connect>Cancel</button></div>':'')+'</section>'+libraryMarkup()+'</div>'+
+ (W.pendingSocket?'<div class="wb-connect-banner">Choose a compatible '+(W.pendingSocket.direction==='out'?'input':'output')+' socket to finish this connection. <button type="button" data-wb-cancel-connect>Cancel</button></div>':'')+'</section><div class="wb-pane-splitter" data-wb-resize role="separator" aria-orientation="horizontal" aria-label="Resize workspace and node library" tabindex="0"><span></span></div>'+libraryMarkup()+'</div>'+
  (issues.length?'<section class="wb-validation-panel"><b>Validation</b>'+issues.map(item=>'<div class="wb-validation-row"><span class="'+(item.severity==='warning'?'warn':'error')+'">'+esc(item.severity||'error')+'</span><div>'+esc(item.message||'')+'<small>'+esc(item.fix||'')+'</small></div></div>').join('')+'</section>':'')+
  (W.testResult?'<section class="wb-test-result"><b>Latest safe test</b><pre>'+esc(JSON.stringify(W.testResult,null,2))+'</pre></section>':'')+(W.configNodeId?configDialogMarkup():'')+'</main>';
+}
+function applyPaneSplit(){
+ const canvas=document.querySelector('.wb-canvas-section'),library=document.querySelector('.wb-library-panel');
+ if(!canvas||!library)return;
+ const fraction=Math.min(.72,Math.max(.28,Number(W.workspaceFraction)||.52));
+ canvas.style.flex=fraction+' 1 0px';
+ library.style.flex=(1-fraction)+' 1 0px';
 }
 function updateZoom(){
  const frame=document.getElementById('wb-world-frame'),world=document.getElementById('wb-world'),label=document.getElementById('wb-zoom-label');
@@ -287,7 +294,7 @@ function renderWorkspace(){
  document.body.classList.add('aharane-workspace-open');view.className='pg wb-view';
  if(S.sub==='web-builder'){
   view.innerHTML=W.draft?renderBuilderPage():'<main class="wb-workspace"><div class="wb-topbar"><button class="wb-back" data-wb-back>‹ Home</button><h1>Visual command builder</h1></div><div class="wb-loading">Loading your command library…</div></main>';
-  bindBuilder();if(W.draft){updateZoom();requestAnimationFrame(drawWires)}if(!W.builderReady&&!W.loading)void loadBuilder();
+  bindBuilder();if(W.draft){applyPaneSplit();updateZoom();requestAnimationFrame(drawWires)}if(!W.builderReady&&!W.loading)void loadBuilder();
  }else if(S.sub==='web-engines'){
   view.innerHTML='<main class="wb-workspace wb-engine-screen">'+renderEnginePage()+'</main>';
   bindEnginePage();if(!W.enginesReady&&!W.engineBusy)void loadEngines();
@@ -373,20 +380,27 @@ function bindBuilder(){
   if(target.dataset.wbConfigField)updateConfigField(target);
  };
  view.onpointerdown=event=>{
+  const splitter=event.target.closest('[data-wb-resize]');
+  if(splitter){W.resizing={pointerId:event.pointerId};try{splitter.setPointerCapture(event.pointerId)}catch{}event.preventDefault();return}
   const handle=event.target.closest('[data-wb-drag]');if(!handle||event.target.closest('button'))return;
   const id=handle.dataset.wbDrag,node=W.draft?.nodes.find(item=>item.id===id);if(!node)return;
   W.drag={nodeId:id,startX:event.clientX,startY:event.clientY,startNodeX:Number(node.x)||0,startNodeY:Number(node.y)||0,moved:false};
   try{handle.setPointerCapture(event.pointerId)}catch{}event.preventDefault();
  };
  view.onpointermove=event=>{
+  if(W.resizing){
+   const layout=view.querySelector('.wb-builder-layout'),rect=layout?.getBoundingClientRect();
+   if(rect&&rect.height>0){W.workspaceFraction=Math.min(.72,Math.max(.28,(event.clientY-rect.top)/rect.height));applyPaneSplit();requestAnimationFrame(drawWires)}
+   return;
+  }
   if(!W.drag)return;const node=W.draft?.nodes.find(item=>item.id===W.drag.nodeId);if(!node)return;
   const dx=(event.clientX-W.drag.startX)/W.zoom,dy=(event.clientY-W.drag.startY)/W.zoom;
   if(Math.abs(dx)+Math.abs(dy)>3)W.drag.moved=true;
   node.x=Math.max(8,Math.round(W.drag.startNodeX+dx));node.y=Math.max(8,Math.round(W.drag.startNodeY+dy));
   const card=view.querySelector('[data-wb-node="'+CSS.escape(node.id)+'"]');if(card){card.style.left=node.x+'px';card.style.top=node.y+'px'}drawWires();
  };
- view.onpointerup=()=>{if(W.drag){if(W.drag.moved)markDirty();W.drag=null}};
- view.onpointercancel=()=>{if(W.drag){markDirty();W.drag=null}};
+ view.onpointerup=()=>{if(W.resizing){W.resizing=null;return}if(W.drag){if(W.drag.moved)markDirty();W.drag=null}};
+ view.onpointercancel=()=>{if(W.resizing){W.resizing=null;return}if(W.drag){markDirty();W.drag=null}};
 }
 async function saveWorkflow(){
  if(W.busy||!W.draft)return;W.busy=true;renderWorkspace();

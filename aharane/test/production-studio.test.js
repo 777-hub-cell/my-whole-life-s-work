@@ -542,3 +542,17 @@ test('Builder creates mobile-friendly vertical nodes and handles empty data attr
   assert.ok(workspace.includes("if(button.hasAttribute('data-wb-socket')){connectSockets(button);return}"))
   assert.ok(css.includes('.wb-viewport{min-height:370px}'))
 })
+
+
+test('Builder mirrors the native draggable workspace and node-library split pane', async () => {
+  const workspace = await read('../control-centre/web-workspace.js')
+  const css = await read('../control-centre/styles.css')
+  assert.ok(workspace.includes('workspaceFraction:.52'))
+  assert.ok(workspace.includes('data-wb-resize'))
+  assert.ok(workspace.includes('function applyPaneSplit()'))
+  assert.ok(workspace.includes('W.workspaceFraction=Math.min(.72,Math.max(.28,(event.clientY-rect.top)/rect.height))'))
+  assert.ok(workspace.includes('if(W.resizing){W.resizing=null;return}'))
+  assert.ok(css.includes('.wb-pane-splitter{'))
+  assert.ok(css.includes('.wb-command-screen .wb-builder-layout{display:flex'))
+  assert.ok(css.includes('.wb-command-screen .wb-lib-scroll{flex:1 1 0'))
+})

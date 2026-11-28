@@ -19,4 +19,20 @@ class ChatApiRequestFieldsTest {
             ChatApiRequestFields.forward("message-2", "2348000000000@s.whatsapp.net")
         )
     }
+
+    @Test
+    fun connectionRequiredMediaErrorsDoNotRepeatPairingInstructions() {
+        assertEquals(
+            "This attachment isn't available right now.",
+            displayableMediaUnavailable("Connect this WhatsApp account before downloading media.")
+        )
+        assertEquals(
+            "This attachment isn't available right now.",
+            displayableMediaUnavailable("Pair your WhatsApp account to access this attachment.")
+        )
+        assertEquals(
+            "File was removed by the sender.",
+            displayableMediaUnavailable("File was removed by the sender.")
+        )
+    }
 }

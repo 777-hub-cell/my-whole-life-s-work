@@ -305,7 +305,7 @@ fun VisualCommandBuilderScreen(
     var pendingSocket by remember { mutableStateOf<ActiveSocket?>(null) }
     var category by remember { mutableStateOf("All") }
     var search by remember { mutableStateOf("") }
-    var workspaceFraction by remember { mutableFloatStateOf(0.54f) }
+    var workspaceFraction by remember { mutableFloatStateOf(0.46f) }
     var zoom by remember(previewMode) { mutableFloatStateOf(if (previewMode) 0.58f else 1f) }
     var workspaceViewportSize by remember { mutableStateOf(IntSize.Zero) }
     var pendingZoomScroll by remember { mutableStateOf<Offset?>(null) }
@@ -327,24 +327,15 @@ fun VisualCommandBuilderScreen(
 
     LaunchedEffect(zoom, pendingZoomScroll) {
         val target = pendingZoomScroll ?: return@LaunchedEffect
-        withFrameNanos { }
+        // The scaled content size is published on the next frame. Applying the
+        // scroll correction then keeps the point under the user's pinch centroid
+        // from visibly drifting toward the canvas origin.
         withFrameNanos { }
         workspaceScroll.scrollTo(target.x.roundToInt().coerceIn(0, workspaceScroll.maxValue))
         workspaceVerticalScroll.scrollTo(target.y.roundToInt().coerceIn(0, workspaceVerticalScroll.maxValue))
         pendingZoomScroll = null
     }
 
-    // Centre each newly opened draft or saved workflow in the open canvas once
-    // the viewport has real dimensions. Editing nodes never steals the viewport.
-    LaunchedEffect(workflow.id, workspaceViewportSize) {
-        if (workspaceViewportSize.width > 0 &&
-            workspaceViewportSize.height > 0 &&
-            autoFitWorkflowId != workflow.id
-        ) {
-            autoFitWorkflowId = workflow.id
-            fitWorkspace()
-        }
-    }
     val measuredNodeSizes = remember { mutableStateMapOf<String, IntSize>() }
     val measuredSocketPositions = remember { mutableStateMapOf<String, Offset>() }
     val density = LocalDensity.current
@@ -434,6 +425,18 @@ fun VisualCommandBuilderScreen(
             }
         } else {
             zoom = 0.78f
+        }
+    }
+
+    // Centre each newly opened draft or saved workflow in the open canvas once
+    // the viewport has real dimensions. Editing nodes never steals the viewport.
+    LaunchedEffect(workflow.id, workspaceViewportSize) {
+        if (workspaceViewportSize.width > 0 &&
+            workspaceViewportSize.height > 0 &&
+            autoFitWorkflowId != workflow.id
+        ) {
+            autoFitWorkflowId = workflow.id
+            fitWorkspace()
         }
     }
 

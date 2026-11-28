@@ -128,6 +128,10 @@ class ChatsScreenTest {
         compose.onNodeWithText("First contact").performTouchInput { longClick() }
         compose.onNodeWithTag("chat-selection-count").assertIsDisplayed()
         compose.onNodeWithText("1 selected").assertIsDisplayed()
+        // The long-press enters multi-select only, without opening an action popup
+        // or performing anything before the user chooses a toolbar action.
+        compose.onAllNodesWithText("Mark as unread").assertCountEquals(0)
+        assertEquals(emptyList<Pair<String, String>>(), actions)
         compose.onNodeWithText("Second contact").performClick()
         compose.onNodeWithText("2 selected").assertIsDisplayed()
         compose.onNodeWithContentDescription("Archive selected chats").performClick()

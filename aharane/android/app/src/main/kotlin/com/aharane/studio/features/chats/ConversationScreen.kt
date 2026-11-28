@@ -337,18 +337,18 @@ fun ConversationScreen(
         Modifier.fillMaxSize().background(StudioPalette.Background).navigationBarsPadding().imePadding()
     ) {
         Row(
-            Modifier.fillMaxWidth().height(70.dp)
+            Modifier.fillMaxWidth().height(72.dp)
                 .background(StudioPalette.Surface)
                 .border(width = 0.5.dp, color = StudioPalette.Line)
-                .padding(horizontal = 2.dp),
+                .padding(horizontal = 3.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             ConversationTool(Icons.Outlined.ArrowBack, "Back to chats", onClick = onBack)
             Box(
-                Modifier.padding(start = 2.dp, end = 11.dp).size(44.dp)
+                Modifier.padding(start = 2.dp, end = 10.dp).size(46.dp)
                     .clip(CircleShape)
                     .background(StudioPalette.Soft)
-                    .border(1.dp, StudioPalette.Accent.copy(alpha = 0.24f), CircleShape),
+                    .border(1.25.dp, StudioPalette.Accent.copy(alpha = 0.34f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 if (contactAvatar != null) {
@@ -362,38 +362,42 @@ fun ConversationScreen(
                     Text(
                         conversation.title.trim().take(1).uppercase().ifBlank { "?" },
                         color = StudioPalette.Accent,
-                        fontSize = 17.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Column(
+                Modifier.weight(1f).testTag("conversation-header-details"),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 Text(
                     conversation.title,
                     color = StudioPalette.Ink,
-                    fontSize = 15.sp,
-                    lineHeight = 19.sp,
+                    fontSize = 16.sp,
+                    lineHeight = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     Box(
                         Modifier.clip(RoundedCornerShape(999.dp))
                             .background(StudioPalette.Soft)
                             .padding(horizontal = 7.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            if (conversation.isGroup) "GROUP" else "DIRECT",
+                            conversation.key.account.label.uppercase(),
                             color = StudioPalette.Accent,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.5.sp
+                            letterSpacing = 0.55.sp,
+                            modifier = Modifier.testTag("conversation-account-badge")
                         )
                     }
+                    Text("·", color = StudioPalette.Muted, fontSize = 11.sp)
                     Text(
-                        conversation.key.account.label + " account" +
-                            if (conversation.isGroup) " · Group chat" else " · " + conversation.key.jid.substringBefore('@'),
+                        if (conversation.isGroup) "Group conversation" else "Direct chat",
                         color = StudioPalette.Muted,
                         fontSize = 10.5.sp,
                         lineHeight = 14.sp,

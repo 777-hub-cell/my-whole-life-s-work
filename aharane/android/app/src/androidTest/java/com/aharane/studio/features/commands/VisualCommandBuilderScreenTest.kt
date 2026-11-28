@@ -183,6 +183,29 @@ class VisualCommandBuilderScreenTest {
     }
 
     @Test
+    fun nodeCategoriesScrollHorizontallyAndNodesStackVertically() {
+        val source = FakeVisualCommandDataSource()
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                VisualCommandBuilderScreen(repository = source, connected = true, onBack = {})
+            }
+        }
+        compose.waitUntil(5_000) { source.readCount > 0 }
+        compose.waitForIdle()
+
+        val allCategory = compose.onNodeWithTag("node-library-category-all")
+            .fetchSemanticsNode().boundsInRoot
+        val starterCategory = compose.onNodeWithTag("node-library-category-starter-nodes")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals("Category chips must share a horizontal row", allCategory.center.y, starterCategory.center.y, 2f)
+        assertTrue("Category chips must advance horizontally", starterCategory.left > allCategory.left)
+
+        val firstNode = compose.onNodeWithTag("add-node-trigger.command").fetchSemanticsNode().boundsInRoot
+        val secondNode = compose.onNodeWithTag("add-node-message.replyText").fetchSemanticsNode().boundsInRoot
+        assertTrue("Nodes within a category must be listed vertically", secondNode.top > firstNode.top)
+    }
+
+    @Test
     fun canvasHasMeasuredBoundsAndNodesAreVisibleInsideIt() {
         val source = FakeVisualCommandDataSource()
         compose.setContent {

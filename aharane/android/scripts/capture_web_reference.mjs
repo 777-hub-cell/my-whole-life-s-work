@@ -90,6 +90,8 @@ try {
   await page.getByText("Appearance", { exact: true }).last().click();
   await delay(250);
   await shot("06-appearance");
+  await page.keyboard.press("Escape");
+  await delay(180);
   for (const [label, name] of [["Builder", "07-builder"], ["Engine Library", "08-engine-library"]]) {
     await navButton(label).click(); await delay(450); await shot(name);
   }

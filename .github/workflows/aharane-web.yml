@@ -1,0 +1,72 @@
+name: Aharane Web
+
+on:
+  pull_request:
+    branches:
+      - aharane/source-import-20261125
+    paths:
+      - "aharane/control-centre/**"
+      - "aharane/src/**"
+      - "aharane/package.json"
+      - "aharane/android/scripts/capture_web_reference.mjs"
+      - ".github/workflows/aharane-web.yml"
+  push:
+    branches:
+      - aharane/source-import-20261125
+    paths:
+      - "aharane/control-centre/**"
+      - "aharane/src/**"
+      - "aharane/package.json"
+      - "aharane/android/scripts/capture_web_reference.mjs"
+      - ".github/workflows/aharane-web.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  web-quality:
+    name: Web source and backend tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - name: Install Aharane dependencies
+        working-directory: aharane
+        run: npm install --no-package-lock
+      - name: Validate source and run project tests
+        working-directory: aharane
+        run: npm run check
+
+  web-browser-screenshots:
+    name: Inspect responsive web screens in Chromium
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Prepare web PWA source
+        run: |
+          mkdir -p web/aharane/studio
+          cp -R aharane/control-centre/. web/aharane/studio/
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save --no-package-lock playwright
+          npx playwright install --with-deps chromium
+      - name: Capture mobile and desktop screens
+        run: node aharane/android/scripts/capture_web_reference.mjs
+      - name: Upload web screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: aharane-web-responsive-screenshots
+          path: web-reference-screenshots/*.png
+          if-no-files-found: error
+          retention-days: 14

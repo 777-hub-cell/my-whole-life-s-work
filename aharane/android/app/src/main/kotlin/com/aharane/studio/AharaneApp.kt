@@ -18,6 +18,8 @@ import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -32,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.core.content.FileProvider
@@ -58,6 +61,9 @@ import com.aharane.studio.core.network.AharaneApiException
 import com.aharane.studio.core.storage.EncryptedMediaCache
 import com.aharane.studio.core.storage.ChatSyncScheduler
 import com.aharane.studio.core.storage.LocalChatRepository
+import com.aharane.studio.core.storage.EncryptedWorkspaceStore
+import com.aharane.studio.core.storage.WorkspaceSyncService
+import com.aharane.studio.core.storage.WorkspaceSyncScheduler
 import com.aharane.studio.features.chats.ChatAppearanceStore
 import com.aharane.studio.core.notifications.AharaneNotificationScheduler
 import com.aharane.studio.core.network.AharaneRepository
@@ -75,7 +81,12 @@ import com.aharane.studio.core.network.ServerStorageSnapshot
 import com.aharane.studio.core.network.ServerMessageMetrics
 import com.aharane.studio.core.navigation.MainDestination
 import com.aharane.studio.features.chats.ChatsScreen
+import com.aharane.studio.features.notes.EncryptedNotesStore
 import com.aharane.studio.features.chats.ConversationScreen
+import com.aharane.studio.features.chats.StickerEntry
+import com.aharane.studio.features.chats.StickerLibrary
+import com.aharane.studio.features.chats.validateWebpStickerPayload
+import com.aharane.studio.features.chats.MAX_WEBP_STICKER_BYTES
 import com.aharane.studio.features.commands.VisualCommandBuilderScreen
 import com.aharane.studio.features.configuration.ConfigurationScreen
 import com.aharane.studio.features.connection.ConnectionScreen
@@ -84,6 +95,7 @@ import com.aharane.studio.features.environment.EnvironmentScreen
 import com.aharane.studio.features.environment.EnvironmentValue
 import com.aharane.studio.features.files.CodeEditorScreen
 import com.aharane.studio.features.files.FilesScreen
+import com.aharane.studio.features.files.EngineLibraryScreen
 import com.aharane.studio.features.files.StudioEditorDocument
 import com.aharane.studio.features.files.StudioFileEntry
 import com.aharane.studio.features.home.HomeScreen
@@ -96,6 +108,15 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Locale
+
+private fun userFacingServerError(message: String): String {
+    if (message.contains("left the composition", ignoreCase = true) &&
+        message.contains("coroutine", ignoreCase = true)
+    ) {
+        return "A chat action was interrupted while the conversation changed. Please try again."
+    }
+    return message
+}
 
 @Composable
 fun AharaneApp(
@@ -128,14 +149,18 @@ fun AharaneApp(
     appLockEnabled: Boolean = false
 ) {
     val context = LocalContext.current
+    val motionEnabled = LocalStudioMotionEnabled.current
     val connectionScope = rememberCoroutineScope()
     val repository = remember(connectionManager) { AharaneRepository(connectionManager) }
     val chatAppearanceStore = remember(context, previewMode) { ChatAppearanceStore(context.applicationContext, previewMode) }
     val encryptedMediaCache = remember(context) { EncryptedMediaCache(context.applicationContext) }
+    val workspaceStore = remember(context) { EncryptedWorkspaceStore(context.applicationContext) }
+    var workspaceRevision by remember { mutableIntStateOf(0) }
     var chatAppearanceRevision by remember { mutableIntStateOf(0) }
     var localChatRepository by remember { mutableStateOf<LocalChatRepository?>(null) }
     var localChatStorageError by remember { mutableStateOf("") }
     var syncingAllChats by remember { mutableStateOf(false) }
+    var mediaOutboxRevision by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(context) {
         try {
@@ -143,7 +168,10 @@ fun AharaneApp(
             // A process that died while sending leaves a durable SENDING row.
             // Move it to FAILED before any automatic flush so retries reuse its
             // original server idempotency key instead of creating a new message.
-            withContext(Dispatchers.IO) { local.resetInterruptedOutgoingMessages() }
+            withContext(Dispatchers.IO) {
+                local.resetInterruptedOutgoingMessages()
+                local.resetInterruptedOutgoingMedia()
+            }
             localChatRepository = local
             localChatStorageError = ""
         } catch (error: Exception) {
@@ -151,7 +179,10 @@ fun AharaneApp(
         }
     }
 
-    var authenticated by remember(previewMode) { mutableStateOf(previewMode) }
+    val hasLocalSession = remember(connectionManager, previewMode) {
+        !previewMode && connectionManager.hasSavedSession()
+    }
+    var authenticated by remember(previewMode, hasLocalSession) { mutableStateOf(previewMode || hasLocalSession) }
     var restoringSession by remember(connectionManager, previewMode) {
         mutableStateOf(!previewMode && connectionManager.hasSavedSession())
     }
@@ -171,25 +202,24 @@ fun AharaneApp(
 
     LaunchedEffect(connectionManager, connectionUrl, restoringSession) {
         if (!restoringSession) return@LaunchedEffect
+        // A saved local session opens cached content immediately; network validation stays in the background.
+        authenticated = true
         connectionBusy = true
         try {
             if (connectionManager.restoreSession()) {
                 authenticated = true
+            } else if (connectionManager.api?.hasSavedSession() == true) {
+                // The encrypted session is still valid locally; don't perform a second
+                // network probe just because the server is temporarily unreachable.
+                authenticated = true
+                connectionError = "Offline access · showing content saved on this phone."
             } else {
                 val result = connectionManager.connect(connectionUrl)
                 val auth = result.optJSONObject("auth") ?: JSONObject()
                 serverVerified = true
                 setupRequired = auth.optBoolean("setupRequired")
                 connectionUrl = connectionManager.savedStudioUrl
-                if (connectionManager.api?.hasSavedSession() == true) {
-                    runCatching {
-                        connectionManager.api?.get("status")
-                        authenticated = true
-                    }.onFailure {
-                        authenticated = true
-                        connectionError = "Offline access · showing chats saved on this phone."
-                    }
-                }
+                authenticated = false
             }
         } catch (error: Exception) {
             if (connectionManager.hasSavedSession()) {
@@ -202,32 +232,6 @@ fun AharaneApp(
             restoringSession = false
             connectionBusy = false
         }
-    }
-
-    if (restoringSession) {
-        Box(
-            Modifier.fillMaxSize().background(StudioPalette.Background),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Image(
-                    painter = painterResource(com.aharane.studio.R.drawable.ic_aharane_brand),
-                    contentDescription = "Aharane logo",
-                    modifier = Modifier.size(76.dp)
-                )
-                Text("Aharane", color = StudioPalette.Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                androidx.compose.material3.CircularProgressIndicator(
-                    modifier = Modifier.size(22.dp),
-                    color = StudioPalette.Accent,
-                    strokeWidth = 2.dp
-                )
-                Text("Restoring your workspace…", color = StudioPalette.Muted, fontSize = 12.5.sp)
-            }
-        }
-        return
     }
 
     if (!authenticated) {
@@ -337,6 +341,7 @@ fun AharaneApp(
     var editorFromConfiguration by rememberSaveable { mutableStateOf(false) }
     var configurationOpen by rememberSaveable { mutableStateOf(false) }
     var commandBuilderOpen by rememberSaveable { mutableStateOf(false) }
+    var engineLibraryOpen by rememberSaveable { mutableStateOf(false) }
     var morePage by rememberSaveable { mutableStateOf("more") }
     var activeConversation by remember { mutableStateOf<ChatSummary?>(null) }
     var activeEditorPath by rememberSaveable { mutableStateOf<String?>(null) }
@@ -444,6 +449,7 @@ fun AharaneApp(
     var mediaTitle by remember { mutableStateOf("") }
     var sharedMediaFile by remember { mutableStateOf<File?>(null) }
     var mediaMessageError by remember { mutableStateOf("") }
+    var mediaVideoFile by remember { mutableStateOf<File?>(null) }
     var viewOnceVideoFile by remember { mutableStateOf<File?>(null) }
     var inlineMediaPreviews by remember { mutableStateOf<Map<String, androidx.compose.ui.graphics.ImageBitmap>>(emptyMap()) }
     var inlineMediaPreviewErrors by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -490,8 +496,19 @@ fun AharaneApp(
         val received = mutableListOf<ChatMessage>()
         var rounds = 0
         do {
-            received += page.messages
-            local?.saveMessages(conversation, page.messages, if (cursor.timestampMillis == 0L) page.hasOlder else null)
+            received += page.messages + page.updatedPolls
+            val queuedMediaBeforeSync = local?.outgoingMediaMessages(conversation.key).orEmpty()
+            local?.saveMessages(conversation, page.messages + page.updatedPolls, if (cursor.timestampMillis == 0L) page.hasOlder else null)
+            val newlyReconciledMedia = queuedMediaBeforeSync.filter { queued ->
+                !queued.remoteMessageId.isNullOrBlank() && page.messages.any { it.messageId == queued.remoteMessageId }
+            }
+            newlyReconciledMedia.forEach { queued ->
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        encryptedMediaCache.delete(conversation.key.account.apiValue, conversation.key.jid, queued.clientMessageId)
+                    }
+                }
+            }
             local?.applyDeletedMessages(conversation.key, page.deletedMessageIds)
             local?.applyRemoteDeletedMessages(
                 conversation.key,
@@ -557,6 +574,86 @@ fun AharaneApp(
         }
     }
 
+    suspend fun flushQueuedMediaMessage(conversation: ChatSummary, clientMessageId: String) {
+        val local = localChatRepository ?: return
+        val queued = local.outgoingMediaMessage(conversation.key, clientMessageId) ?: return
+        if (queued.state == "SENT" || queued.state == "SENDING") return
+        local.updateOutgoingMedia(conversation.key, clientMessageId, "SENDING", null)
+        if (activeConversation?.key == conversation.key) activeMessages = local.messages(conversation.key)
+
+        val remoteMessageId = try {
+            val bytes = withContext(Dispatchers.IO) {
+                encryptedMediaCache.read(
+                    conversation.key.account.apiValue, conversation.key.jid, clientMessageId,
+                    queued.cachePath, queued.cacheSha256
+                )
+            }
+            repository.sendMedia(
+                conversation, bytes, queued.mimeType, queued.fileName, queued.caption,
+                isVoiceNote = queued.isVoiceNote,
+                durationSeconds = queued.durationSeconds,
+                clientMessageId = clientMessageId
+            )
+        } catch (error: Exception) {
+            val uncertain = (error as? AharaneApiException)?.statusCode == 409
+            val explanation = if (uncertain) {
+                "WhatsApp delivery is uncertain. Aharane did not resend this attachment to avoid a duplicate. Check the conversation before retrying."
+            } else {
+                error.message ?: "The attachment could not be sent. Retry will reuse the same message ID."
+            }
+            local.updateOutgoingMedia(conversation.key, clientMessageId, "FAILED", explanation)
+            if (activeConversation?.key == conversation.key) activeMessages = local.messages(conversation.key)
+            return
+        }
+
+        local.updateOutgoingMedia(
+            conversation.key, clientMessageId, "SENT", null,
+            remoteMessageId.takeIf { it.isNotBlank() }
+        )
+        if (activeConversation?.key == conversation.key) {
+            activeMessages = local.messages(conversation.key)
+            runCatching { refreshConversationIncrementally(conversation) }
+                .onSuccess { activeMessages = it }
+                .onFailure { serverError = it.message ?: "Attachment sent; refreshing history is unavailable." }
+        }
+    }
+
+    suspend fun enqueueOutgoingMedia(
+        conversation: ChatSummary,
+        bytes: ByteArray,
+        mimeType: String,
+        fileName: String,
+        caption: String = "",
+        isVoiceNote: Boolean = false,
+        durationSeconds: Int = 0,
+        quotedMessageId: String? = null
+    ): String {
+        val local = localChatRepository ?: error("Encrypted offline chat storage is unavailable.")
+        require(bytes.isNotEmpty() && bytes.size <= 24 * 1024 * 1024) {
+            "WhatsApp attachments are limited to 24 MB in Aharane."
+        }
+        val clientMessageId = java.util.UUID.randomUUID().toString().replace("-", "")
+        val cacheRecord = withContext(Dispatchers.IO) {
+            encryptedMediaCache.store(
+                conversation.key.account.apiValue, conversation.key.jid, clientMessageId, bytes
+            )
+        }
+        try {
+            local.enqueueMediaMessage(
+                conversation, mimeType, fileName, caption, quotedMessageId, cacheRecord,
+                isVoiceNote, durationSeconds, clientMessageId
+            )
+        } catch (error: Exception) {
+            withContext(Dispatchers.IO) {
+                encryptedMediaCache.delete(conversation.key.account.apiValue, conversation.key.jid, clientMessageId)
+            }
+            throw error
+        }
+        activeMessages = local.messages(conversation.key)
+        mediaOutboxRevision += 1
+        return clientMessageId
+    }
+
     fun stopAndSendVoiceNote() {
         val active = voiceRecorder ?: return
         val conversation = activeConversation ?: return
@@ -570,29 +667,25 @@ fun AharaneApp(
         }
         voiceRecorder = null
         voiceRecording = false
-        if (previewMode || !authenticated || !serverReachable) {
+        if (previewMode || localChatRepository == null) {
             recorded.file.delete()
-            Toast.makeText(context, "Voice notes can only be sent to a connected live WhatsApp account.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Encrypted local chat storage is unavailable; voice note was not kept.", Toast.LENGTH_SHORT).show()
             return
         }
         connectionScope.launch {
             try {
                 val bytes = withContext(Dispatchers.IO) { recorded.file.readBytes() }
-                repository.sendMedia(
-                    conversation,
-                    bytes,
-                    "audio/ogg",
-                    "voice-note.ogg",
-                    "",
-                    isVoiceNote = true,
-                    durationSeconds = recorded.durationSeconds
+                enqueueOutgoingMedia(
+                    conversation, bytes, "audio/ogg", "voice-note.ogg", "",
+                    isVoiceNote = true, durationSeconds = recorded.durationSeconds
                 )
-                activeMessages = refreshConversationIncrementally(conversation)
-                chatsByAccount[conversation.key.account] = localChatRepository?.saveConversations(repository.chats(conversation.key.account))
-                    ?: repository.chats(conversation.key.account)
-                Toast.makeText(context, "Voice note sent.", Toast.LENGTH_SHORT).show()
+                if (authenticated && !previewMode && serverReachable) {
+                    chatsByAccount[conversation.key.account] = localChatRepository?.saveConversations(repository.chats(conversation.key.account))
+                        ?: chatsByAccount[conversation.key.account].orEmpty()
+                }
+                Toast.makeText(context, "Voice note saved to the encrypted outbox.", Toast.LENGTH_SHORT).show()
             } catch (error: Exception) {
-                Toast.makeText(context, error.message ?: "Voice note could not be sent.", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, error.message ?: "Voice note could not be queued.", Toast.LENGTH_LONG).show()
             } finally {
                 recorded.file.delete()
             }
@@ -751,15 +844,75 @@ fun AharaneApp(
                     val name = queryDisplayName(context, uri)
                     val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
                     val bytes = withContext(Dispatchers.IO) {
-                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        val input = context.contentResolver.openInputStream(uri)
                             ?: error("Could not read the selected attachment.")
+                        input.use { stream ->
+                            val output = ByteArrayOutputStream()
+                            val buffer = ByteArray(64 * 1024)
+                            var total = 0
+                            while (true) {
+                                val count = stream.read(buffer)
+                                if (count < 0) break
+                                total += count
+                                require(total <= 24 * 1024 * 1024) {
+                                    "WhatsApp attachments are limited to 24 MB in Aharane."
+                                }
+                                output.write(buffer, 0, count)
+                            }
+                            output.toByteArray()
+                        }
                     }
-                    if (bytes.size > 24 * 1024 * 1024) error("WhatsApp attachments are limited to 24 MB in Aharane.")
-                    repository.sendMedia(conversation, bytes, mime, name, "")
-                    activeMessages = refreshConversationIncrementally(conversation)
-                    chatsByAccount[conversation.key.account] = repository.chats(conversation.key.account)
+                    enqueueOutgoingMedia(conversation, bytes, mime, name, "")
                 } catch (error: Exception) {
                     Toast.makeText(context, error.message ?: "Attachment could not be sent.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    // Stickers are stored in this app's private files directory on this device.
+    val stickerLibrary = remember(context) { StickerLibrary(context.applicationContext) }
+    var stickerEntries by remember { mutableStateOf(emptyList<StickerEntry>()) }
+    LaunchedEffect(stickerLibrary) { stickerEntries = stickerLibrary.list() }
+
+    val chatStickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        val conversation = activeConversation
+        if (uri != null && conversation != null) {
+            connectionScope.launch {
+                try {
+                    require(!previewMode) {
+                        "Preview mode cannot edit the local sticker tray."
+                    }
+                    val bytes = withContext(Dispatchers.IO) {
+                        val input = context.contentResolver.openInputStream(uri)
+                            ?: error("Could not read the selected sticker.")
+                        input.use { stream ->
+                            val output = ByteArrayOutputStream()
+                            val buffer = ByteArray(16 * 1024)
+                            var total = 0
+                            while (true) {
+                                val count = stream.read(buffer)
+                                if (count < 0) break
+                                total += count
+                                require(total <= MAX_WEBP_STICKER_BYTES) {
+                                    "WebP stickers must be 500 KB or smaller."
+                                }
+                                output.write(buffer, 0, count)
+                            }
+                            output.toByteArray()
+                        }
+                    }
+                    val invalidReason = validateWebpStickerPayload(bytes)
+                    require(invalidReason == null) {
+                        invalidReason ?: "Choose a valid WebP sticker."
+                    }
+                    stickerLibrary.add(bytes)
+                    stickerEntries = stickerLibrary.list()
+                    Toast.makeText(context, "Sticker added to your tray.", Toast.LENGTH_SHORT).show()
+                } catch (error: Exception) {
+                    Toast.makeText(context, error.message ?: "Sticker could not be added.", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -796,7 +949,10 @@ fun AharaneApp(
             .onSuccess { fileDraft = it }
             .onFailure { failures += "Files draft: ${it.message ?: "unavailable"}" }
         runCatching { repository.allFiles() }
-            .onSuccess { serverFiles = it }
+            .onSuccess {
+                serverFiles = it
+                workspaceRevision += 1
+            }
             .onFailure { failures += "Files: ${it.message ?: "unavailable"}" }
         runCatching { repository.chats(ChatAccount.PRIVATE) }
             .onSuccess {
@@ -829,6 +985,20 @@ fun AharaneApp(
             .onFailure { failures += "Update status: ${it.message ?: "unavailable"}" }
 
         if (failures.isNotEmpty()) serverError = failures.joinToString(" · ")
+    }
+
+    // Cache source files after the inbox has started loading; large workspaces
+    // must never delay the first usable chat screen.
+    LaunchedEffect(authenticated, serverReachable, previewMode) {
+        if (!authenticated || previewMode || !serverReachable) return@LaunchedEffect
+        runCatching {
+            withContext(Dispatchers.IO) { WorkspaceSyncService.sync(repository, workspaceStore) }
+        }.onSuccess {
+            serverFiles = it
+            workspaceRevision += 1
+        }.onFailure {
+            serverError = it.message ?: "Offline workspace cache could not be refreshed."
+        }
     }
 
     LaunchedEffect(authenticated, previewMode) {
@@ -955,22 +1125,51 @@ fun AharaneApp(
             return
         }
         connectionScope.launch {
+            val cachedRecord = workspaceStore.file(path)
+            val cachedText = workspaceStore.readText(path)
             try {
-                val source = repository.previewFile(path)
-                val existingIndex = editorDocuments.indexOfFirst { it.path == path }
-                val document = StudioEditorDocument(
-                    path = source.path,
-                    content = source.content,
-                    languageLabel = source.language.replaceFirstChar { it.uppercase(Locale.ROOT) },
-                    sha256 = source.sha256
-                )
-                if (existingIndex >= 0) editorDocuments[existingIndex] = document
-                else editorDocuments.add(document)
+                val source = if (serverReachable) repository.previewFile(path) else null
+                if (source != null) {
+                    runCatching {
+                        workspaceStore.cacheRemoteText(source.path, source.content, source.sha256, source.language)
+                        workspaceRevision += 1
+                    }
+                    val document = StudioEditorDocument(
+                        path = source.path, content = source.content,
+                        languageLabel = source.language.replaceFirstChar { it.uppercase(Locale.ROOT) },
+                        sha256 = source.sha256
+                    )
+                    val index = editorDocuments.indexOfFirst { it.path == path }
+                    if (index >= 0) editorDocuments[index] = document else editorDocuments.add(document)
+                } else if (cachedText != null && cachedRecord != null) {
+                    val document = StudioEditorDocument(
+                        path = path, content = cachedText,
+                        languageLabel = cachedRecord.language.ifBlank { "Text" }.replaceFirstChar { it.uppercase(Locale.ROOT) },
+                        sha256 = cachedRecord.serverSha256
+                    )
+                    val index = editorDocuments.indexOfFirst { it.path == path }
+                    if (index >= 0) editorDocuments[index] = document else editorDocuments.add(document)
+                } else {
+                    error("This file has not been saved for offline use yet. Connect once to cache it.")
+                }
                 activeEditorPath = path
                 editorOpen = true
                 activeConversation = null
             } catch (error: Exception) {
-                Toast.makeText(context, error.message ?: "Could not open source file.", Toast.LENGTH_LONG).show()
+                if (cachedText != null && cachedRecord != null) {
+                    val document = StudioEditorDocument(
+                        path = path, content = cachedText,
+                        languageLabel = cachedRecord.language.ifBlank { "Text" }.replaceFirstChar { it.uppercase(Locale.ROOT) },
+                        sha256 = cachedRecord.serverSha256
+                    )
+                    val index = editorDocuments.indexOfFirst { it.path == path }
+                    if (index >= 0) editorDocuments[index] = document else editorDocuments.add(document)
+                    activeEditorPath = path
+                    editorOpen = true
+                    activeConversation = null
+                } else {
+                    Toast.makeText(context, error.message ?: "Could not open source file.", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -1254,6 +1453,29 @@ fun AharaneApp(
     }
 
     val currentDestination = MainDestination.valueOf(destinationName)
+    val tabPagerState = rememberPagerState(initialPage = MainDestination.entries.indexOf(currentDestination)) {
+        MainDestination.entries.size
+    }
+    LaunchedEffect(currentDestination) {
+        val index = MainDestination.entries.indexOf(currentDestination)
+        if (index >= 0 && tabPagerState.settledPage != index) {
+            tabPagerState.animateScrollToPage(
+                page = index,
+                animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Float>(
+                    enabled = motionEnabled,
+                    targetMillis = StudioFoundationContract.Motion.ScreenTransitionMillis
+                )
+            )
+        }
+    }
+    LaunchedEffect(tabPagerState, activeConversation) {
+        snapshotFlow { tabPagerState.settledPage }.collect { page ->
+            if (activeConversation == null && page in MainDestination.entries.indices) {
+                val name = MainDestination.entries[page].name
+                if (destinationName != name) destinationName = name
+            }
+        }
+    }
     val selectedAccount = ChatAccount.valueOf(accountName)
     val selectedFilter = ChatFilter.valueOf(filterName)
     val connected = authenticated && !previewMode && serverReachable
@@ -1377,8 +1599,16 @@ fun AharaneApp(
                 return stored
             }
         }
-        if (!connected) error("Attachment could not be loaded.")
-        val bytes = repository.mediaBytes(conversation, message)
+        if (!connected) error("This attachment is not available on this device right now.")
+        val bytes = try {
+            repository.mediaBytes(conversation, message)
+        } catch (failure: Exception) {
+            val detail = failure.message.orEmpty()
+            if (Regex("(?i)(connect|pair|link).{0,50}(whatsapp|account)|(whatsapp|account).{0,50}(connect|pair|link)").containsMatchIn(detail)) {
+                throw IllegalStateException("This attachment is not available on this device right now.")
+            }
+            throw failure
+        }
         val cacheWrite = runCatching {
             val localRepository = local ?: error("Local media storage is unavailable.")
             val record = withContext(Dispatchers.IO) {
@@ -1419,7 +1649,7 @@ fun AharaneApp(
         ChatAccount.PUBLIC -> runtime?.publicAccount
     }
 
-    LaunchedEffect(connected, selectedAccount, currentAccountState?.connected, localChatRepository, chatsByAccount[selectedAccount]) {
+    LaunchedEffect(connected, selectedAccount, currentAccountState?.connected, localChatRepository, chatsByAccount[selectedAccount], mediaOutboxRevision) {
         if (!connected || currentAccountState?.connected != true) return@LaunchedEffect
         val local = localChatRepository ?: return@LaunchedEffect
         val conversations = chatsByAccount[selectedAccount].orEmpty()
@@ -1429,12 +1659,18 @@ fun AharaneApp(
             val conversation = conversations.firstOrNull { it.key.jid == row.jid } ?: return@forEach
             flushQueuedTextMessage(conversation, row.clientMessageId)
         }
+        val pendingMedia = local.pendingOutgoingMedia(selectedAccount)
+        pendingMedia.forEach { row ->
+            val conversation = conversations.firstOrNull { it.key.jid == row.jid } ?: return@forEach
+            flushQueuedMediaMessage(conversation, row.clientMessageId)
+        }
     }
     val currentChats = if (previewMode) DesignPreviewFixtures.conversations else chatsByAccount[selectedAccount].orEmpty()
+    val cachedWorkspaceEntries = remember(workspaceRevision) { workspaceStore.entries() }
     val sourceFileEntries = if (previewMode) {
         DesignPreviewFixtures.files.map { StudioFileEntry(it.name, it.path, it.isDirectory, it.sizeLabel) }
     } else {
-        serverFiles.map { entry ->
+        val liveEntries = serverFiles.map { entry ->
             StudioFileEntry(
                 name = entry.name,
                 path = entry.path,
@@ -1443,6 +1679,16 @@ fun AharaneApp(
                 modifiedLabel = entry.modifiedAt
             )
         }
+        val cachedEntries = cachedWorkspaceEntries.map { entry ->
+            StudioFileEntry(
+                name = entry.name,
+                path = entry.path,
+                isDirectory = entry.isDirectory,
+                sizeLabel = entry.sizeBytes?.let(::formatBytes),
+                modifiedLabel = entry.modifiedAt
+            )
+        }
+        (liveEntries + cachedEntries).distinctBy { it.path }
     }
     val studioFileEntries = sourceFileEntries + listOf(
         StudioFileEntry("Update packages", "Update packages", true)
@@ -1459,13 +1705,27 @@ fun AharaneApp(
         EnvironmentValue(it.key, it.value, it.readOnly, it.type, it.secret)
     }
 
+    Box(
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.TopCenter
+    ) {
     Column(
-        Modifier.fillMaxSize()
+        Modifier
+            .then(
+                if (editorOpen || activeConversation != null || commandBuilderOpen || engineLibraryOpen) Modifier
+                else Modifier.widthIn(max = StudioFoundationContract.Layout.ContentMaxWidth)
+            )
+            .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
-        if (!editorOpen && activeConversation == null && !commandBuilderOpen) {
-            StudioHeader()
+        if (!editorOpen && activeConversation == null && !commandBuilderOpen && !engineLibraryOpen) {
+            StudioHeader(
+                connected = connected,
+                preview = previewMode,
+                showBrand = currentDestination == MainDestination.HOME,
+                showStatus = false
+            )
         }
 
         if (previewMode) {
@@ -1482,7 +1742,7 @@ fun AharaneApp(
 
         if (serverError.isNotBlank() && connected) {
             Text(
-                serverError,
+                userFacingServerError(serverError),
                 color = StudioPalette.Bad,
                 fontSize = 11.5.sp,
                 modifier = Modifier.fillMaxWidth().background(StudioPalette.Surface).padding(horizontal = 14.dp, vertical = 5.dp)
@@ -1491,11 +1751,36 @@ fun AharaneApp(
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
-                commandBuilderOpen -> VisualCommandBuilderScreen(
+                engineLibraryOpen && !commandBuilderOpen -> EngineLibraryScreen(
                     repository = repository,
                     connected = connected,
-                    onBack = { commandBuilderOpen = false }
+                    onBack = { engineLibraryOpen = false }
                 )
+                commandBuilderOpen -> {
+                    // Keep the builder composed while the Engine library is open;
+                    // unsaved graphs and socket positions must survive code editing.
+                    VisualCommandBuilderScreen(
+                        repository = repository,
+                        connected = connected,
+                        previewMode = previewMode,
+                        onBack = { commandBuilderOpen = false; engineLibraryOpen = false },
+                        onManageEngines = { engineLibraryOpen = true }
+                    )
+                    if (engineLibraryOpen) {
+                        Dialog(
+                            onDismissRequest = { engineLibraryOpen = false },
+                            properties = DialogProperties(usePlatformDefaultWidth = false)
+                        ) {
+                            Box(Modifier.fillMaxSize()) {
+                                EngineLibraryScreen(
+                                    repository = repository,
+                                    connected = connected,
+                                    onBack = { engineLibraryOpen = false }
+                                )
+                            }
+                        }
+                    }
+                }
                 editorOpen -> CodeEditorScreen(
                     modifier = Modifier.fillMaxSize(),
                     onClose = {
@@ -1505,7 +1790,7 @@ fun AharaneApp(
                     },
                     openDocuments = editorDocuments.toList(),
                     activeDocumentPath = activeEditorPath,
-                    availableFiles = if (previewMode) DesignPreviewFixtures.sourceFiles.keys.toList() else serverFiles.filterNot { it.isDirectory }.map { it.path },
+                    availableFiles = if (previewMode) DesignPreviewFixtures.sourceFiles.keys.toList() else (serverFiles.filterNot { it.isDirectory }.map { it.path } + cachedWorkspaceEntries.filterNot { it.isDirectory }.map { it.path }).distinct(),
                     editable = true,
                     lineNumbers = editorLineNumbers,
                     fontSizeSp = editorFontSize,
@@ -1531,16 +1816,24 @@ fun AharaneApp(
                             try {
                                 val index = editorDocuments.indexOfFirst { it.path == path }
                                 if (index < 0) return@CodeEditorScreen false
-                                val latestSha = repository.saveFile(path, content, editorDocuments[index].sha256)
-                                editorDocuments[index] = editorDocuments[index].copy(content = content, sha256 = latestSha)
-                                // The source write is already committed at this point. A secondary
-                                // directory refresh must not turn a successful save into "unsaved".
-                                runCatching { repository.fileTree() }
-                                    .onSuccess { fileDraft = it }
-                                    .onFailure {
-                                        serverError = it.message ?: "File saved, but the Files list could not refresh."
-                                    }
-                                true
+                                val document = editorDocuments[index]
+                                if (!serverReachable) {
+                                    workspaceStore.saveLocalText(path, content, document.sha256, document.languageLabel)
+                                    editorDocuments[index] = document.copy(content = content)
+                                    workspaceRevision += 1
+                                    WorkspaceSyncScheduler.enqueue(context)
+                                    serverError = "Saved securely on this phone · waiting for connection to sync."
+                                    true
+                                } else {
+                                    val latestSha = repository.saveFile(path, content, document.sha256)
+                                    workspaceStore.cacheRemoteText(path, content, latestSha, document.languageLabel)
+                                    workspaceRevision += 1
+                                    editorDocuments[index] = document.copy(content = content, sha256 = latestSha)
+                                    runCatching { repository.fileTree() }
+                                        .onSuccess { fileDraft = it }
+                                        .onFailure { serverError = it.message ?: "File saved, but the Files list could not refresh." }
+                                    true
+                                }
                             } catch (error: Exception) {
                                 serverError = error.message ?: "Could not save this file."
                                 false
@@ -1635,6 +1928,11 @@ fun AharaneApp(
                     conversation = activeConversation!!,
                     messages = if (previewMode) previewMessages.filter { it.key == activeConversation!!.key } else activeMessages,
                     connected = if (previewMode) true else currentAccountState?.connected == true,
+                    canQueueMedia = !previewMode && localChatRepository != null && connectionManager.hasSavedSession(),
+                    voiceRecording = voiceRecording,
+                    onLoadAvatar = { chat ->
+                        if (previewMode || !connected) null else repository.whatsappAvatarBytes(chat)
+                    },
                     aiReplyAvailable = !previewMode && aiReplyAvailable,
                     onGenerateAiReply = { message, quotedMessage, tone, instruction ->
                         repository.generateAiReply(message, quotedMessage, tone, instruction)
@@ -1695,6 +1993,33 @@ fun AharaneApp(
                         }
                     },
                     onBack = { activeConversation = null },
+                    onCreatePoll = { name, options, selectableCount ->
+                        val target = activeConversation
+                        if (target != null && !previewMode && currentAccountState?.connected == true) {
+                            connectionScope.launch {
+                                try {
+                                    repository.createPoll(target, name, options, selectableCount)
+                                    activeMessages = refreshConversationIncrementally(target)
+                                    chatsByAccount[target.key.account] = repository.chats(target.key.account)
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Poll could not be created.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    onVotePoll = { message, selectedOptions ->
+                        val target = activeConversation
+                        if (target != null && !previewMode && currentAccountState?.connected == true) {
+                            connectionScope.launch {
+                                try {
+                                    repository.votePoll(target, message, selectedOptions)
+                                    activeMessages = refreshConversationIncrementally(target)
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Poll vote could not be sent.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
                     onSend = { text, replyTo ->
                         val target = activeConversation
                         if (previewMode && target != null) {
@@ -1736,11 +2061,18 @@ fun AharaneApp(
                             connectionScope.launch {
                                 try {
                                     val local = localChatRepository ?: error("Local encrypted outgoing-message queue is unavailable.")
-                                    val queued = local.outgoingMessage(target.key, clientMessageId)
-                                    if (queued?.state == "FAILED") {
-                                        local.updateOutgoingMessage(target.key, clientMessageId, "PENDING", null)
+                                    val queuedMedia = local.outgoingMediaMessage(target.key, clientMessageId)
+                                    if (queuedMedia?.state == "FAILED") {
+                                        local.updateOutgoingMedia(target.key, clientMessageId, "PENDING", null)
                                         activeMessages = local.messages(target.key)
-                                        flushQueuedTextMessage(target, clientMessageId)
+                                        flushQueuedMediaMessage(target, clientMessageId)
+                                    } else {
+                                        val queued = local.outgoingMessage(target.key, clientMessageId)
+                                        if (queued?.state == "FAILED") {
+                                            local.updateOutgoingMessage(target.key, clientMessageId, "PENDING", null)
+                                            activeMessages = local.messages(target.key)
+                                            flushQueuedTextMessage(target, clientMessageId)
+                                        }
                                     }
                                 } catch (error: Exception) {
                                     Toast.makeText(context, error.message ?: "Queued message could not be retried.", Toast.LENGTH_LONG).show()
@@ -1749,13 +2081,64 @@ fun AharaneApp(
                         }
                     },
                     onAttach = {
-                        if (connected && currentAccountState?.connected == true) {
+                        if (!previewMode && localChatRepository != null && connectionManager.hasSavedSession()) {
                             chatAttachmentLauncher.launch(arrayOf("image/*", "video/*", "audio/*", "application/*"))
+                        } else {
+                            Toast.makeText(context, "Sign in to Aharane to keep attachments in your encrypted outbox.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onPickSticker = {
+                        if (!previewMode) {
+                            chatStickerLauncher.launch(arrayOf("image/webp"))
+                        } else {
+                            Toast.makeText(context, "Preview mode cannot edit the local sticker tray.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    stickers = stickerEntries,
+                    onSendSticker = { entry ->
+                        val target = activeConversation
+                        if (target != null && !previewMode && localChatRepository != null && connectionManager.hasSavedSession()) {
+                            connectionScope.launch {
+                                try {
+                                    val bytes = stickerLibrary.read(entry)
+                                    enqueueOutgoingMedia(target, bytes, "image/webp", entry.id + ".webp", "")
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Sticker could not be sent.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        } else {
+                            Toast.makeText(context, "Sign in to Aharane to send stickers.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onDeleteSticker = { entry ->
+                        connectionScope.launch {
+                            try {
+                                stickerLibrary.remove(entry)
+                                stickerEntries = stickerLibrary.list()
+                            } catch (error: Exception) {
+                                Toast.makeText(context, error.message ?: "Sticker could not be removed.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
+                    onReuseSticker = { sticker ->
+                        val target = activeConversation
+                        if (target != null && !previewMode && localChatRepository != null) {
+                            connectionScope.launch {
+                                try {
+                                    val bytes = obtainCachedOrRemoteMedia(target, sticker)
+                                    enqueueOutgoingMedia(
+                                        target, bytes, "image/webp",
+                                        sticker.mediaFileName ?: "sticker.webp"
+                                    )
+                                } catch (error: Exception) {
+                                    Toast.makeText(context, error.message ?: "Sticker could not be reused.", Toast.LENGTH_LONG).show()
+                                }
+                            }
                         }
                     },
                     onRecordVoice = {
-                        if (!connected || currentAccountState?.connected != true) {
-                            Toast.makeText(context, "Connect the selected WhatsApp account to send a voice note.", Toast.LENGTH_SHORT).show()
+                        if (previewMode || localChatRepository == null || !connectionManager.hasSavedSession()) {
+                            Toast.makeText(context, "Sign in to Aharane to queue a voice note securely.", Toast.LENGTH_SHORT).show()
                         } else if (voiceRecording) {
                             stopAndSendVoiceNote()
                         } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
@@ -1764,6 +2147,12 @@ fun AharaneApp(
                             pendingVoiceStart = true
                             microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         }
+                    },
+                    onCancelVoiceRecording = {
+                        voiceRecorder?.cancel()
+                        voiceRecorder = null
+                        voiceRecording = false
+                        Toast.makeText(context, "Voice note discarded.", Toast.LENGTH_SHORT).show()
                     },
                     onKeepMediaOffline = { message ->
                         val target = activeConversation
@@ -1790,15 +2179,35 @@ fun AharaneApp(
                                     val target = activeConversation ?: return@launch
                                     val bytes = obtainCachedOrRemoteMedia(target, message)
                                     val mime = message.mediaMimeType.orEmpty()
-                                    if (mime.startsWith("image/")) {
-                                        showImageBytes(
-                                            bytes,
-                                            message.mediaFileName.orEmpty(),
-                                            onBitmap = { mediaTitle = message.mediaFileName.orEmpty(); mediaImage = it; mediaMessageError = "" },
-                                            onError = { mediaTitle = message.mediaFileName.orEmpty(); mediaMessageError = it }
-                                        )
-                                    } else {
-                                        openExternalAttachment(bytes, message.mediaFileName ?: "attachment", mime)
+                                    when {
+                                        mime.startsWith("image/") -> {
+                                            mediaVideoFile?.delete()
+                                            mediaVideoFile = null
+                                            showImageBytes(
+                                                bytes,
+                                                message.mediaFileName.orEmpty(),
+                                                onBitmap = {
+                                                    mediaTitle = message.mediaFileName.orEmpty()
+                                                    mediaImage = it
+                                                    mediaMessageError = ""
+                                                },
+                                                onError = {
+                                                    mediaTitle = message.mediaFileName.orEmpty()
+                                                    mediaMessageError = it
+                                                }
+                                            )
+                                        }
+                                        mime.startsWith("video/") -> {
+                                            mediaImage = null
+                                            mediaMessageError = ""
+                                            mediaTitle = message.mediaFileName.orEmpty().ifBlank { "Video" }
+                                            mediaVideoFile?.delete()
+                                            mediaVideoFile = withContext(Dispatchers.IO) {
+                                                File.createTempFile("aharane-chat-media-", ".mp4", context.cacheDir)
+                                                    .apply { writeBytes(bytes) }
+                                            }
+                                        }
+                                        else -> openExternalAttachment(bytes, message.mediaFileName ?: "attachment", mime)
                                     }
                                 } catch (error: Exception) {
                                     serverError = error.message ?: "Media could not be opened."
@@ -2093,9 +2502,9 @@ fun AharaneApp(
                     connected = connected,
                     serverValues = environmentRows.associate { it.key to it.value } + mapOf(
                         "PRIVATE_OWNER_NUMBER" to owners.privateOwnerNumber,
-                        "PUBLIC_BOT_NUMBER" to owners.publicBotNumber
+                        "PUBLIC_OWNER_NUMBER" to owners.publicOwnerNumber
                     ),
-                    ownerNumberValue = if (accountName == ChatAccount.PRIVATE.name) owners.privateOwnerNumber else owners.publicBotNumber,
+                    ownerNumberValue = if (accountName == ChatAccount.PRIVATE.name) owners.privateOwnerNumber else owners.publicOwnerNumber,
                     onBack = { configurationOpen = false },
                     onEditConfig = {
                         editorFromConfiguration = true
@@ -2111,7 +2520,7 @@ fun AharaneApp(
                         val updatedOwners = if (profile == "Private") {
                             owners.copy(privateOwnerNumber = values["PRIVATE_OWNER_NUMBER"] ?: owners.privateOwnerNumber)
                         } else {
-                            owners.copy(publicBotNumber = values["PUBLIC_BOT_NUMBER"] ?: owners.publicBotNumber)
+                            owners.copy(publicOwnerNumber = values["PUBLIC_OWNER_NUMBER"] ?: owners.publicOwnerNumber)
                         }
                         repository.saveOwnerSettings(updatedOwners)
                         val nextEnvironment = environmentRows.map { row ->
@@ -2125,7 +2534,13 @@ fun AharaneApp(
                         }
                     }
                 )
-                else -> when (currentDestination) {
+                else -> HorizontalPager(
+                    state = tabPagerState,
+                    userScrollEnabled = currentDestination != MainDestination.CHATS,
+                    modifier = Modifier.fillMaxSize()
+                ) { page ->
+                    val destination = MainDestination.entries[page]
+                    when (destination) {
                     MainDestination.HOME -> HomeScreen(
                         onOpenChats = { destinationName = MainDestination.CHATS.name },
                         onOpenMore = { destinationName = MainDestination.MORE.name; morePage = "more" },
@@ -2147,6 +2562,12 @@ fun AharaneApp(
                         metricsAvailable = messageMetrics != null && connected,
                         messagesLast24h = messageMetrics?.messagesLast24h ?: 0,
                         hourlyMessageCounts = messageMetrics?.hourlyMessages ?: emptyList(),
+                        monthUtc = messageMetrics?.monthUtc ?: "",
+                        monthlyDataSince = messageMetrics?.availableSince,
+                        dailySent = messageMetrics?.dailySent ?: emptyList(),
+                        dailyReceived = messageMetrics?.dailyReceived ?: emptyList(),
+                        sentThisMonth = messageMetrics?.sentThisMonth ?: 0,
+                        receivedThisMonth = messageMetrics?.receivedThisMonth ?: 0,
                         onAccountAction = { target ->
                             if (previewMode) {
                                 openPairingScreen(target)
@@ -2170,15 +2591,42 @@ fun AharaneApp(
                         onFilterSelected = { filterName = it.name },
                         conversations = currentChats,
                         accountConnected = if (previewMode) true else runtime?.let { if (selectedAccount == ChatAccount.PRIVATE) it.privateAccount.connected else it.publicAccount.connected } == true,
+                        onConnectAccount = {
+                            if (previewMode) {
+                                openPairingScreen(selectedAccount)
+                            } else if (connected) {
+                                connectionScope.launch {
+                                    try {
+                                        beginAccountLink(selectedAccount)
+                                    } catch (error: Exception) {
+                                        Toast.makeText(context, error.message ?: "Account pairing could not start.", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        },
+                        onLoadChannels = { account ->
+                            if (previewMode || !connected) JSONObject().put("supported", false).put("reason", "Connect a real paired session to load Channels.")
+                            else repository.subscribedChannels(account)
+                        },
+                        onLoadChannelUpdates = { account, jid ->
+                            if (previewMode || !connected) JSONObject().put("supported", false).put("reason", "Channel updates require a paired session.")
+                            else repository.channelUpdates(account, jid)
+                        },
                         onConversationSelected = { activeConversation = it },
+                        onLoadAvatar = { chat ->
+                            if (previewMode || !connected) null else repository.whatsappAvatarBytes(chat)
+                        },
                         onChatAction = { chat, action ->
                             if (previewMode) return@ChatsScreen
                             connectionScope.launch {
                                 try {
                                     when (action) {
-                                        "pin" -> repository.setChatPreferences(chat.key.account, chat.key.jid, pinned = !chat.isPinned)
-                                        "mute" -> repository.setChatPreferences(chat.key.account, chat.key.jid, muted = !chat.isMuted)
-                                        "archive" -> repository.archive(chat, !chat.isArchived)
+                                        "pin" -> repository.setChatPreferences(chat.key.account, chat.key.jid, pinned = true)
+                                        "unpin" -> repository.setChatPreferences(chat.key.account, chat.key.jid, pinned = false)
+                                        "mute" -> repository.setChatPreferences(chat.key.account, chat.key.jid, muted = true)
+                                        "unmute" -> repository.setChatPreferences(chat.key.account, chat.key.jid, muted = false)
+                                        "archive" -> repository.archive(chat, true)
+                                        "unarchive" -> repository.archive(chat, false)
                                         "unread" -> repository.markUnread(chat)
                                     }
                                     chatsByAccount[chat.key.account] = repository.chats(chat.key.account)
@@ -2250,6 +2698,7 @@ fun AharaneApp(
                         }
                     )
                     MainDestination.FILES -> FilesScreen(
+                        onOpenEngines = { engineLibraryOpen = true },
                         entries = studioFileEntries,
                         connected = connected,
                         initialPath = fileDirectory,
@@ -2414,14 +2863,17 @@ fun AharaneApp(
                         onEditorLineNumbersChanged = onEditorLineNumbersChanged,
                         page = morePage,
                         onPageChange = { morePage = it },
+                        notesStore = remember(context) { EncryptedNotesStore(context.applicationContext) },
+                        updatesRepository = repository,
+                        channelsEnabled = connected && !previewMode,
                         onOpenEnvironment = { destinationName = MainDestination.ENVIRONMENT.name; morePage = "more" },
+                        onOpenConfiguration = { configurationOpen = true; morePage = "more" },
                         connected = connected,
                         privateAccountStatus = runtime?.privateAccount?.let(::accountStateLabel) ?: "Status not loaded",
                         publicAccountStatus = runtime?.publicAccount?.let(::accountStateLabel) ?: "Status not loaded",
-                        privateOwnerNumber = owners.privateOwnerNumber,
+                        ownerNumber = owners.privateOwnerNumber,
                         publicOwnerNumber = owners.publicOwnerNumber,
                         publicBotNumber = owners.publicBotNumber,
-                        allowedPublicSenders = owners.allowedPublicSenders.joinToString(", "),
                         activityEntries = activityRows.map { "${it.timestamp} · ${it.level.uppercase(Locale.ROOT)} · ${it.source} · ${it.message}" },
                         storageSummary = storageSnapshot?.let { formatBytes(it.usedBytes) } ?: "—",
                         storageTotalSummary = storageSnapshot?.let { formatBytes(it.totalBytes) } ?: "—",
@@ -2456,18 +2908,14 @@ fun AharaneApp(
                                 }
                             }
                         },
-                        onSaveOwnerSettings = { privateOwner, publicOwner, publicBot, allowed ->
+                        onSaveOwnerSettings = { privateOwner, publicOwner, publicBot ->
                             if (previewMode || !connected) {
-                                Toast.makeText(context, "Preview mode cannot save owner settings to a server.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Connect to your Aharane server to save owner settings.", Toast.LENGTH_SHORT).show()
                             } else connectionScope.launch {
                                 try {
-                                    val updated = ServerOwnerSettings(
-                                        privateOwnerNumber = privateOwner,
-                                        publicOwnerNumber = publicOwner,
-                                        publicBotNumber = publicBot,
-                                        allowedPublicSenders = allowed.split(',').map(String::trim).filter(String::isNotBlank)
+                                    repository.saveOwnerSettings(
+                                        ServerOwnerSettings(privateOwnerNumber = privateOwner, publicOwnerNumber = publicOwner, publicBotNumber = publicBot)
                                     )
-                                    repository.saveOwnerSettings(updated)
                                     owners = repository.ownerSettings()
                                     Toast.makeText(context, "Owner settings saved.", Toast.LENGTH_SHORT).show()
                                 } catch (error: Exception) {
@@ -2634,11 +3082,12 @@ fun AharaneApp(
                             chatAppearance = chatAppearanceStore.resolve(selectedAccount).toJson()
                         }
                     )
+                    }
                 }
             }
         }
 
-        if (!editorOpen && activeConversation == null && !commandBuilderOpen) {
+        if (!editorOpen && activeConversation == null && !commandBuilderOpen && !engineLibraryOpen) {
             StudioBottomNavigation(
                 selected = currentDestination,
                 onNavigate = {
@@ -2648,6 +3097,7 @@ fun AharaneApp(
                 }
             )
         }
+    }
     }
 
     if (accountControlTarget != null) {
@@ -2888,16 +3338,14 @@ fun AharaneApp(
         DisposableEffect(videoFile) {
             onDispose { videoFile.delete() }
         }
-        Dialog(onDismissRequest = {
-            videoFile.delete()
-            viewOnceVideoFile = null
-        }) {
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                    .background(StudioPalette.Surface).padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text("View-once video", color = StudioPalette.Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        Dialog(
+            onDismissRequest = {
+                videoFile.delete()
+                viewOnceVideoFile = null
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
                 AndroidView(
                     factory = { viewContext ->
                         VideoView(viewContext).apply {
@@ -2907,37 +3355,117 @@ fun AharaneApp(
                             setOnPreparedListener { it.start() }
                         }
                     },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 420.dp)
+                    modifier = Modifier.fillMaxSize()
                 )
-                StudioActionButton("Close", compact = true, primary = true, onClick = {
-                    videoFile.delete()
-                    viewOnceVideoFile = null
-                })
+                Row(
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                        .statusBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "View-once video",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    StudioActionButton("Close", compact = true, primary = true, onClick = {
+                        videoFile.delete()
+                        viewOnceVideoFile = null
+                    })
+                }
+            }
+        }
+    }
+
+    if (mediaVideoFile != null) {
+        val videoFile = mediaVideoFile!!
+        DisposableEffect(videoFile) {
+            onDispose { videoFile.delete() }
+        }
+        Dialog(
+            onDismissRequest = {
+                mediaVideoFile = null
+                mediaTitle = ""
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
+                AndroidView(
+                    factory = { viewContext ->
+                        VideoView(viewContext).apply {
+                            val player = this
+                            setMediaController(MediaController(viewContext).also { it.setAnchorView(player) })
+                            setVideoPath(videoFile.absolutePath)
+                            setOnPreparedListener { it.start() }
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+                Row(
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                        .statusBarsPadding().padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        mediaTitle.ifBlank { "Video" },
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1
+                    )
+                    StudioActionButton("Close", compact = true, primary = true, onClick = {
+                        mediaVideoFile = null
+                        mediaTitle = ""
+                    })
+                }
             }
         }
     }
 
     if (mediaImage != null || mediaMessageError.isNotBlank()) {
-        Dialog(onDismissRequest = { mediaImage = null; mediaTitle = ""; mediaMessageError = "" }) {
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                    .background(StudioPalette.Surface).padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(9.dp)
-            ) {
-                Text(mediaTitle, color = StudioPalette.Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Dialog(
+            onDismissRequest = { mediaImage = null; mediaTitle = ""; mediaMessageError = "" },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
                 if (mediaImage != null) {
                     Image(
                         bitmap = mediaImage!!,
                         contentDescription = mediaTitle,
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp)
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize().padding(top = 58.dp, bottom = 20.dp)
                     )
                 }
-                if (mediaMessageError.isNotBlank()) Text(mediaMessageError, color = StudioPalette.Bad, fontSize = 12.5.sp)
-                StudioActionButton("Close", compact = true, primary = true, onClick = {
-                    mediaImage = null
-                    mediaTitle = ""
-                    mediaMessageError = ""
-                })
+                Row(
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                        .statusBarsPadding().background(Color.Black.copy(alpha = 0.42f))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        mediaTitle.ifBlank { "Photo" },
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1
+                    )
+                    StudioActionButton("Close", compact = true, primary = true, onClick = {
+                        mediaImage = null
+                        mediaTitle = ""
+                        mediaMessageError = ""
+                    })
+                }
+                if (mediaMessageError.isNotBlank()) {
+                    Text(
+                        mediaMessageError,
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        modifier = Modifier.align(Alignment.Center).padding(20.dp)
+                    )
+                }
             }
         }
     }

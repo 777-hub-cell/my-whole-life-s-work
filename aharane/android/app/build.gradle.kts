@@ -1,5 +1,14 @@
 buildscript {
-    repositories { gradlePluginPortal(); mavenCentral() }
+    repositories {
+        maven {
+            name = "KspCentralMirror"
+            url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+            content { includeGroup("com.google.devtools.ksp") }
+        }
+        maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
+        mavenCentral()
+        gradlePluginPortal()
+    }
     dependencies {
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.21")
         classpath("org.jetbrains.kotlin.plugin.compose:org.jetbrains.kotlin.plugin.compose.gradle.plugin:2.4.21")
@@ -84,6 +93,7 @@ ksp {
 
 dependencies {
     implementation(libs.androidx.activity.compose)
+    implementation("androidx.core:core-splashscreen:1.2.0")
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)

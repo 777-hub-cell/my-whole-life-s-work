@@ -1,5 +1,8 @@
 package com.aharane.studio.core.design
 
+import android.animation.ValueAnimator
+import android.os.Build
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
@@ -8,6 +11,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
@@ -30,6 +34,8 @@ private val BricolageGrotesque = FontFamily(
     Font(R.font.bricolage_grotesque, FontWeight.SemiBold),
     Font(R.font.bricolage_grotesque, FontWeight.Bold)
 )
+
+val LocalStudioMotionEnabled = staticCompositionLocalOf { true }
 
 private val Light = lightColorScheme(
     primary = Color(0xFF0E7A5C),
@@ -63,29 +69,29 @@ private val Dark = darkColorScheme(
 
 private val StudioTypography = Typography(
     displayLarge = TextStyle(fontFamily = BricolageGrotesque, fontWeight = FontWeight.Bold,
-        fontSize = 30.sp, lineHeight = 34.sp, letterSpacing = (-0.75).sp),
+        fontSize = StudioFoundationContract.TypeScale.DisplayTitle, lineHeight = 34.sp, letterSpacing = (-0.75).sp),
     displayMedium = TextStyle(fontFamily = BricolageGrotesque, fontWeight = FontWeight.Bold,
         fontSize = 26.sp, lineHeight = 30.sp, letterSpacing = (-0.55).sp),
     headlineLarge = TextStyle(fontFamily = BricolageGrotesque, fontWeight = FontWeight.Bold,
-        fontSize = 30.sp, lineHeight = 34.sp, letterSpacing = (-0.75).sp),
+        fontSize = StudioFoundationContract.TypeScale.DisplayTitle, lineHeight = 34.sp, letterSpacing = (-0.75).sp),
     headlineMedium = TextStyle(fontFamily = BricolageGrotesque, fontWeight = FontWeight.Bold,
         fontSize = 26.sp, lineHeight = 30.sp, letterSpacing = (-0.55).sp),
     titleLarge = TextStyle(fontFamily = BricolageGrotesque, fontWeight = FontWeight.Bold,
-        fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.15).sp),
+        fontSize = StudioFoundationContract.TypeScale.SectionTitle, lineHeight = 22.sp, letterSpacing = (-0.15).sp),
     titleMedium = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp, lineHeight = 19.sp),
     bodyLarge = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.Normal,
-        fontSize = 15.sp, lineHeight = 21.sp),
+        fontSize = StudioFoundationContract.TypeScale.Body, lineHeight = 21.sp),
     bodyMedium = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.Normal,
         fontSize = 14.sp, lineHeight = 20.sp),
     bodySmall = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.Normal,
-        fontSize = 12.5.sp, lineHeight = 17.sp),
+        fontSize = StudioFoundationContract.TypeScale.Supporting, lineHeight = 17.sp),
     labelLarge = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp, lineHeight = 18.sp),
     labelMedium = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
         fontSize = 12.5.sp, lineHeight = 16.sp),
     labelSmall = TextStyle(fontFamily = AharaneInstrumentSans, fontWeight = FontWeight.SemiBold,
-        fontSize = 11.5.sp, lineHeight = 14.sp)
+        fontSize = StudioFoundationContract.TypeScale.BottomNavigationLabel, lineHeight = 14.sp)
 )
 
 private fun blend(from: Color, to: Color, amount: Float): Color = Color(
@@ -135,6 +141,29 @@ fun AharaneTheme(
         surfaceVariant = if (amoled) Color(0xFF101614) else Dark.surfaceVariant,
         outline = if (amoled) Color(0xFF202725) else Dark.outline
     )
+    // Respect Android's system-wide animation setting, including Battery Saver.
+    val motionEnabled = Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ValueAnimator.areAnimatorsEnabled()
+    val colorTarget = if (dark) darkScheme else lightScheme
+    val themeColorSpec = StudioFoundationContract.Motion.stateChangeSpec<Color>(
+        enabled = motionEnabled,
+        targetMillis = StudioFoundationContract.Motion.ThemeTransitionMillis
+    )
+    // Theme changes transition as one coherent palette rather than repainting
+    // each surface and label in a single frame.
+    val animatedScheme = colorTarget.copy(
+        primary = animateColorAsState(colorTarget.primary, themeColorSpec, label = "theme-primary").value,
+        onPrimary = animateColorAsState(colorTarget.onPrimary, themeColorSpec, label = "theme-on-primary").value,
+        primaryContainer = animateColorAsState(colorTarget.primaryContainer, themeColorSpec, label = "theme-primary-container").value,
+        onPrimaryContainer = animateColorAsState(colorTarget.onPrimaryContainer, themeColorSpec, label = "theme-on-primary-container").value,
+        background = animateColorAsState(colorTarget.background, themeColorSpec, label = "theme-background").value,
+        onBackground = animateColorAsState(colorTarget.onBackground, themeColorSpec, label = "theme-on-background").value,
+        surface = animateColorAsState(colorTarget.surface, themeColorSpec, label = "theme-surface").value,
+        onSurface = animateColorAsState(colorTarget.onSurface, themeColorSpec, label = "theme-on-surface").value,
+        surfaceVariant = animateColorAsState(colorTarget.surfaceVariant, themeColorSpec, label = "theme-surface-variant").value,
+        onSurfaceVariant = animateColorAsState(colorTarget.onSurfaceVariant, themeColorSpec, label = "theme-on-surface-variant").value,
+        outline = animateColorAsState(colorTarget.outline, themeColorSpec, label = "theme-outline").value,
+        error = animateColorAsState(colorTarget.error, themeColorSpec, label = "theme-error").value
+    )
     val baseDensity = LocalDensity.current
     val scaledDensity = Density(
         density = baseDensity.density * interfaceScale.coerceIn(.88f, 1.12f),
@@ -143,11 +172,12 @@ fun AharaneTheme(
 
     CompositionLocalProvider(
         LocalDensity provides scaledDensity,
+        LocalStudioMotionEnabled provides motionEnabled,
         LocalStudioCornerScale provides cornerScale.coerceIn(.65f, 1.3f),
         LocalStudioRowScale provides rowScale.coerceIn(.85f, 1.2f)
     ) {
         MaterialTheme(
-            colorScheme = if (dark) darkScheme else lightScheme,
+            colorScheme = animatedScheme,
             typography = StudioTypography,
             content = content
         )

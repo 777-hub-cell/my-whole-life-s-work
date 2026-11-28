@@ -37,8 +37,8 @@ class AharaneConnectionManager(context: Context) {
     }
 
     /**
-     * Checks the encrypted cookie jar synchronously so the UI can show a
-     * restore splash instead of briefly rendering the sign-in form.
+     * Checks the encrypted cookie jar synchronously so the UI can open cached
+     * content immediately while remote session validation continues in background.
      */
     fun hasSavedSession(): Boolean {
         val address = savedStudioUrl

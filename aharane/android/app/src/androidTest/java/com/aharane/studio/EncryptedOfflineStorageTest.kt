@@ -481,6 +481,81 @@ class EncryptedOfflineStorageTest {
     }
 
     @Test
+    fun roomVersionSevenMigrationAddsSystemMessageMarkerWithoutDroppingRows() {
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(null)
+                .callback(object : SupportSQLiteOpenHelper.Callback(7) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        db.execSQL(
+                            """CREATE TABLE chat_messages (
+                                account TEXT NOT NULL,
+                                jid TEXT NOT NULL,
+                                messageId TEXT NOT NULL,
+                                text TEXT NOT NULL,
+                                PRIMARY KEY(account, jid, messageId)
+                            )"""
+                        )
+                        db.execSQL(
+                            "INSERT INTO chat_messages VALUES ('private','120363000000000001@g.us','group-left-1','Quarantine Scope left the group.')"
+                        )
+                    }
+                    override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                })
+                .build()
+        )
+        try {
+            val db = helper.writableDatabase
+            EncryptedChatDatabase.MIGRATION_7_8.migrate(db)
+            db.query("SELECT text, isSystem FROM chat_messages WHERE messageId='group-left-1'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Quarantine Scope left the group.", cursor.getString(0))
+                assertEquals(0, cursor.getInt(1))
+            }
+        } finally {
+            helper.close()
+        }
+    }
+
+    @Test
+    fun groupSystemMessageFlagSurvivesEncryptedOfflineSyncAndReopen() = runBlocking {
+        val key = ConversationKey(ChatAccount.PRIVATE, "120363000000000001@g.us")
+        val summary = com.aharane.studio.core.model.ChatSummary(
+            key = key,
+            title = "Project group",
+            lastMessagePreview = "Quarantine Scope left the group.",
+            lastMessageAtMillis = 1765000000000L,
+            isGroup = true
+        )
+        val local = LocalChatRepository(context)
+        val systemMessage = ChatMessage(
+            key = key,
+            messageId = "group-left-offline",
+            direction = MessageDirection.INCOMING,
+            kind = MessageKind.TEXT,
+            text = "Quarantine Scope left the group.",
+            timestampMillis = 1765000000000L,
+            isSystem = true
+        )
+        try {
+            local.saveConversations(listOf(summary))
+            local.saveMessages(summary, listOf(systemMessage))
+        } finally {
+            local.close()
+        }
+
+        val reopened = LocalChatRepository(context)
+        try {
+            val restored = reopened.messages(key).single()
+            assertEquals(systemMessage.text, restored.text)
+            assertTrue(restored.isSystem)
+        } finally {
+            reopened.clearLocalConversation(key)
+            reopened.close()
+        }
+    }
+
+    @Test
     fun appearanceInheritanceKeepsPrivatePublicAndChatLayersSeparate() {
         context.getSharedPreferences("aharane-chat-appearance", Context.MODE_PRIVATE).edit().clear().commit()
         val store = ChatAppearanceStore(context)

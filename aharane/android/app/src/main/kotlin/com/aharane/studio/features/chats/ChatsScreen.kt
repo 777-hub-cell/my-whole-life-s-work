@@ -1,21 +1,30 @@
 package com.aharane.studio.features.chats
 
 import androidx.compose.animation.core.animateDpAsState
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.MoreVert
 
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.text.style.TextAlign
@@ -25,8 +34,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,10 +51,14 @@ import com.aharane.studio.core.model.ChatMessage
 import android.app.DatePickerDialog
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import java.util.Calendar
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import org.json.JSONObject
 
 @Composable
 fun ChatsScreen(
@@ -54,8 +69,10 @@ fun ChatsScreen(
     conversations: List<ChatSummary> = emptyList(),
     accountDisplayName: String = account.label,
     accountConnected: Boolean = false,
+    onConnectAccount: () -> Unit = {},
     onConversationSelected: (ChatSummary) -> Unit = {},
     onChatAction: (ChatSummary, String) -> Unit = { _, _ -> },
+    onLoadAvatar: suspend (ChatSummary) -> ByteArray? = { null },
     showIndividuals: Boolean = true,
     showGroups: Boolean = true,
     savedChatTheme: String = "system",
@@ -65,6 +82,8 @@ fun ChatsScreen(
     messageSearchResults: List<ChatMessage> = emptyList(),
     onInboxSearchChanged: (String, Long, Long) -> Unit = { _, _, _ -> },
     onInboxMessageSelected: (ChatMessage) -> Unit = {},
+    onLoadChannels: suspend (ChatAccount) -> JSONObject = { JSONObject().put("supported", false) },
+    onLoadChannelUpdates: suspend (ChatAccount, String) -> JSONObject = { _, _ -> JSONObject().put("supported", false) },
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var fromMillis by rememberSaveable { mutableLongStateOf(0L) }
@@ -79,6 +98,62 @@ fun ChatsScreen(
             onInboxSearchChanged("", 0L, 0L)
         }
     }
+    var channelRows by remember { mutableStateOf<List<Triple<String, String, String>>>(emptyList()) }
+    var selectedChannel by remember { mutableStateOf<String?>(null) }
+    var channelUpdates by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var channelsSupported by remember { mutableStateOf(false) }
+    var channelError by remember { mutableStateOf("") }
+    var channelsLoading by remember { mutableStateOf(false) }
+    var updatesLoading by remember { mutableStateOf(false) }
+    LaunchedEffect(filter, account, accountConnected) {
+        if (filter == ChatFilter.CHANNELS) {
+            selectedChannel = null
+            channelRows = emptyList()
+            channelUpdates = emptyList()
+            channelError = ""
+            if (accountConnected) {
+                channelsLoading = true
+                try {
+                    val result = onLoadChannels(account)
+                    channelsSupported = result.optBoolean("supported")
+                    val data = result.optJSONArray("channels")
+                    channelRows = buildList {
+                        if (data != null) for (index in 0 until data.length()) {
+                            val row = data.optJSONObject(index) ?: continue
+                            val jid = row.optString("jid")
+                            if (jid.endsWith("@newsletter")) add(
+                                Triple(jid, row.optString("name", "Unnamed channel"), row.optString("description"))
+                            )
+                        }
+                    }
+                    if (!channelsSupported) channelError = result.optString("reason", "Channels are not supported by this paired session.")
+                } catch (failure: Exception) {
+                    channelsSupported = false
+                    channelError = failure.message ?: "Could not retrieve Channels."
+                } finally { channelsLoading = false }
+            }
+        }
+    }
+    LaunchedEffect(selectedChannel, account) {
+        val jid = selectedChannel ?: return@LaunchedEffect
+        updatesLoading = true
+        channelUpdates = emptyList()
+        try {
+            val result = onLoadChannelUpdates(account, jid)
+            val data = result.optJSONArray("updates")
+            if (!result.optBoolean("supported")) {
+                channelError = result.optString("reason", "Channel updates are unsupported by this session.")
+            } else {
+                channelError = ""
+                channelUpdates = buildList {
+                    if (data != null) for (index in 0 until data.length()) data.optJSONObject(index)?.let(::add)
+                }
+            }
+        } catch (failure: Exception) {
+            channelError = failure.message ?: "Could not retrieve Channel updates."
+        } finally { updatesLoading = false }
+    }
+
     val chatTheme = savedChatTheme.replaceFirstChar { it.uppercase() }
     val showAvatars = savedShowAvatars
     val showPreviews = savedShowPreviews
@@ -126,6 +201,8 @@ fun ChatsScreen(
                     ChatFilter.ALL -> !chat.isArchived
                     ChatFilter.UNREAD -> chat.unreadCount > 0 && !chat.isArchived
                     ChatFilter.GROUPS -> chat.isGroup && !chat.isArchived
+                    // Newsletter JIDs are not ingested by the current ChatStore; do not present ordinary chats as Channels.
+                    ChatFilter.CHANNELS -> false
                     ChatFilter.ARCHIVED -> chat.isArchived
                 }
             }
@@ -134,31 +211,106 @@ fun ChatsScreen(
             .toList()
     }
 
+    var selectedChatKeys by remember(account) { mutableStateOf<Set<String>>(emptySet()) }
+    var selectionActionsOpen by remember { mutableStateOf(false) }
+    fun selectionKey(chat: ChatSummary) = chat.key.account.apiValue + ":" + chat.key.jid
+    val selectedChats = accountConversations.filter { selectionKey(it) in selectedChatKeys }
+    val selectionMode = selectedChatKeys.isNotEmpty()
+    val allSelectedArchived = selectedChats.isNotEmpty() && selectedChats.all { it.isArchived }
+    val allSelectedPinned = selectedChats.isNotEmpty() && selectedChats.all { it.isPinned }
+    val allSelectedMuted = selectedChats.isNotEmpty() && selectedChats.all { it.isMuted }
+    fun toggleChatSelection(chat: ChatSummary) {
+        val key = selectionKey(chat)
+        selectedChatKeys = if (key in selectedChatKeys) selectedChatKeys - key else selectedChatKeys + key
+    }
+    fun applySelectionAction(action: String) {
+        val targets = selectedChats
+        selectionActionsOpen = false
+        selectedChatKeys = emptySet()
+        targets.forEach { onChatAction(it, action) }
+    }
+
+    val chatListState = rememberLazyListState()
     MaterialTheme(colorScheme = chatScheme) {
     LazyColumn(
+        state = chatListState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 3.dp, bottom = 10.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { StudioPageTitle("Chats") }
-                ChatHeaderButton(
-                    icon = switchIcon,
-                    description = if (account == ChatAccount.PRIVATE) "Switch to Public WhatsApp" else "Switch to Private WhatsApp"
+            if (selectionMode) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 54.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
-                    onAccountSelected(
-                        if (account == ChatAccount.PRIVATE) ChatAccount.PUBLIC else ChatAccount.PRIVATE
-                    )
+                    ChatHeaderButton(Icons.Outlined.Close, "Clear chat selection") {
+                        selectedChatKeys = emptySet()
+                        selectionActionsOpen = false
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                        Text(
+                            "${selectedChats.size} selected",
+                            color = StudioPalette.Ink,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.testTag("chat-selection-count")
+                        )
+                        Text("Tap more conversations to include them", color = StudioPalette.Muted, fontSize = 10.5.sp)
+                    }
+                    ChatHeaderButton(
+                        Icons.Outlined.Archive,
+                        if (allSelectedArchived) "Unarchive selected chats" else "Archive selected chats",
+                        enabled = accountConnected
+                    ) { applySelectionAction(if (allSelectedArchived) "unarchive" else "archive") }
+                    Box {
+                        ChatHeaderButton(
+                            Icons.Outlined.MoreVert,
+                            "More selected chat actions",
+                            enabled = accountConnected
+                        ) { selectionActionsOpen = true }
+                        DropdownMenu(
+                            expanded = selectionActionsOpen,
+                            onDismissRequest = { selectionActionsOpen = false },
+                            modifier = Modifier.background(StudioPalette.Surface)
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Mark as unread") },
+                                onClick = { applySelectionAction("unread") }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (allSelectedPinned) "Unpin selected" else "Pin selected") },
+                                onClick = { applySelectionAction(if (allSelectedPinned) "unpin" else "pin") }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (allSelectedMuted) "Unmute selected" else "Mute selected") },
+                                onClick = { applySelectionAction(if (allSelectedMuted) "unmute" else "mute") }
+                            )
+                        }
+                    }
                 }
+                Spacer(Modifier.height(12.dp))
+            } else {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) { StudioPageTitle("Chat", compact = true) }
+                    ChatHeaderButton(
+                        icon = switchIcon,
+                        description = if (account == ChatAccount.PRIVATE) "Switch to Public WhatsApp" else "Switch to Private WhatsApp"
+                    ) {
+                        onAccountSelected(
+                            if (account == ChatAccount.PRIVATE) ChatAccount.PUBLIC else ChatAccount.PRIVATE
+                        )
+                    }
+                }
+                Text(
+                    "${account.label} account · ${accountConversations.size} conversations",
+                    color = StudioPalette.Muted,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 12.dp)
+                )
             }
-            Text(
-                "${account.label} account · ${accountConversations.size} conversations",
-                color = StudioPalette.Muted,
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                modifier = Modifier.padding(top = 6.dp, bottom = 12.dp)
-            )
         }
         item {
             Row(
@@ -282,42 +434,178 @@ fun ChatsScreen(
             )
             Spacer(Modifier.height(14.dp))
         }
-        item {
-            if (visibleChats.isEmpty()) {
-                StudioCard(padding = PaddingValues(horizontal = 16.dp, vertical = 28.dp)) {
-                    Text(
-                        when {
-                            !accountConnected -> "This WhatsApp account is not connected yet. Link it from Home to load conversations."
-                            filter == ChatFilter.UNREAD -> "No unread chats."
-                            filter == ChatFilter.GROUPS -> "No groups match."
-                            filter == ChatFilter.ARCHIVED -> "No archived chats."
-                            else -> "No chats match."
-                        },
-                        color = StudioPalette.Muted,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
+        if (filter == ChatFilter.CHANNELS) {
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            if (selectedChannel == null) "Subscribed Channels" else channelRows.firstOrNull { it.first == selectedChannel }?.second ?: "Channel",
+                            fontSize = 15.sp, color = StudioPalette.Ink, fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            if (selectedChannel == null) "Updates from channels you follow" else "Channel updates",
+                            fontSize = 11.5.sp, color = StudioPalette.Muted
+                        )
+                    }
+                    if (selectedChannel != null) {
+                        StudioActionButton(
+                            "All channels",
+                            compact = true,
+                            onClick = { selectedChannel = null; channelError = "" }
+                        )
+                    }
+                }
+                when {
+                    !accountConnected -> Text(
+                        "Connect this WhatsApp session to view its subscribed Channels.",
+                        color = StudioPalette.Muted, fontSize = 12.sp
+                    )
+                    channelsLoading || updatesLoading -> Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            Modifier.size(15.dp), color = StudioPalette.Accent, strokeWidth = 2.dp
+                        )
+                        Text("Loading channels…", color = StudioPalette.Muted, fontSize = 12.sp)
+                    }
+                    channelError.isNotBlank() -> Text(channelError, color = StudioPalette.Muted, fontSize = 12.sp)
+                    selectedChannel == null && channelRows.isEmpty() -> Text(
+                        if (channelsSupported) "No subscribed channels found." else "This session does not support listing channels.",
+                        color = StudioPalette.Muted, fontSize = 12.sp
+                    )
+                    selectedChannel != null && channelUpdates.isEmpty() -> Text(
+                        "No channel updates are available.",
+                        color = StudioPalette.Muted, fontSize = 12.sp
                     )
                 }
-                Spacer(Modifier.height(16.dp))
+            }
+            if (selectedChannel == null) {
+                itemsIndexed(
+                    items = channelRows.filter { query.isBlank() || it.second.contains(query, true) || it.third.contains(query, true) },
+                    key = { _, row -> row.first }
+                ) { index, row ->
+                    if (index > 0) StudioDivider()
+                    ChannelListRow(
+                        title = row.second,
+                        description = row.third.ifBlank { "Channel" },
+                        onClick = { selectedChannel = row.first }
+                    )
+                }
             } else {
-                StudioCard {
-                    visibleChats.forEachIndexed { index, chat ->
-                        if (index > 0) StudioDivider()
-                        ChatListRow(
-                            chat = chat,
-                            connected = accountConnected,
-                            showAvatar = showAvatars,
-                            showPreview = showPreviews,
-                            showTimestamp = showTimestamps,
-                            onClick = { onConversationSelected(chat) },
-                            onAction = { action -> onChatAction(chat, action) }
+                itemsIndexed(channelUpdates, key = { index, row -> row.optString("id").ifBlank { "update-$index" } }) { index, update ->
+                    if (index > 0) StudioDivider()
+                    Column(
+                        Modifier.fillMaxWidth().background(StudioPalette.Surface).padding(horizontal = 13.dp, vertical = 13.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        val kind = update.optString("type", "text")
+                        Text(
+                            update.optString("text").ifBlank { "Channel $kind update" },
+                            color = StudioPalette.Ink, fontSize = 13.sp, lineHeight = 18.sp
                         )
+                        val time = update.optLong("timestampMillis")
+                        if (time > 0L) {
+                            Text(
+                                SimpleDateFormat("d MMM yyyy · h:mm a", Locale.getDefault()).format(Date(time)),
+                                color = StudioPalette.Muted, fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+        item {
+            if (visibleChats.isEmpty()) {
+                StudioCard(padding = PaddingValues(horizontal = 16.dp, vertical = 26.dp)) {
+                    Column(
+                        Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            Modifier.size(44.dp).clip(CircleShape).background(StudioPalette.Soft),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Outlined.ChatBubbleOutline,
+                                contentDescription = null,
+                                tint = StudioPalette.Accent,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Text(
+                            when {
+                                !accountConnected -> "Connect this WhatsApp account"
+                                query.isNotBlank() -> "No chats match your search."
+                                filter == ChatFilter.UNREAD -> "No unread chats."
+                                filter == ChatFilter.GROUPS -> "No groups yet."
+                                filter == ChatFilter.CHANNELS -> "No supported Channels are available in this session."
+                                filter == ChatFilter.ARCHIVED -> "No archived chats."
+                                accountConversations.isEmpty() -> "No conversations yet."
+                                else -> "No chats match these filters."
+                            },
+                            color = StudioPalette.Ink,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 20.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            when {
+                                !accountConnected -> "Link this account to load its conversations."
+                                query.isNotBlank() -> "Try a different search or clear the current query."
+                                filter == ChatFilter.UNREAD -> "Unread conversations will appear here."
+                                filter == ChatFilter.GROUPS -> "Group conversations will appear here."
+                                filter == ChatFilter.CHANNELS -> "Channel conversations are not yet available through Aharane’s Chat service."
+                                filter == ChatFilter.ARCHIVED -> "Archived conversations will appear here."
+                                accountConversations.isEmpty() -> "New conversations will appear here when this account receives messages."
+                                else -> "Try another filter to find the conversation you need."
+                            },
+                            color = StudioPalette.Muted,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (!accountConnected) {
+                            StudioActionButton("Link account", compact = true, primary = true, onClick = onConnectAccount)
+                        } else if (query.isNotBlank()) {
+                            StudioActionButton("Clear search", compact = true, onClick = { query = "" })
+                        }
                     }
                 }
                 Spacer(Modifier.height(16.dp))
             }
+        }
+        if (visibleChats.isNotEmpty()) {
+            itemsIndexed(
+                items = visibleChats,
+                key = { _, chat -> chat.key.account.apiValue + ":" + chat.key.jid }
+            ) { index, chat ->
+                if (index > 0) StudioDivider()
+                ChatListRow(
+                    chat = chat,
+                    connected = accountConnected,
+                    showAvatar = showAvatars,
+                    showPreview = showPreviews,
+                    showTimestamp = showTimestamps,
+                    onLoadAvatar = onLoadAvatar,
+                    selected = selectionKey(chat) in selectedChatKeys,
+                    selectionMode = selectionMode,
+                    onClick = {
+                        if (selectionMode) toggleChatSelection(chat)
+                        else onConversationSelected(chat)
+                    },
+                    onLongClick = { toggleChatSelection(chat) }
+                )
+            }
+            item { Spacer(Modifier.height(16.dp)) }
+        }
         }
     }
     }
@@ -327,16 +615,70 @@ fun ChatsScreen(
 private fun ChatHeaderButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     Box(
         Modifier.size(40.dp).clip(CircleShape)
             .background(StudioPalette.Surface)
             .border(1.dp, StudioPalette.Line, CircleShape)
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, contentDescription = description, tint = StudioPalette.Accent, modifier = Modifier.size(19.dp))
+        Icon(
+            icon,
+            contentDescription = description,
+            tint = if (enabled) StudioPalette.Accent else StudioPalette.Muted,
+            modifier = Modifier.size(19.dp)
+        )
+    }
+}
+
+@Composable
+private fun ChannelListRow(
+    title: String,
+    description: String,
+    onClick: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 66.dp)
+            .background(StudioPalette.Surface)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 13.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(11.dp)
+    ) {
+        Box(
+            Modifier.size(40.dp).clip(CircleShape).background(StudioPalette.Soft),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Outlined.Public,
+                contentDescription = "Channel",
+                tint = StudioPalette.Accent,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                title,
+                color = StudioPalette.Ink,
+                fontSize = 14.sp,
+                lineHeight = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                description,
+                color = StudioPalette.Muted,
+                fontSize = 12.5.sp,
+                lineHeight = 17.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Text("›", color = StudioPalette.Muted, fontSize = 22.sp, lineHeight = 24.sp)
     }
 }
 
@@ -347,135 +689,121 @@ private fun ChatListRow(
     showAvatar: Boolean,
     showPreview: Boolean,
     showTimestamp: Boolean,
+    onLoadAvatar: suspend (ChatSummary) -> ByteArray?,
+    selected: Boolean,
+    selectionMode: Boolean,
     onClick: () -> Unit,
-    onAction: (String) -> Unit
+    onLongClick: () -> Unit
 ) {
-    var swipeOpen by rememberSaveable(chat.key.jid) { mutableStateOf(false) }
-    var dragDistance by remember { mutableFloatStateOf(0f) }
-    val density = LocalDensity.current
-    val offset by animateDpAsState(
-        targetValue = if (swipeOpen) (-228).dp else 0.dp,
-        label = "chat-row-swipe"
-    )
     val rowScale = LocalStudioRowScale.current
-    val avatarInitials = chat.title.trim().split(Regex("\\s+"))
-        .filter { it.isNotEmpty() }.take(2).joinToString("") { it.take(1) }.uppercase()
-
-    Box(
-        Modifier.fillMaxWidth().heightIn(min = 66.dp * rowScale).clip(RoundedCornerShape(0.dp))
+    // WhatsApp-style inbox: show each contact or group picture in the chat list.
+    // Conversation message rows intentionally do not repeat the contact avatar.
+    val showProfileAvatar = true
+    val profilePicture by produceState<ImageBitmap?>(
+        initialValue = null, chat.key, connected, showProfileAvatar
     ) {
-        Row(
-            Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(228.dp),
-            horizontalArrangement = Arrangement.spacedBy(0.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            listOf("Pin", "Mute", "Archive", "Unread").forEachIndexed { index, label ->
-                val color = when (index) {
-                    0 -> StudioPalette.Accent
-                    1 -> StudioPalette.Muted
-                    2 -> Color(0xFF52645F)
-                    else -> Color(0xFF8A6A24)
-                }
-                Box(
-                    Modifier.weight(1f).fillMaxHeight().background(color)
-                        .clickable(enabled = connected) {
-                            swipeOpen = false
-                            onAction(label.lowercase())
-                        }.padding(horizontal = 2.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(label, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                }
+        if (connected && showProfileAvatar) {
+            val bytes = try {
+                onLoadAvatar(chat)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
             }
-        }
-
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 66.dp * rowScale)
-                .offset(x = offset, y = 0.dp)
-                .background(StudioPalette.Surface)
-                .pointerInput(connected, swipeOpen) {
-                    val threshold = with(density) { 38.dp.toPx() }
-                    detectHorizontalDragGestures(
-                        onDragEnd = {
-                            if (dragDistance < -threshold) swipeOpen = true
-                            if (dragDistance > threshold) swipeOpen = false
-                            dragDistance = 0f
-                        },
-                        onHorizontalDrag = { change, amount ->
-                            dragDistance += amount
-                            change.consume()
-                        }
-                    )
-                }
-                .clickable {
-                    if (swipeOpen) swipeOpen = false else onClick()
-                }
-                .padding(horizontal = 13.dp, vertical = 10.dp * rowScale),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(11.dp)
-        ) {
-            if (showAvatar) {
-                Box(
-                    Modifier.size(40.dp).clip(CircleShape).background(StudioPalette.Soft),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        if (chat.isGroup) "◎" else avatarInitials.ifBlank { "?" },
-                        color = StudioPalette.Accent,
-                        fontSize = if (chat.isGroup) 21.sp else 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    chat.title,
-                    color = StudioPalette.Ink,
-                    fontSize = 14.sp,
-                    lineHeight = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (showPreview) {
-                    Text(
-                        chat.lastMessagePreview,
-                        color = StudioPalette.Muted,
-                        fontSize = 12.5.sp,
-                        lineHeight = 17.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (chat.isPinned) Text("📌", fontSize = 10.sp)
-                    if (chat.isMuted) Text("🔕", fontSize = 10.sp)
-                    if (showTimestamp) {
-                        Text(
-                            relativeTime(chat.lastMessageAtMillis),
-                            color = StudioPalette.Muted,
-                            fontSize = 10.5.sp,
-                            maxLines = 1
-                        )
-                    }
-                }
-                if (chat.unreadCount > 0) {
-                    Text(
-                        chat.unreadCount.coerceAtMost(99).toString(),
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        lineHeight = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clip(RoundedCornerShape(20.dp))
-                            .background(StudioPalette.Accent)
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
+            value = bytes?.let { data ->
+                withContext(Dispatchers.Default) {
+                    BitmapFactory.decodeByteArray(data, 0, data.size)?.asImageBitmap()
                 }
             }
         }
     }
+
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 66.dp * rowScale)
+            .background(if (selected) StudioPalette.Accent.copy(alpha = 0.09f) else StudioPalette.Surface)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
+            .padding(horizontal = 13.dp, vertical = 10.dp * rowScale),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(11.dp)
+    ) {
+        if (selectionMode) {
+            Box(
+                Modifier.size(40.dp).clip(CircleShape)
+                    .background(if (selected) StudioPalette.Accent else StudioPalette.Soft)
+                    .border(1.dp, if (selected) StudioPalette.Accent else StudioPalette.Line, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                if (selected) Text("✓", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+            }
+        } else if (showProfileAvatar) {
+            Box(
+                Modifier.size(40.dp).clip(CircleShape).background(StudioPalette.Soft),
+                contentAlignment = Alignment.Center
+            ) {
+                if (profilePicture != null) {
+                    Image(
+                        bitmap = profilePicture!!,
+                        contentDescription = "WhatsApp profile picture of " + chat.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape)
+                    )
+                } else {
+                    Text(chat.title.trim().take(1).uppercase().ifBlank { "?" }, color = StudioPalette.Accent, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                chat.title,
+                color = StudioPalette.Ink,
+                fontSize = 14.sp,
+                lineHeight = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (showPreview) {
+                Text(
+                    chat.lastMessagePreview,
+                    color = StudioPalette.Muted,
+                    fontSize = 12.5.sp,
+                    lineHeight = 17.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (chat.isPinned) Text("Pinned", color = StudioPalette.Muted, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                if (chat.isMuted) Text("Muted", color = StudioPalette.Muted, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                if (showTimestamp) {
+                    Text(
+                        relativeTime(chat.lastMessageAtMillis),
+                        color = StudioPalette.Muted,
+                        fontSize = 10.5.sp,
+                        maxLines = 1
+                    )
+                }
+            }
+            if (chat.unreadCount > 0) {
+                Text(
+                    chat.unreadCount.coerceAtMost(99).toString(),
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    lineHeight = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(RoundedCornerShape(20.dp))
+                        .background(StudioPalette.Accent)
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+        }
+    }
+
 }
 
 private fun relativeTime(timestamp: Long): String {

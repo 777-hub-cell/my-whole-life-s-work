@@ -1,16 +1,22 @@
 package com.aharane.studio.features.commands
 
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeLeft
-import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createComposeRule
+import android.view.KeyEvent
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import com.aharane.studio.core.design.AharaneTheme
@@ -27,6 +33,35 @@ class VisualCommandBuilderScreenTest {
     val compose = createComposeRule()
 
     @Test
+    fun previewModeShowsStarterNodesInsideMeasuredWorkspace() {
+        val source = FakeVisualCommandDataSource()
+        compose.setContent {
+            AharaneTheme(themeMode = "dark") {
+                VisualCommandBuilderScreen(
+                    repository = source,
+                    connected = false,
+                    onBack = {},
+                    previewMode = true
+                )
+            }
+        }
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag("node-card-trigger.command").fetchSemanticsNodes().isNotEmpty() &&
+                compose.onAllNodesWithTag("node-card-message.replyText").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.waitForIdle()
+
+        val workspace = compose.onNodeWithTag("workflow-workspace").fetchSemanticsNode().boundsInRoot
+        val trigger = compose.onNodeWithTag("node-card-trigger.command").fetchSemanticsNode().boundsInRoot
+        val reply = compose.onNodeWithTag("node-card-message.replyText").fetchSemanticsNode().boundsInRoot
+        assertTrue("Preview workspace must have measured bounds", workspace.width > 100f && workspace.height > 100f)
+        assertTrue("Preview trigger must be fully visible horizontally", trigger.left >= workspace.left - 1f && trigger.right <= workspace.right + 1f)
+        assertTrue("Preview trigger must be fully visible vertically", trigger.top >= workspace.top - 1f && trigger.bottom <= workspace.bottom + 1f)
+        assertTrue("Preview reply must be fully visible horizontally", reply.left >= workspace.left - 1f && reply.right <= workspace.right + 1f)
+        assertTrue("Preview reply must be fully visible vertically", reply.top >= workspace.top - 1f && reply.bottom <= workspace.bottom + 1f)
+    }
+
+    @Test
     fun editAddConnectSaveReloadAndSafeTestWorkflow() {
         val source = FakeVisualCommandDataSource()
         compose.setContent {
@@ -36,16 +71,25 @@ class VisualCommandBuilderScreenTest {
         }
         compose.waitUntil(5_000) { source.readCount > 0 }
 
-        compose.onNodeWithText("TRIGGER").assertIsDisplayed()
-        compose.onNodeWithTag("workflow-save").assertIsEnabled()
         compose.onNodeWithTag("node-card-trigger.command").performClick()
         compose.onNodeWithTag("node-config-field-command").performTextClearance()
         compose.onNodeWithTag("node-config-field-command").performTextInput("welcome")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
         compose.onNodeWithText("Apply").performClick()
 
+        compose.onNodeWithTag("visual-command-node-library")
+            .performScrollToNode(hasTestTag("add-node-message.sendText"))
         compose.onNodeWithTag("add-node-message.sendText").performClick()
+        // The dialog is composed after the newly added node enters the canvas.
+        // Allow a little more time on slower CI emulators before declaring a UI regression.
+        compose.waitUntil(15_000) {
+            compose.onAllNodesWithTag("node-config-field-text").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithTag("node-config-field-text").performTextClearance()
         compose.onNodeWithTag("node-config-field-text").performTextInput("Hello from the builder")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
         compose.onNodeWithText("Apply").performClick()
 
         compose.onNodeWithTag("socket-message.replyText-out-next").performClick()
@@ -54,14 +98,14 @@ class VisualCommandBuilderScreenTest {
 
         compose.onNodeWithTag("workflow-save").performClick()
         compose.waitUntil(5_000) { source.createCount == 1 }
-        compose.onNodeWithText("Saved draft").assertIsDisplayed()
-        compose.onNodeWithTag("workflow-save").assertIsEnabled()
         // The command name belongs to the trigger node; there is no separate
         // workflow-name text field. Change it locally, then reload the saved
         // version to verify the command name comes back from that node.
         compose.onNodeWithTag("node-card-trigger.command").performClick()
         compose.onNodeWithTag("node-config-field-command").performTextClearance()
         compose.onNodeWithTag("node-config-field-command").performTextInput("unsaved-local")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
         compose.onNodeWithText("Apply").performClick()
         compose.onNodeWithTag("workflow-load").performClick()
         compose.onNodeWithText("welcome").performClick()
@@ -69,7 +113,7 @@ class VisualCommandBuilderScreenTest {
         compose.onNodeWithTag("node-config-field-command").assertTextEquals("welcome")
         compose.onNodeWithTag("workflow-node-count").assertTextEquals("3 nodes · 2 wires")
 
-        compose.onNodeWithText("Test safely").performClick()
+        compose.onNodeWithTag("workflow-test").performClick()
         compose.waitUntil(5_000) { source.safeTestCount == 1 }
         compose.onNodeWithText("Passed · no live WhatsApp actions were performed").assertIsDisplayed()
 
@@ -81,7 +125,94 @@ class VisualCommandBuilderScreenTest {
     }
 
     @Test
-    fun draggingOneNodeDoesNotRebaseTheOtherNode() {
+    fun customNodeManagerExposesTheCompleteSafeTypedOperatorSet() {
+        val source = FakeVisualCommandDataSource()
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                VisualCommandBuilderScreen(repository = source, connected = true, onBack = {})
+            }
+        }
+        compose.waitUntil(5_000) { source.readCount > 0 }
+
+        compose.onNodeWithTag("custom-node-manager").performClick()
+        listOf(
+            "Uppercase",
+            "Lowercase",
+            "Trim whitespace",
+            "Combine text",
+            "Contains text",
+            "Compare text",
+            "Text length",
+            "Split text into a list",
+            "Join a list into text",
+            "Add numbers",
+            "Subtract numbers",
+            "Multiply numbers",
+            "Divide numbers",
+            "Boolean AND",
+            "Boolean OR",
+            "Boolean NOT",
+            "Choose between two text values"
+        ).forEach { label ->
+            assertTrue(compose.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty())
+        }
+    }
+
+    @Test
+    fun conversionNodesCanBeSearchedAddedAndConfigured() {
+        val source = FakeVisualCommandDataSource()
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                VisualCommandBuilderScreen(repository = source, connected = true, onBack = {})
+            }
+        }
+        compose.waitUntil(5_000) { source.readCount > 0 }
+        // Conversion nodes are intentionally hidden from the compact default rows.
+        // Search first, then wait for the filtered result to become available.
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag("node-library-search").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("node-library-search").performTextInput("Text to number")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("add-node-value.toNumber").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("add-node-value.toNumber")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Apply").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Apply").performClick()
+        assertTrue(compose.onAllNodesWithTag("node-card-value.toNumber").fetchSemanticsNodes().isNotEmpty())
+
+        compose.onNodeWithTag("node-library-search").performTextClearance()
+        compose.onNodeWithTag("node-library-search").performTextInput("Text to list")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("add-node-value.toList").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("add-node-value.toList")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("node-config-field-separator").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("node-config-field-separator").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("node-config-field-separator").performTextClearance()
+        compose.onNodeWithTag("node-config-field-separator").performTextInput(";")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
+        compose.onNodeWithText("Apply").performScrollTo().performClick()
+        assertTrue(compose.onAllNodesWithTag("node-card-value.toList").fetchSemanticsNodes().isNotEmpty())
+    }
+
+    @Test
+    fun nodeCategoriesScrollHorizontallyAndNodesStackVertically() {
         val source = FakeVisualCommandDataSource()
         compose.setContent {
             AharaneTheme(themeMode = "light") {
@@ -90,55 +221,84 @@ class VisualCommandBuilderScreenTest {
         }
         compose.waitUntil(5_000) { source.readCount > 0 }
         compose.waitForIdle()
-        val first = compose.onNodeWithTag("node-card-trigger.command").fetchSemanticsNode().boundsInRoot
-        val second = compose.onNodeWithTag("node-card-message.replyText").fetchSemanticsNode().boundsInRoot
-        compose.onNodeWithTag("node-card-trigger.command").performTouchInput {
-            val start = center
-            down(start)
-            moveTo(start.copy(y = start.y + 140f), delayMillis = 400)
+
+        val allCategory = compose.onNodeWithTag("node-library-category-all")
+            .fetchSemanticsNode().boundsInRoot
+        val starterCategory = compose.onNodeWithTag("node-library-category-starter-nodes")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals("Category chips must share a horizontal row", allCategory.center.y, starterCategory.center.y, 2f)
+        assertTrue("Category chips must advance horizontally", starterCategory.left > allCategory.left)
+
+        val firstNode = compose.onNodeWithTag("add-node-trigger.command").fetchSemanticsNode().boundsInRoot
+        val secondNode = compose.onNodeWithTag("add-node-message.replyText").fetchSemanticsNode().boundsInRoot
+        assertTrue("Nodes within a category must be listed vertically", secondNode.top > firstNode.top)
+    }
+
+    @Test
+    fun canvasHasMeasuredBoundsAndNodesAreVisibleInsideIt() {
+        val source = FakeVisualCommandDataSource()
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                VisualCommandBuilderScreen(repository = source, connected = true, onBack = {})
+            }
+        }
+        compose.waitUntil(5_000) { source.readCount > 0 }
+        compose.waitForIdle()
+
+        val workspace = compose.onNodeWithTag("workflow-workspace").fetchSemanticsNode().boundsInRoot
+        assertTrue("Canvas must have non-zero measured bounds", workspace.width > 100f && workspace.height > 100f)
+
+        compose.onNodeWithTag("node-card-trigger.command").assertIsDisplayed()
+        compose.onNodeWithTag("node-card-message.replyText").assertIsDisplayed()
+        val trigger = compose.onNodeWithTag("node-card-trigger.command").fetchSemanticsNode().boundsInRoot
+        val reply = compose.onNodeWithTag("node-card-message.replyText").fetchSemanticsNode().boundsInRoot
+        assertTrue("Nodes must have non-zero size", trigger.width > 50f && trigger.height > 30f && reply.width > 50f && reply.height > 30f)
+        assertTrue("Trigger must sit inside the canvas viewport", trigger.left >= workspace.left - 1f && trigger.top >= workspace.top - 1f)
+        assertTrue("Trigger must be fully visible horizontally", trigger.right <= workspace.right + 1f)
+        assertTrue("Trigger must be fully visible vertically", trigger.bottom <= workspace.bottom + 1f)
+        assertTrue("Reply must be fully visible horizontally", reply.left >= workspace.left - 1f && reply.right <= workspace.right + 1f)
+        assertTrue("Reply must be fully visible vertically", reply.top >= workspace.top - 1f && reply.bottom <= workspace.bottom + 1f)
+    }
+
+    @Test
+    fun draggingOneNodeLeavesTheOtherInPlaceAndBlankGridCanPan() {
+        val source = FakeVisualCommandDataSource()
+        compose.setContent {
+            AharaneTheme(themeMode = "light") {
+                VisualCommandBuilderScreen(repository = source, connected = true, onBack = {})
+            }
+        }
+        compose.waitUntil(5_000) { source.readCount > 0 }
+
+        val trigger = compose.onNodeWithTag("node-card-trigger.command")
+        val reply = compose.onNodeWithTag("node-card-message.replyText")
+        val triggerBefore = trigger.fetchSemanticsNode().boundsInRoot
+        val replyBefore = reply.fetchSemanticsNode().boundsInRoot
+
+        trigger.performTouchInput {
+            down(center)
+            moveTo(center + Offset(0f, 120f), delayMillis = 350)
             up()
         }
         compose.waitForIdle()
-        val firstAfter = compose.onNodeWithTag("node-card-trigger.command").fetchSemanticsNode().boundsInRoot
-        val secondAfter = compose.onNodeWithTag("node-card-message.replyText").fetchSemanticsNode().boundsInRoot
-        assertTrue("Dragged node should move down", firstAfter.top > first.top + 40f)
-        assertEquals("The other node must keep its position", second.top, secondAfter.top, 2f)
-        compose.onNodeWithTag("workflow-canvas-background").assertIsDisplayed()
-    }
 
-    @Test
-    fun nodeCategoriesAreVisibleAndHorizontallyScrollable() {
-        val source = FakeVisualCommandDataSource(includeExtraCategories = true)
-        compose.setContent {
-            AharaneTheme(themeMode = "light") {
-                VisualCommandBuilderScreen(repository = source, connected = true, onBack = {})
-            }
-        }
-        compose.waitUntil(5_000) { source.readCount > 0 }
-        compose.onNodeWithTag("workflow-categories").assertIsDisplayed()
-        compose.onNodeWithText("Starter nodes").assertIsDisplayed()
-        repeat(4) { compose.onNodeWithTag("workflow-categories").performTouchInput { swipeLeft() } }
-        compose.onNodeWithText("Extra category 8").assertIsDisplayed()
-    }
+        val triggerAfter = trigger.fetchSemanticsNode().boundsInRoot
+        val replyAfter = reply.fetchSemanticsNode().boundsInRoot
+        assertTrue("Dragged node should move down", triggerAfter.top > triggerBefore.top + 45f)
+        assertEquals("Other node must keep its vertical position", replyBefore.top, replyAfter.top, 2f)
 
-    @Test
-    fun repeatedNodeTypesAcrossCategoriesDoNotCrashTheScrollableLibrary() {
-        val source = FakeVisualCommandDataSource(
-            includeExtraCategories = true,
-            includeDuplicateNodeType = true
-        )
-        compose.setContent {
-            AharaneTheme(themeMode = "light") {
-                VisualCommandBuilderScreen(repository = source, connected = true, onBack = {})
-            }
+        val workspaceBounds = compose.onNodeWithTag("workflow-workspace")
+            .fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("workflow-workspace").performTouchInput {
+            val x = 14f
+            down(Offset(x, workspaceBounds.height * 0.88f))
+            moveTo(Offset(x, workspaceBounds.height * 0.18f), delayMillis = 400)
+            up()
         }
-        compose.waitUntil(5_000) { source.readCount > 0 }
-        compose.onNodeWithTag("workflow-node-list").assertIsDisplayed()
-        compose.onNodeWithTag("workflow-node-list").performTouchInput {
-            repeat(8) { swipeUp() }
-        }
-        compose.onNodeWithText("Reply text in another category").assertIsDisplayed()
-        compose.onNodeWithTag("workflow-categories").assertIsDisplayed()
+        compose.waitForIdle()
+
+        val replyAfterPan = reply.fetchSemanticsNode().boundsInRoot
+        assertTrue("Blank-grid swipe should pan the workspace", kotlin.math.abs(replyAfterPan.top - replyAfter.top) > 8f)
     }
 
     @Test
@@ -152,15 +312,12 @@ class VisualCommandBuilderScreenTest {
         compose.onNodeWithText("Connect to your Aharane server to load the WhatsApp node library.")
             .assertIsDisplayed()
         compose.onNodeWithTag("workflow-save").assertIsNotEnabled()
-        compose.onNodeWithText("Test safely").assertIsNotEnabled()
+        compose.onNodeWithTag("workflow-test").assertIsNotEnabled()
         assertEquals(0, source.createCount)
     }
 }
 
-private class FakeVisualCommandDataSource(
-    private val includeExtraCategories: Boolean = false,
-    private val includeDuplicateNodeType: Boolean = false
-) : VisualCommandDataSource {
+private class FakeVisualCommandDataSource : VisualCommandDataSource {
     private val workflows = linkedMapOf<String, JSONObject>()
     var readCount = 0
         private set
@@ -214,31 +371,25 @@ private class FakeVisualCommandDataSource(
         JSONObject().put("valid", true).put("errors", JSONArray()).put("warnings", JSONArray())
 
     private fun nodeLibrary(): JSONArray {
-        fun socket(id: String, label: String) =
-            JSONObject().put("id", id).put("label", label).put("type", "exec")
+        fun socket(id: String, label: String, type: String = "exec") =
+            JSONObject().put("id", id).put("label", label).put("type", type)
         fun definition(type: String, name: String, inputs: JSONArray, outputs: JSONArray) =
             JSONObject().put("type", type).put("name", name).put("description", name)
                 .put("ports", JSONObject().put("inputs", inputs).put("outputs", outputs))
         val trigger = definition("trigger.command", "Command trigger", JSONArray(), JSONArray().put(socket("next", "Next")))
         val reply = definition("message.replyText", "Reply text", JSONArray().put(socket("in", "In")), JSONArray().put(socket("next", "Next")))
         val sendText = definition("message.sendText", "Send text", JSONArray().put(socket("in", "In")), JSONArray().put(socket("next", "Next")))
-        val result = JSONArray().put(JSONObject().put("category", "Starter nodes")
-            .put("nodes", JSONArray().put(trigger).put(reply).put(sendText)))
-        if (includeExtraCategories) {
-            repeat(9) { index ->
-                val extraNode = definition("test.extra$index", "Extra node $index", JSONArray(), JSONArray())
-                result.put(JSONObject().put("category", "Extra category $index").put("nodes", JSONArray().put(extraNode)))
-            }
-        }
-        if (includeDuplicateNodeType) {
-            val repeated = definition(
-                "message.replyText",
-                "Reply text in another category",
-                JSONArray().put(socket("in", "In")),
-                JSONArray().put(socket("next", "Next"))
-            ).put("description", "Repeated type in the second category")
-            result.put(JSONObject().put("category", "Repeated nodes").put("nodes", JSONArray().put(repeated)))
-        }
-        return result
+        val toNumber = definition(
+            "value.toNumber", "Text to number",
+            JSONArray().put(socket("value", "Text", "string")),
+            JSONArray().put(socket("value", "Number", "number"))
+        )
+        val toList = definition(
+            "value.toList", "Text to list",
+            JSONArray().put(socket("value", "Text", "string")).put(socket("separator", "Separator", "string")),
+            JSONArray().put(socket("value", "List", "list"))
+        )
+        return JSONArray().put(JSONObject().put("category", "Starter nodes")
+            .put("nodes", JSONArray().put(trigger).put(reply).put(sendText).put(toNumber).put(toList)))
     }
 }

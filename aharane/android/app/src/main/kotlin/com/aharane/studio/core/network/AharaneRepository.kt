@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import com.aharane.studio.core.model.ChatAccount
 import com.aharane.studio.core.model.ChatMessage
 import com.aharane.studio.core.model.ChatSummary
@@ -12,6 +13,23 @@ import com.aharane.studio.core.model.ConversationKey
 import com.aharane.studio.core.model.MessageDirection
 import com.aharane.studio.core.model.MessageKind
 import com.aharane.studio.core.model.MessageStatus
+
+/**
+ * Server-side media availability can describe the required account connection.
+ * The native chat already shows the account state in its header, so keep the
+ * attachment row focused on availability rather than repeating connection prompts.
+ */
+internal fun displayableMediaUnavailable(value: String?): String? {
+    val message = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val connectionRequired = Regex(
+        "(?i)(connect|pair|link).{0,100}(whatsapp|account)|(whatsapp|account).{0,100}(connect|pair|link)"
+    )
+    return if (connectionRequired.containsMatchIn(message)) {
+        "This attachment isn't available right now."
+    } else {
+        message
+    }
+}
 
 data class ServerAccountState(
     val id: ChatAccount,
@@ -44,9 +62,10 @@ data class ServerAiReplyAvailability(
 data class ServerOwnerSettings(
     val privateOwnerNumber: String = "",
     val publicOwnerNumber: String = "",
-    val publicBotNumber: String = "",
-    val allowedPublicSenders: List<String> = emptyList()
-)
+    val publicBotNumber: String = ""
+) {
+    val ownerNumber: String get() = privateOwnerNumber // legacy display alias
+}
 
 data class ServerEnvironmentValue(
     val key: String,
@@ -100,7 +119,13 @@ data class ServerStorageSnapshot(
 data class ServerMessageMetrics(
     val messagesLast24h: Int,
     val totalMessages: Int,
-    val hourlyMessages: List<Int>
+    val hourlyMessages: List<Int>,
+    val monthUtc: String = "",
+    val availableSince: String? = null,
+    val dailySent: List<Int> = emptyList(),
+    val dailyReceived: List<Int> = emptyList(),
+    val sentThisMonth: Int = 0,
+    val receivedThisMonth: Int = 0
 )
 
 
@@ -148,7 +173,8 @@ data class ChatSyncPage(
     val hasNewer: Boolean,
     val syncedAtMillis: Long,
     val deletedMessageIds: List<String> = emptyList(),
-    val remoteDeletedMessages: List<RemoteDeletedMessage> = emptyList()
+    val remoteDeletedMessages: List<RemoteDeletedMessage> = emptyList(),
+    val updatedPolls: List<ChatMessage> = emptyList()
 )
 
 interface VisualCommandDataSource {
@@ -157,9 +183,15 @@ interface VisualCommandDataSource {
     suspend fun updateVisualCommand(id: String, workflow: JSONObject): JSONObject
     suspend fun deleteVisualCommand(id: String): JSONObject
     suspend fun testVisualCommand(id: String, messageText: String = ""): JSONObject
+    suspend fun createCustomNode(definition: JSONObject): JSONObject =
+        throw UnsupportedOperationException("Custom node management is unavailable.")
+    suspend fun deleteCustomNode(id: String): JSONObject =
+        throw UnsupportedOperationException("Custom node management is unavailable.")
 }
 
 class AharaneRepository(private val connection: AharaneConnectionManager) : VisualCommandDataSource {
+    private data class AvatarCacheEntry(val expiresAt: Long, val bytes: ByteArray?)
+    private val avatarCache = ConcurrentHashMap<String, AvatarCacheEntry>()
     private val api: AharaneApiClient
         get() = connection.api ?: throw IllegalStateException("Connect to your Aharane server first.")
     override suspend fun visualCommands(account: String): JSONObject =
@@ -176,6 +208,46 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
 
     override suspend fun testVisualCommand(id: String, messageText: String): JSONObject =
         api.post("visual-commands/" + encodePath(id) + "/test", JSONObject().put("messageText", messageText))
+
+    override suspend fun createCustomNode(definition: JSONObject): JSONObject =
+        api.post("custom-nodes", JSONObject().put("node", definition))
+
+    override suspend fun deleteCustomNode(id: String): JSONObject =
+        api.delete("custom-nodes/" + encodePath(id), JSONObject().put("confirm", true))
+
+    suspend fun subscribedChannels(account: ChatAccount): JSONObject =
+        api.get("whatsapp/${account.apiValue}/channels")
+
+    suspend fun channelUpdates(account: ChatAccount, jid: String): JSONObject =
+        api.get("whatsapp/${account.apiValue}/channels/${encodePath(jid)}/updates")
+
+    suspend fun engineLibrary(): JSONObject = api.get("engines")
+
+    suspend fun readEngine(id: String): JSONObject =
+        api.get("engines/" + encodePath(id)).optJSONObject("engine") ?: JSONObject()
+
+    suspend fun createEngine(manifest: JSONObject, code: String): JSONObject =
+        api.post("engines", JSONObject().put("manifest", manifest).put("code", code))
+
+    suspend fun updateEngine(id: String, manifest: JSONObject, code: String, expectedVersion: Int, expectedRevision: Int = 0): JSONObject =
+        api.put(
+            "engines/" + encodePath(id),
+            JSONObject().put("manifest", manifest).put("code", code).put("expectedVersion", expectedVersion)
+                // Optional: lets the server reject a save that would overwrite a newer revision at the same version.
+                .also { if (expectedRevision > 0) it.put("expectedRevision", expectedRevision) }
+        )
+
+    suspend fun engineCapabilities(id: String): JSONObject =
+        api.get("engines/" + encodePath(id) + "/capabilities")
+
+    suspend fun runEngine(id: String, revision: Int, inputs: JSONObject): JSONObject =
+        api.post(
+            "engines/" + encodePath(id) + "/run",
+            JSONObject().put("revision", revision).put("inputs", inputs)
+        )
+
+    suspend fun deleteEngine(id: String): JSONObject =
+        api.delete("engines/" + encodePath(id), JSONObject().put("confirm", true))
 
     suspend fun runtimeSnapshot(): ServerRuntimeSnapshot {
         val payload = api.get("studio/snapshot")
@@ -206,10 +278,9 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
     suspend fun ownerSettings(): ServerOwnerSettings {
         val result = api.get("owners").optJSONObject("owners") ?: JSONObject()
         return ServerOwnerSettings(
-            privateOwnerNumber = result.optString("privateOwnerNumber"),
-            publicOwnerNumber = result.optString("publicOwnerNumber"),
-            publicBotNumber = result.optString("publicBotNumber"),
-            allowedPublicSenders = result.optJSONArray("allowedPublicSenders").toStringList()
+            privateOwnerNumber = result.optString("privateOwnerNumber").ifBlank { result.optString("ownerNumber") },
+            publicOwnerNumber = result.optString("publicOwnerNumber").ifBlank { result.optString("ownerNumber") },
+            publicBotNumber = result.optString("publicBotNumber")
         )
     }
 
@@ -220,7 +291,6 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
                 .put("privateOwnerNumber", settings.privateOwnerNumber)
                 .put("publicOwnerNumber", settings.publicOwnerNumber)
                 .put("publicBotNumber", settings.publicBotNumber)
-                .put("allowedPublicSenders", JSONArray(settings.allowedPublicSenders))
         )
     }
 
@@ -286,6 +356,46 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
             require(it.isNotBlank()) { "The AI provider returned an empty reply. Try again." }
         }
     }
+
+    /**
+     * Load real, account-scoped WhatsApp profile pictures on demand.
+     * The backend returns the authenticated WhatsApp session identity, so a
+     * re-paired account cannot accidentally reuse another session's avatar.
+     * Privacy-restricted pictures gracefully return null.
+     */
+    suspend fun whatsappAvatarBytes(chat: ChatSummary): ByteArray? {
+        val meta = api.get(
+            "chats/${chat.key.account.apiValue}/${encodePath(chat.key.jid)}/avatar"
+        )
+        val session = meta.optString("sourceSession")
+        if (session.isBlank()) return null
+        val cacheKey = "${chat.key.account.apiValue}:$session:${chat.key.jid}"
+        val now = System.currentTimeMillis()
+        avatarCache[cacheKey]?.takeIf { it.expiresAt > now }?.let { return it.bytes }
+        val sourceUrl = meta.optString("pictureUrl")
+        val bytes = if (sourceUrl.isBlank()) null else downloadWhatsappAvatar(sourceUrl)
+        avatarCache[cacheKey] = AvatarCacheEntry(now + if (bytes == null) 60_000L else 600_000L, bytes)
+        if (avatarCache.size > 350) {
+            avatarCache.entries.removeIf { it.value.expiresAt <= now }
+            if (avatarCache.size > 350) avatarCache.clear()
+        }
+        return bytes
+    }
+
+    suspend fun whatsappStatuses(account: ChatAccount): JSONObject =
+        api.get("whatsapp/${account.apiValue}/statuses")
+
+    suspend fun whatsappStatusMedia(account: ChatAccount, senderJid: String, messageId: String): ByteArray =
+        api.getBytes(
+            "whatsapp/${account.apiValue}/statuses/${encodePath(senderJid)}/${encodePath(messageId)}/media"
+        )
+
+
+    suspend fun whatsappChannels(account: ChatAccount): JSONObject =
+        api.get("whatsapp/${account.apiValue}/channels")
+
+    suspend fun whatsappChannelUpdates(account: ChatAccount, jid: String): JSONObject =
+        api.get("whatsapp/${account.apiValue}/channels/${encodePath(jid)}/updates")
 
     suspend fun chats(account: ChatAccount, query: String = "", limit: Int = 200): List<ChatSummary> {
         val response = api.get(
@@ -361,11 +471,24 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
                         mediaSizeBytes = row.optLong("size").takeIf { it > 0 },
                         mediaDurationSeconds = row.optLong("duration").takeIf { it > 0 },
                         viewOnceViewed = row.optBoolean("viewOnceViewed"),
-                        mediaUnavailable = row.optString("mediaUnavailable").takeIf { it.isNotBlank() },
+                        mediaUnavailable = displayableMediaUnavailable(row.optString("mediaUnavailable")),
+                        isSystem = row.optBoolean("system"),
                         isStarred = row.optBoolean("starred"),
                         isVoiceNote = row.optBoolean("ptt"),
                         replyToMessageId = row.optString("quotedMessageId").takeIf { it.isNotBlank() },
-                        quotedMessageText = row.optString("quotedMessageText").takeIf { it.isNotBlank() }
+                        quotedMessageText = row.optString("quotedMessageText").takeIf { it.isNotBlank() },
+                        pollOptions = row.optJSONArray("pollOptions").let { values ->
+                            if (values == null) emptyList() else List(values.length()) { values.optString(it) }.filter(String::isNotBlank)
+                        },
+                        pollSelectableCount = row.optInt("pollSelectableCount", 1).coerceAtLeast(1),
+                        pollVoteCounts = row.optJSONObject("pollVoteCounts").let { values ->
+                            if (values == null) emptyMap() else buildMap {
+                                values.keys().forEach { option -> put(option, values.optInt(option).coerceAtLeast(0)) }
+                            }
+                        },
+                        pollMyVotes = row.optJSONArray("pollMyVotes").let { values ->
+                            if (values == null) emptyList() else List(values.length()) { values.optString(it) }.filter(String::isNotBlank)
+                        }
                     )
                 )
             }
@@ -422,12 +545,24 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
                     mediaSizeBytes = row.optLong("size").takeIf { it > 0 },
                     mediaDurationSeconds = row.optLong("duration").takeIf { it > 0 },
                     viewOnceViewed = row.optBoolean("viewOnceViewed"),
-                    mediaUnavailable = row.optString("mediaUnavailable").takeIf { it.isNotBlank() },
+                    mediaUnavailable = displayableMediaUnavailable(row.optString("mediaUnavailable")),
                     isStarred = row.optBoolean("starred"),
                     isVoiceNote = row.optBoolean("ptt"),
                     replyToMessageId = row.optString("quotedMessageId").takeIf { it.isNotBlank() },
                     quotedMessageText = row.optString("quotedMessageText").takeIf { it.isNotBlank() },
                     reactions = reactions,
+                    pollOptions = row.optJSONArray("pollOptions").let { values ->
+                        if (values == null) emptyList() else List(values.length()) { values.optString(it) }.filter(String::isNotBlank)
+                    },
+                    pollSelectableCount = row.optInt("pollSelectableCount", 1).coerceAtLeast(1),
+                    pollVoteCounts = row.optJSONObject("pollVoteCounts").let { values ->
+                        if (values == null) emptyMap() else buildMap {
+                            values.keys().forEach { option -> put(option, values.optInt(option).coerceAtLeast(0)) }
+                        }
+                    },
+                    pollMyVotes = row.optJSONArray("pollMyVotes").let { values ->
+                        if (values == null) emptyList() else List(values.length()) { values.optString(it) }.filter(String::isNotBlank)
+                    },
                     deletedByRemote = row.optBoolean("deletedByRemote"),
                     deletedAtMillis = row.optLong("deletedAt")
                 ))
@@ -449,6 +584,35 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
                         if (messageId.isNotBlank()) add(
                             RemoteDeletedMessage(messageId, row.optLong("deletedAt").coerceAtLeast(0L))
                         )
+                    }
+                }
+            },
+            updatedPolls = response.optJSONArray("pollUpdates").let { values ->
+                if (values == null) emptyList() else buildList {
+                    for (index in 0 until values.length()) {
+                        val row = values.optJSONObject(index) ?: continue
+                        val messageId = row.optString("id")
+                        if (messageId.isBlank()) continue
+                        val options = row.optJSONArray("pollOptions") ?: JSONArray()
+                        val counts = row.optJSONObject("pollVoteCounts") ?: JSONObject()
+                        val ownVotes = row.optJSONArray("pollMyVotes") ?: JSONArray()
+                        add(ChatMessage(
+                            key = conversation.key,
+                            messageId = messageId,
+                            direction = if (row.optBoolean("fromMe")) MessageDirection.OUTGOING else MessageDirection.INCOMING,
+                            kind = MessageKind.POLL,
+                            text = row.optString("text"),
+                            timestampMillis = row.optLong("timestamp").let { value ->
+                                if (value > 0 && value < 10_000_000_000L) value * 1000L else value
+                            }.coerceAtLeast(0L),
+                            senderName = row.optString("pushName").takeIf { it.isNotBlank() },
+                            pollOptions = List(options.length()) { options.optString(it) }.filter(String::isNotBlank),
+                            pollSelectableCount = row.optInt("pollSelectableCount", 1).coerceAtLeast(1),
+                            pollVoteCounts = buildMap {
+                                counts.keys().forEach { option -> put(option, counts.optInt(option).coerceAtLeast(0)) }
+                            },
+                            pollMyVotes = List(ownVotes.length()) { ownVotes.optString(it) }.filter(String::isNotBlank)
+                        ))
                     }
                 }
             }
@@ -521,7 +685,8 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
         fileName: String,
         caption: String,
         isVoiceNote: Boolean = false,
-        durationSeconds: Int = 0
+        durationSeconds: Int = 0,
+        clientMessageId: String? = null
     ): String {
         val result = api.sendChatMedia(
             conversation.key.account.apiValue,
@@ -531,9 +696,20 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
             fileName,
             caption,
             isVoiceNote,
-            durationSeconds
+            durationSeconds,
+            clientMessageId
         )
         return result.optString("message")
+    }
+
+    suspend fun createPoll(conversation: ChatSummary, name: String, options: List<String>, selectableCount: Int): String {
+        val response = api.createChatPoll(conversation.key.account.apiValue, conversation.key.jid, name, options, selectableCount)
+        return response.optString("message")
+    }
+
+    suspend fun votePoll(conversation: ChatSummary, poll: ChatMessage, selectedOptions: List<String>) {
+        require(poll.key == conversation.key && poll.kind == MessageKind.POLL)
+        api.voteChatPoll(conversation.key.account.apiValue, conversation.key.jid, poll.messageId, selectedOptions)
     }
 
     suspend fun visibility(account: ChatAccount): JSONObject =
@@ -1012,12 +1188,23 @@ class AharaneRepository(private val connection: AharaneConnectionManager) : Visu
     suspend fun metrics(): ServerMessageMetrics {
         val response = api.get("metrics")
         val hourly = response.optJSONArray("hourlyMessages") ?: JSONArray()
+        val month = response.optJSONObject("thisMonth") ?: JSONObject()
+        fun counts(name: String): List<Int> {
+            val values = month.optJSONArray(name) ?: JSONArray()
+            return List(values.length()) { index -> values.optInt(index).coerceAtLeast(0) }
+        }
         return ServerMessageMetrics(
             messagesLast24h = response.optInt("messagesLast24h"),
             totalMessages = response.optInt("totalMessages"),
             hourlyMessages = buildList {
                 for (index in 0 until hourly.length()) add(hourly.optInt(index))
-            }
+            },
+            monthUtc = month.optString("month"),
+            availableSince = month.optString("availableSince").takeIf { it.isNotBlank() && it != "null" },
+            dailySent = counts("dailySent"),
+            dailyReceived = counts("dailyReceived"),
+            sentThisMonth = month.optInt("sent"),
+            receivedThisMonth = month.optInt("received")
         )
     }
 

@@ -1,6 +1,15 @@
 package com.aharane.studio.features.connection
 
 import android.graphics.Bitmap
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,6 +32,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -39,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aharane.studio.R
 import com.aharane.studio.core.design.StudioActionButton
+import com.aharane.studio.core.design.LocalStudioMotionEnabled
 import com.aharane.studio.core.design.StudioPalette
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
@@ -77,19 +88,40 @@ fun WhatsAppPairingScreen(
                 .padding(horizontal = 18.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(13.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "‹  Back",
-                    color = StudioPalette.Accent,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        "WHATSAPP CONNECTION",
+                        color = StudioPalette.Muted,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.1.sp
+                    )
+                    Text(
+                        "Link a device",
+                        color = StudioPalette.Ink,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Box(
+                    Modifier.size(40.dp).clip(RoundedCornerShape(14.dp))
+                        .background(StudioPalette.Surface)
+                        .border(1.dp, StudioPalette.Line, RoundedCornerShape(14.dp))
                         .clickable(onClick = onBack)
-                        .padding(horizontal = 9.dp, vertical = 9.dp)
-                        .testTag("pairing-back")
-                )
-                Spacer(Modifier.weight(1f))
-                Text("WHATSAPP LINK", color = StudioPalette.Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
+                        .testTag("pairing-close"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Outlined.Close,
+                        contentDescription = "Close WhatsApp pairing",
+                        tint = StudioPalette.Muted,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
             }
 
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
@@ -127,6 +159,8 @@ fun WhatsAppPairingScreen(
                 ) { onSelectMethod("qr") }
             }
 
+            PairingSteps(method = method)
+
             if (previewMode) {
                 PairingInfoPanel {
                     Text(
@@ -148,9 +182,14 @@ fun WhatsAppPairingScreen(
                         )
                     }
                 }
-                if (method == "qr") {
-                PairingInfoPanel {
-                    Text("On your phone, open WhatsApp → Linked devices → Link a device. Scan the QR code below.", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
+                Crossfade(
+                    targetState = method == "qr",
+                    animationSpec = tween(if (LocalStudioMotionEnabled.current) 200 else 0),
+                    label = "pairing-method-transition"
+                ) { showQr ->
+                    if (showQr) {
+                        PairingInfoPanel {
+                    Text("Your QR code appears below. Use the steps above to scan it from your phone.", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
                     Box(
                         Modifier.fillMaxWidth().heightIn(min = 236.dp)
                             .clip(RoundedCornerShape(12.dp))
@@ -184,7 +223,7 @@ fun WhatsAppPairingScreen(
                 }
             } else {
                 PairingInfoPanel {
-                    Text("On the phone you want to link, open WhatsApp → Linked devices → Link with phone number.", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
+                    Text("Enter the pairing code on the phone you want to link, following the steps above.", color = StudioPalette.Muted, fontSize = 13.sp, lineHeight = 19.sp)
                     if (pairingCode.isBlank()) {
                         Text("A code is only requested when you tap the button below.", color = StudioPalette.Ink, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                     } else {
@@ -220,10 +259,16 @@ fun WhatsAppPairingScreen(
                         )
                     }
                 }
-            }
+                }
             }
 
-            if (loading) {
+            AnimatedVisibility(
+                visible = loading,
+                enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 140 else 0)) +
+                    expandVertically(tween(if (LocalStudioMotionEnabled.current) 180 else 0)),
+                exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
+                    shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 140 else 0))
+            ) {
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
@@ -233,7 +278,13 @@ fun WhatsAppPairingScreen(
                     Text(" Contacting WhatsApp…", color = StudioPalette.Muted, fontSize = 12.sp)
                 }
             }
-            if (errorMessage.isNotBlank()) {
+            AnimatedVisibility(
+                visible = errorMessage.isNotBlank(),
+                enter = fadeIn(tween(if (LocalStudioMotionEnabled.current) 160 else 0)) +
+                    expandVertically(tween(if (LocalStudioMotionEnabled.current) 180 else 0)),
+                exit = fadeOut(tween(if (LocalStudioMotionEnabled.current) 100 else 0)) +
+                    shrinkVertically(tween(if (LocalStudioMotionEnabled.current) 140 else 0))
+            ) {
                 Text(
                     errorMessage,
                     color = if (errorMessage.contains("is connected", ignoreCase = true)) StudioPalette.Accent else StudioPalette.Bad,
@@ -246,8 +297,63 @@ fun WhatsAppPairingScreen(
                         .testTag("pairing-error")
                 )
             }
-            StudioActionButton("Back to accounts", modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp), onClick = onBack)
+            StudioActionButton("Close", modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp), onClick = onBack)
+            }
         }
+    }
+}
+
+@Composable
+private fun PairingSteps(method: String) {
+    val qrMode = method == "qr"
+    PairingInfoPanel {
+        Text(
+            "How to connect",
+            color = StudioPalette.Ink,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold
+        )
+        val steps = if (qrMode) listOf(
+            "Open WhatsApp on your phone",
+            "Go to Linked devices in WhatsApp settings",
+            "Choose Link a device and scan the QR code"
+        ) else listOf(
+            "Open WhatsApp on the phone you want to link",
+            "Go to Linked devices in WhatsApp settings",
+            "Choose Link with phone number and enter the code"
+        )
+        steps.forEachIndexed { index, label ->
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    Modifier.size(27.dp).clip(RoundedCornerShape(50))
+                        .background(StudioPalette.Soft),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        (index + 1).toString(),
+                        color = StudioPalette.Accent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Text(
+                    label,
+                    color = StudioPalette.Muted,
+                    fontSize = 12.5.sp,
+                    lineHeight = 18.sp
+                )
+            }
+        }
+        Text(
+            "Only approve the link on your own phone. Keep pairing codes and QR codes private.",
+            color = StudioPalette.Muted,
+            fontSize = 11.sp,
+            lineHeight = 16.sp
+        )
     }
 }
 

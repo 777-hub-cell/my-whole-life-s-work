@@ -1,6 +1,13 @@
 buildscript {
     repositories {
         google()
+        maven {
+            name = "KspCentralMirror"
+            url = uri("https://maven-central.storage-download.googleapis.com/maven2/")
+            content { includeGroup("com.google.devtools.ksp") }
+        }
+        // Google-hosted Maven Central mirror avoids transient Central 429 throttling.
+        maven { url = uri("https://maven-central.storage-download.googleapis.com/maven2/") }
         mavenCentral()
     }
     dependencies {

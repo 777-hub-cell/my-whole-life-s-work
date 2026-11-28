@@ -1,6 +1,7 @@
 package com.aharane.studio.features.more
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,8 +23,6 @@ import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -48,6 +47,10 @@ import com.aharane.studio.core.model.ChatSummary
 import com.aharane.studio.features.chats.ChatAppearanceStore
 import com.aharane.studio.features.chats.ChatAppearanceStudioScreen
 import com.aharane.studio.core.storage.EncryptedMediaCache
+import com.aharane.studio.features.notes.EncryptedNotesStore
+import com.aharane.studio.features.notes.NotesScreen
+import com.aharane.studio.features.whatsapp.WhatsAppUpdatesScreen
+import com.aharane.studio.core.network.AharaneRepository
 
 private val AccentChoices = listOf(
     "#0E7A5C", "#3867D6", "#8752C7", "#B34D76", "#B56C22", "#4D7779"
@@ -74,13 +77,13 @@ fun MoreScreen(
     page: String,
     onPageChange: (String) -> Unit,
     onOpenEnvironment: () -> Unit = {},
+    onOpenConfiguration: () -> Unit = {},
     connected: Boolean = false,
     privateAccountStatus: String = "Status not loaded",
     publicAccountStatus: String = "Status not loaded",
-    privateOwnerNumber: String = "",
+    ownerNumber: String = "",
     publicOwnerNumber: String = "",
     publicBotNumber: String = "",
-    allowedPublicSenders: String = "",
     activityEntries: List<String> = emptyList(),
     storageSummary: String = "—",
     storageTotalSummary: String = "—",
@@ -90,7 +93,7 @@ fun MoreScreen(
     largestFiles: List<String> = emptyList(),
     folderSummaries: List<String> = emptyList(),
     onAccountAction: (String) -> Unit = {},
-    onSaveOwnerSettings: (String, String, String, String) -> Unit = { _, _, _, _ -> },
+    onSaveOwnerSettings: (String, String, String) -> Unit = { _, _, _ -> },
     onClearActivity: () -> Unit = {},
     onRefreshActivity: () -> Unit = {},
     onCopyActivity: () -> Unit = {},
@@ -113,6 +116,9 @@ fun MoreScreen(
     onChatAppearanceChange: (String, Boolean, Boolean, Boolean) -> Unit = { _, _, _, _ -> },
     onChatMessageSizeChanged: (Int) -> Unit = {},
     appearanceStore: ChatAppearanceStore? = null,
+    notesStore: EncryptedNotesStore? = null,
+    updatesRepository: AharaneRepository? = null,
+    channelsEnabled: Boolean = false,
     appearanceRevision: Int = 0,
     cachedConversations: List<ChatSummary> = emptyList(),
     mediaCache: EncryptedMediaCache? = null,
@@ -137,18 +143,16 @@ fun MoreScreen(
             }
         }
     }
-    var privateOwnerDraft by rememberSaveable { mutableStateOf(privateOwnerNumber) }
+    var ownerDraft by rememberSaveable { mutableStateOf(ownerNumber) }
     var publicOwnerDraft by rememberSaveable { mutableStateOf(publicOwnerNumber) }
     var publicBotDraft by rememberSaveable { mutableStateOf(publicBotNumber) }
-    var allowedSendersDraft by rememberSaveable { mutableStateOf(allowedPublicSenders) }
     var currentPassword by rememberSaveable { mutableStateOf("") }
     var newPassword by rememberSaveable { mutableStateOf("") }
 
-    LaunchedEffect(privateOwnerNumber, publicOwnerNumber, publicBotNumber, allowedPublicSenders) {
-        privateOwnerDraft = privateOwnerNumber
+    LaunchedEffect(ownerNumber, publicOwnerNumber, publicBotNumber) {
+        ownerDraft = ownerNumber
         publicOwnerDraft = publicOwnerNumber
         publicBotDraft = publicBotNumber
-        allowedSendersDraft = allowedPublicSenders
     }
     val context = LocalContext.current
 
@@ -167,7 +171,25 @@ fun MoreScreen(
         onPageChange(if (page == "chat-appearance-studio") "chat-settings" else "more")
     }
 
-    if (page == "appearance") {
+    Crossfade(
+        targetState = page,
+        animationSpec = StudioFoundationContract.Motion.stateChangeSpec<Float>(
+            enabled = LocalStudioMotionEnabled.current,
+            targetMillis = StudioFoundationContract.Motion.ScreenTransitionMillis
+        ),
+        label = "more-page-transition"
+    ) { targetPage ->
+    if (targetPage == "whatsapp-updates" && updatesRepository != null) {
+        WhatsAppUpdatesScreen(
+            repository = updatesRepository,
+            selectedAccount = selectedChatAccount,
+            onAccountSelected = onChatAccountSelected,
+            connected = channelsEnabled,
+            onBack = { onPageChange("more") }
+        )
+    } else if (targetPage == "notes" && notesStore != null) {
+        NotesScreen(store = notesStore, onBack = { onPageChange("more") })
+    } else if (targetPage == "appearance") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -312,7 +334,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "chat-settings") {
+    } else if (targetPage == "chat-settings") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
@@ -505,7 +527,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "chat-appearance-studio") {
+    } else if (targetPage == "chat-appearance-studio") {
         if (appearanceStore != null) {
             ChatAppearanceStudioScreen(
                 account = selectedChatAccount,
@@ -521,7 +543,7 @@ fun MoreScreen(
                 Text("The local appearance store could not be opened.", color = StudioPalette.Muted, fontSize = 12.sp)
             }
         }
-    } else if (page == "starred") {
+    } else if (targetPage == "starred") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -554,14 +576,14 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "accounts") {
+    } else if (targetPage == "accounts") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
         ) {
             item {
                 Spacer(Modifier.height(12.dp))
-                StudioPageTitle("Accounts", "Two independent WhatsApp sessions. Pairing numbers are saved in Configuration.")
+                StudioPageTitle("Accounts & owners", "Two independent WhatsApp sessions, one shared Owner identity.")
                 Spacer(Modifier.height(14.dp))
             }
             item {
@@ -593,25 +615,30 @@ fun MoreScreen(
                     )
                 }
             }
-            item { StudioSectionHeading("Owner identities") }
+            item { StudioSectionHeading("Owner") }
             item {
                 StudioCard(padding = PaddingValues(14.dp)) {
-                    OwnerNumberField("Private Owner number", privateOwnerDraft, connected) { privateOwnerDraft = it }
+                    Text(
+                        "The Private and Public Owners are configured independently. The Public Owner may be the Public bot's own WhatsApp number.",
+                        color = StudioPalette.Muted,
+                        fontSize = 12.5.sp,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(Modifier.height(13.dp))
+                    OwnerNumberField("Private Owner phone number", ownerDraft, connected) { ownerDraft = it }
                     Spacer(Modifier.height(12.dp))
-                    OwnerNumberField("Public Owner number", publicOwnerDraft, connected) { publicOwnerDraft = it }
+                    OwnerNumberField("Public Owner phone number", publicOwnerDraft, connected) { publicOwnerDraft = it }
                     Spacer(Modifier.height(12.dp))
                     OwnerNumberField("Public bot WhatsApp number", publicBotDraft, connected) { publicBotDraft = it }
-                    Spacer(Modifier.height(12.dp))
-                    OwnerNumberField("Allowed public senders (comma separated)", allowedSendersDraft, connected) { allowedSendersDraft = it }
                     Spacer(Modifier.height(14.dp))
                     StudioActionButton(
                         "Save owner settings",
                         primary = true,
                         enabled = connected,
-                        onClick = { onSaveOwnerSettings(privateOwnerDraft, publicOwnerDraft, publicBotDraft, allowedSendersDraft) }
+                        onClick = { onSaveOwnerSettings(ownerDraft, publicOwnerDraft, publicBotDraft) }
                     )
                     if (!connected) Text(
-                        "Connect to your Aharane server to load or save owner identities.",
+                        "Connect to your Aharane server to load or save these settings.",
                         color = StudioPalette.Muted,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 8.dp)
@@ -619,7 +646,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "activity") {    } else if (page == "activity") {
+    } else if (targetPage == "activity") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -691,7 +718,7 @@ fun MoreScreen(
                 }
             }
         }
-    } else if (page == "storage") {
+    } else if (targetPage == "storage") {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
@@ -782,17 +809,17 @@ fun MoreScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
-            item { StudioPageTitle("More", "Additional tools and information") }
+            item { StudioPageTitle("More", "Additional tools and information", compact = true) }
 
             item {
                 Spacer(Modifier.height(18.dp))
                 StudioCard {
                     StudioRow(
-                        "Accounts & owners",
-                        "Pair the two WhatsApp sessions and set their separate Owner identities",
+                        "Configuration",
+                        "Private and Public Owner settings, commands and account preferences",
                         icon = null,
                         trailing = "›",
-                        onClick = { onPageChange("accounts") }
+                        onClick = onOpenConfiguration
                     )
                 }
             }
@@ -800,6 +827,22 @@ fun MoreScreen(
             item { StudioSectionHeading("Tools") }
             item {
                 StudioCard {
+                    StudioRow(
+                        "Notes",
+                        "Encrypted notes stored privately on this device",
+                        icon = null,
+                        trailing = "›",
+                        onClick = { onPageChange("notes") }
+                    )
+                    StudioDivider()
+                    StudioRow(
+                        "Channels",
+                        "Browse Channels followed by each linked WhatsApp account",
+                        icon = null,
+                        trailing = "›",
+                        onClick = { onPageChange("whatsapp-updates") }
+                    )
+                    StudioDivider()
                     StudioRow(
                         "Activity and logs",
                         "Review bot activity and diagnostic records",
@@ -887,6 +930,8 @@ fun MoreScreen(
         }
     }
 
+
+    }
     if (customColorOpen) {
         Dialog(onDismissRequest = { customColorOpen = false }) {
             Column(
@@ -1016,7 +1061,7 @@ private fun RowScope.LauncherIconOption(
     onClick: () -> Unit
 ) {
     Column(
-        Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+        Modifier.weight(1f).height(126.dp).clip(RoundedCornerShape(12.dp))
             .background(if (selected) StudioPalette.Soft else StudioPalette.Background)
             .border(
                 if (selected) 1.5.dp else 1.dp,
@@ -1024,13 +1069,27 @@ private fun RowScope.LauncherIconOption(
                 RoundedCornerShape(12.dp)
             )
             .clickable(onClick = onClick)
-            .padding(vertical = 12.dp, horizontal = 5.dp),
+            .padding(vertical = 8.dp, horizontal = 5.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(7.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Image(painterResource(iconRes), contentDescription = "$label Aharane app icon", modifier = Modifier.size(52.dp))
-        Text(label, color = if (selected) StudioPalette.Accent else StudioPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-        if (selected) Text("Selected", color = StudioPalette.Accent, fontSize = 10.sp)
+        val tileColor = when (label.lowercase()) {
+            "night" -> Color(0xFF101816)
+            "mono" -> Color(0xFF252B29)
+            else -> Color(0xFF0E7A5C)
+        }
+        Box(
+            Modifier.size(62.dp).clip(CircleShape).background(tileColor),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painterResource(iconRes),
+                contentDescription = "$label Aharane app icon",
+                modifier = Modifier.size(43.dp)
+            )
+        }
+        Text(label, color = if (selected) StudioPalette.Accent else StudioPalette.Ink, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+        Text(if (selected) "Selected" else " ", color = StudioPalette.Accent, fontSize = 10.sp, lineHeight = 12.sp)
     }
 }
 
@@ -1056,27 +1115,27 @@ private fun PreferenceSwitch(
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        Modifier.fillMaxWidth().defaultMinSize(minHeight = 58.dp)
+        Modifier.fillMaxWidth().defaultMinSize(minHeight = 68.dp)
             .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange)
-            .padding(vertical = 7.dp),
+            .padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, color = if (enabled) StudioPalette.Ink else StudioPalette.Muted, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
-            Text(description, color = StudioPalette.Muted, fontSize = 12.sp, lineHeight = 16.sp)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, color = if (enabled) StudioPalette.Ink else StudioPalette.Muted, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(description, color = StudioPalette.Muted, fontSize = 12.5.sp, lineHeight = 18.sp)
         }
-        Switch(
-            checked = checked,
-            onCheckedChange = null,
-            enabled = enabled,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
-                checkedTrackColor = StudioPalette.Accent,
-                uncheckedThumbColor = StudioPalette.Muted,
-                uncheckedTrackColor = StudioPalette.Line
+        Box(
+            Modifier.width(48.dp).height(28.dp).clip(CircleShape)
+                .background(if (checked && enabled) StudioPalette.Accent else StudioPalette.Line)
+                .padding(3.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Box(
+                Modifier.offset(x = if (checked) 20.dp else 0.dp).size(22.dp)
+                    .clip(CircleShape).background(Color.White)
             )
-        )
+        }
     }
 }
 
@@ -1100,20 +1159,12 @@ private fun StudioPreferenceSlider(
     steps: Int = 0,
     onValueChangeFinished: () -> Unit = {}
 ) {
-    Slider(
-        value = value.coerceIn(valueRange),
+    StudioCircularDial(
+        value = value,
         onValueChange = onValueChange,
-        onValueChangeFinished = onValueChangeFinished,
         valueRange = valueRange,
         steps = steps,
-        modifier = Modifier.fillMaxWidth().height(52.dp),
-        colors = SliderDefaults.colors(
-            thumbColor = StudioPalette.Accent,
-            activeTrackColor = StudioPalette.Accent,
-            inactiveTrackColor = StudioPalette.Line,
-            activeTickColor = StudioPalette.Surface,
-            inactiveTickColor = StudioPalette.Muted.copy(alpha = 0.32f)
-        )
+        onValueChangeFinished = onValueChangeFinished
     )
 }
 

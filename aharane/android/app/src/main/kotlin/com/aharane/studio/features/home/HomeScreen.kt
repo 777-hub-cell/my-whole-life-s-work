@@ -3,6 +3,8 @@ package com.aharane.studio.features.home
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -10,12 +12,15 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -47,9 +52,16 @@ fun HomeScreen(
     metricsAvailable: Boolean = false,
     messagesLast24h: Int = 0,
     hourlyMessageCounts: List<Int> = emptyList(),
+    monthUtc: String = "",
+    monthlyDataSince: String? = null,
+    dailySent: List<Int> = emptyList(),
+    dailyReceived: List<Int> = emptyList(),
+    sentThisMonth: Int = 0,
+    receivedThisMonth: Int = 0,
     onAccountAction: (ChatAccount) -> Unit = {},
     recentActivity: List<String> = emptyList()
 ) {
+    val previewMode = serviceSubtitle.equals("Preview only", ignoreCase = true)
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
@@ -60,7 +72,7 @@ fun HomeScreen(
             Spacer(Modifier.height(18.dp))
         }
         item {
-            StudioCard(padding = PaddingValues(16.dp)) {
+            StudioCard(modifier = Modifier.animateItem(), padding = PaddingValues(16.dp)) {
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 42.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -80,36 +92,20 @@ fun HomeScreen(
                             lineHeight = 17.sp
                         )
                     }
-                    Row(
-                        Modifier.clip(RoundedCornerShape(99.dp))
-                            .background(
-                                when {
-                                    !serviceConnected -> StudioPalette.Bad.copy(alpha = 0.12f)
-                                    serviceDegraded -> Color(0xFFB87928).copy(alpha = 0.16f)
-                                    else -> StudioPalette.Accent.copy(alpha = 0.12f)
-                                }
-                            )
-                            .padding(horizontal = 11.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(7.dp)
-                    ) {
-                        HomeConnectionIndicator(connected = serviceConnected, degraded = serviceDegraded, size = 20.dp)
-                        Text(
-                            when {
-                                !serviceConnected -> "Offline"
-                                serviceDegraded -> "Partial"
-                                else -> "Online"
-                            },
-                            color = when {
-                                !serviceConnected -> StudioPalette.Bad
-                                serviceDegraded -> Color(0xFFB87928)
-                                else -> StudioPalette.Accent
-                            },
-                            fontSize = 12.5.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
+                    Box(
+                        modifier = Modifier.size(9.dp)
+                            .clip(CircleShape)
+                            .background(if (serviceConnected) Color(0xFF668A73) else Color(0xFFB57979))
+                    )
+
                 }
+                Text(
+                    "Private and Public are independent WhatsApp sessions.",
+                    color = StudioPalette.Muted,
+                    fontSize = 11.5.sp,
+                    lineHeight = 16.sp,
+                    modifier = Modifier.padding(top = 7.dp)
+                )
                 StudioDivider()
                 Column(
                     Modifier.fillMaxWidth().padding(top = 11.dp),
@@ -117,44 +113,94 @@ fun HomeScreen(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "Messages handled, last 24 hours",
+                            "Message activity · This Month",
                             color = StudioPalette.Ink,
-                            fontSize = 12.5.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                         Spacer(Modifier.weight(1f))
                         Text(
-                            if (metricsAvailable) messagesLast24h.toString() else "—",
+                            if (monthUtc.isNotEmpty()) "$monthUtc · UTC" else "—",
                             color = StudioPalette.Muted,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontSize = 10.5.sp
                         )
                     }
-                    val samples = (0 until 24).map { hourlyMessageCounts.getOrNull(it) ?: 0 }
-                    val peak = samples.maxOrNull()?.coerceAtLeast(1) ?: 1
-                    Row(
-                        Modifier.fillMaxWidth().height(48.dp),
-                        horizontalArrangement = Arrangement.spacedBy(3.dp),
-                        verticalAlignment = Alignment.Bottom
-                    ) {
-                        samples.forEach { count ->
-                            val fraction = if (count == 0) 0.045f else (count.toFloat() / peak).coerceIn(0.08f, 1f)
-                            Box(
-                                Modifier.weight(1f).fillMaxHeight(),
-                                contentAlignment = Alignment.BottomCenter
+                    if (!metricsAvailable || monthUtc.isEmpty() || dailySent.isEmpty()) {
+                        Text(
+                            "Monthly message history is unavailable.",
+                            color = StudioPalette.Muted,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(vertical = 16.dp)
+                        )
+                    } else {
+                        val sentColor = Color(0xFF638A79)
+                        val receivedColor = Color(0xFF987C9E)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(8.dp).clip(CircleShape).background(sentColor))
+                            Spacer(Modifier.width(5.dp))
+                            Text("Sent  $sentThisMonth", color = StudioPalette.Ink, fontSize = 12.sp)
+                            Spacer(Modifier.width(20.dp))
+                            Box(Modifier.size(8.dp).clip(CircleShape).background(receivedColor))
+                            Spacer(Modifier.width(5.dp))
+                            Text("Received  $receivedThisMonth", color = StudioPalette.Ink, fontSize = 12.sp)
+                        }
+                        val days = maxOf(dailySent.size, dailyReceived.size)
+                        val peak = (dailySent + dailyReceived).maxOrNull()?.coerceAtLeast(1) ?: 1
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(
+                                modifier = Modifier.height(88.dp).padding(end = 6.dp),
+                                verticalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Box(
-                                    Modifier.fillMaxWidth().fillMaxHeight(fraction)
-                                        .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                                        .background(if (count == 0) StudioPalette.Line else StudioPalette.Accent)
-                                )
+                                Text(peak.toString(), fontSize = 9.sp, color = StudioPalette.Muted)
+                                Text("0", fontSize = 9.sp, color = StudioPalette.Muted)
+                            }
+                            Row(
+                                modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.Bottom
+                            ) {
+                                repeat(days) { day ->
+                                    val sent = dailySent.getOrElse(day) { 0 }.coerceAtLeast(0)
+                                    val received = dailyReceived.getOrElse(day) { 0 }.coerceAtLeast(0)
+                                    Column(
+                                        modifier = Modifier.width(20.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.height(72.dp),
+                                            verticalAlignment = Alignment.Bottom,
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            Box(
+                                                Modifier.width(8.dp).height(if (sent == 0) 2.dp else (70f * sent / peak).dp)
+                                                    .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                                                    .background(if (sent == 0) StudioPalette.Line else sentColor)
+                                            )
+                                            Box(
+                                                Modifier.width(8.dp).height(if (received == 0) 2.dp else (70f * received / peak).dp)
+                                                    .clip(RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp))
+                                                    .background(if (received == 0) StudioPalette.Line else receivedColor)
+                                            )
+                                        }
+                                        Text(
+                                            if (day == 0 || (day + 1) % 5 == 0) (day + 1).toString() else "",
+                                            fontSize = 9.sp,
+                                            color = StudioPalette.Muted
+                                        )
+                                    }
+                                }
                             }
                         }
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("24 hours ago", color = StudioPalette.Muted, fontSize = 9.5.sp)
-                        Spacer(Modifier.weight(1f))
-                        Text("Now", color = StudioPalette.Muted, fontSize = 9.5.sp)
+                        Text(
+                            monthlyDataSince?.take(10)?.let { "Available stored records begin $it. Earlier WhatsApp history may be missing." }
+                                ?: "No stored WhatsApp message records are available yet.",
+                            color = StudioPalette.Muted,
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp
+                        )
                     }
                 }
             }
@@ -184,17 +230,17 @@ fun HomeScreen(
             StudioCard {
                 StudioRow(
                     title = "Configuration",
-                    subtitle = "Private Owner · Public Owner · Public bot number",
+                    subtitle = "Independent Private and Public Owners",
                     icon = Icons.Outlined.Tune,
                     trailing = "›",
                     onClick = onOpenConfiguration,
-                    subtitleMaxLines = 1
+                    subtitleMaxLines = 2
                 )
                 StudioDivider()
                 StudioRow(
                     title = "Visual command builder",
                     subtitle = "Create WhatsApp commands with connected workflow nodes",
-                    icon = null,
+                    icon = Icons.Outlined.AccountTree,
                     trailing = "›",
                     onClick = onOpenCommandBuilder,
                     subtitleMaxLines = 1
@@ -263,20 +309,29 @@ fun HomeScreen(
 private fun HomeConnectionIndicator(
     connected: Boolean,
     degraded: Boolean = false,
+    preview: Boolean = false,
     size: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier
 ) {
-    val tint = when { !connected -> StudioPalette.Bad; degraded -> Color(0xFFB87928); else -> StudioPalette.Accent }
-    val transition = rememberInfiniteTransition(label = "home-connection-pulse")
-    val progress = transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1900, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "home-connection-ring"
-    ).value
+    val tint = when {
+        preview -> StudioPalette.Accent
+        !connected -> StudioPalette.Bad
+        degraded -> Color(0xFFB87928)
+        else -> StudioPalette.Accent
+    }
+    val motionEnabled = LocalStudioMotionEnabled.current
+    val progress = if (connected && !preview && motionEnabled) {
+        val transition = rememberInfiniteTransition(label = "home-connection-pulse")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1900, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "home-connection-ring"
+        ).value
+    } else 0f
     Canvas(modifier.size(size)) {
         val center = androidx.compose.ui.geometry.Offset(this.size.width / 2f, this.size.height / 2f)
         val maxRadius = this.size.minDimension * .43f
@@ -291,7 +346,7 @@ private fun HomeConnectionIndicator(
         if (connected) {
             drawLine(Color.White, androidx.compose.ui.geometry.Offset(this.size.width * .34f, this.size.height * .51f), androidx.compose.ui.geometry.Offset(this.size.width * .46f, this.size.height * .64f), strokeWidth = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
             drawLine(Color.White, androidx.compose.ui.geometry.Offset(this.size.width * .46f, this.size.height * .64f), androidx.compose.ui.geometry.Offset(this.size.width * .69f, this.size.height * .37f), strokeWidth = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
-        } else {
+        } else if (!preview) {
             drawLine(Color.White, androidx.compose.ui.geometry.Offset(this.size.width * .39f, this.size.height * .39f), androidx.compose.ui.geometry.Offset(this.size.width * .61f, this.size.height * .61f), strokeWidth = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
             drawLine(Color.White, androidx.compose.ui.geometry.Offset(this.size.width * .61f, this.size.height * .39f), androidx.compose.ui.geometry.Offset(this.size.width * .39f, this.size.height * .61f), strokeWidth = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round)
         }
@@ -308,6 +363,7 @@ private fun AccountRow(
     val isPrivate = account == ChatAccount.PRIVATE
     Row(
         Modifier.fillMaxWidth().defaultMinSize(minHeight = 65.dp)
+            .animateContentSize()
             .padding(horizontal = 13.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(11.dp)

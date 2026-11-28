@@ -8,7 +8,7 @@ enum class ChatAccount(val apiValue: String, val label: String) {
 }
 
 enum class ChatFilter(val label: String) {
-    ALL("All"), UNREAD("Unread"), GROUPS("Groups"), ARCHIVED("Archived")
+    ALL("All"), UNREAD("Unread"), GROUPS("Groups"), CHANNELS("Channels"), ARCHIVED("Archived")
 }
 
 data class ConversationKey(val account: ChatAccount, val jid: String) {
@@ -72,7 +72,13 @@ data class ChatMessage(
     val localOutboxState: String? = null,
     val localOutboxError: String? = null,
     val deletedByRemote: Boolean = false,
-    val deletedAtMillis: Long = 0L
+    val deletedAtMillis: Long = 0L,
+    val localOutboxMedia: Boolean = false,
+    val pollOptions: List<String> = emptyList(),
+    val pollSelectableCount: Int = 1,
+    val pollVoteCounts: Map<String, Int> = emptyMap(),
+    val pollMyVotes: List<String> = emptyList(),
+    val isSystem: Boolean = false
 ) {
     init {
         require(messageId.isNotBlank())

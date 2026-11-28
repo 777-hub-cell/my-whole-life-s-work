@@ -4,6 +4,8 @@
 The launch flag is guarded by ApplicationInfo.FLAG_DEBUGGABLE. This script never
 contacts the Aharane server; sample content is absent from release launches.
 """
+import json
+import os
 import re
 import subprocess
 import time
@@ -12,6 +14,9 @@ from pathlib import Path
 
 REMOTE_XML = "/sdcard/window.xml"
 OUT = Path("screenshots")
+SCREEN_INDEX = []
+CURRENT_THEME = "emulator-default"
+DEVICE_INFO = {}
 
 
 def run(*args, capture_output=False):
@@ -28,6 +33,14 @@ def capture(name: str, settle: float = 1.5):
     time.sleep(settle)
     with (OUT / name).open("wb") as image_file:
         subprocess.run(["adb", "exec-out", "screencap", "-p"], check=True, stdout=image_file)
+    SCREEN_INDEX.append({
+        "file": name,
+        "theme": CURRENT_THEME,
+        "device": DEVICE_INFO.get("model", "Android emulator"),
+        "api_level": DEVICE_INFO.get("api_level", "unknown"),
+        "resolution": DEVICE_INFO.get("resolution", "unknown"),
+        "density": DEVICE_INFO.get("density", "unknown"),
+    })
 
 
 def nodes():
@@ -132,9 +145,9 @@ def tap_label(
         )
     return False
 
-def assert_visible_texts(labels):
-    """Fail the screenshot run if the native popup drifts from the web actions."""
-    deadline = time.time() + 8
+def assert_visible_texts(labels, timeout_seconds: float = 8):
+    """Wait for expected native UI text, failing with the missing labels."""
+    deadline = time.time() + timeout_seconds
     while time.time() < deadline:
         visible = {node.attrib.get("text", "") for node in nodes()}
         missing = [
@@ -144,7 +157,7 @@ def assert_visible_texts(labels):
         if not missing:
             return
         time.sleep(0.35)
-    raise RuntimeError(f"File popup is missing expected actions: {missing!r}")
+    raise RuntimeError(f"Expected UI text is not visible: {missing!r}")
 
 def assert_absent_texts(labels):
     """Ensure removed or relocated entries do not reappear on More."""
@@ -160,7 +173,7 @@ def assert_absent_texts(labels):
         raise RuntimeError(f"Unexpected UI entries are visible: {found!r}")
 
 
-def scroll_until_label_visible(label: str, max_swipes: int = 6):
+def scroll_until_label_visible(label: str, max_swipes: int = 30):
     """Scroll a screen until a label is visible without activating it."""
     for _ in range(max_swipes + 1):
         visible = [
@@ -174,7 +187,7 @@ def scroll_until_label_visible(label: str, max_swipes: int = 6):
     raise RuntimeError(f"Could not scroll to visible UI label: {label!r}")
 
 
-def scroll_back_until_label_visible(label: str, max_swipes: int = 6):
+def scroll_back_until_label_visible(label: str, max_swipes: int = 14):
     """Scroll toward the top of a LazyColumn until an earlier section is visible."""
     for _ in range(max_swipes + 1):
         visible = [
@@ -194,21 +207,51 @@ def back():
 
 
 def main():
+    global CURRENT_THEME
     OUT.mkdir(parents=True, exist_ok=True)
+    DEVICE_INFO.update({
+        "model": run("adb", "shell", "getprop", "ro.product.model", capture_output=True).stdout.strip(),
+        "api_level": run("adb", "shell", "getprop", "ro.build.version.sdk", capture_output=True).stdout.strip(),
+        "resolution": run("adb", "shell", "wm", "size", capture_output=True).stdout.strip(),
+        "density": run("adb", "shell", "wm", "density", capture_output=True).stdout.strip(),
+    })
+    SCREEN_INDEX.clear()
     run("adb", "install", "-r", "artifacts/app-debug.apk")
     run(
         "adb", "shell", "am", "start", "-n", "com.aharane.studio/.MainActivity",
         "--ez", "aharane_preview_mode", "true"
     )
-    capture("01-home.png", 5)
-    tap_label("Preview", occurrence=0)
-    assert_visible_texts(["Pairing code", "QR code", "This is a preview", "Back to accounts"])
+    # Wait for the actual Home page instead of capturing the launch splash.
+    assert_visible_texts(["Welcome back", "WhatsApp accounts"], timeout_seconds=25)
+    capture("01-home.png")
+    if os.environ.get("AHARANE_COMMAND_BUILDER_ONLY") == "1":
+        scroll_until_label_visible("Visual command builder")
+        capture("01e-home-visual-command-builder-shortcut.png", 0.5)
+        tap_label("Visual command builder")
+        capture("01f-home-visual-command-builder.png", 2)
+        assert_visible_texts(["Command builder", "WORKSPACE", "NODE LIBRARY", "Search nodes", "Save", "Command trigger", "Reply to message"])
+        index = {
+            "file": "index.json",
+            "device": DEVICE_INFO.get("model", "Android emulator"),
+            "api_level": DEVICE_INFO.get("api_level", "unknown"),
+            "resolution": DEVICE_INFO.get("resolution", "unknown"),
+            "density": DEVICE_INFO.get("density", "unknown"),
+            "screens": SCREEN_INDEX.copy(),
+        }
+        (OUT / "index.json").write_text(json.dumps(index, indent=2), encoding="utf-8")
+        print("Captured the native Aharane command builder screen.")
+        return
+    # The header's Preview status badge is not interactive. Open the Private
+    # account's Preview action (the second visible Preview label).
+    tap_label("Preview", occurrence=1)
+    assert_visible_texts(["Pairing code", "QR code", "This is a preview"])
     capture("01a-whatsapp-pairing-code-choice.png")
     tap_label("QR code")
     capture("01aa-whatsapp-qr-choice.png")
     tap_label("Pairing code")
     capture("01ab-whatsapp-pairing-code-choice.png")
-    tap_label("Back to accounts")
+    # The visible top Back control and the lower CTA share the same onBack handler.
+    tap_label("Close WhatsApp pairing", content_desc=True)
     tap_label("Configuration", scroll_to_find=True)
     capture("01b-configuration.png")
     tap_label("Edit config.js", scroll_to_find=True)
@@ -220,7 +263,19 @@ def main():
     capture("01e-home-visual-command-builder-shortcut.png")
     tap_label("Visual command builder")
     capture("01f-home-visual-command-builder.png", 2)
-    assert_visible_texts(["WORKSPACE", "NODE LIBRARY", "Test safely", "Search WhatsApp nodes"])
+    assert_visible_texts(["Command builder", "WORKSPACE", "NODE LIBRARY", "Search nodes", "Save", "Command trigger", "Reply to message"])
+    if os.environ.get("AHARANE_COMMAND_BUILDER_ONLY") == "1":
+        index = {
+            "file": "index.json",
+            "device": DEVICE_INFO.get("model", "Android emulator"),
+            "api_level": DEVICE_INFO.get("api_level", "unknown"),
+            "resolution": DEVICE_INFO.get("resolution", "unknown"),
+            "density": DEVICE_INFO.get("density", "unknown"),
+            "screens": SCREEN_INDEX.copy(),
+        }
+        (OUT / "index.json").write_text(json.dumps(index, indent=2), encoding="utf-8")
+        print("Captured the native Aharane command builder screen.")
+        return
     back()
 
     tap_label("Chats")
@@ -292,12 +347,45 @@ def main():
     capture("04-env.png")
     tap_label("More")
     capture("05-more.png")
-    assert_absent_texts(["Development", "Studio source", "Visual command builder"])
-    tap_label("Accounts & owners")
-    capture("05a-accounts-owners.png")
+    assert_absent_texts([
+        "Development", "Studio source", "Visual command builder",
+        "Status", "Status & Channels", "WhatsApp Status", "No currently received statuses"
+    ])
+    tap_label("Configuration", scroll_to_find=True)
+    capture("05a-configuration-from-more.png")
+    tap_label("‹  Back to Home")
+
+    tap_label("Activity and logs", scroll_to_find=True)
+    capture("05b-activity-and-logs.png")
     back()
+    tap_label("Storage information", scroll_to_find=True)
+    capture("05c-storage-information.png")
+    back()
+    tap_label("Notes", scroll_to_find=True)
+    capture("05d-notes.png")
+    back()
+    tap_label("Channels", scroll_to_find=True)
+    assert_visible_texts(["Connect a paired WhatsApp account to browse Channels"])
+    capture("05h-channels-disconnected.png")
+    back()
+
+    tap_label("Help", scroll_to_find=True)
+    capture("05e-help-dialog.png")
+    tap_label("Close")
+    tap_label("About Aharane", scroll_to_find=True)
+    capture("05f-about-dialog.png")
+    tap_label("Close")
+
     tap_label("Appearance", scroll_to_find=True)
     capture("06-appearance.png")
+    tap_label("Dark")
+    CURRENT_THEME = "dark"
+    capture("06a-appearance-dark.png")
+    back()
+    capture("05g-more-dark.png")
+    tap_label("Appearance", scroll_to_find=True)
+    tap_label("Light")
+    CURRENT_THEME = "light"
     back()
     tap_label("Chat settings", scroll_to_find=True)
     capture("06a-chat-settings.png", 1)
@@ -307,9 +395,11 @@ def main():
     if tap_label("Choose photo", scroll_to_find=True, required=False):
         capture("06c-android-photo-picker.png", 1)
         back()
-    tap_label("Message bubbles", scroll_to_find=True)
+    # These are section headings inside the Appearance Studio, not buttons.
+    # Scroll them into view and capture the controls beneath each heading.
+    scroll_until_label_visible("Message bubbles")
     capture("06d-message-bubble-customisation.png")
-    tap_label("Typography", scroll_to_find=True)
+    scroll_until_label_visible("Typography")
     capture("06e-typography-settings.png")
     scroll_back_until_label_visible("Apply to")
     tap_label("Conversation")
@@ -329,8 +419,20 @@ def main():
     run("adb", "shell", "am", "start", "-n", "com.aharane.studio/.MainActivity")
     capture("07-server-connection.png", 8)
     assert_visible_texts(["Aharane", "Connect your private Studio", "Server address", "HTTPS only"])
+    SCREEN_INDEX.append({
+        "file": "index.json",
+        "device": DEVICE_INFO.get("model", "Android emulator"),
+        "api_level": DEVICE_INFO.get("api_level", "unknown"),
+        "resolution": DEVICE_INFO.get("resolution", "unknown"),
+        "density": DEVICE_INFO.get("density", "unknown"),
+        "screens": SCREEN_INDEX.copy(),
+    })
+    (OUT / "index.json").write_text(
+        json.dumps(SCREEN_INDEX[-1], indent=2),
+        encoding="utf-8"
+    )
 
-    print("Captured debug-only native UI flows and the normal secure first-launch connection screen.")
+    print("Captured debug-only native UI flows and wrote screenshots/index.json.")
 
 
 if __name__ == "__main__":

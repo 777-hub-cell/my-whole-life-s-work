@@ -428,7 +428,7 @@ function renderEngineDetail(){
  '<label class="wb-config-field"><span>Safe test inputs (JSON)</span><textarea id="wb-engine-inputs" rows="4">'+esc(W.engineTestInputs||'{}')+'</textarea></label><div class="wb-engine-detail-actions"><button class="wb-action primary" data-engine-run>Run saved revision in sandbox</button><button class="wb-action secondary" data-engine-list>Back to library</button></div>'+
  (W.engineResult?'<h3>Latest safe test result</h3><pre class="wb-json">'+esc(JSON.stringify(W.engineResult,null,2))+'</pre>':'')+'<p class="wb-engine-safety">Tests run a saved immutable Engine revision. Source is never evaluated in this browser.</p></section>';
 }
-function renderEnginePage(){if(W.engineMode==='list')return renderEngineList();return renderEngineHeader()+(W.engineMode==='editor'?renderEngineEditor():renderEngineDetail())}
+function renderEnginePage(){if(W.engineMode==='list')return renderEngineList();if(W.engineMode==='editor')return renderEngineHeader()+renderEngineEditor();return renderEngineHeader()+(W.engine?renderEngineDetail():'<div class="wb-loading">'+esc(W.engineMessage||'Loading Engine details…')+'</div>')}
 async function loadEngines(){
  if(W.engineBusy)return;W.engineBusy=true;renderWorkspace();
  try{const result=await api('engines');W.engines=Array.isArray(result.engines)?result.engines:[];W.enginesReady=true;W.engineMessage=''}

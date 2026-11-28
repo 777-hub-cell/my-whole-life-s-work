@@ -169,7 +169,7 @@ try {
   await shot("07-engine-safe-test");
   await page.locator("[data-engine-back]").click();
   await delay(150);
-  await page.locator("[data-engine-back]").click();
+  await page.locator("[data-wb-back]").click();
   await delay(150);
   await activateNav("Files");
   await page.locator("[data-open-engine-library]").click();
@@ -178,7 +178,6 @@ try {
   await page.locator("[data-engine-open='text_transform']").click();
   await page.locator("[data-engine-edit]").click();
   await shot("09-engine-editor");
-  await page.locator("[data-engine-back]").click();
   await page.locator("[data-engine-back]").click();
 
   await activateNav("Home");

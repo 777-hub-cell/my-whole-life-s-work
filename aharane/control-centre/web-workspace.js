@@ -334,7 +334,7 @@ function deleteConfiguredNode(){
 function bindBuilder(){
  const view=document.getElementById('view');if(!view)return;
  view.onclick=async event=>{
-  const button=event.target.closest('[data-wb-back],[data-wb-save],[data-wb-test],[data-wb-add],[data-wb-category],[data-wb-manage-engines],[data-wb-config],[data-wb-open-config],[data-wb-apply-config],[data-wb-cancel-config],[data-wb-delete-node],[data-wb-disconnect],[data-wb-remove-edge],[data-wb-socket],[data-wb-new],[data-wb-fit],[data-wb-zoom],[data-wb-cancel-connect]');
+  const button=event.target.closest('[data-wb-back],[data-wb-save],[data-wb-test],[data-wb-add],[data-wb-category],[data-wb-manage-engines],[data-wb-config],[data-wb-open-config],[data-wb-apply-config],[data-wb-cancel-config],[data-wb-delete-node],[data-wb-disconnect],[data-wb-remove-edge],[data-wb-socket],[data-wb-new],[data-wb-fit],[data-wb-zoom],[data-wb-cancel-connect],[data-wb-scope]');
   if(!button)return;
   if(button.hasAttribute('data-wb-back')){backFromWorkspace();return}
   if(button.hasAttribute('data-wb-save')){await saveWorkflow();return}
@@ -342,6 +342,7 @@ function bindBuilder(){
   if(button.dataset.wbAdd){addNode(button.dataset.wbAdd);return}
   if(button.dataset.wbCategory){W.category=button.dataset.wbCategory;renderWorkspace();return}
   if(button.hasAttribute('data-wb-manage-engines')){openWebEngineLibrary('builder');return}
+  if(button.dataset.wbScope){W.configDraft.chatScope=button.dataset.wbScope;renderWorkspace();return}
   if(button.dataset.wbConfig||button.dataset.wbOpenConfig){const id=button.dataset.wbConfig||button.dataset.wbOpenConfig,node=W.draft.nodes.find(item=>item.id===id);if(node){W.selectedNodeId=id;W.configNodeId=id;W.configDraft=clone(node.config||{});renderWorkspace()}return}
   if(button.hasAttribute('data-wb-cancel-config')){W.configNodeId=null;W.configDraft=null;renderWorkspace();return}
   if(button.hasAttribute('data-wb-modal-close')&&event.target===button){W.configNodeId=null;W.configDraft=null;renderWorkspace();return}
@@ -424,10 +425,10 @@ function renderEngineDetail(){
  '<div class="wb-engine-ports"><section><b>Inputs</b>'+(manifest.inputs||[]).map(port=>'<span>'+esc(port.id)+' · '+esc(port.type)+(port.required===false?' · optional':' · required')+'</span>').join('')+'</section><section><b>Outputs</b>'+(manifest.outputs||[]).map(port=>'<span>'+esc(port.id)+' · '+esc(port.type)+'</span>').join('')+'</section></div>'+
  '<h3>Sandbox capabilities</h3><pre class="wb-json">'+esc(JSON.stringify(W.caps?.capabilities||{permissions:manifest.permissions||[],allowedHosts:manifest.allowedHosts||[]},null,2))+'</pre>'+
  (W.caps?.diagnostics?.findings?.length?'<h3>Static diagnostics</h3>'+W.caps.diagnostics.findings.map(item=>'<div class="wb-config-note">'+esc(item.severity+' · '+item.message)+'</div>').join(''):'')+
- '<label class="wb-config-field"><span>Safe test inputs (JSON)</span><textarea id="wb-engine-inputs" rows="4">'+esc(W.engineTestInputs||'{}')+'</textarea></label><div class="wb-engine-detail-actions"><button class="wb-action primary" data-engine-run>Run saved revision in sandbox</button><button class="wb-action secondary" data-engine-back>Back to library</button></div>'+
+ '<label class="wb-config-field"><span>Safe test inputs (JSON)</span><textarea id="wb-engine-inputs" rows="4">'+esc(W.engineTestInputs||'{}')+'</textarea></label><div class="wb-engine-detail-actions"><button class="wb-action primary" data-engine-run>Run saved revision in sandbox</button><button class="wb-action secondary" data-engine-list>Back to library</button></div>'+
  (W.engineResult?'<h3>Latest safe test result</h3><pre class="wb-json">'+esc(JSON.stringify(W.engineResult,null,2))+'</pre>':'')+'<p class="wb-engine-safety">Tests run a saved immutable Engine revision. Source is never evaluated in this browser.</p></section>';
 }
-function renderEnginePage(){return renderEngineHeader()+(W.engineMode==='editor'?renderEngineEditor():W.engineMode==='detail'&&W.engine?renderEngineDetail():renderEngineList())}
+function renderEnginePage(){if(W.engineMode==='list')return renderEngineList();return renderEngineHeader()+(W.engineMode==='editor'?renderEngineEditor():renderEngineDetail())}
 async function loadEngines(){
  if(W.engineBusy)return;W.engineBusy=true;renderWorkspace();
  try{const result=await api('engines');W.engines=Array.isArray(result.engines)?result.engines:[];W.enginesReady=true;W.engineMessage=''}
@@ -491,9 +492,10 @@ async function runEngine(){
 function bindEnginePage(){
  const view=document.getElementById('view');if(!view)return;
  view.onclick=async event=>{
-  const button=event.target.closest('[data-engine-back],[data-engine-refresh],[data-engine-new],[data-engine-open],[data-engine-edit],[data-engine-cancel],[data-engine-save],[data-engine-delete],[data-engine-run]');
+  const button=event.target.closest('[data-engine-back],[data-engine-list],[data-engine-refresh],[data-engine-new],[data-engine-open],[data-engine-edit],[data-engine-cancel],[data-engine-save],[data-engine-delete],[data-engine-run]');
   if(!button)return;
   if(button.hasAttribute('data-engine-back')){if(W.engineReturn==='builder'){S.sub='web-builder';renderWorkspace()}else backFromWorkspace();return}
+  if(button.hasAttribute('data-engine-list')){W.engineMode='list';W.engine=null;W.caps=null;W.engineResult=null;renderWorkspace();return}
   if(button.hasAttribute('data-engine-refresh')){W.enginesReady=false;await loadEngines();return}
   if(button.hasAttribute('data-engine-new')){newEngine();return}
   if(button.dataset.engineOpen){await openEngine(button.dataset.engineOpen);return}

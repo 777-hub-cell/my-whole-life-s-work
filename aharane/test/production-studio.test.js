@@ -484,3 +484,23 @@ test('update monitoring tolerates restart-time API failures for up to twelve min
  assert.ok(poll.includes('error.status===401||error.status===403'))
  assert.ok(poll.includes('the deployment may still have completed'))
 })
+
+
+test('web Builder and Engine Library use native Home and Files entry points, not bottom tabs', async () => {
+  const workspace = await read('../control-centre/web-workspace.js')
+  const css = await read('../control-centre/styles.css')
+  assert.ok(workspace.includes("Object.assign(T,{home:'Home',files:'Files',chats:'Chats',env:'ENV',more:'More'})"))
+  assert.ok(workspace.includes('function injectHomeEntry()'))
+  assert.ok(workspace.includes('function injectEnginesFolder()'))
+  assert.ok(workspace.includes("openWorkspace('web-builder','home')"))
+  assert.ok(workspace.includes("openWorkspace('web-engines',W.returnTab)"))
+  assert.ok(!/builder:'Builder'|library:'Engine Library'/.test(workspace))
+  assert.ok(workspace.includes('data-wb-drag'))
+  assert.ok(workspace.includes('data-wb-socket'))
+  assert.ok(workspace.includes('data-wb-open-config'))
+  assert.ok(workspace.includes('function configDialogMarkup()'))
+  assert.ok(workspace.includes('data-wb-apply-config'))
+  assert.ok(workspace.includes('data-engine-save'))
+  assert.ok(css.includes('body.aharane-workspace-open .nav'))
+  assert.ok(!/\\.app\\{max-width:1440px/.test(css))
+})

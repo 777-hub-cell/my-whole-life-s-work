@@ -110,8 +110,10 @@ try {
     scrollWidth: el.scrollWidth,
     labels: [...el.querySelectorAll("button")].map(button => button.innerText.trim())
   }));
-  if (navFit.buttons !== 7 || navFit.scrollWidth > navFit.clientWidth + 1) {
-    throw new Error("The seven-item mobile navigation does not fit: " + JSON.stringify(navFit));
+  const expectedTabs = ["Home", "Files", "Chats", "ENV", "More"];
+  if (JSON.stringify(navFit.labels) !== JSON.stringify(expectedTabs) ||
+      navFit.buttons !== 5 || navFit.scrollWidth > navFit.clientWidth + 1) {
+    throw new Error("The native five-tab navigation changed or overflows: " + JSON.stringify(navFit));
   }
   if (navFit.labels[2] !== "Chats") throw new Error("Chats must remain the third navigation item.");
   await delay(500);
@@ -119,68 +121,66 @@ try {
   const out = "web-reference-screenshots";
   const fs = await import("node:fs/promises");
   await fs.mkdir(out, { recursive: true });
-  const shot = async name => {
-    await page.screenshot({ path: `${out}/${name}.png`, fullPage: false, animations: "disabled" });
+  const shot = async name => page.screenshot({
+    path: out + "/" + name + ".png", fullPage: false, animations: "disabled"
+  });
+  const navButton = label => page.locator("#nav button").filter({ hasText: label }).first();
+  const activateNav = async label => {
+    await navButton(label).evaluate(button => button.click());
+    await delay(280);
   };
 
   await shot("01-home");
-  const navButton = label => page.locator("#nav button").filter({ hasText: label }).first();
-  const activateNav = async label => {
-    // The fixed mobile tab rail is horizontally scrollable. Invoke the real
-    // tab button handler directly so the screenshot test does not depend on
-    // Playwright scrolling a clipped fixed-position child into view.
-    await navButton(label).evaluate(button => button.click());
-    await delay(300);
-  };
-  for (const [label, name] of [
-    ["Chats", "02-chats"],
-    ["Files", "03-files"],
-    ["ENV", "04-env"],
-    ["More", "05-more"]
-  ]) {
-    await activateNav(label);
-    await shot(name);
-  }
-
-  await page.getByText("Appearance", { exact: true }).last().click();
-  await delay(250);
-  await shot("06-appearance");
-  await page.keyboard.press("Escape");
-  await delay(180);
-  await activateNav("Builder");
-  await page.locator("[data-wf-add='trigger.command']").click();
-  await page.locator("[data-wf-add='message.sendText']").click();
-  await page.locator("[data-wf-select]").nth(1).click();
-  await shot("07-builder");
-  await page.locator(".wb-inspector").evaluate(element => element.scrollIntoView({ block: "center" }));
-  await delay(150);
-  await shot("08-builder-node-configuration");
-
-  await activateNav("Engine Library");
+  await page.locator("[data-open-web-builder]").click();
+  await page.waitForSelector("[data-wb-add='trigger.command']", { timeout: 15000 });
+  await shot("02-home-command-builder-entry");
+  await page.locator("[data-wb-add='trigger.command']").click();
+  await page.locator("[data-wb-add='message.sendText']").click();
+  await page.locator(".wb-node-card").first().click();
+  await shot("03-command-node-configuration");
+  await page.locator("[data-wb-cancel-config]").last().click();
+  const outputSocket = page.locator(".wb-node-card").first().locator("[data-wb-socket][data-direction='out']").first();
+  const inputSocket = page.locator(".wb-node-card").nth(1).locator("[data-wb-socket][data-direction='in']").first();
+  await outputSocket.click();
+  await inputSocket.click();
+  await shot("04-command-canvas-connected-nodes");
+  await page.locator("[data-wb-manage-engines]").click();
+  await page.waitForSelector("[data-engine-open='text_transform']", { timeout: 15000 });
+  await shot("05-engine-library-from-builder");
   await page.locator("[data-engine-open='text_transform']").click();
-  await delay(200);
-  await shot("09-engine-library");
+  await page.waitForSelector("[data-engine-run]");
+  await shot("06-engine-details");
   await page.locator("[data-engine-run]").click();
-  await delay(200);
-  await shot("10-engine-test-result");
-  await page.locator("[data-engine-new]").click();
   await delay(150);
-  await shot("11-engine-editor");
-
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await activateNav("Builder");
-  await shot("12-desktop-builder");
-  await page.locator(".wb-inspector").evaluate(element => element.scrollIntoView({ block: "center" }));
-  await delay(100);
-  await shot("13-desktop-node-configuration");
-  await activateNav("Engine Library");
+  await shot("07-engine-safe-test");
+  await page.locator("[data-engine-back]").click();
+  await delay(150);
+  await page.locator("[data-engine-back]").click();
+  await delay(150);
+  await activateNav("Files");
+  await page.locator("[data-open-engine-library]").click();
+  await page.waitForSelector("[data-engine-open='text_transform']");
+  await shot("08-files-virtual-engines-folder");
   await page.locator("[data-engine-open='text_transform']").click();
-  await delay(200);
-  await shot("14-desktop-engine-library");
   await page.locator("[data-engine-edit]").click();
-  await delay(150);
-  await shot("15-desktop-engine-editor");
-  console.log("Captured Studio screens at mobile and desktop sizes, including Builder and Engine Library.");
+  await shot("09-engine-editor");
+  await page.locator("[data-engine-back]").click();
+  await page.locator("[data-engine-back]").click();
+
+  await activateNav("Home");
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.locator("[data-open-web-builder]").click();
+  await page.waitForSelector(".wb-node-card");
+  await shot("10-desktop-command-canvas");
+  await page.locator(".wb-node-card").first().click();
+  await shot("11-desktop-node-configuration");
+  await page.locator("[data-wb-cancel-config]").last().click();
+  await page.locator("[data-wb-manage-engines]").click();
+  await page.locator("[data-engine-open='text_transform']").click();
+  await shot("12-desktop-engine-details");
+  await page.locator("[data-engine-edit]").click();
+  await shot("13-desktop-engine-editor");
+  console.log("Captured mobile and desktop Studio, Builder canvas, node configuration and Engine screens.");
 } finally {
   if (browser) await browser.close();
   try { process.kill(-server.pid, "SIGTERM"); } catch {}

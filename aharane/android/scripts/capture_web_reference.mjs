@@ -156,12 +156,9 @@ try {
   await page.locator(".wb-node-card").first().click();
   await shot("03-command-node-configuration");
   await page.locator("[data-wb-cancel-config]").last().click();
-  const outputSocket = page.locator(".wb-node-card").first().locator("[data-wb-socket][data-direction='out']").first();
-  const inputSocket = page.locator(".wb-node-card").nth(1).locator("[data-wb-socket][data-direction='in']").first();
-  await outputSocket.click();
-  await inputSocket.click();
   await page.waitForFunction(() => document.querySelectorAll("#wb-wires path").length === 1, null, { timeout: 5000 });
-  if (await page.locator("#wb-wires path").count() !== 1) throw new Error("Builder did not draw the expected typed connection.");
+  if (await page.locator("#wb-wires path").count() !== 1) throw new Error("Adding an action did not automatically connect the previous execution output.");
+  if (await page.locator(".wb-inline-message.error").count()) throw new Error("Builder displayed an error while automatically connecting nodes.");
   const splitter = page.locator("[data-wb-resize]");
   const splitterBox = await splitter.boundingBox();
   if (!splitterBox) throw new Error("The Builder canvas/library resize handle is not visible.");

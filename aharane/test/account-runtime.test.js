@@ -13,6 +13,7 @@ async function fixture(t, {
   reconnectMaxMs = 5,
   reconnectJitterRatio = 0.2,
   reconnectRandom = () => 0.5,
+  pairingReadyTimeoutMs = 70_000,
   logger = { info() {}, warn() {}, error() {} },
 } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'aharane-accounts-'))
@@ -65,6 +66,7 @@ async function fixture(t, {
     reconnectJitterRatio,
     reconnectRandom,
     pairingReadyDelayMs: 0,
+    pairingReadyTimeoutMs,
     logger,
   })
   return { root, runtime, authLoads, authContexts, sockets, savedAuth }
@@ -662,4 +664,26 @@ test('automatic reconnect delay applies deterministic bounded jitter', async t =
   })
   assert.equal(upperLogs.find(entry => entry.event === 'whatsapp.reconnect-scheduled')?.delayMs, 125)
   await upper.runtime.shutdown()
+})
+
+
+test('pairing readiness timeout allows the configured window and preserves the previous session', async t => {
+  const { runtime, sockets } = await fixture(t, {
+    registered: true,
+    pairingReadyTimeoutMs: 30,
+  })
+  await runtime.start('private')
+  const previousSocket = runtime.get('private').socket
+
+  await assert.rejects(
+    runtime.requestPairingCode('private', '2348012345678'),
+    /did not become ready/i,
+  )
+
+  assert.equal(runtime.get('private').socket, previousSocket)
+  assert.equal(runtime.get('private').registered, true)
+  assert.equal(runtime.get('private').pairingCandidate, null)
+  assert.equal(sockets[1].ended, true)
+  assert.match(runtime.get('private').pairingError, /previous session was kept/i)
+  await runtime.shutdown()
 })

@@ -38,6 +38,7 @@ export function createAccountRuntime({
   reconnectJitterRatio = 0.2,
   reconnectRandom = Math.random,
   pairingReadyDelayMs = 1500,
+  pairingReadyTimeoutMs = 70_000,
   replacementReconnectTimeoutMs = 210000,
 }) {
   if (typeof loadAuthState !== 'function' || typeof makeSocket !== 'function') {
@@ -48,6 +49,10 @@ export function createAccountRuntime({
     ? Math.min(0.5, Math.max(0, jitterRatioValue))
     : 0.2
   const randomValue = typeof reconnectRandom === 'function' ? reconnectRandom : Math.random
+  const pairingReadyTimeoutValue = Number(pairingReadyTimeoutMs)
+  const effectivePairingReadyTimeoutMs = Number.isFinite(pairingReadyTimeoutValue)
+    ? Math.max(10, Math.min(180_000, Math.round(pairingReadyTimeoutValue)))
+    : 70_000
 
   const privatePath = String(authDirs?.private || '').trim()
   const publicPath = String(authDirs?.public || '').trim()
@@ -837,7 +842,7 @@ export function createAccountRuntime({
     }
   }
 
-  async function waitUntilReady(id, timeoutMs = 20000) {
+  async function waitUntilReady(id, timeoutMs = effectivePairingReadyTimeoutMs) {
     const session = get(id)
     let timer
     try {
@@ -897,7 +902,7 @@ export function createAccountRuntime({
     }
   }
 
-  async function waitUntilCandidateReady(candidate, timeoutMs = 20000) {
+  async function waitUntilCandidateReady(candidate, timeoutMs = effectivePairingReadyTimeoutMs) {
     let timer
     try {
       await Promise.race([

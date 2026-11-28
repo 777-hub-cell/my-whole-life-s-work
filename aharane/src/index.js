@@ -1388,6 +1388,7 @@ privateCommandRegistry = await loadCommandRegistry(new URL('../private-commands/
 accountRuntime = createAccountRuntime({
   authDirs: { public: AUTH_DIR, private: PRIVATE_AUTH_DIR },
   loadAuthState: useMultiFileAuthState,
+  pairingReadyTimeoutMs: 70_000,
   makeSocket: ({ auth }) => {
     // The pinned Baileys fork prefers Node's built-in Undici WebSocket on
     // Node 22+, which currently hides useful handshake failure details.
@@ -1399,10 +1400,9 @@ accountRuntime = createAccountRuntime({
         auth,
         logger,
         browser: Browsers.macOS('Chrome'),
-        // Azure egress and WhatsApp's initial pairing handshake can be slower
-        // than the upstream 30-second defaults. The account runtime now retries
-        // transient post-link network failures while preserving rollback state.
-        connectTimeoutMs: 45_000,
+        // Allow Azure's outbound WebSocket handshake enough time to complete.
+        // The account runtime's readiness wait is longer than this timeout.
+        connectTimeoutMs: 60_000,
         defaultQueryTimeoutMs: 60_000,
         keepAliveIntervalMs: 15_000,
         markOnlineOnConnect: false,

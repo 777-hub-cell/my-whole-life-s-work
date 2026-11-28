@@ -516,3 +516,13 @@ test('Builder node configuration preserves typed values and command aliases', as
   assert.ok(workspace.includes(".map(value=>String(value).trim()).filter(Boolean)"))
   assert.ok(workspace.includes("config.maxMessagesPerRun=Number(config.maxMessagesPerRun==null?10:config.maxMessagesPerRun)"))
 })
+
+
+test('Builder node dragging keeps canvas coordinates aligned and the config backdrop closes the dialog', async () => {
+  const workspace = await read('../control-centre/web-workspace.js')
+  assert.ok(workspace.includes("card.style.left=node.x+'px';card.style.top=node.y+'px'"))
+  assert.ok(workspace.includes("Math.max(0,minX*W.zoom-60)"))
+  assert.ok(workspace.includes("Math.max(0,minY*W.zoom-50)"))
+  assert.ok(workspace.includes('[data-wb-modal-close]'))
+  assert.ok(workspace.includes('event.target===button'))
+})

@@ -279,7 +279,7 @@ function fitCanvas(){
  const minX=Math.min(...W.draft.nodes.map(node=>Number(node.x)||0)),minY=Math.min(...W.draft.nodes.map(node=>Number(node.y)||0));
  const maxX=Math.max(...W.draft.nodes.map(node=>(Number(node.x)||0)+270)),maxY=Math.max(...W.draft.nodes.map(node=>(Number(node.y)||0)+190));
  W.zoom=Math.min(1.25,Math.max(.28,Math.min((viewport.clientWidth-100)/(maxX-minX+180),(viewport.clientHeight-90)/(maxY-minY+140))));
- updateZoom();requestAnimationFrame(()=>{viewport.scrollLeft=Math.max(0,(minX+600)*W.zoom-60);viewport.scrollTop=Math.max(0,(minY+420)*W.zoom-50);drawWires()});
+ updateZoom();requestAnimationFrame(()=>{viewport.scrollLeft=Math.max(0,minX*W.zoom-60);viewport.scrollTop=Math.max(0,minY*W.zoom-50);drawWires()});
 }
 function renderWorkspace(){
  nav();if(typeof pill==='function')pill();
@@ -337,7 +337,7 @@ function deleteConfiguredNode(){
 function bindBuilder(){
  const view=document.getElementById('view');if(!view)return;
  view.onclick=async event=>{
-  const button=event.target.closest('[data-wb-back],[data-wb-save],[data-wb-test],[data-wb-add],[data-wb-category],[data-wb-manage-engines],[data-wb-config],[data-wb-open-config],[data-wb-apply-config],[data-wb-cancel-config],[data-wb-delete-node],[data-wb-disconnect],[data-wb-remove-edge],[data-wb-socket],[data-wb-new],[data-wb-fit],[data-wb-zoom],[data-wb-cancel-connect],[data-wb-scope]');
+  const button=event.target.closest('[data-wb-back],[data-wb-save],[data-wb-test],[data-wb-add],[data-wb-category],[data-wb-manage-engines],[data-wb-config],[data-wb-open-config],[data-wb-apply-config],[data-wb-cancel-config],[data-wb-delete-node],[data-wb-disconnect],[data-wb-remove-edge],[data-wb-modal-close],[data-wb-socket],[data-wb-new],[data-wb-fit],[data-wb-zoom],[data-wb-cancel-connect],[data-wb-scope]');
   if(!button)return;
   if(button.hasAttribute('data-wb-back')){backFromWorkspace();return}
   if(button.hasAttribute('data-wb-save')){await saveWorkflow();return}
@@ -382,8 +382,8 @@ function bindBuilder(){
   if(!W.drag)return;const node=W.draft?.nodes.find(item=>item.id===W.drag.nodeId);if(!node)return;
   const dx=(event.clientX-W.drag.startX)/W.zoom,dy=(event.clientY-W.drag.startY)/W.zoom;
   if(Math.abs(dx)+Math.abs(dy)>3)W.drag.moved=true;
-  node.x=Math.max(-450,Math.round(W.drag.startNodeX+dx));node.y=Math.max(-350,Math.round(W.drag.startNodeY+dy));
-  const card=view.querySelector('[data-wb-node="'+CSS.escape(node.id)+'"]');if(card){card.style.left=(node.x+600)+'px';card.style.top=(node.y+420)+'px'}drawWires();
+  node.x=Math.max(8,Math.round(W.drag.startNodeX+dx));node.y=Math.max(8,Math.round(W.drag.startNodeY+dy));
+  const card=view.querySelector('[data-wb-node="'+CSS.escape(node.id)+'"]');if(card){card.style.left=node.x+'px';card.style.top=node.y+'px'}drawWires();
  };
  view.onpointerup=()=>{if(W.drag){if(W.drag.moved)markDirty();W.drag=null}};
  view.onpointercancel=()=>{if(W.drag){markDirty();W.drag=null}};
@@ -527,7 +527,7 @@ function renderWorkspace(){
 function bindBuilder(){
  const view=document.getElementById('view');if(!view)return;
  view.onclick=async event=>{
-  const button=event.target.closest('[data-wb-back],[data-wb-save],[data-wb-test],[data-wb-add],[data-wb-category],[data-wb-manage-engines],[data-wb-config],[data-wb-open-config],[data-wb-apply-config],[data-wb-cancel-config],[data-wb-delete-node],[data-wb-disconnect],[data-wb-remove-edge],[data-wb-socket],[data-wb-new],[data-wb-fit],[data-wb-zoom],[data-wb-cancel-connect]');
+  const button=event.target.closest('[data-wb-back],[data-wb-save],[data-wb-test],[data-wb-add],[data-wb-category],[data-wb-manage-engines],[data-wb-config],[data-wb-open-config],[data-wb-apply-config],[data-wb-cancel-config],[data-wb-delete-node],[data-wb-disconnect],[data-wb-remove-edge],[data-wb-modal-close],[data-wb-socket],[data-wb-new],[data-wb-fit],[data-wb-zoom],[data-wb-cancel-connect]');
   if(!button)return;
   if(button.hasAttribute('data-wb-back')){backFromWorkspace();return}
   if(button.hasAttribute('data-wb-save')){await saveWorkflow();return}
@@ -571,8 +571,8 @@ function bindBuilder(){
   if(!W.drag)return;const node=W.draft?.nodes.find(item=>item.id===W.drag.nodeId);if(!node)return;
   const dx=(event.clientX-W.drag.startX)/W.zoom,dy=(event.clientY-W.drag.startY)/W.zoom;
   if(Math.abs(dx)+Math.abs(dy)>3)W.drag.moved=true;
-  node.x=Math.max(-450,Math.round(W.drag.startNodeX+dx));node.y=Math.max(-350,Math.round(W.drag.startNodeY+dy));
-  const card=view.querySelector('[data-wb-node="'+CSS.escape(node.id)+'"]');if(card){card.style.left=(node.x+600)+'px';card.style.top=(node.y+420)+'px'}drawWires();
+  node.x=Math.max(8,Math.round(W.drag.startNodeX+dx));node.y=Math.max(8,Math.round(W.drag.startNodeY+dy));
+  const card=view.querySelector('[data-wb-node="'+CSS.escape(node.id)+'"]');if(card){card.style.left=node.x+'px';card.style.top=node.y+'px'}drawWires();
  };
  view.onpointerup=()=>{if(W.drag){if(W.drag.moved)markDirty();W.drag=null}};
  view.onpointercancel=()=>{if(W.drag){markDirty();W.drag=null}};

@@ -229,7 +229,7 @@ def main():
         capture("01e-home-visual-command-builder-shortcut.png", 0.5)
         tap_label("Visual command builder")
         capture("01f-home-visual-command-builder.png", 2)
-        assert_visible_texts(["Command builder", "WORKSPACE", "NODE LIBRARY", "Search nodes", "Save"])
+        assert_visible_texts(["Command builder", "WORKSPACE", "NODE LIBRARY", "Search nodes", "Save", "Command trigger", "Reply to message"])
         index = {
             "file": "index.json",
             "device": DEVICE_INFO.get("model", "Android emulator"),
@@ -263,7 +263,7 @@ def main():
     capture("01e-home-visual-command-builder-shortcut.png")
     tap_label("Visual command builder")
     capture("01f-home-visual-command-builder.png", 2)
-    assert_visible_texts(["Command builder", "WORKSPACE", "NODE LIBRARY", "Search nodes", "Save"])
+    assert_visible_texts(["Command builder", "WORKSPACE", "NODE LIBRARY", "Search nodes", "Save", "Command trigger", "Reply to message"])
     if os.environ.get("AHARANE_COMMAND_BUILDER_ONLY") == "1":
         index = {
             "file": "index.json",

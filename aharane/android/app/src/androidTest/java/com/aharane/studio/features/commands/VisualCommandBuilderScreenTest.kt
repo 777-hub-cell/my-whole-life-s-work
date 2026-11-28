@@ -33,6 +33,35 @@ class VisualCommandBuilderScreenTest {
     val compose = createComposeRule()
 
     @Test
+    fun previewModeShowsStarterNodesInsideMeasuredWorkspace() {
+        val source = FakeVisualCommandDataSource()
+        compose.setContent {
+            AharaneTheme(themeMode = "dark") {
+                VisualCommandBuilderScreen(
+                    repository = source,
+                    connected = false,
+                    onBack = {},
+                    previewMode = true
+                )
+            }
+        }
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag("node-card-trigger.command").fetchSemanticsNodes().isNotEmpty() &&
+                compose.onAllNodesWithTag("node-card-message.replyText").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.waitForIdle()
+
+        val workspace = compose.onNodeWithTag("workflow-workspace").fetchSemanticsNode().boundsInRoot
+        val trigger = compose.onNodeWithTag("node-card-trigger.command").fetchSemanticsNode().boundsInRoot
+        val reply = compose.onNodeWithTag("node-card-message.replyText").fetchSemanticsNode().boundsInRoot
+        assertTrue("Preview workspace must have measured bounds", workspace.width > 100f && workspace.height > 100f)
+        assertTrue("Preview trigger must be fully visible horizontally", trigger.left >= workspace.left - 1f && trigger.right <= workspace.right + 1f)
+        assertTrue("Preview trigger must be fully visible vertically", trigger.top >= workspace.top - 1f && trigger.bottom <= workspace.bottom + 1f)
+        assertTrue("Preview reply must be fully visible horizontally", reply.left >= workspace.left - 1f && reply.right <= workspace.right + 1f)
+        assertTrue("Preview reply must be fully visible vertically", reply.top >= workspace.top - 1f && reply.bottom <= workspace.bottom + 1f)
+    }
+
+    @Test
     fun editAddConnectSaveReloadAndSafeTestWorkflow() {
         val source = FakeVisualCommandDataSource()
         compose.setContent {

@@ -34,12 +34,35 @@ test('Export Bot Source uses a real browser download instead of the preview-only
  assert.ok(!bridge.includes("claude.use('downloads')"))
 })
 
-test('the offline service worker caches the bridge and invalidates the previous shell', async () => {
+test('the offline service worker caches the bridge and the new workspace shell', async () => {
   const sw = await read('../control-centre/sw.js')
-  assert.ok(sw.includes('aharane-local-studio-shell-v14'))
+  assert.ok(sw.includes('aharane-local-studio-shell-v15'))
+  assert.ok(sw.includes("k.startsWith('aharane-local-studio-shell-')&&k!==CACHE_NAME"))
   assert.ok(sw.includes('/aharane/studio/production-bridge.js'))
   assert.ok(sw.includes("['/aharane/studio/production-bridge.js','production-bridge.js']"))
+  assert.ok(sw.includes('/aharane/studio/web-workspace.js'))
+  assert.ok(sw.includes("['/aharane/studio/web-workspace.js','web-workspace.js']"))
 })
+test('web conversations render encrypted on-device cache before fetching server history', async () => {
+  const html = await read('../control-centre/index.html')
+  const bridge = await read('../control-centre/production-bridge.js')
+  assert.ok(html.includes('/aharane/studio/web-workspace.js'))
+  assert.ok(bridge.includes("const CHAT_CACHE_DB_P='aharane-encrypted-chat-cache-v1'"))
+  assert.ok(bridge.includes("crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt'])"))
+  assert.ok(bridge.includes('crypto.subtle.encrypt({name:\'AES-GCM\',iv},key,clear)'))
+  assert.ok(bridge.includes('crypto.subtle.decrypt({name:\'AES-GCM\',iv:new Uint8Array(record.iv)},key,record.ciphertext)'))
+  assert.ok(bridge.includes("readChatCacheP(account,'messages',jid)"))
+  assert.ok(bridge.includes("await writeChatCacheP(account,'messages',jid,"))
+  assert.ok(bridge.includes("function cacheableChatMessageP(message)"))
+  assert.ok(bridge.includes("CHAT_CACHE_MAX_MESSAGE_CHATS_P=150"))
+  assert.ok(bridge.includes("CHAT_CACHE_MAX_BYTES_P=20*1024*1024"))
+  const sanitizer = bridge.slice(bridge.indexOf("function cacheableChatMessageP(message)"), bridge.indexOf("async function writeChatCacheP", bridge.indexOf("function cacheableChatMessageP(message)")))
+  assert.ok(sanitizer.includes("viewOnce:true"))
+  assert.ok(!sanitizer.includes("text:"))
+  assert.ok(!sanitizer.includes("mediaUrl"))
+  assert.ok(bridge.includes("crypto.getRandomValues(new Uint8Array(12))"))
+})
+
 
 test('Files toolbar groups Export Bot Source with the creation and upload actions', async () => {
   const app = await read('../control-centre/app.js')
@@ -460,4 +483,92 @@ test('update monitoring tolerates restart-time API failures for up to twelve min
  assert.ok(poll.includes('lastError=error'))
  assert.ok(poll.includes('error.status===401||error.status===403'))
  assert.ok(poll.includes('the deployment may still have completed'))
+})
+
+
+test('web Builder and Engine Library use native Home and Files entry points, not bottom tabs', async () => {
+  const workspace = await read('../control-centre/web-workspace.js')
+  const css = await read('../control-centre/styles.css')
+  assert.ok(workspace.includes("Object.assign(T,{home:'Home',files:'Files',chats:'Chats',env:'ENV',more:'More'})"))
+  assert.ok(workspace.includes('function injectHomeEntry()'))
+  assert.ok(workspace.includes('function wrappedRender()'))
+  assert.ok(workspace.includes('window.render=wrappedRender;'))
+  assert.ok(workspace.includes('function injectEnginesFolder()'))
+  assert.ok(workspace.includes("openWorkspace('web-builder','home')"))
+  assert.ok(workspace.includes("openWorkspace('web-engines',W.returnTab)"))
+  assert.ok(!/builder:'Builder'|library:'Engine Library'/.test(workspace))
+  assert.ok(workspace.includes('data-wb-drag'))
+  assert.ok(workspace.includes('data-wb-socket'))
+  assert.ok(workspace.includes('data-wb-open-config'))
+  assert.ok(workspace.includes('function configDialogMarkup()'))
+  assert.ok(workspace.includes('data-wb-apply-config'))
+  assert.ok(workspace.includes('data-engine-save'))
+  assert.ok(css.includes('body.aharane-workspace-open .nav'))
+  assert.ok(!/\\.app\\{max-width:1440px/.test(css))
+})
+
+
+test('Builder node configuration preserves typed values and command aliases', async () => {
+  const workspace = await read('../control-centre/web-workspace.js')
+  assert.ok(workspace.includes("'trigger.command':{command:'hello',aliases:'',chatScope:'direct',maxMessagesPerRun:'10',requireQuoted:'false',requireReply:'false'}"))
+  assert.ok(workspace.includes("type==='boolean'?target.checked:type==='number'?(target.value===''?'':Number(target.value)):target.value"))
+  assert.ok(workspace.includes("config.aliases=(Array.isArray(config.aliases)?config.aliases:String(config.aliases||'').split("))
+  assert.ok(workspace.includes(".map(value=>String(value).trim()).filter(Boolean)"))
+  assert.ok(workspace.includes("config.maxMessagesPerRun=Number(config.maxMessagesPerRun==null?10:config.maxMessagesPerRun)"))
+})
+
+
+test('Builder node dragging keeps canvas coordinates aligned and the config backdrop closes the dialog', async () => {
+  const workspace = await read('../control-centre/web-workspace.js')
+  assert.ok(workspace.includes("card.style.left=node.x+'px';card.style.top=node.y+'px'"))
+  assert.ok(workspace.includes("Math.max(0,minX*W.zoom-60)"))
+  assert.ok(workspace.includes("Math.max(0,minY*W.zoom-50)"))
+  assert.ok(workspace.includes('[data-wb-modal-close]'))
+  assert.ok(workspace.includes('event.target===button'))
+})
+
+
+test('web workspace declares only one renderer and one Builder event handler', async () => {
+  const workspace = await read('../control-centre/web-workspace.js')
+  assert.equal((workspace.match(/function renderWorkspace\(\)\{/g) || []).length, 1)
+  assert.equal((workspace.match(/function bindBuilder\(\)\{/g) || []).length, 1)
+  assert.ok(workspace.includes('if(button.dataset.wbScope){W.configDraft.chatScope=button.dataset.wbScope;renderWorkspace();return}'))
+})
+
+test('Builder creates mobile-friendly vertical nodes and handles empty data attributes', async () => {
+  const workspace = await read('../control-centre/web-workspace.js')
+  const css = await read('../control-centre/styles.css')
+  assert.ok(workspace.includes("columns=viewportWidth<700?1:3"))
+  assert.ok(workspace.includes("if(button.hasAttribute('data-wb-socket')){connectSockets(button);return}"))
+  assert.ok(css.includes('.wb-viewport{min-height:370px}'))
+})
+
+
+test('Builder mirrors the native draggable workspace and node-library split pane', async () => {
+  const workspace = await read('../control-centre/web-workspace.js')
+  const css = await read('../control-centre/styles.css')
+  assert.ok(workspace.includes('workspaceFraction:.52'))
+  assert.ok(workspace.includes('data-wb-resize'))
+  assert.ok(workspace.includes('function applyPaneSplit()'))
+  assert.ok(workspace.includes('W.workspaceFraction=Math.min(.72,Math.max(.28,(event.clientY-rect.top)/rect.height))'))
+  assert.ok(workspace.includes('if(W.resizing){W.resizing=null;return}'))
+  assert.ok(css.includes('.wb-pane-splitter{'))
+  assert.ok(css.includes('.wb-command-screen .wb-builder-layout{display:flex'))
+  assert.ok(css.includes('.wb-command-screen .wb-lib-scroll{flex:1 1 0'))
+})
+
+
+test('new Engine and Custom nodes pin their definition versions and auto-connect execution flow', async () => {
+  const workspace = await read('../control-centre/web-workspace.js')
+  assert.ok(workspace.includes("if(type.startsWith('engine.'))node.config.engineVersion=String(definition.version||1)"))
+  assert.ok(workspace.includes("if(type.startsWith('custom.'))node.config.nodeVersion=String(definition.version||1)"))
+  assert.ok(workspace.includes("const needsExec=(definition.ports?.inputs||[]).some(port=>port.id==='in'&&port.type==='exec')"))
+  assert.ok(workspace.includes("W.draft.edges.push({id:uid(),from:previous.id,fromSocket:'next',to:node.id,toSocket:'in'})"))
+  assert.ok(workspace.includes("?' · v'"))
+})
+
+
+test('opening a fresh Builder from Home resets the node library filter', async () => {
+  const workspace = await read('../control-centre/web-workspace.js')
+  assert.ok(workspace.includes("W.category='All';W.search='';W.selectedNodeId=null;W.pendingSocket=null"))
 })

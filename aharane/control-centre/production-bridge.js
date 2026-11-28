@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const API='/aharane/api', Q=s=>document.querySelector(s);
-const APP_SOURCE_PATHS=['index.html','styles.css','app.js','production-bridge.js','manifest.webmanifest'];
+const APP_SOURCE_PATHS=['index.html','styles.css','app.js','production-bridge.js','web-workspace.js','manifest.webmanifest'];
 const escP=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pack=JSON.stringify;
 // Shared preview callbacks replaced by the live production bridge. Keep these
@@ -959,19 +959,94 @@ function drawChatVisibilityP(account,search){
  const save=Q('#vis-save');if(save)save.onclick=async()=>{save.disabled=true;save.textContent='Saving…';try{const response=await apiP('chats/'+account+'/visibility',{method:'PUT',body:pack({visibility:visibilityDraftP})});P.visibility=response.visibility||visibilityDraftP;visibilityDraftP=null;visibilityChatsDraftP=[];closeSheet();await refreshChatsP();render();notifyP('Chat visibility saved')}catch(error){save.disabled=false;save.textContent='Save visibility';notifyP(error.message)}};
 }
 
-async function refreshChatsP(){
- const account=S.cacc==='private'?'private':'public',r=await apiP('chats/'+account+'?limit=500'),current=P.chatJid,prefs=r.preferences||{pinned:[],muted:[],archived:[]},pinned=new Set(prefs.pinned||[]),muted=new Set(prefs.muted||[]),archived=new Set(prefs.archived||[]);
- P.chatPreferences=prefs;
- CH.splice(0,CH.length,...(r.chats||[]).map(c=>({jid:c.jid,n:c.name||c.jid.split('@')[0],g:c.group===true||String(c.jid).endsWith('@g.us'),mem:[],un:c.unreadCount||0,pinned:pinned.has(c.jid),muted:muted.has(c.jid),archived:archived.has(c.jid),m:[{d:c.fromMe?'o':'i',t:c.lastMessage||'',ts:c.timestamp||Date.now()}]})));P.messageFingerprints.clear();
+
+const CHAT_CACHE_DB_P='aharane-encrypted-chat-cache-v1';
+let chatCacheDbPromiseP=null;
+const chatCacheKeysP=new Map();
+function openChatCacheDbP(){
+ if(chatCacheDbPromiseP)return chatCacheDbPromiseP;
+ chatCacheDbPromiseP=new Promise((resolve,reject)=>{
+  if(!('indexedDB' in window)||!window.isSecureContext||!window.crypto?.subtle){reject(new Error('Encrypted browser storage is unavailable.'));return}
+  const request=indexedDB.open(CHAT_CACHE_DB_P,1);
+  request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains('keys'))db.createObjectStore('keys',{keyPath:'scope'});if(!db.objectStoreNames.contains('records'))db.createObjectStore('records',{keyPath:'id'})};
+  request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);request.onblocked=()=>reject(new Error('Encrypted chat storage is blocked by another tab.'));
+ });
+ return chatCacheDbPromiseP;
+}
+function chatIdbGetP(store,key){return openChatCacheDbP().then(db=>new Promise((resolve,reject)=>{const tx=db.transaction(store,'readonly'),r=tx.objectStore(store).get(key);r.onsuccess=()=>resolve(r.result||null);r.onerror=()=>reject(r.error)}))}
+function chatIdbPutP(store,value){return openChatCacheDbP().then(db=>new Promise((resolve,reject)=>{const tx=db.transaction(store,'readwrite');tx.objectStore(store).put(value);tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)}))}
+function chatIdbGetAllP(store){return openChatCacheDbP().then(db=>new Promise((resolve,reject)=>{const tx=db.transaction(store,'readonly'),r=tx.objectStore(store).getAll();r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error)}))}
+function chatIdbDeleteManyP(store,keys){if(!keys.length)return Promise.resolve(true);return openChatCacheDbP().then(db=>new Promise((resolve,reject)=>{const tx=db.transaction(store,'readwrite'),objectStore=tx.objectStore(store);keys.forEach(key=>objectStore.delete(key));tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)}))}
+async function chatHashP(value){const data=new TextEncoder().encode(String(value));const hash=await crypto.subtle.digest('SHA-256',data);return Array.from(new Uint8Array(hash)).map(x=>x.toString(16).padStart(2,'0')).join('')}
+async function chatScopeP(account){
+ if(!window.isSecureContext||!window.crypto?.subtle||!('indexedDB' in window))return null;
+ const identity=account==='private'?String(P.owners?.privateOwnerNumber||P.owners?.ownerNumber||''):[P.owners?.publicBotNumber||'',P.owners?.publicOwnerNumber||''].join('|');
+ if(!identity.replace(/\|/g,'').trim())return null;
+ return'aharane-chat-v1:'+account+':'+await chatHashP(identity);
+}
+async function chatKeyP(scope){
+ if(chatCacheKeysP.has(scope))return chatCacheKeysP.get(scope);
+ const promise=(async()=>{const old=await chatIdbGetP('keys',scope);if(old?.key)return old.key;const key=await crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt']);await chatIdbPutP('keys',{scope,key,createdAt:Date.now()});return key})();
+ chatCacheKeysP.set(scope,promise);try{return await promise}catch(error){chatCacheKeysP.delete(scope);throw error}
+}
+const CHAT_CACHE_MAX_MESSAGE_CHATS_P=150;
+const CHAT_CACHE_MAX_BYTES_P=20*1024*1024;
+async function pruneChatCacheP(scope){
+ try{
+  const rows=(await chatIdbGetAllP('records')).filter(row=>row.scope===scope&&row.type==='messages').sort((a,b)=>(Number(b.updatedAt)||0)-(Number(a.updatedAt)||0));
+  let kept=0,bytes=0;const remove=[];
+  for(const row of rows){
+   const size=Number(row.sizeBytes)||Number(row.ciphertext?.byteLength)||0;
+   if(kept<CHAT_CACHE_MAX_MESSAGE_CHATS_P&&bytes+size<=CHAT_CACHE_MAX_BYTES_P){kept++;bytes+=size}
+   else remove.push(row.id);
+  }
+  await chatIdbDeleteManyP('records',remove);
+ }catch(error){console.warn('[Aharane] Encrypted chat cache pruning unavailable:',String(error?.message||error))}
+}
+function cacheableChatMessageP(message){
+ if(!message?.viewOnce)return message;
+ // Keep only a neutral marker. View Once captions, text, file metadata and media
+ // URLs must never be written to the persistent device cache.
+ return{id:String(message.id||''),fromMe:message.fromMe===true,timestamp:Number(message.timestamp)||0,type:String(message.type||''),viewOnce:true,viewOnceViewed:message.viewOnceViewed===true,status:String(message.status||''),reactions:Array.isArray(message.reactions)?message.reactions.slice(0,10):[]};
+}
+async function writeChatCacheP(account,type,identity,value){
+ try{
+  const scope=await chatScopeP(account);if(!scope)return false;
+  const clear=new TextEncoder().encode(JSON.stringify(value));
+  if(clear.byteLength>1024*1024)return false;
+  const key=await chatKeyP(scope),id=scope+':'+await chatHashP(type+'|'+String(identity||'')),iv=crypto.getRandomValues(new Uint8Array(12));
+  const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,clear);
+  await chatIdbPutP('records',{id,scope,type,iv:iv.buffer,ciphertext:cipher,sizeBytes:clear.byteLength,updatedAt:Date.now()});
+  if(type==='messages')await pruneChatCacheP(scope);
+  return true;
+ }catch(error){console.warn('[Aharane] Encrypted chat cache write unavailable:',String(error?.message||error));return false}
+}
+async function readChatCacheP(account,type,identity){
+ try{const scope=await chatScopeP(account);if(!scope)return null;const id=scope+':'+await chatHashP(type+'|'+String(identity||'')),record=await chatIdbGetP('records',id);if(!record||record.scope!==scope||record.type!==type)return null;const key=await chatKeyP(scope),clear=await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(record.iv)},key,record.ciphertext);return JSON.parse(new TextDecoder().decode(clear))}
+ catch(error){console.warn('[Aharane] Encrypted chat cache read unavailable:',String(error?.message||error));return null}
+}
+function applyChatListP(payload,current){
+ const prefs=payload.preferences||{pinned:[],muted:[],archived:[]},pinned=new Set(prefs.pinned||[]),muted=new Set(prefs.muted||[]),archived=new Set(prefs.archived||[]);
+ P.chatPreferences=prefs;CH.splice(0,CH.length,...(payload.chats||[]).map(c=>({jid:c.jid,n:c.name||String(c.jid||'').split('@')[0],g:c.group===true||String(c.jid).endsWith('@g.us'),mem:[],un:Number(c.unreadCount)||0,pinned:pinned.has(c.jid),muted:muted.has(c.jid),archived:archived.has(c.jid),m:[{d:c.fromMe?'o':'i',t:c.lastMessage||'',ts:Number(c.timestamp)||Date.now()}]})));
  if(current&&S.chat!==null){const i=CH.findIndex(c=>c.jid===current);if(i>=0)S.chat=i;else S.chat=null}
 }
+
+async function refreshChatsP(){
+ const account=S.cacc==='private'?'private':'public',current=P.chatJid,cached=await readChatCacheP(account,'chat-list','');
+ if(cached&&S.cacc===account){applyChatListP(cached,current);P.chatLoaded=true;if(S.tab==='chats')render()}
+ const r=await apiP('chats/'+account+'?limit=500');if(S.cacc!==account)return;
+ const payload={chats:r.chats||[],preferences:r.preferences||{pinned:[],muted:[],archived:[]}};
+ applyChatListP(payload,current);P.messageFingerprints.clear();await writeChatCacheP(account,'chat-list','',payload);
+}
 async function loadMessagesP(index=S.chat,before=0){
- const c=CH[index];if(!c?.jid)return;P.chatJid=c.jid;
- const account=S.cacc==='private'?'private':'public',url='chats/'+account+'/'+encodeURIComponent(c.jid)+'/messages?limit=500'+(before?'&before='+encodeURIComponent(before):'');
- const r=await apiP(url),messages=r.messages||[],fingerprint=JSON.stringify(messages.map(m=>[m.id,m.timestamp,m.type,m.text,m.status,m.mediaUrl,m.viewOnceViewed,m.reactions,m.mediaAvailable,m.ptt]));
- const key=account+'|'+c.jid+'|'+(before||'latest');
+ let c=CH[index];if(!c?.jid)return;const jid=c.jid,account=S.cacc==='private'?'private':'public',key=account+'|'+jid+'|'+(before||'latest');P.chatJid=jid;
+ if(!before){const cached=await readChatCacheP(account,'messages',jid);if(cached&&Array.isArray(cached.messages)&&S.cacc===account&&CH[index]?.jid===jid){c=CH[index];c.m=cached.messages.map(mapMessageP);const fp=JSON.stringify(cached.messages.map(m=>[m.id,m.timestamp,m.type,m.text,m.status,m.mediaUrl,m.viewOnceViewed,m.reactions,m.mediaAvailable,m.ptt]));P.messageFingerprints.set(key,fp);if(S.chat===index)drawMsgs()}}
+ const url='chats/'+account+'/'+encodeURIComponent(jid)+'/messages?limit=500'+(before?'&before='+encodeURIComponent(before):''),r=await apiP(url);
+ if(S.cacc!==account||CH[index]?.jid!==jid)return;
+ const messages=Array.isArray(r.messages)?r.messages:[],fingerprint=JSON.stringify(messages.map(m=>[m.id,m.timestamp,m.type,m.text,m.status,m.mediaUrl,m.viewOnceViewed,m.reactions,m.mediaAvailable,m.ptt]));
  if(P.messageFingerprints.get(key)===fingerprint)return;
- P.messageFingerprints.set(key,fingerprint);c.m=messages.map(mapMessageP);
+ P.messageFingerprints.set(key,fingerprint);c=CH[index];c.m=messages.map(mapMessageP);
+ if(!before){const safe=messages.map(cacheableChatMessageP);await writeChatCacheP(account,'messages',jid,{messages:safe,cachedAt:Date.now(),hasMore:Boolean(r.hasMore),nextBefore:r.nextBefore||null})}
  if(S.chat===index)drawMsgs();
 }
 async function sendChatP(msg){

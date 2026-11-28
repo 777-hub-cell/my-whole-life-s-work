@@ -137,16 +137,39 @@ try {
   await shot("06-appearance");
   await page.keyboard.press("Escape");
   await delay(180);
-  for (const [label, name] of [["Builder", "07-builder"], ["Engine Library", "08-engine-library"]]) {
-    await activateNav(label); await shot(name);
-  }
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await activateNav("Builder"); await shot("09-desktop-builder");
+  await activateNav("Builder");
+  await page.locator("[data-wf-add='trigger.command']").click();
+  await page.locator("[data-wf-add='message.sendText']").click();
+  await page.locator("[data-wf-select]").nth(1).click();
+  await shot("07-builder");
+  await page.locator(".wb-inspector").evaluate(element => element.scrollIntoView({ block: "center" }));
+  await delay(150);
+  await shot("08-builder-node-configuration");
+
   await activateNav("Engine Library");
-  await navButton("Engine Library").evaluate(button => button.click());
   await page.locator("[data-engine-open='text_transform']").click();
-  await delay(250);
-  await shot("10-desktop-engine-library");
+  await delay(200);
+  await shot("09-engine-library");
+  await page.locator("[data-engine-run]").click();
+  await delay(200);
+  await shot("10-engine-test-result");
+  await page.locator("[data-engine-new]").click();
+  await delay(150);
+  await shot("11-engine-editor");
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await activateNav("Builder");
+  await shot("12-desktop-builder");
+  await page.locator(".wb-inspector").evaluate(element => element.scrollIntoView({ block: "center" }));
+  await delay(100);
+  await shot("13-desktop-node-configuration");
+  await activateNav("Engine Library");
+  await page.locator("[data-engine-open='text_transform']").click();
+  await delay(200);
+  await shot("14-desktop-engine-library");
+  await page.locator("[data-engine-edit]").click();
+  await delay(150);
+  await shot("15-desktop-engine-editor");
   console.log("Captured Studio screens at mobile and desktop sizes, including Builder and Engine Library.");
 } finally {
   if (browser) await browser.close();

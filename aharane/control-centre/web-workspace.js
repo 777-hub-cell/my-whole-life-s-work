@@ -34,7 +34,7 @@ function enginePage(){const rows=W.engines.map(x=>'<button class="wb-engine-row 
 function newEngineEditor(){
  W.engine=null;W.caps=null;W.result=null;W.engineMode='edit';W.editingEngineId=null;
  W.editorManifest={id:'text_transform',name:'Text transform',version:1,entryPoint:'run',inputs:[{id:'value',type:'string'}],outputs:[{id:'result',type:'string'}],permissions:[],allowedHosts:[],timeoutMs:10000,maxResults:10};
- W.editorCode='export async function run(inputs, context) {\\n  return { result: String(inputs.value ?? \'\') };\\n}';
+ W.editorCode='export async function run(inputs, context) {\n  return { result: String(inputs.value ?? \'\') };\n}';
  paint();
 }
 function editEngineEditor(){

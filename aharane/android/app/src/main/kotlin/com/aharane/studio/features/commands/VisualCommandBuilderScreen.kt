@@ -411,28 +411,25 @@ fun VisualCommandBuilderScreen(
                 (WORKSPACE_CANVAS_PADDING_DP + (top + bottom) / 2f).dp.toPx()
             } * fittedZoom
             scope.launch {
-                // Changing zoom changes the scaled content dimensions. Do not clamp
-                // the centre target against the old (often zero) scroll range: wait
-                // until both axes publish their new bounds, with a bounded fallback
-                // for a transiently detached canvas.
+                val targetX = (graphCenterX - workspaceViewportSize.width / 2f)
+                    .roundToInt().coerceAtLeast(0)
+                val targetY = (graphCenterY - workspaceViewportSize.height / 2f)
+                    .roundToInt().coerceAtLeast(0)
+                // Changing zoom changes the scaled content dimensions. Wait until
+                // both axes can reach the requested centre, not merely until they
+                // expose any non-zero range from the previous zoom level.
                 var frames = 0
                 while (
                     frames < 30 &&
-                    (workspaceScroll.maxValue == 0 || workspaceVerticalScroll.maxValue == 0)
+                    (workspaceScroll.maxValue < targetX || workspaceVerticalScroll.maxValue < targetY)
                 ) {
                     withFrameNanos { }
                     frames += 1
                 }
                 // Let the final size/layout pass settle before applying the centre.
                 withFrameNanos { }
-                workspaceScroll.scrollTo(
-                    (graphCenterX - workspaceViewportSize.width / 2f).roundToInt()
-                        .coerceIn(0, workspaceScroll.maxValue)
-                )
-                workspaceVerticalScroll.scrollTo(
-                    (graphCenterY - workspaceViewportSize.height / 2f).roundToInt()
-                        .coerceIn(0, workspaceVerticalScroll.maxValue)
-                )
+                workspaceScroll.scrollTo(targetX.coerceIn(0, workspaceScroll.maxValue))
+                workspaceVerticalScroll.scrollTo(targetY.coerceIn(0, workspaceVerticalScroll.maxValue))
             }
         } else {
             zoom = 0.78f

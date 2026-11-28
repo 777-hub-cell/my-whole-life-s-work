@@ -191,7 +191,7 @@ try {
   await page.locator(".wb-node-card").first().click();
   await shot("11-desktop-node-configuration");
   await page.locator("[data-wb-cancel-config]").last().click();
-  await page.locator("[data-wb-manage-engines]").click();
+  await page.locator(".wb-top-actions [data-wb-manage-engines]").click();
   await page.locator("[data-engine-open='text_transform']").click();
   await shot("12-desktop-engine-details");
   await page.locator("[data-engine-edit]").click();

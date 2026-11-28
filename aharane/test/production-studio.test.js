@@ -34,12 +34,29 @@ test('Export Bot Source uses a real browser download instead of the preview-only
  assert.ok(!bridge.includes("claude.use('downloads')"))
 })
 
-test('the offline service worker caches the bridge and invalidates the previous shell', async () => {
+test('the offline service worker caches the bridge and the new workspace shell', async () => {
   const sw = await read('../control-centre/sw.js')
-  assert.ok(sw.includes('aharane-local-studio-shell-v14'))
+  assert.ok(sw.includes('aharane-local-studio-shell-v15'))
+  assert.ok(sw.includes("k.startsWith('aharane-local-studio-shell-')&&k!==CACHE_NAME"))
   assert.ok(sw.includes('/aharane/studio/production-bridge.js'))
   assert.ok(sw.includes("['/aharane/studio/production-bridge.js','production-bridge.js']"))
+  assert.ok(sw.includes('/aharane/studio/web-workspace.js'))
+  assert.ok(sw.includes("['/aharane/studio/web-workspace.js','web-workspace.js']"))
 })
+test('web conversations render encrypted on-device cache before fetching server history', async () => {
+  const html = await read('../control-centre/index.html')
+  const bridge = await read('../control-centre/production-bridge.js')
+  assert.ok(html.includes('/aharane/studio/web-workspace.js'))
+  assert.ok(bridge.includes("const CHAT_CACHE_DB_P='aharane-encrypted-chat-cache-v1'"))
+  assert.ok(bridge.includes("crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt'])"))
+  assert.ok(bridge.includes('crypto.subtle.encrypt({name:\'AES-GCM\',iv},key,clear)'))
+  assert.ok(bridge.includes('crypto.subtle.decrypt({name:\'AES-GCM\',iv:new Uint8Array(record.iv)},key,record.ciphertext)'))
+  assert.ok(bridge.includes("readChatCacheP(account,'messages',jid)"))
+  assert.ok(bridge.includes("await writeChatCacheP(account,'messages',jid,"))
+  assert.ok(bridge.includes("m.viewOnce?{...m,mediaUrl:null,mediaAvailable:false}:m"))
+  assert.ok(bridge.includes("crypto.getRandomValues(new Uint8Array(12))"))
+})
+
 
 test('Files toolbar groups Export Bot Source with the creation and upload actions', async () => {
   const app = await read('../control-centre/app.js')

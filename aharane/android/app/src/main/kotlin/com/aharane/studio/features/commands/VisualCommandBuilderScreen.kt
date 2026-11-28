@@ -411,8 +411,19 @@ fun VisualCommandBuilderScreen(
                 (WORKSPACE_CANVAS_PADDING_DP + (top + bottom) / 2f).dp.toPx()
             } * fittedZoom
             scope.launch {
-                // Wait for the enlarged, scaled canvas to publish its new scroll bounds.
-                withFrameNanos { }
+                // Changing zoom changes the scaled content dimensions. Do not clamp
+                // the centre target against the old (often zero) scroll range: wait
+                // until both axes publish their new bounds, with a bounded fallback
+                // for a transiently detached canvas.
+                var frames = 0
+                while (
+                    frames < 30 &&
+                    (workspaceScroll.maxValue == 0 || workspaceVerticalScroll.maxValue == 0)
+                ) {
+                    withFrameNanos { }
+                    frames += 1
+                }
+                // Let the final size/layout pass settle before applying the centre.
                 withFrameNanos { }
                 workspaceScroll.scrollTo(
                     (graphCenterX - workspaceViewportSize.width / 2f).roundToInt()

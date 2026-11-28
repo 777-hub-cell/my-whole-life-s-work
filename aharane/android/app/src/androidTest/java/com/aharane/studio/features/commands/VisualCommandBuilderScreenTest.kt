@@ -225,6 +225,10 @@ class VisualCommandBuilderScreenTest {
         val reply = compose.onNodeWithTag("node-card-message.replyText").fetchSemanticsNode().boundsInRoot
         assertTrue("Nodes must have non-zero size", trigger.width > 50f && trigger.height > 30f && reply.width > 50f && reply.height > 30f)
         assertTrue("Trigger must sit inside the canvas viewport", trigger.left >= workspace.left - 1f && trigger.top >= workspace.top - 1f)
+        assertTrue("Trigger must be fully visible horizontally", trigger.right <= workspace.right + 1f)
+        assertTrue("Trigger must be fully visible vertically", trigger.bottom <= workspace.bottom + 1f)
+        assertTrue("Reply must be fully visible horizontally", reply.left >= workspace.left - 1f && reply.right <= workspace.right + 1f)
+        assertTrue("Reply must be fully visible vertically", reply.top >= workspace.top - 1f && reply.bottom <= workspace.bottom + 1f)
     }
 
     @Test

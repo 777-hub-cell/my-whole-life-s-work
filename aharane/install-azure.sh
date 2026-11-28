@@ -255,6 +255,8 @@ chown root:"$SERVICE_USER" "$ENV_FILE"
 chmod 0640 "$ENV_FILE"
 
 runuser -u "$SERVICE_USER" -- npm --prefix "$RELEASE" install --omit=dev --no-audit --no-fund
+echo "Checking Azure host outbound access to WhatsApp WebSocket endpoint..."
+runuser -u "$SERVICE_USER" -- node "$RELEASE/scripts/diagnose-whatsapp-transport.mjs"
 printf '%s\n' "$SOURCE_SHA" > "$RELEASE/.deployed-source-ref"
 chown root:"$SERVICE_USER" "$RELEASE/.deployed-source-ref"
 chmod 0440 "$RELEASE/.deployed-source-ref"

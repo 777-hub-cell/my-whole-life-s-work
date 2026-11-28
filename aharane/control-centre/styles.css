@@ -339,3 +339,12 @@ body.aharane-booting .app,body.aharane-booting .nav{visibility:hidden}
  .wb-engine-layout{grid-template-columns:320px minmax(0,1fr)!important}
  .wb-inspector{position:sticky;top:14px;max-height:calc(100vh - 190px);overflow:auto}
 }
+@media(max-width:540px){
+ .nav #nav{width:100%;min-width:0;max-width:none;justify-content:space-between;overflow:hidden}
+ .nav button{min-width:0;max-width:none;flex:1 1 0;padding:7px 1px 6px;font-size:10px;line-height:1.15;gap:2px;white-space:normal;overflow-wrap:anywhere}
+ .nav button svg{width:18px;height:18px;flex-shrink:0}
+}
+@media(max-width:360px){
+ .nav button{font-size:9px;padding-left:0;padding-right:0}
+ .nav button svg{width:16px;height:16px}
+}

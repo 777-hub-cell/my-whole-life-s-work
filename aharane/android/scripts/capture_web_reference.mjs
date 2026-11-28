@@ -104,6 +104,16 @@ try {
   await page.waitForFunction(() => document.body.classList.contains("aharane-authenticated"), null, { timeout: 15000 });
   await page.waitForFunction(() => document.querySelector("#view")?.textContent?.includes("Welcome back"), null, { timeout: 15000 });
   await page.evaluate(() => document.fonts.ready.then(() => true));
+  const navFit = await page.locator("#nav").evaluate(el => ({
+    buttons: el.querySelectorAll("button").length,
+    clientWidth: el.clientWidth,
+    scrollWidth: el.scrollWidth,
+    labels: [...el.querySelectorAll("button")].map(button => button.innerText.trim())
+  }));
+  if (navFit.buttons !== 7 || navFit.scrollWidth > navFit.clientWidth + 1) {
+    throw new Error("The seven-item mobile navigation does not fit: " + JSON.stringify(navFit));
+  }
+  if (navFit.labels[2] !== "Chats") throw new Error("Chats must remain the third navigation item.");
   await delay(500);
 
   const out = "web-reference-screenshots";

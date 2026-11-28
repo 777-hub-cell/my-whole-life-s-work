@@ -975,6 +975,8 @@ function openChatCacheDbP(){
 }
 function chatIdbGetP(store,key){return openChatCacheDbP().then(db=>new Promise((resolve,reject)=>{const tx=db.transaction(store,'readonly'),r=tx.objectStore(store).get(key);r.onsuccess=()=>resolve(r.result||null);r.onerror=()=>reject(r.error)}))}
 function chatIdbPutP(store,value){return openChatCacheDbP().then(db=>new Promise((resolve,reject)=>{const tx=db.transaction(store,'readwrite');tx.objectStore(store).put(value);tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)}))}
+function chatIdbGetAllP(store){return openChatCacheDbP().then(db=>new Promise((resolve,reject)=>{const tx=db.transaction(store,'readonly'),r=tx.objectStore(store).getAll();r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error)}))}
+function chatIdbDeleteManyP(store,keys){if(!keys.length)return Promise.resolve(true);return openChatCacheDbP().then(db=>new Promise((resolve,reject)=>{const tx=db.transaction(store,'readwrite'),objectStore=tx.objectStore(store);keys.forEach(key=>objectStore.delete(key));tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)}))}
 async function chatHashP(value){const data=new TextEncoder().encode(String(value));const hash=await crypto.subtle.digest('SHA-256',data);return Array.from(new Uint8Array(hash)).map(x=>x.toString(16).padStart(2,'0')).join('')}
 async function chatScopeP(account){
  if(!window.isSecureContext||!window.crypto?.subtle||!('indexedDB' in window))return null;
@@ -987,9 +989,37 @@ async function chatKeyP(scope){
  const promise=(async()=>{const old=await chatIdbGetP('keys',scope);if(old?.key)return old.key;const key=await crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt']);await chatIdbPutP('keys',{scope,key,createdAt:Date.now()});return key})();
  chatCacheKeysP.set(scope,promise);try{return await promise}catch(error){chatCacheKeysP.delete(scope);throw error}
 }
+const CHAT_CACHE_MAX_MESSAGE_CHATS_P=150;
+const CHAT_CACHE_MAX_BYTES_P=20*1024*1024;
+async function pruneChatCacheP(scope){
+ try{
+  const rows=(await chatIdbGetAllP('records')).filter(row=>row.scope===scope&&row.type==='messages').sort((a,b)=>(Number(b.updatedAt)||0)-(Number(a.updatedAt)||0));
+  let kept=0,bytes=0;const remove=[];
+  for(const row of rows){
+   const size=Number(row.sizeBytes)||Number(row.ciphertext?.byteLength)||0;
+   if(kept<CHAT_CACHE_MAX_MESSAGE_CHATS_P&&bytes+size<=CHAT_CACHE_MAX_BYTES_P){kept++;bytes+=size}
+   else remove.push(row.id);
+  }
+  await chatIdbDeleteManyP('records',remove);
+ }catch(error){console.warn('[Aharane] Encrypted chat cache pruning unavailable:',String(error?.message||error))}
+}
+function cacheableChatMessageP(message){
+ if(!message?.viewOnce)return message;
+ // Keep only a neutral marker. View Once captions, text, file metadata and media
+ // URLs must never be written to the persistent device cache.
+ return{id:String(message.id||''),fromMe:message.fromMe===true,timestamp:Number(message.timestamp)||0,type:String(message.type||''),viewOnce:true,viewOnceViewed:message.viewOnceViewed===true,status:String(message.status||''),reactions:Array.isArray(message.reactions)?message.reactions.slice(0,10):[]};
+}
 async function writeChatCacheP(account,type,identity,value){
- try{const scope=await chatScopeP(account);if(!scope)return false;const key=await chatKeyP(scope);const id=scope+':'+await chatHashP(type+'|'+String(identity||'')),iv=crypto.getRandomValues(new Uint8Array(12));const clear=new TextEncoder().encode(JSON.stringify(value)),cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,clear);await chatIdbPutP('records',{id,scope,type,iv:iv.buffer,ciphertext:cipher,updatedAt:Date.now()});return true}
- catch(error){console.warn('[Aharane] Encrypted chat cache write unavailable:',String(error?.message||error));return false}
+ try{
+  const scope=await chatScopeP(account);if(!scope)return false;
+  const clear=new TextEncoder().encode(JSON.stringify(value));
+  if(clear.byteLength>1024*1024)return false;
+  const key=await chatKeyP(scope),id=scope+':'+await chatHashP(type+'|'+String(identity||'')),iv=crypto.getRandomValues(new Uint8Array(12));
+  const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,clear);
+  await chatIdbPutP('records',{id,scope,type,iv:iv.buffer,ciphertext:cipher,sizeBytes:clear.byteLength,updatedAt:Date.now()});
+  if(type==='messages')await pruneChatCacheP(scope);
+  return true;
+ }catch(error){console.warn('[Aharane] Encrypted chat cache write unavailable:',String(error?.message||error));return false}
 }
 async function readChatCacheP(account,type,identity){
  try{const scope=await chatScopeP(account);if(!scope)return null;const id=scope+':'+await chatHashP(type+'|'+String(identity||'')),record=await chatIdbGetP('records',id);if(!record||record.scope!==scope||record.type!==type)return null;const key=await chatKeyP(scope),clear=await crypto.subtle.decrypt({name:'AES-GCM',iv:new Uint8Array(record.iv)},key,record.ciphertext);return JSON.parse(new TextDecoder().decode(clear))}
@@ -1016,7 +1046,7 @@ async function loadMessagesP(index=S.chat,before=0){
  const messages=Array.isArray(r.messages)?r.messages:[],fingerprint=JSON.stringify(messages.map(m=>[m.id,m.timestamp,m.type,m.text,m.status,m.mediaUrl,m.viewOnceViewed,m.reactions,m.mediaAvailable,m.ptt]));
  if(P.messageFingerprints.get(key)===fingerprint)return;
  P.messageFingerprints.set(key,fingerprint);c=CH[index];c.m=messages.map(mapMessageP);
- if(!before){const safe=messages.map(m=>m.viewOnce?{...m,mediaUrl:null,mediaAvailable:false}:m);await writeChatCacheP(account,'messages',jid,{messages:safe,cachedAt:Date.now(),hasMore:Boolean(r.hasMore),nextBefore:r.nextBefore||null})}
+ if(!before){const safe=messages.map(cacheableChatMessageP);await writeChatCacheP(account,'messages',jid,{messages:safe,cachedAt:Date.now(),hasMore:Boolean(r.hasMore),nextBefore:r.nextBefore||null})}
  if(S.chat===index)drawMsgs();
 }
 async function sendChatP(msg){

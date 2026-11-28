@@ -556,3 +556,13 @@ test('Builder mirrors the native draggable workspace and node-library split pane
   assert.ok(css.includes('.wb-command-screen .wb-builder-layout{display:flex'))
   assert.ok(css.includes('.wb-command-screen .wb-lib-scroll{flex:1 1 0'))
 })
+
+
+test('new Engine and Custom nodes pin their definition versions and auto-connect execution flow', async () => {
+  const workspace = await read('../control-centre/web-workspace.js')
+  assert.ok(workspace.includes("if(type.startsWith('engine.'))node.config.engineVersion=String(definition.version||1)"))
+  assert.ok(workspace.includes("if(type.startsWith('custom.'))node.config.nodeVersion=String(definition.version||1)"))
+  assert.ok(workspace.includes("const needsExec=(definition.ports?.inputs||[]).some(port=>port.id==='in'&&port.type==='exec')"))
+  assert.ok(workspace.includes("W.draft.edges.push({id:uid(),from:previous.id,fromSocket:'next',to:node.id,toSocket:'in'})"))
+  assert.ok(workspace.includes("?' · v'"))
+})

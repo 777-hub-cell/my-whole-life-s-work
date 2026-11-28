@@ -139,10 +139,43 @@ function addNode(type){
  const definition=def(type);if(!definition){note('That node is not in the verified node library.','error');return}
  const index=W.draft.nodes.length,viewportWidth=document.getElementById('wb-viewport')?.clientWidth||window.innerWidth,columns=viewportWidth<700?1:3,column=index%columns,row=Math.floor(index/columns);
  const node={id:uid(),type,x:columns===1?70:85+column*305,y:90+row*(columns===1?180:230),config:{}};
- if(type==='trigger.command')Object.assign(node.config,{command:'newcommand',aliases:[],chatScope:'direct',maxMessagesPerRun:10,requireQuoted:false,requireReply:false});
- if(type==='trigger.message')Object.assign(node.config,{chatScope:'direct',maxMessagesPerRun:10});
- if(type==='flow.repeat')node.config.count=2;
- if(type==='flow.delay')node.config.milliseconds=1000;
+ const defaults={
+  'trigger.command':{command:'hello',aliases:'',chatScope:'direct',maxMessagesPerRun:'10',requireQuoted:'false',requireReply:'false'},
+  'trigger.message':{chatScope:'direct',maxMessagesPerRun:'10'},
+  'message.sendText':{text:'Hello, {{sender}}!'},'message.replyText':{text:'Hello, {{sender}}!'},
+  'message.react':{emoji:'👍'},'message.sendViewOnceText':{text:'This message can be opened once.'},
+  'media.sendViewOnce':{kind:'image',caption:''},'media.sendMedia':{kind:'image',caption:''},
+  'message.editOriginal':{text:'Updated message'},'message.pinOriginal':{seconds:'86400',action:'pin'},
+  'message.keepOriginal':{action:'keep'},'chat.setDisappearing':{seconds:'86400'},
+  'message.sendPoll':{title:'Quick question?',options:'Option A\nOption B',selectableCount:'1'},
+  'message.sendLocation':{latitude:'6.5244',longitude:'3.3792',name:'Lagos'},
+  'contact.sendCard':{name:'Contact name',phone:'2348012345678'},
+  'message.sendButtons':{text:'Choose an option',buttons:'Yes|yes\nNo|no'},
+  'group.updateSubject':{subject:'Group name'},'group.updateDescription':{description:'Group description'},
+  'group.participantsUpdate':{action:'promote',participants:'2348012345678'},
+  'group.settingUpdate':{setting:'announcement'},'moderation.blockContact':{phone:'2348012345678'},
+  'moderation.unblockContact':{phone:'2348012345678'},'profile.updateName':{name:'Aharane'},
+  'profile.updateStatus':{status:'Available'},'newsletter.create':{name:'My newsletter',description:'Updates'},
+  'newsletter.follow':{newsletterJid:''},'newsletter.unfollow':{newsletterJid:''},
+  'newsletter.publishText':{newsletterJid:'',text:'Hello from Aharane'},
+  'condition.equals':{left:'',right:''},'condition.contains':{text:'{{message.text}}',search:''},
+  'variable.set':{key:'value',value:''},'variable.get':{key:'count'},'counter.increment':{key:'count'},
+  'flow.delay':{milliseconds:'1000'},'flow.repeat':{count:'2'},
+  'media.sendImage':{caption:''},'media.sendImages':{caption:'',limit:'10'},'value.toList':{separator:','}
+ };
+ Object.assign(node.config,defaults[type]||{});
+ if(type.startsWith('custom.'))node.config.nodeVersion=String(definition.version||1);
+ if(type.startsWith('engine.'))node.config.engineVersion=String(definition.version||1);
+ const definitions=W.groups.flatMap(group=>group.nodes||[]);
+ const needsExec=(definition.ports?.inputs||[]).some(port=>port.id==='in'&&port.type==='exec');
+ const previous=[...W.draft.nodes].reverse().find(source=>{
+  const sourceDef=definitions.find(item=>item.type===source.type)||def(source.type);
+  return sourceDef?.ports?.outputs?.some(port=>port.id==='next'&&port.type==='exec')&&
+    !W.draft.edges.some(edge=>edge.from===source.id&&edge.fromSocket==='next');
+ });
+ if(needsExec&&previous){
+  W.draft.edges.push({id:uid(),from:previous.id,fromSocket:'next',to:node.id,toSocket:'in'});
+ }
  W.draft.nodes.push(node);W.selectedNodeId=node.id;W.pendingSocket=null;markDirty();renderWorkspace();
 }
 function portMarkup(node,definition,direction){
@@ -157,7 +190,7 @@ function renderNode(node,index){
  const errors=(W.validation?.errors||[]).filter(item=>item.nodeId===node.id);
  return '<article class="wb-node-card '+(W.selectedNodeId===node.id?'selected':'')+' accent-'+nodeAccent(node.type,definition.category)+'" data-wb-node="'+esc(node.id)+'" data-wb-open-config="'+esc(node.id)+'" style="left:'+(Number(node.x)||0)+'px;top:'+(Number(node.y)||0)+'px">'+
  '<header class="wb-node-head" data-wb-drag="'+esc(node.id)+'"><span class="wb-node-icon">'+glyph(node.type)+'</span><span class="wb-node-title"><b>'+esc(definition.name||node.type)+'</b><small>'+esc(definition.description||'')+'</small></span><button type="button" class="wb-node-config" data-wb-config="'+esc(node.id)+'" aria-label="Configure '+esc(definition.name||node.type)+'">⋯</button></header>'+
- '<div class="wb-node-code">'+esc(node.type)+'</div><div class="wb-node-ports">'+portMarkup(node,definition,'inputs')+portMarkup(node,definition,'outputs')+'</div>'+
+ '<div class="wb-node-code">'+esc(node.type)+((node.config?.engineVersion||node.config?.nodeVersion)?' · v'+esc(node.config.engineVersion||node.config.nodeVersion):'')+'</div><div class="wb-node-ports">'+portMarkup(node,definition,'inputs')+portMarkup(node,definition,'outputs')+'</div>'+
  (errors.length?'<div class="wb-node-warning">'+esc(errors[0].message||'Check this node')+'</div>':'')+
  '<footer class="wb-node-foot"><span>NODE '+String(index+1).padStart(2,'0')+'</span><span>'+esc(definition.category||'Action')+'</span></footer></article>';
 }

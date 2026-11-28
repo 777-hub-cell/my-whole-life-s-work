@@ -42,6 +42,9 @@ try {
     { category: "Data conversion", nodes: [
       { type: "value.toNumber", name: "Convert to number", description: "Convert validated text into a number.", ports: { inputs: [{ id: "value", label: "Value", type: "string" }], outputs: [{ id: "number", label: "Number", type: "number" }] } },
       { type: "value.toBoolean", name: "Convert to boolean", description: "Convert text into a boolean value.", ports: { inputs: [{ id: "value", label: "Value", type: "string" }], outputs: [{ id: "boolean", label: "Boolean", type: "boolean" }] } }
+    ]},
+    { category: "Engine", nodes: [
+      { type: "engine.text_transform", name: "Text transform", description: "Run the reusable Text transform Engine.", version: 1, engineId: "text_transform", ports: { inputs: [{ id: "in", label: "In", type: "exec" }, { id: "value", label: "value", type: "string" }], outputs: [{ id: "next", label: "Next", type: "exec" }, { id: "result", label: "result", type: "string" }] } }
     ]}
   ];
   const sampleEngine = {
@@ -174,6 +177,15 @@ try {
   await page.locator("[data-wb-fit]").click();
   await page.evaluate(() => window.scrollTo(0, 0));
   await shot("04-command-canvas-connected-nodes");
+  await page.locator("[data-wb-category='Engine']").click();
+  await page.locator("[data-wb-add='engine.text_transform']").click();
+  const pinnedLabel = await page.locator(".wb-node-card").last().locator(".wb-node-code").innerText();
+  if (!pinnedLabel.includes("v1")) throw new Error("New Engine node did not pin the Engine version.");
+  await page.locator(".wb-node-card").last().click();
+  await page.locator("[data-wb-config-field='value']").fill("a sample value");
+  await page.locator("[data-wb-apply-config]").click();
+  await page.waitForFunction(() => document.querySelectorAll("#wb-wires path").length === 2, null, { timeout: 5000 });
+  await shot("14-engine-node-added-to-builder");
   await page.locator(".wb-top-actions [data-wb-manage-engines]").click();
   await page.waitForSelector("[data-engine-open='text_transform']", { timeout: 15000 });
   await shot("05-engine-library-from-builder");

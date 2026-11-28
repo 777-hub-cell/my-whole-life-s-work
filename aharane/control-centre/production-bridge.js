@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const API='/aharane/api', Q=s=>document.querySelector(s);
-const APP_SOURCE_PATHS=['index.html','styles.css','app.js','production-bridge.js','manifest.webmanifest'];
+const APP_SOURCE_PATHS=['index.html','styles.css','app.js','production-bridge.js','web-workspace.js','manifest.webmanifest'];
 const escP=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pack=JSON.stringify;
 // Shared preview callbacks replaced by the live production bridge. Keep these

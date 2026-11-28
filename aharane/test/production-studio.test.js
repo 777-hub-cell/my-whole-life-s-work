@@ -530,8 +530,8 @@ test('Builder node dragging keeps canvas coordinates aligned and the config back
 
 test('web workspace declares only one renderer and one Builder event handler', async () => {
   const workspace = await read('../control-centre/web-workspace.js')
-  assert.equal((workspace.match(/function renderWorkspace\\(\\)\\{/g) || []).length, 1)
-  assert.equal((workspace.match(/function bindBuilder\\(\\)\\{/g) || []).length, 1)
+  assert.equal((workspace.match(/function renderWorkspace\(\)\{/g) || []).length, 1)
+  assert.equal((workspace.match(/function bindBuilder\(\)\{/g) || []).length, 1)
   assert.ok(workspace.includes('if(button.dataset.wbScope){W.configDraft.chatScope=button.dataset.wbScope;renderWorkspace();return}'))
 })
 

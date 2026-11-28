@@ -80,8 +80,10 @@ try {
     console.log('[aharane-netcheck] IPv' + result.family + ': ' + result.result + '.')
   }
   if (!results.some(result => result.result.startsWith('TLS and WebSocket endpoint responded'))) {
-    console.warn("[aharane-netcheck] No tested address returned an HTTP response. Check this host's DNS and outbound TCP 443 path.")
+    console.error("[aharane-netcheck] No tested address returned an HTTP response. Check this host's DNS and outbound TCP 443 path.")
+    process.exitCode = 1
   }
 } catch (error) {
-  console.warn('[aharane-netcheck] DNS/network probe failed: ' + String(error?.code || error?.message || 'unknown error').slice(0, 180))
+  console.error('[aharane-netcheck] DNS/network probe failed: ' + String(error?.code || error?.message || 'unknown error').slice(0, 180))
+  process.exitCode = 1
 }

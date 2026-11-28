@@ -28,8 +28,29 @@ try {
   });
   const page = await context.newPage();
 
-  // Use the actual production web UI and only stub its API with empty,
-  // disconnected responses. No sample chat or server metrics are injected.
+  // Use the actual production web UI with deterministic test fixtures. The browser
+  // screens are still the real app; API fixtures are isolated to this screenshot run.
+  let savedWorkflow = null;
+  const sampleLibrary = [
+    { category: "Triggers and events", nodes: [
+      { type: "trigger.command", name: "Command trigger", description: "Start on an allowed WhatsApp command.", ports: { inputs: [], outputs: [{ id: "next", label: "Next", type: "exec" }, { id: "messageText", label: "Message text", type: "string" }] } },
+      { type: "trigger.message", name: "Message received", description: "Start on an allowed Public message event.", ports: { inputs: [], outputs: [{ id: "next", label: "Next", type: "exec" }, { id: "messageText", label: "Message text", type: "string" }] } }
+    ]},
+    { category: "Messages", nodes: [
+      { type: "message.sendText", name: "Send text", description: "Send text to the triggering chat.", ports: { inputs: [{ id: "in", label: "In", type: "exec" }, { id: "text", label: "Text", type: "string" }], outputs: [{ id: "next", label: "Next", type: "exec" }] } }
+    ]},
+    { category: "Data conversion", nodes: [
+      { type: "value.toNumber", name: "Convert to number", description: "Convert validated text into a number.", ports: { inputs: [{ id: "value", label: "Value", type: "string" }], outputs: [{ id: "number", label: "Number", type: "number" }] } },
+      { type: "value.toBoolean", name: "Convert to boolean", description: "Convert text into a boolean value.", ports: { inputs: [{ id: "value", label: "Value", type: "string" }], outputs: [{ id: "boolean", label: "Boolean", type: "boolean" }] } }
+    ]}
+  ];
+  const sampleEngine = {
+    manifest: { id: "text_transform", name: "Text transform", version: 1, entryPoint: "run",
+      inputs: [{ id: "value", type: "string" }], outputs: [{ id: "result", type: "string" }],
+      permissions: [], allowedHosts: [], timeoutMs: 10000, maxResults: 10 },
+    code: "export async function run(inputs, context) { return { result: String(inputs.value ?? '') } }",
+    revision: 1, sha256: "test-fixture"
+  };
   await page.route("**/aharane/api/**", async route => {
     const path = new URL(route.request().url()).pathname.replace("/aharane/api/", "");
     let body;
@@ -53,6 +74,24 @@ try {
     };
     else if (path === "files/packages") body = { ok: true, packages: [] };
     else if (path.startsWith("files/tree")) body = { ok: true, children: [] };
+    else if (path === "visual-commands" && route.request().method() === "GET") body = {
+      ok: true, workflows: savedWorkflow ? [savedWorkflow] : [], library: sampleLibrary, customNodes: []
+    };
+    else if (path === "visual-commands" && route.request().method() === "POST") {
+      const payload = route.request().postDataJSON();
+      savedWorkflow = { ...payload.workflow, revision: 1 };
+      body = { ok: true, workflow: savedWorkflow, validation: { valid: true, errors: [], warnings: [], summary: { nodes: savedWorkflow.nodes.length, connections: savedWorkflow.edges.length, errors: 0, warnings: 0 } } };
+    }
+    else if (path.startsWith("visual-commands/") && path.endsWith("/test")) body = { ok: true, dryRun: true, result: { ok: true, events: ["trigger evaluated", "dry-run send suppressed"] } };
+    else if (path.startsWith("visual-commands/") && route.request().method() === "PUT") {
+      const payload = route.request().postDataJSON();
+      savedWorkflow = { ...payload.workflow, revision: (savedWorkflow?.revision || 1) + 1 };
+      body = { ok: true, workflow: savedWorkflow, validation: { valid: true, errors: [], warnings: [], summary: { nodes: savedWorkflow.nodes.length, connections: savedWorkflow.edges.length, errors: 0, warnings: 0 } } };
+    }
+    else if (path === "engines") body = { ok: true, engines: [{ ...sampleEngine.manifest, revision: 1 }], executionAvailable: true };
+    else if (path === "engines/text_transform") body = { ok: true, engine: sampleEngine, executionAvailable: true };
+    else if (path === "engines/text_transform/capabilities") body = { ok: true, revision: 1, capabilities: { contractVersion: 1, permissions: [], neverGranted: ["filesystem", "process", "shell", "whatsapp"], limits: { timeoutMs: 10000 } }, diagnostics: { findings: [] } };
+    else if (path === "engines/text_transform/run") body = { ok: true, outcome: "success", outputs: { result: "sample" }, durationMs: 2, networkCalls: 0 };
     else body = { ok: true };
     await route.fulfill({
       status: 200,
@@ -76,14 +115,20 @@ try {
 
   await shot("01-home");
   const navButton = label => page.locator("#nav button").filter({ hasText: label }).first();
+  const activateNav = async label => {
+    // The fixed mobile tab rail is horizontally scrollable. Invoke the real
+    // tab button handler directly so the screenshot test does not depend on
+    // Playwright scrolling a clipped fixed-position child into view.
+    await navButton(label).evaluate(button => button.click());
+    await delay(300);
+  };
   for (const [label, name] of [
     ["Chats", "02-chats"],
     ["Files", "03-files"],
     ["ENV", "04-env"],
     ["More", "05-more"]
   ]) {
-    await navButton(label).click();
-    await delay(250);
+    await activateNav(label);
     await shot(name);
   }
 
@@ -93,11 +138,15 @@ try {
   await page.keyboard.press("Escape");
   await delay(180);
   for (const [label, name] of [["Builder", "07-builder"], ["Engine Library", "08-engine-library"]]) {
-    await navButton(label).click(); await delay(450); await shot(name);
+    await activateNav(label); await shot(name);
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await navButton("Builder").click(); await delay(350); await shot("09-desktop-builder");
-  await navButton("Engine Library").click(); await delay(350); await shot("10-desktop-engine-library");
+  await activateNav("Builder"); await shot("09-desktop-builder");
+  await activateNav("Engine Library");
+  await navButton("Engine Library").evaluate(button => button.click());
+  await page.locator("[data-engine-open='text_transform']").click();
+  await delay(250);
+  await shot("10-desktop-engine-library");
   console.log("Captured Studio screens at mobile and desktop sizes, including Builder and Engine Library.");
 } finally {
   if (browser) await browser.close();

@@ -209,6 +209,7 @@ try {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.locator("[data-open-web-builder]").click();
   await page.waitForSelector("[data-wb-add='trigger.command']");
+  if (!await page.locator("[data-wb-category='All'].active").count()) throw new Error("A fresh Builder entry must reset the node filter to All.");
   await page.locator("[data-wb-add='trigger.command']").click();
   await page.locator("[data-wb-add='message.sendText']").click();
   await page.waitForSelector(".wb-node-card");

@@ -566,3 +566,9 @@ test('new Engine and Custom nodes pin their definition versions and auto-connect
   assert.ok(workspace.includes("W.draft.edges.push({id:uid(),from:previous.id,fromSocket:'next',to:node.id,toSocket:'in'})"))
   assert.ok(workspace.includes("?' · v'"))
 })
+
+
+test('opening a fresh Builder from Home resets the node library filter', async () => {
+  const workspace = await read('../control-centre/web-workspace.js')
+  assert.ok(workspace.includes("W.category='All';W.search='';W.selectedNodeId=null;W.pendingSocket=null"))
+})

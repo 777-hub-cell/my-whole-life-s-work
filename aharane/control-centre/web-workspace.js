@@ -98,6 +98,7 @@ function openWorkspace(subpage,returnTab){
 function openWebCommandBuilder(){
  W.returnTab='home';W.account='private';W.builderReady=false;W.loading=false;W.draft=null;
  W.workflows=[];W.groups=[];W.customNodes=[];W.isNew=true;W.dirty=false;W.message='';
+ W.category='All';W.search='';W.selectedNodeId=null;W.pendingSocket=null;W.configNodeId=null;W.configDraft=null;W.validation=null;W.testResult=null;W.zoom=.72;
  openWorkspace('web-builder','home');void loadBuilder();
 }
 function openWebEngineLibrary(source){

@@ -158,7 +158,7 @@ try {
   await outputSocket.click();
   await inputSocket.click();
   await shot("04-command-canvas-connected-nodes");
-  await page.locator("[data-wb-manage-engines]").click();
+  await page.locator(".wb-top-actions [data-wb-manage-engines]").click();
   await page.waitForSelector("[data-engine-open='text_transform']", { timeout: 15000 });
   await shot("05-engine-library-from-builder");
   await page.locator("[data-engine-open='text_transform']").click();

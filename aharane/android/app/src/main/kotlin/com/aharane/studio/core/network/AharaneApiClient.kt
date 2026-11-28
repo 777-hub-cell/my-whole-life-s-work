@@ -109,8 +109,16 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
         return requestJson(url, "GET")
     }
 
-    suspend fun post(path: String, body: JSONObject): JSONObject =
-        requestJson(endpoint.apiUrl(path), "POST", body.toString().toByteArray(StandardCharsets.UTF_8))
+    suspend fun post(
+        path: String,
+        body: JSONObject,
+        readTimeoutMs: Int = 30_000
+    ): JSONObject = requestJson(
+        endpoint.apiUrl(path),
+        "POST",
+        body.toString().toByteArray(StandardCharsets.UTF_8),
+        readTimeoutMs = readTimeoutMs
+    )
 
     suspend fun put(path: String, body: JSONObject): JSONObject =
         requestJson(endpoint.apiUrl(path), "PUT", body.toString().toByteArray(StandardCharsets.UTF_8))
@@ -254,9 +262,10 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
         method: String,
         body: ByteArray? = null,
         contentType: String? = "application/json",
-        headers: Map<String, String> = emptyMap()
+        headers: Map<String, String> = emptyMap(),
+        readTimeoutMs: Int = 30_000
     ): JSONObject {
-        val response = perform(url, method, body, contentType, headers)
+        val response = perform(url, method, body, contentType, headers, readTimeoutMs)
         if (response.first !in 200..299) throw responseError(response.first, response.second)
         val text = response.third.toString(StandardCharsets.UTF_8)
         return if (text.isBlank()) JSONObject().put("ok", true) else runCatching { JSONObject(text) }
@@ -268,12 +277,13 @@ class AharaneApiClient(context: Context, endpoint: ServerEndpoint) {
         method: String,
         body: ByteArray?,
         contentType: String?,
-        headers: Map<String, String>
+        headers: Map<String, String>,
+        readTimeoutMs: Int = 30_000
     ): Triple<Int, String, ByteArray> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 15_000
-            readTimeout = 30_000
+            readTimeout = readTimeoutMs.coerceIn(30_000, 180_000)
             useCaches = false
             instanceFollowRedirects = false
             setRequestProperty("Accept", "application/json")

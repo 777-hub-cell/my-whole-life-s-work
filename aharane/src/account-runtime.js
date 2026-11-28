@@ -2,6 +2,7 @@ import { chmod, lstat, mkdir, readFile, realpath, rename, rm, stat, writeFile } 
 import { dirname, join, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { normalizeConnectionUpdate } from './whatsapp-contract.js'
+import { DEFAULT_WHATSAPP_CONNECT_TIMEOUT_MS, resolveWhatsAppReadyTimeoutMs } from './whatsapp-connection-settings.js'
 
 const SESSION_IDS = Object.freeze(['private', 'public'])
 
@@ -38,6 +39,7 @@ export function createAccountRuntime({
   reconnectJitterRatio = 0.2,
   reconnectRandom = Math.random,
   pairingReadyDelayMs = 1500,
+  socketConnectTimeoutMs = DEFAULT_WHATSAPP_CONNECT_TIMEOUT_MS,
 }) {
   if (typeof loadAuthState !== 'function' || typeof makeSocket !== 'function') {
     throw new TypeError('Account runtime requires auth-state and socket factories.')
@@ -47,6 +49,7 @@ export function createAccountRuntime({
     ? Math.min(0.5, Math.max(0, jitterRatioValue))
     : 0.2
   const randomValue = typeof reconnectRandom === 'function' ? reconnectRandom : Math.random
+  const connectionReadyTimeoutMs = resolveWhatsAppReadyTimeoutMs(socketConnectTimeoutMs)
 
   const privatePath = String(authDirs?.private || '').trim()
   const publicPath = String(authDirs?.public || '').trim()
@@ -800,7 +803,7 @@ export function createAccountRuntime({
     }
   }
 
-  async function waitUntilReady(id, timeoutMs = 20000) {
+  async function waitUntilReady(id, timeoutMs = connectionReadyTimeoutMs) {
     const session = get(id)
     let timer
     try {
@@ -860,7 +863,7 @@ export function createAccountRuntime({
     }
   }
 
-  async function waitUntilCandidateReady(candidate, timeoutMs = 20000) {
+  async function waitUntilCandidateReady(candidate, timeoutMs = connectionReadyTimeoutMs) {
     let timer
     try {
       await Promise.race([

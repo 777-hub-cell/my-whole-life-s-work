@@ -19,6 +19,7 @@ import {
 } from './policy.js'
 import { scheduledDestinationError } from './schedule-destination.js'
 import { createAccountRuntime } from './account-runtime.js'
+import { resolveWhatsAppConnectTimeoutMs } from './whatsapp-connection-settings.js'
 import {
   WHATSAPP_LIBRARY,
   WHATSAPP_TRANSPORT_CONTRACT_VERSION,
@@ -64,6 +65,7 @@ const OWNER_CONFIG_FILE = join(DATA_DIR, 'owner-config.json')
 const ADMIN_AUTH_FILE = join(DATA_DIR, 'admin-auth.json')
 const ADMIN_SETUP_CODE_FILE = join(DATA_DIR, 'admin-setup-code')
 const ADMIN_TOKEN = String(process.env.AHARANE_ADMIN_TOKEN || '')
+const WHATSAPP_CONNECT_TIMEOUT_MS = resolveWhatsAppConnectTimeoutMs(process.env.AHARANE_WHATSAPP_CONNECT_TIMEOUT_MS)
 const LEGACY_PRIVATE_OWNER_NUMBER = String(process.env.AHARANE_PRIVATE_OWNER_NUMBER || '')
 const LEGACY_PUBLIC_OWNER_NUMBER = String(process.env.AHARANE_PUBLIC_OWNER_NUMBER || process.env.AHARANE_OWNER_NUMBER || '')
 const LEGACY_PUBLIC_BOT_NUMBER = String(process.env.AHARANE_PUBLIC_BOT_NUMBER || '')
@@ -1385,9 +1387,11 @@ async function handleMessages(sessionId, currentSocket, event) {
 publicCommandRegistry = await loadCommandRegistry(new URL('../commands/', import.meta.url), { scope: 'public' })
 privateCommandRegistry = await loadCommandRegistry(new URL('../private-commands/', import.meta.url), { scope: 'private' })
 
+logger.info({ event: 'whatsapp.transport-configured', connectTimeoutMs: WHATSAPP_CONNECT_TIMEOUT_MS, readinessTimeoutMs: WHATSAPP_CONNECT_TIMEOUT_MS + 10_000 })
 accountRuntime = createAccountRuntime({
   authDirs: { public: AUTH_DIR, private: PRIVATE_AUTH_DIR },
   loadAuthState: useMultiFileAuthState,
+  socketConnectTimeoutMs: WHATSAPP_CONNECT_TIMEOUT_MS,
   makeSocket: ({ auth }) => {
     // The pinned Baileys fork prefers Node's built-in Undici WebSocket on
     // Node 22+, which currently hides useful handshake failure details.
@@ -1398,6 +1402,7 @@ accountRuntime = createAccountRuntime({
       return makeWASocket({
         auth,
         logger,
+        connectTimeoutMs: WHATSAPP_CONNECT_TIMEOUT_MS,
         browser: Browsers.macOS('Chrome'),
         markOnlineOnConnect: false,
         syncFullHistory: false,

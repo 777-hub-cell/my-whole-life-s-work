@@ -139,10 +139,10 @@ function addNode(type){
  const definition=def(type);if(!definition){note('That node is not in the verified node library.','error');return}
  const index=W.draft.nodes.length;
  const node={id:uid(),type,x:85+(index%3)*305,y:90+Math.floor(index/3)*230,config:{}};
- if(type==='trigger.command')Object.assign(node.config,{command:'newcommand',aliases:'',chatScope:'direct',maxMessagesPerRun:'10',requireQuoted:'false',requireReply:'false'});
- if(type==='trigger.message')Object.assign(node.config,{chatScope:'direct',maxMessagesPerRun:'10'});
- if(type==='flow.repeat')node.config.count='2';
- if(type==='flow.delay')node.config.milliseconds='1000';
+ if(type==='trigger.command')Object.assign(node.config,{command:'newcommand',aliases:[],chatScope:'direct',maxMessagesPerRun:10,requireQuoted:false,requireReply:false});
+ if(type==='trigger.message')Object.assign(node.config,{chatScope:'direct',maxMessagesPerRun:10});
+ if(type==='flow.repeat')node.config.count=2;
+ if(type==='flow.delay')node.config.milliseconds=1000;
  W.draft.nodes.push(node);W.selectedNodeId=node.id;W.pendingSocket=null;markDirty();renderWorkspace();
 }
 function portMarkup(node,definition,direction){
@@ -306,19 +306,22 @@ function connectSockets(button){
 }
 function updateConfigField(target){
  if(!W.configDraft)return;
- const type=target.dataset.type||'text';
- W.configDraft[target.dataset.wbConfigField]=type==='boolean'?String(target.checked):target.value;
+ const type=target.dataset.type||'text',key=target.dataset.wbConfigField;
+ W.configDraft[key]=type==='boolean'?target.checked:type==='number'?(target.value===''?'':Number(target.value)):target.value;
 }
 function applyNodeConfig(){
  const node=W.draft.nodes.find(item=>item.id===W.configNodeId);if(!node)return;
  const config=clone(W.configDraft||{});
  if(node.type==='trigger.command'){
   config.command=String(config.command||'').trim().replace(/^\.+/,'');
-  config.aliases=String(config.aliases||'').split(/[,\n]/).map(value=>value.trim()).filter(Boolean).join(',');
+  config.aliases=(Array.isArray(config.aliases)?config.aliases:String(config.aliases||'').split(/[,\n]/)).map(value=>String(value).trim()).filter(Boolean);
+  config.requireQuoted=config.requireQuoted===true||String(config.requireQuoted)==='true';
+  config.requireReply=config.requireReply===true||String(config.requireReply)==='true';
   if(!config.command){note('Command name is required.','error');return}
   W.draft.name=config.command;
  }
  if(node.type==='trigger.command'||node.type==='trigger.message'){
+  config.maxMessagesPerRun=Number(config.maxMessagesPerRun==null?10:config.maxMessagesPerRun);
   if(W.account==='private')config.chatScope='direct';
   else config.chatScope=config.chatScope||'direct';
  }

@@ -506,3 +506,12 @@ test('web Builder and Engine Library use native Home and Files entry points, not
   assert.ok(css.includes('body.aharane-workspace-open .nav'))
   assert.ok(!/\\.app\\{max-width:1440px/.test(css))
 })
+
+
+test('Builder node configuration preserves typed values and command aliases', async () => {
+  const workspace = await read('../control-centre/web-workspace.js')
+  assert.ok(workspace.includes("aliases:[],chatScope:'direct',maxMessagesPerRun:10,requireQuoted:false,requireReply:false"))
+  assert.ok(workspace.includes("type==='boolean'?target.checked:type==='number'?(target.value===''?'':Number(target.value)):target.value"))
+  assert.ok(workspace.includes("config.aliases=(Array.isArray(config.aliases)?config.aliases:String(config.aliases||'').split(/[,\n]/)).map(value=>String(value).trim()).filter(Boolean)"))
+  assert.ok(workspace.includes("config.maxMessagesPerRun=Number(config.maxMessagesPerRun==null?10:config.maxMessagesPerRun)"))
+})

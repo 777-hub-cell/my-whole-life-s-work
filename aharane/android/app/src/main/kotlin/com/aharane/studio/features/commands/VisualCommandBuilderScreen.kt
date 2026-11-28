@@ -45,6 +45,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -56,6 +57,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -986,15 +988,29 @@ fun VisualCommandBuilderScreen(
                     // generous room to pan on every side instead of reaching an edge quickly.
                     val canvasWidth = maxOf(5200.dp, (canvasOriginX + maxNodeRight + WORKSPACE_CANVAS_PADDING_DP).dp)
                     val canvasHeight = maxOf(5200.dp, (canvasOriginY + maxNodeBottom + WORKSPACE_CANVAS_PADDING_DP).dp)
-                    // Outer box owns scaled scroll dimensions; inner box preserves
-                    // unscaled coordinates for socket measurements.
-                    Box(Modifier.width(canvasWidth * zoom).height(canvasHeight * zoom)) {
+                    // Report the scaled size to the scroll containers while measuring
+                    // the graph at its unscaled size. requiredWidth() inside a smaller
+                    // fixed-size parent can be centred/clipped by Compose, which hid
+                    // nodes even though the scroll offsets appeared valid.
                     Box(
-                        Modifier.requiredWidth(canvasWidth).requiredHeight(canvasHeight).graphicsLayer {
-                            scaleX = zoom
-                            scaleY = zoom
-                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
-                        }.onGloballyPositioned { workspaceCoordinates = it }
+                        Modifier.layout { measurable, _ ->
+                            val contentWidth = canvasWidth.roundToPx()
+                            val contentHeight = canvasHeight.roundToPx()
+                            val placeable = measurable.measure(Constraints.fixed(contentWidth, contentHeight))
+                            val scaledWidth = (contentWidth * zoom).roundToInt().coerceAtLeast(1)
+                            val scaledHeight = (contentHeight * zoom).roundToInt().coerceAtLeast(1)
+                            layout(scaledWidth, scaledHeight) {
+                                placeable.placeWithLayer(0, 0) {
+                                    scaleX = zoom
+                                    scaleY = zoom
+                                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                                }
+                            }
+                        }
+                    ) {
+                    Box(
+                        Modifier.requiredWidth(canvasWidth).requiredHeight(canvasHeight)
+                            .onGloballyPositioned { workspaceCoordinates = it }
                     ) {
                         Canvas(Modifier.fillMaxSize()) {
                             val gridStep = 26.dp.toPx()

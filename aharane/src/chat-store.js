@@ -22,7 +22,7 @@ function accountId(value) {
 function safeJid(value) {
   const jid = String(value || '').trim()
   if (/^\d{7,15}@s\.whatsapp\.net$/.test(jid)) return jid
-  if (/^\d{5,25}-\d{5,25}@g\.us$/.test(jid)) return jid
+  if (/^\d{5,25}(?:-\d{5,25})?@g\.us$/.test(jid)) return jid
   if (/^\d{5,25}@lid$/.test(jid)) return jid
   return ''
 }
@@ -79,7 +79,9 @@ function messageContent(message) {
     ['stickerMessage', 'sticker'], ['documentMessage', 'document'],
     ['contactMessage', 'contact'], ['contactsArrayMessage', 'contact'],
     ['locationMessage', 'location'], ['liveLocationMessage', 'location'],
-    ['pollCreationMessage', 'poll'], ['pollCreationMessageV3', 'poll'],
+    ['pollCreationMessage', 'poll'], ['pollCreationMessageV2', 'poll'],
+    ['pollCreationMessageV3', 'poll'], ['pollCreationMessageV5', 'poll'],
+    ['pollCreationMessageV6', 'poll'],
     ['reactionMessage', 'reaction'], ['buttonsResponseMessage', 'response'],
     ['listResponseMessage', 'response'], ['templateButtonReplyMessage', 'response'],
   ]
@@ -117,6 +119,20 @@ function messageContent(message) {
         String(value.name || value.question || value.title || value.text || '').trim(),
         ...options.map(option => String(option?.optionName || option?.name || '').trim()).filter(Boolean).map(option => '• ' + option),
       ].filter(Boolean).join('\n')
+      const pollOptions = options.map(option => String(option?.optionName || option?.name || '').trim()).filter(Boolean)
+      return {
+        type,
+        text: text.slice(0, MAX_TEXT),
+        mimeType: '',
+        fileName: '',
+        size: 0,
+        duration: 0,
+        ptt: false,
+        media: false,
+        viewOnce: false,
+        pollOptions: [...new Set(pollOptions)].slice(0, 20),
+        pollSelectableCount: Math.max(1, Math.min(pollOptions.length || 1, Number(value.selectableOptionsCount || value.selectableCount || 1) || 1)),
+      }
     } else {
       text = String(value.text || value.caption || value.name || value.selectedDisplayText || value.comment || '')
     }
@@ -298,6 +314,45 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     })
   }
 
+  async function beginIdempotentMediaSend(id, {
+    clientMessageId, jid: jidValue, mimeType, fileName, caption = '',
+    sha256, sizeBytes, isVoiceNote = false, durationSeconds = 0,
+  } = {}) {
+    const account = accountId(id)
+    const jid = safeJid(jidValue)
+    const key = String(clientMessageId || '')
+    if (!jid || !/^[A-Za-z0-9_-]{8,128}$/.test(key)) {
+      throw Object.assign(new Error('A valid client message id and conversation are required.'), { status: 400 })
+    }
+    const digest = String(sha256 || '')
+    if (!/^[a-f0-9]{64}$/.test(digest) || !Number.isSafeInteger(Number(sizeBytes)) || Number(sizeBytes) <= 0) {
+      throw Object.assign(new Error('A valid attachment digest and size are required.'), { status: 400 })
+    }
+    const payloadHash = createHash('sha256').update(JSON.stringify({
+      jid, mimeType: String(mimeType || ''), fileName: String(fileName || ''),
+      caption: String(caption || ''), sha256: digest, sizeBytes: Number(sizeBytes),
+      isVoiceNote: isVoiceNote === true, durationSeconds: Math.max(0, Number(durationSeconds) || 0),
+    })).digest('hex')
+    await ensureReady(account)
+    return enqueue(account, async () => {
+      const entries = await readSendKeys(account)
+      const existing = entries[key]
+      if (existing) {
+        if (existing.payloadHash !== payloadHash || existing.jid !== jid) {
+          throw Object.assign(new Error('This client media id was already used for different attachment content.'), { status: 409 })
+        }
+        if (existing.state === 'sent') return { state: 'sent', messageId: existing.messageId || '' }
+        return { state: 'uncertain', messageId: existing.messageId || '' }
+      }
+      entries[key] = {
+        clientMessageId: key, jid, payloadHash, state: 'sending', messageId: '',
+        createdAt: Date.now(), updatedAt: Date.now(), kind: 'media',
+      }
+      await writeSendKeys(account, entries)
+      return { state: 'sending', messageId: '' }
+    })
+  }
+
   async function completeIdempotentSend(id, clientMessageId, messageId) {
     const account = accountId(id), key = String(clientMessageId || '')
     if (!/^[A-Za-z0-9_-]{8,128}$/.test(key)) throw Object.assign(new Error('Invalid client message id.'), { status: 400 })
@@ -399,6 +454,12 @@ export function createChatStore({ dataDir, logger = console } = {}) {
             ...record,
             status: record.status || previous.status || '',
             reactions: Array.isArray(previous.reactions) ? previous.reactions : [],
+            pollOptions: Array.isArray(record.pollOptions) && record.pollOptions.length
+              ? record.pollOptions : (Array.isArray(previous.pollOptions) ? previous.pollOptions : []),
+            pollSelectableCount: Number(record.pollOptions?.length)
+              ? record.pollSelectableCount : (previous.pollSelectableCount || 1),
+            pollVoteCounts: previous.pollVoteCounts || {},
+            pollVotesByActor: previous.pollVotesByActor || {},
             starred: previous.starred === true,
             viewOnceViewed: previous.viewOnceViewed === true,
             mediaFile: sameMedia ? (previous.mediaFile || '') : '',
@@ -427,13 +488,17 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     })
   }
 
-  async function recordMessage({ sessionId, message, socket } = {}) {
+  async function recordMessage({ sessionId, message, socket, systemText = '' } = {}) {
     const account = accountId(sessionId)
     const key = message?.key || {}
     const jid = safeJid(key.remoteJid)
     const id = String(key.id || '').slice(0, 256)
-    if (!jid || !id || !message?.message) return null
-    const extracted = messageContent(message)
+    const normalizedSystemText = String(systemText || '').trim().slice(0, 1200)
+    const isSystem = normalizedSystemText.length > 0
+    if (!jid || !id || (!message?.message && !isSystem)) return null
+    const extracted = isSystem
+      ? { type: 'text', text: normalizedSystemText, mimeType: '', fileName: '', size: 0, duration: 0, ptt: false, media: false, viewOnce: false }
+      : messageContent(message)
     const ts = timestamp(message.messageTimestamp)
     const fromMe = key.fromMe === true
     const directionKnown = typeof key.fromMe === 'boolean'
@@ -452,6 +517,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     const record = {
       id, jid, fromMe, directionKnown, participant: String(key.participant || ''),
       pushName: String(message.pushName || '').slice(0, 120),
+      system: isSystem,
       timestamp: ts, type: extracted.type, text: extracted.text,
       mimeType: extracted.mimeType, fileName: extracted.fileName ? safeName(extracted.fileName) : '',
       size: extracted.size, duration: extracted.duration || 0, ptt: extracted.ptt === true,
@@ -459,6 +525,10 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       quotedMessageId: quotedMessageId(message),
       quotedMessageText: quotedMessageText(message),
       viewOnce: extracted.viewOnce, viewOnceViewed: false, status: '',
+      pollOptions: extracted.pollOptions || [],
+      pollSelectableCount: extracted.pollSelectableCount || 1,
+      pollVoteCounts: {},
+      pollVotesByActor: {},
       reactions: [], starred: false,
     }
     if (extracted.media && extracted.size > MAX_MEDIA_BYTES) {
@@ -504,7 +574,7 @@ export function createChatStore({ dataDir, logger = console } = {}) {
       }))
   }
 
-  async function getMessages(id, jidValue, { limit = 200, before = 0, after = 0, beforeId = '', afterId = '' } = {}) {
+  async function getMessages(id, jidValue, { limit = 200, before = 0, after = 0, beforeId = '', afterId = '', pollActorKey = '' } = {}) {
     const account = accountId(id)
     const jid = safeJid(jidValue)
     if (!jid) throw Object.assign(new Error('Invalid WhatsApp conversation.'), { status: 400 })
@@ -531,9 +601,20 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     const isOlderPage = Number(before) > 0
     const isDeltaPage = Number(after) > 0
     const page = isOlderPage ? matching.slice(-pageLimit) : isDeltaPage ? matching.slice(0, pageLimit) : matching.slice(-pageLimit)
-    return page.map(row => ({
+    return page.map(row => {
+      const pollOptions = Array.isArray(row.pollOptions) ? row.pollOptions : []
+      const optionHash = option => createHash('sha256').update(Buffer.from(String(option), 'utf8')).digest('hex')
+      const counts = row.pollVoteCounts || {}
+      const mine = /^[a-f0-9]{64}$/.test(String(pollActorKey || ''))
+        ? (row.pollVotesByActor?.[pollActorKey] || []) : []
+      return {
         id: row.id, jid: row.jid, fromMe: row.fromMe, participant: row.participant,
         pushName: row.pushName, timestamp: row.timestamp, type: row.type, text: row.text,
+        system: row.system === true,
+        pollOptions,
+        pollSelectableCount: Math.max(1, Number(row.pollSelectableCount) || 1),
+        pollVoteCounts: Object.fromEntries(pollOptions.map(option => [option, Number(counts[optionHash(option)]) || 0])),
+        pollMyVotes: pollOptions.filter(option => mine.includes(optionHash(option))),
         mimeType: row.mimeType, fileName: row.fileName, size: row.size, duration: row.duration || 0,
         mediaUrl: row.viewOnce ? '' : row.mediaFile ? row.mediaUrl || mediaUrl(account, row.id) : '',
         viewOnce: row.viewOnce === true, viewOnceViewed: row.viewOnceViewed === true,
@@ -542,7 +623,8 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         quotedMessageText: row.quotedMessageText || quotedMessageTextFromSource(row.sourceMessage),
         reactions: Array.isArray(row.reactions) ? row.reactions : [], starred: row.starred === true, ptt: row.ptt === true, status: row.status || '',
         deletedByRemote: row.deletedByRemote === true, deletedAt: Number(row.deletedAt) || 0,
-      }))
+      }
+    })
   }
 
   async function searchMessages(id, { query = '', limit = 60, jid: jidValue = '' } = {}) {
@@ -583,6 +665,9 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     }
     return { id: row.id, jid: row.jid, fromMe: row.fromMe, participant: row.participant,
       pushName: row.pushName, timestamp: row.timestamp, type: row.type, text: row.text,
+      pollOptions: Array.isArray(row.pollOptions) ? row.pollOptions : [],
+      pollSelectableCount: Math.max(1, Number(row.pollSelectableCount) || 1),
+      pollVoteCounts: row.pollVoteCounts || {},
       mimeType: row.mimeType, fileName: row.fileName, size: row.size, viewOnce: row.viewOnce === true,
       key: { remoteJid: row.jid, id: row.id, fromMe: row.fromMe === true, ...(row.participant ? { participant: row.participant } : {}) },
       starred: row.starred === true,
@@ -646,6 +731,55 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         row.sourceMessage = ''
         await rewriteRows(account, rows)
         throw Object.assign(new Error(row.mediaUnavailable), { status: 410 })
+      }
+    })
+  }
+
+  async function applyPollVote(id, jidValue, pollMessageId, actorKey, selectedOptionHashes) {
+    const account = accountId(id), jid = safeJid(jidValue), key = String(pollMessageId || '')
+    const actor = String(actorKey || '')
+    if (!jid || !/^[A-Za-z0-9_-]{1,256}$/.test(key) || !/^[a-f0-9]{64}$/.test(actor)) {
+      throw Object.assign(new Error('Invalid poll vote reference.'), { status: 400 })
+    }
+    if (!Array.isArray(selectedOptionHashes) || selectedOptionHashes.length < 1 || selectedOptionHashes.length > 20 ||
+        selectedOptionHashes.some(value => !/^[a-f0-9]{64}$/.test(String(value || ''))) ||
+        new Set(selectedOptionHashes).size !== selectedOptionHashes.length) {
+      throw Object.assign(new Error('The poll vote contains invalid option hashes.'), { status: 400 })
+    }
+    return enqueue(account, async () => {
+      const rows = await readRows(account)
+      const row = rows.find(item => item.jid === jid && item.id === key && item.type === 'poll')
+      if (!row) return null
+      const optionHashes = new Set((row.pollOptions || []).map(option =>
+        createHash('sha256').update(Buffer.from(String(option), 'utf8')).digest('hex')
+      ))
+      if (selectedOptionHashes.some(value => !optionHashes.has(value))) {
+        throw Object.assign(new Error('This vote contains an option that is not part of the poll.'), { status: 400 })
+      }
+      if (selectedOptionHashes.length > Math.max(1, Number(row.pollSelectableCount) || 1)) {
+        throw Object.assign(new Error('This poll allows fewer selections.'), { status: 400 })
+      }
+
+      const voters = { ...(row.pollVotesByActor || {}) }
+      voters[actor] = [...selectedOptionHashes]
+      const actorKeys = Object.keys(voters)
+      while (actorKeys.length > 5000) delete voters[actorKeys.shift()]
+      const counts = {}
+      for (const hashes of Object.values(voters)) {
+        for (const hash of Array.isArray(hashes) ? hashes : []) {
+          counts[hash] = (counts[hash] || 0) + 1
+        }
+      }
+      row.pollVotesByActor = voters
+      row.pollVoteCounts = counts
+      await rewriteRows(account, rows)
+      return {
+        pollOptions: row.pollOptions || [],
+        pollVoteCounts: Object.fromEntries((row.pollOptions || []).map(option => {
+          const hash = createHash('sha256').update(Buffer.from(String(option), 'utf8')).digest('hex')
+          return [option, Number(counts[hash]) || 0]
+        })),
+        totalVoters: Object.keys(voters).length,
       }
     })
   }
@@ -745,6 +879,13 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return enqueue(account, async () => {
       const rows = await readRows(account), row = rows.find(item => item.jid === jid && item.id === key)
       if (!row || row.viewOnceViewed === true || row.status === value) return row || null
+      // Receipt events can arrive out of order after reconnects. A stale
+      // delivered event must never turn actual blue read ticks grey.
+      const receiptOrder = { pending: 0, sent: 1, delivered: 2, read: 3 }
+      if (row.status in receiptOrder && value in receiptOrder &&
+          receiptOrder[value] <= receiptOrder[row.status]) return row
+      // A late failure cannot undo a confirmed delivery or read receipt.
+      if (value === 'failed' && ['delivered', 'read'].includes(row.status)) return row
       row.status = value
       await rewriteRows(account, rows)
       return { id: row.id, jid: row.jid, status: row.status }
@@ -965,7 +1106,38 @@ export function createChatStore({ dataDir, logger = console } = {}) {
         hourlyMessages[bucket] += 1
       }
     }
-    return { messagesLast24h, totalMessages, hourlyMessages }
+    // All counts are based only on persisted chat messages. Historical gaps
+    // cannot be inferred from a newly paired WhatsApp session.
+    const monthStart = new Date(Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), 1))
+    const dayCount = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0)).getUTCDate()
+    const dailySent = Array(dayCount).fill(0)
+    const dailyReceived = Array(dayCount).fill(0)
+    const unique = new Set()
+    let availableSince = null
+    for (const id of ACCOUNTS) {
+      for (const row of await readRows(id)) {
+        const ts = Number(row.timestamp)
+        const key = id + '|' + String(row.jid || '') + '|' + String(row.id || '')
+        if (!row.id || !Number.isFinite(ts) || ts <= 0 || ts > now || unique.has(key)) continue
+        unique.add(key)
+        if (availableSince === null || ts < availableSince) availableSince = ts
+        if (ts < monthStart.getTime()) continue
+        const day = new Date(ts).getUTCDate() - 1
+        if (row.fromMe === true) dailySent[day] += 1
+        else dailyReceived[day] += 1
+      }
+    }
+    return {
+      messagesLast24h, totalMessages, hourlyMessages,
+      thisMonth: {
+        timeZone: 'UTC',
+        month: monthStart.toISOString().slice(0, 7),
+        availableSince: availableSince == null ? null : new Date(availableSince).toISOString(),
+        dailySent, dailyReceived,
+        sent: dailySent.reduce((a, n) => a + n, 0),
+        received: dailyReceived.reduce((a, n) => a + n, 0),
+      },
+    }
   }
 
   async function mediaUsage() {
@@ -988,5 +1160,5 @@ export function createChatStore({ dataDir, logger = console } = {}) {
     return { bytes: total, files: count }
   }
 
-  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, updateMessageStatus, markMessageDeletedRemotely, markMessageDeletedByOther, markConversationIncomingMessagesDeletedRemotely, listRemoteDeletedMessages, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, deleteConversationMessages, listDeletedMessageIds, beginIdempotentSend, completeIdempotentSend, getIdempotentSend, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
+  return { init, recordMessage, recordOutgoingMedia, listChats, getMessages, searchMessages, getMessage, downloadMessageMedia, applyReaction, applyPollVote, updateMessageStatus, markMessageDeletedRemotely, markMessageDeletedByOther, markConversationIncomingMessagesDeletedRemotely, listRemoteDeletedMessages, setStarred, listStarredMessages, getMediaGallery, exportConversation, markUnread, deleteMessage, deleteConversationMessages, listDeletedMessageIds, beginIdempotentSend, beginIdempotentMediaSend, completeIdempotentSend, getIdempotentSend, hasConversation, getMedia, getViewOnceInfo, consumeViewOnceMedia, markRead, mediaUsage, metrics }
 }

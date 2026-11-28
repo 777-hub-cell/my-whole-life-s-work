@@ -24,18 +24,42 @@ test('Aharane uses two scoped command registries and independent WhatsApp auth s
   assert.ok(!runtime.includes('let socket = null'), 'The old single-socket runtime must be removed')
 })
 
-test('Private Owner and Public Owner are separate, persisted identities', async () => {
+test('Private and Public sessions persist distinct Owner identities', async () => {
   const runtime = await read('../src/index.js')
   const config = await read('../src/owner-config.js')
   assert.ok(config.includes('publicBotNumber'))
+  assert.ok(config.includes('ownerNumber'))
+  assert.ok(config.includes('privateOwnerNumber,'))
+  assert.ok(config.includes('publicOwnerNumber,'))
+  assert.ok(config.includes('version: 4'))
+  assert.ok(runtime.includes('privateOwnerNumber: req.body?.privateOwnerNumber'))
+  assert.ok(runtime.includes('publicOwnerNumber: req.body?.publicOwnerNumber'))
+  assert.ok(config.includes('allowedPublicSenders: []'))
   const auth = await read('../src/authorization.js')
   assert.ok(runtime.includes("OWNER_CONFIG_FILE = join(DATA_DIR, 'owner-config.json')"))
   assert.ok(runtime.includes("app.get('/api/owners'"))
   assert.ok(runtime.includes("app.put('/api/owners'"))
-  assert.ok(config.includes('Private Owner, Public Owner, and Public bot WhatsApp numbers must be different.'))
+  assert.ok(!config.includes('The Owner number and Public bot WhatsApp number must be different.'))
   assert.ok(auth.includes('Private Owner never inherits this role.'))
-  assert.ok(runtime.includes('isPublicOwnerSender'))
-  assert.ok(runtime.includes('isPrivateSelfCommand'))
+  assert.ok(runtime.includes('resolveExecutionAuthorization'))
+})
+
+test('every execution path derives privilege from the canonical evaluator, never directly', async () => {
+  const runtime = await read('../src/index.js')
+  const registry = await read('../src/command-registry.js')
+  // No entry path may call the identity primitives or invent flags from the account type.
+  for (const forbidden of [
+    'isPrivateSelfCommand(', 'isPrivateSelfChat(', 'isPublicOwnerSender(', 'isAllowedInbound(',
+    "privateControl: workflow.account", "isPublicOwner: workflow.account", "allowedPublicSender: workflow.account",
+    "privateControl: schedule.account", "isPublicOwner: schedule.account", "allowedPublicSender: schedule.account",
+  ]) assert.ok(!runtime.includes(forbidden), 'index.js must not use: ' + forbidden)
+  // Every call site resolves through the evaluator: direct, scheduler and admin preview.
+  assert.equal(runtime.match(/resolveExecutionAuthorization\((?:\{|authorizationProof)/g).length, 3)
+  assert.ok(runtime.includes("source: 'direct'") && runtime.includes("source: 'scheduler'") && runtime.includes("source: 'admin-preview'"))
+  // Dispatch authorises through the evaluator and no longer trusts caller flags.
+  assert.ok(registry.includes('resolveExecutionAuthorization(auth'))
+  assert.ok(!registry.includes('context.privateControl') && !registry.includes('context.isPublicOwner'))
+  assert.ok(runtime.includes('auth: authorizationProof'))
 })
 
 test('private and public account management is wired into the supplied Studio preview', async () => {
@@ -45,12 +69,19 @@ test('private and public account management is wired into the supplied Studio pr
   for (const marker of [
     'id="owner-private"',
     'id="owner-public"',
+    'id="owner-public-bot"',
+    "privateOwnerNumber:Q('#owner-private').value",
+    "publicOwnerNumber:Q('#owner-public').value",
+    'Ordinary Public users do not need an allow-list',
     'data-pair-account',
     'data-account',
     'data-action="reconnect"',
     'id="prod-cancel-pairing"',
     'id="prod-pair-back"',
   ]) assert.ok(bridge.includes(marker), 'Missing production account control: ' + marker)
+  assert.ok(!bridge.includes('id="owner-allow"'))
+  assert.ok(!bridge.includes('Allowed public senders'))
+  assert.ok(bridge.includes('id="owner-public"'))
   for (const marker of [
     "apiP('owners'",
     "apiP('accounts/'+id+'/pair-code'",

@@ -1,6 +1,7 @@
 import { chmod, lstat, mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { normalizeConnectionUpdate } from './whatsapp-contract.js'
 
 const SESSION_IDS = Object.freeze(['private', 'public'])
 
@@ -34,11 +35,18 @@ export function createAccountRuntime({
   reconnectBaseMs = 2000,
   reconnectMaxMs = 60000,
   reconnectLimit = 3,
+  reconnectJitterRatio = 0.2,
+  reconnectRandom = Math.random,
   pairingReadyDelayMs = 1500,
 }) {
   if (typeof loadAuthState !== 'function' || typeof makeSocket !== 'function') {
     throw new TypeError('Account runtime requires auth-state and socket factories.')
   }
+  const jitterRatioValue = Number(reconnectJitterRatio)
+  const jitterRatio = Number.isFinite(jitterRatioValue)
+    ? Math.min(0.5, Math.max(0, jitterRatioValue))
+    : 0.2
+  const randomValue = typeof reconnectRandom === 'function' ? reconnectRandom : Math.random
 
   const privatePath = String(authDirs?.private || '').trim()
   const publicPath = String(authDirs?.public || '').trim()
@@ -212,9 +220,16 @@ export function createAccountRuntime({
       return
     }
     session.reconnectAttempts += 1
-    const delayMs = immediate ? 0 : Math.min(
+    const baseDelayMs = Math.min(
       reconnectMaxMs,
       reconnectBaseMs * (2 ** Math.min(5, session.reconnectAttempts - 1)),
+    )
+    const sample = Number(randomValue())
+    const boundedSample = Number.isFinite(sample) ? Math.min(1, Math.max(0, sample)) : 0.5
+    const jitterFactor = 1 + ((boundedSample * 2) - 1) * jitterRatio
+    const delayMs = immediate ? 0 : Math.min(
+      reconnectMaxMs,
+      Math.max(0, Math.round(baseDelayMs * jitterFactor)),
     )
     session.state = 'reconnecting'
     emit()
@@ -270,17 +285,18 @@ export function createAccountRuntime({
       })
 
       currentSocket.ev.on('connection.update', update => {
+        const normalizedUpdate = normalizeConnectionUpdate(update)
         Promise.resolve(onConnection({ sessionId: id, socket: currentSocket, update })).catch(error => logger.warn?.({ event: 'whatsapp.connection-hook-failed', accountId: id, error: String(error?.message || error) }))
         if (update?.qr) session.qr = String(update.qr)
-        if (update?.connection === 'open' || update?.connection === 'close') session.qr = ''
+        if (normalizedUpdate.state === 'connected' || normalizedUpdate.state === 'disconnected') session.qr = ''
         // Phone-number pairing must wait for WhatsApp's initial pair-device/QR
         // event, not merely the earlier transport-level "connecting" update.
-        if (update?.qr || update?.connection === 'open') {
+        if (normalizedUpdate.qrAvailable || normalizedUpdate.state === 'connected') {
           session.resolveReady?.()
           session.resolveReady = null
           session.rejectReady = null
         }
-        if (update?.connection === 'open') {
+        if (normalizedUpdate.state === 'connected') {
           session.registered = true
           session.pairingCodeIssued = false
           session.state = 'connected'
@@ -296,7 +312,7 @@ export function createAccountRuntime({
           emit()
           return
         }
-        if (update?.connection === 'close') {
+        if (normalizedUpdate.state === 'disconnected') {
           // A stale socket's close event must never mutate a newer session.
           if (session.socket !== currentSocket) return
           session.rejectReady?.(
@@ -897,8 +913,14 @@ export function createAccountRuntime({
 
   async function reconnect(id) {
     const session = get(id)
-    if (session.state === 'needs-pairing' || session.state === 'reconnect-exhausted') {
-      throw Object.assign(new Error('This WhatsApp session needs re-pairing. Use safe Re-pair to stage a replacement without changing the saved authentication until the new link connects.'), { status: 409 })
+    if (session.state === 'needs-pairing') {
+      throw Object.assign(new Error('WhatsApp rejected this account authentication. Use safe Re-pair to stage a replacement without changing the saved authentication until the new link connects.'), { status: 409 })
+    }
+    if (session.state === 'reconnect-exhausted') {
+      // Automatic retries are deliberately bounded. A user-initiated reconnect
+      // starts a fresh retry budget with the existing linked credentials.
+      session.reconnectAttempts = 0
+      session.state = 'disconnected'
     }
     if (!session.registered && !session.socket) {
       throw Object.assign(new Error('This WhatsApp account has not been paired yet. Use the explicit Pair action to request a code or QR.'), { status: 409 })

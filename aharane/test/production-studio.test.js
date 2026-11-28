@@ -491,6 +491,8 @@ test('web Builder and Engine Library use native Home and Files entry points, not
   const css = await read('../control-centre/styles.css')
   assert.ok(workspace.includes("Object.assign(T,{home:'Home',files:'Files',chats:'Chats',env:'ENV',more:'More'})"))
   assert.ok(workspace.includes('function injectHomeEntry()'))
+  assert.ok(workspace.includes('function wrappedRender()'))
+  assert.ok(workspace.includes('window.render=wrappedRender;'))
   assert.ok(workspace.includes('function injectEnginesFolder()'))
   assert.ok(workspace.includes("openWorkspace('web-builder','home')"))
   assert.ok(workspace.includes("openWorkspace('web-engines',W.returnTab)"))

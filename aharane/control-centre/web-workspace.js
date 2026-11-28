@@ -574,12 +574,12 @@ function bindBuilder(){
  view.onpointerup=()=>{if(W.drag){if(W.drag.moved)markDirty();W.drag=null}};
  view.onpointercancel=()=>{if(W.drag){markDirty();W.drag=null}};
 }
-function render(){
+function wrappedRender(){
  if(S.sub==='web-builder'||S.sub==='web-engines'){renderWorkspace();return}
  document.body.classList.remove('aharane-workspace-open');
  const result=renderBase();
  injectHomeEntry();injectEnginesFolder();
  return result;
 }
-window.render=render;
+window.render=wrappedRender;
 })();

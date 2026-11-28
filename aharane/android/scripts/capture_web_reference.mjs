@@ -100,9 +100,23 @@ try {
     });
   });
 
+  const browserErrors = [];
+  page.on("pageerror", error => browserErrors.push(String(error?.stack || error)));
+  page.on("console", message => { if (message.type() === "error") browserErrors.push(message.text()); });
   await page.goto("http://127.0.0.1:4173/aharane/studio/", { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.body.classList.contains("aharane-authenticated"), null, { timeout: 15000 });
-  await page.waitForFunction(() => document.querySelector("#view")?.textContent?.includes("Welcome back"), null, { timeout: 15000 });
+  try {
+    await page.waitForSelector("[data-open-web-builder]", { timeout: 15000 });
+  } catch (error) {
+    const diagnostics = {
+      browserErrors,
+      bodyText: await page.locator("body").innerText().catch(() => "unavailable"),
+      viewHtml: await page.locator("#view").innerHTML().catch(() => "missing #view"),
+      navHtml: await page.locator("#nav").innerHTML().catch(() => "missing #nav")
+    };
+    console.error("Studio Home did not expose the Builder entry point:", JSON.stringify(diagnostics));
+    throw error;
+  }
   await page.evaluate(() => document.fonts.ready.then(() => true));
   const navFit = await page.locator("#nav").evaluate(el => ({
     buttons: el.querySelectorAll("button").length,

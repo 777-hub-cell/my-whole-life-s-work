@@ -90,8 +90,13 @@ try {
   await page.getByText("Appearance", { exact: true }).last().click();
   await delay(250);
   await shot("06-appearance");
-
-  console.log("Captured actual web Studio Home, Chats, Files, ENV, More and Appearance at 412×915 with empty disconnected API responses.");
+  for (const [label, name] of [["Builder", "07-builder"], ["Engine Library", "08-engine-library"]]) {
+    await navButton(label).click(); await delay(450); await shot(name);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await navButton("Builder").click(); await delay(350); await shot("09-desktop-builder");
+  await navButton("Engine Library").click(); await delay(350); await shot("10-desktop-engine-library");
+  console.log("Captured Studio screens at mobile and desktop sizes, including Builder and Engine Library.");
 } finally {
   if (browser) await browser.close();
   try { process.kill(-server.pid, "SIGTERM"); } catch {}

@@ -47,12 +47,12 @@ function probeAddress(record) {
       const firstLine = response.split('\r\n', 1)[0]
       if (firstLine.startsWith('HTTP/')) {
         const status = firstLine.match(/^HTTP\/\d(?:\.\d)?\s+(\d{3})/)
-        finish(status ? \`TLS and WebSocket endpoint responded (HTTP \${status[1]})\` : 'TLS connected; endpoint returned an HTTP response')
+        finish(status ? 'TLS and WebSocket endpoint responded (HTTP ' + status[1] + ')' : 'TLS connected; endpoint returned an HTTP response')
       } else if (response.length > 4096) {
         finish('TLS connected; endpoint response was not an HTTP status line')
       }
     })
-    socket.once('error', error => finish(\`failed (\${String(error?.code || error?.name || 'network error')})\`))
+    socket.once('error', error => finish('failed (' + String(error?.code || error?.name || 'network error') + ')'))
     socket.once('timeout', () => finish('timeout'))
     socket.once('close', () => {
       if (!settled) finish('closed before receiving an HTTP response')
@@ -65,23 +65,23 @@ try {
   const unique = []
   const seen = new Set()
   for (const record of records) {
-    const key = \`\${record.family}:\${record.address}\`
+    const key = record.family + ':' + record.address
     if (!seen.has(key)) {
       unique.push(record)
       seen.add(key)
     }
   }
-  console.log(\`[aharane-netcheck] DNS resolved \${unique.length} address(es) for \${hostname}.\`)
+  console.log('[aharane-netcheck] DNS resolved ' + unique.length + ' address(es) for ' + hostname + '.')
   const results = await Promise.all(unique.slice(0, 4).map(async record => ({
     family: record.family,
     result: await probeAddress(record),
   })))
   for (const result of results) {
-    console.log(\`[aharane-netcheck] IPv\${result.family}: \${result.result}.\`)
+    console.log('[aharane-netcheck] IPv' + result.family + ': ' + result.result + '.')
   }
   if (!results.some(result => result.result.startsWith('TLS and WebSocket endpoint responded'))) {
-    console.warn('[aharane-netcheck] No tested address returned an HTTP response. Check this host\\'s DNS and outbound TCP 443 path.')
+    console.warn("[aharane-netcheck] No tested address returned an HTTP response. Check this host's DNS and outbound TCP 443 path.")
   }
 } catch (error) {
-  console.warn(\`[aharane-netcheck] DNS/network probe failed: \${String(error?.code || error?.message || 'unknown error').slice(0, 180)}\`)
+  console.warn('[aharane-netcheck] DNS/network probe failed: ' + String(error?.code || error?.message || 'unknown error').slice(0, 180))
 }

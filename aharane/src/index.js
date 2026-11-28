@@ -1399,6 +1399,12 @@ accountRuntime = createAccountRuntime({
         auth,
         logger,
         browser: Browsers.macOS('Chrome'),
+        // Azure egress and WhatsApp's initial pairing handshake can be slower
+        // than the upstream 30-second defaults. The account runtime now retries
+        // transient post-link network failures while preserving rollback state.
+        connectTimeoutMs: 45_000,
+        defaultQueryTimeoutMs: 60_000,
+        keepAliveIntervalMs: 15_000,
         markOnlineOnConnect: false,
         syncFullHistory: false,
         // Keep Baileys' default selective history policy. Disabling all sync

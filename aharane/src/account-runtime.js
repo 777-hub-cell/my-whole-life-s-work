@@ -38,6 +38,7 @@ export function createAccountRuntime({
   reconnectJitterRatio = 0.2,
   reconnectRandom = Math.random,
   pairingReadyDelayMs = 1500,
+  replacementReconnectTimeoutMs = 210000,
 }) {
   if (typeof loadAuthState !== 'function' || typeof makeSocket !== 'function') {
     throw new TypeError('Account runtime requires auth-state and socket factories.')
@@ -336,6 +337,20 @@ export function createAccountRuntime({
           }
           if (replacement) {
             session.qr = ''
+            if (isTransientNetworkFailure(disconnectError) && session.reconnectAttempts < reconnectLimit) {
+              logger.warn?.({
+                event: 'whatsapp.replacement-network-retry',
+                accountId: id,
+                nextAttempt: session.reconnectAttempts + 1,
+                reconnectLimit,
+                disconnect: disconnectDetails(disconnectError),
+              })
+              // Keep the candidate credentials active while a short-lived
+              // transport failure is retried. The previous authentication
+              // remains available for rollback until the replacement opens.
+              scheduleReconnect(id)
+              return
+            }
             logger.error?.({
               event: 'whatsapp.replacement-session-restart-failed',
               accountId: id,
@@ -496,6 +511,25 @@ export function createAccountRuntime({
     }
   }
 
+  function isTransientNetworkFailure(error) {
+    const details = disconnectDetails(error)
+    const codes = [details.code, details.errno].filter(Boolean).map(value => String(value).toUpperCase())
+    const transientCodes = new Set([
+      'ETIMEDOUT', 'ESOCKETTIMEDOUT', 'ECONNRESET', 'ECONNREFUSED',
+      'ECONNABORTED', 'EHOSTUNREACH', 'ENETUNREACH', 'EHOSTDOWN',
+      'EAI_AGAIN', 'EPIPE',
+    ])
+    if (codes.some(code => transientCodes.has(code))) return true
+
+    const responseStatus = Number(details.explicitResponseStatus ?? details.statusCode)
+    if ([408, 502, 503, 504].includes(responseStatus)) return true
+
+    const message = [details.message, details.transportMessage, details.cause]
+      .filter(Boolean)
+      .join(' | ')
+    return /timed?\s*out|opening handshake has timed out|socket hang up|network is unreachable|connection reset/i.test(message)
+  }
+
   function isPairingRateLimit(error) {
     const statusCode = error?.output?.statusCode ?? error?.statusCode ?? error?.status
     const message = String(error?.message || error || '')
@@ -644,13 +678,16 @@ export function createAccountRuntime({
         session.socket = null
         try { previousSocket.end?.(undefined) } catch {}
       }
+      const replacementWindow = Number.isFinite(Number(replacementReconnectTimeoutMs)) && Number(replacementReconnectTimeoutMs) > 0
+        ? Math.min(300000, Math.round(Number(replacementReconnectTimeoutMs)))
+        : 210000
       replacement.timeoutTimer = setTimeout(() => {
         void serializeSessionOperation(id, () => rollbackReplacementInternal(
           id,
           replacement,
-          new Error('The newly linked WhatsApp session did not reconnect in time.')
+          new Error('The newly linked WhatsApp session did not reconnect before the bounded network-retry window ended.')
         )).catch(error => logger.error?.({ event: 'whatsapp.replacement-rollback-failed', accountId: id, error: String(error?.message || error) }))
-      }, 30000)
+      }, replacementWindow)
       replacement.timeoutTimer.unref?.()
       try { candidate.socket?.end?.(undefined) } catch {}
       session.state = 'connecting'

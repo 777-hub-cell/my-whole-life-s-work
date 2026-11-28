@@ -511,6 +511,55 @@ test('an explicit stop cancels an in-flight replacement without restoring a runn
   await runtime.shutdown()
 })
 
+test('a replacement session retries transient WhatsApp network timeouts before rolling back', async t => {
+  const { runtime, sockets } = await fixture(t, {
+    registered: true,
+    reconnectBaseMs: 5,
+    reconnectMaxMs: 5,
+    reconnectJitterRatio: 0,
+  })
+  await runtime.start('private')
+  const oldSocket = runtime.get('private').socket
+  oldSocket.ev.emit('connection.update', { connection: 'open' })
+  const oldAuthDir = runtime.get('private').authDir
+
+  await runtime.startPairing('private')
+  const candidate = runtime.get('private').pairingCandidate
+  candidate.auth.state.creds.registered = true
+  candidate.socket.ev.emit('creds.update')
+  candidate.socket.ev.emit('connection.update', { connection: 'open' })
+  await waitFor(() => sockets.length === 3 && runtime.get('private').replacementPending !== null)
+
+  const failedReplacementSocket = runtime.get('private').socket
+  const transportError = Object.assign(new Error('connect ETIMEDOUT'), {
+    code: 'ETIMEDOUT',
+    errno: 'ETIMEDOUT',
+    syscall: 'connect',
+  })
+  const error = Object.assign(new Error('WebSocket Error ()'), {
+    output: { statusCode: 408 },
+    data: transportError,
+  })
+  failedReplacementSocket.ev.emit('connection.update', {
+    connection: 'close',
+    lastDisconnect: { error },
+  })
+
+  await waitFor(() => sockets.length === 4)
+  assert.ok(runtime.get('private').replacementPending)
+  assert.equal(runtime.get('private').authDir, candidate.authDir)
+  assert.equal(runtime.get('private').registered, true)
+  assert.notEqual(runtime.get('private').authDir, oldAuthDir)
+
+  const recoveredSocket = runtime.get('private').socket
+  recoveredSocket.ev.emit('connection.update', { connection: 'open' })
+  assert.equal(runtime.get('private').state, 'connected')
+  assert.equal(runtime.get('private').pairingSucceeded, true)
+  assert.equal(runtime.get('private').replacementPending, null)
+  assert.equal(runtime.get('private').authDir, candidate.authDir)
+  await runtime.shutdown()
+})
+
 test('a replacement session handles Baileys 515 restartRequired without rolling back', async t => {
   const { runtime, sockets } = await fixture(t, { registered: true })
   await runtime.start('private')

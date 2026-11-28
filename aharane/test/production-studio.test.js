@@ -117,7 +117,7 @@ test('pairing uses saved Private and Public numbers and is always user-requested
  assert.ok(bind.includes('reconnectPairP'))
  assert.ok(code.includes('startPairMonitorP()'), 'Pairing code requests monitor the candidate lifecycle.')
  assert.ok(qrRequest.includes('startQrP()'), 'QR polling starts only after the explicit QR request.')
- assert.ok(bridge.includes("C.owner=profile==='private'?(P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'')"))
+ assert.ok(bridge.includes("C.owner=profile==='private'?(P.owners.ownerNumber||P.owners.privateOwnerNumber||''):(P.owners.publicBotNumber||'')"))
 })
 
 test('Configuration drafts are not redrawn by background status polling', async () => {
@@ -138,6 +138,42 @@ test('Home exposes service health and separate Private/Public WhatsApp status', 
  assert.ok(!home.includes("svc('stop')"))
 })
 
+test('Base Studio Files and Chats render contextual empty states without dead selection controls', async () => {
+ const app=await read('../control-centre/app.js')
+ assert.ok(app.includes("if(!ks.length&&!n)return ''"))
+ assert.ok(app.includes('This folder is empty'))
+ assert.ok(app.includes('Create file'))
+ assert.ok(app.includes("CH.length===0?'No conversations yet':'No chats in this filter'"))
+ assert.ok(app.includes("q?'No chats match your search'"))
+ assert.ok(app.includes("id=\"clear-chat-search\""))
+ const css=await read('../control-centre/styles.css')
+ assert.ok(css.includes('.files-empty,.chats-empty'))
+ const bridge=await read('../control-centre/production-bridge.js')
+ const chats=bridge.slice(bridge.indexOf('const chatsBaseP=chatsV;'),bridge.indexOf('filesV=filesScreenP'))
+ assert.ok(chats.includes("let title='Link your '+accountName"))
+ assert.ok(chats.includes('data-pair-account='))
+ assert.ok(chats.includes('data-action="reconnect"'))
+ assert.ok(chats.includes('Re-pair account'))
+ assert.ok(chats.includes('Continue pairing'))
+})
+ 
+test('ENV and Home display useful empty states instead of blank panels', async () => {
+ const bridge=await read('../control-centre/production-bridge.js')
+ const env=bridge.slice(bridge.indexOf('function envViewP(){'),bridge.indexOf('async function saveEnvP(){'))
+ const home=bridge.slice(bridge.indexOf('function homeViewP(){'),bridge.indexOf('function installFileSaveLifecycleP(){'))
+ assert.ok(env.includes('No environment values are available yet.'))
+ assert.ok(env.includes('id="prod-save-env"'))
+ assert.ok(env.includes("const save=P.env.length?"))
+ assert.ok(env.includes("P.env.length?'':'"))
+ assert.ok(home.includes('No recent activity yet.'))
+ assert.ok(home.includes("a.registered?'Paired · offline':'Not paired'"))
+ assert.ok(home.includes("['needs-pairing','reconnect-exhausted'].includes(a.state)?'Needs re-pairing'"))
+ assert.ok(home.includes('white-space:normal'))
+ const more=bridge.slice(bridge.indexOf('function moreViewP(){'),bridge.indexOf('function changePasswordP(){'))
+ assert.ok(more.includes('Manage both sessions with one shared Owner identity'))
+ assert.ok(!more.includes('separate Owner identities'))
+})
+ 
 test('Chats search updates in place and preserves message reading position', async () => {
  const bridge=await read('../control-centre/production-bridge.js')
  assert.ok(bridge.includes("apiP('chats/'+account+'/search?q='"))

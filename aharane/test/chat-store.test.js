@@ -782,3 +782,82 @@ test('incremental chat sync uses a composite timestamp/message cursor and preser
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('poll options and privacy-preserving vote totals persist and replace a voter previous choice', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-poll-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '120363000000000001@g.us'
+    const pollId = 'poll-message-1'
+    const options = ['Yes', 'No']
+    const optionHash = value => createHash('sha256').update(Buffer.from(value, 'utf8')).digest('hex')
+    const actorOne = createHash('sha256').update('2348000000001@s.whatsapp.net').digest('hex')
+    const actorTwo = createHash('sha256').update('2348000000002@s.whatsapp.net').digest('hex')
+
+    await store.recordMessage({
+      sessionId: 'public',
+      message: {
+        key: { id: pollId, remoteJid: jid, fromMe: true },
+        messageTimestamp: 1760000010,
+        message: {
+          pollCreationMessageV3: {
+            name: 'Should we meet?',
+            selectableOptionsCount: 1,
+            options: options.map(optionName => ({ optionName })),
+          },
+        },
+      },
+    })
+
+    let [poll] = await store.getMessages('public', jid, { pollActorKey: actorOne })
+    assert.equal(poll.type, 'poll')
+    assert.deepEqual(poll.pollOptions, options)
+    assert.equal(poll.pollSelectableCount, 1)
+    assert.deepEqual(poll.pollVoteCounts, { Yes: 0, No: 0 })
+    assert.deepEqual(poll.pollMyVotes, [])
+
+    await store.applyPollVote('public', jid, pollId, actorOne, [optionHash('Yes')])
+    await store.applyPollVote('public', jid, pollId, actorTwo, [optionHash('No')])
+    ;[poll] = await store.getMessages('public', jid, { pollActorKey: actorOne })
+    assert.deepEqual(poll.pollVoteCounts, { Yes: 1, No: 1 })
+    assert.deepEqual(poll.pollMyVotes, ['Yes'])
+
+    await store.applyPollVote('public', jid, pollId, actorOne, [optionHash('No')])
+    ;[poll] = await store.getMessages('public', jid, { pollActorKey: actorOne })
+    assert.deepEqual(poll.pollVoteCounts, { Yes: 0, No: 2 })
+    assert.deepEqual(poll.pollMyVotes, ['No'])
+    assert.equal(JSON.stringify(poll).includes('2348000000001'), false)
+    assert.equal(JSON.stringify(poll).includes(actorOne), false)
+
+    await assert.rejects(
+      store.applyPollVote('public', jid, pollId, actorOne, [optionHash('Unknown')]),
+      /not part of the poll/
+    )
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
+test('group service events are retained as readable system messages without a WhatsApp message body', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aharane-chat-system-'))
+  try {
+    const store = createChatStore({ dataDir: dir, logger: { warn() {} } })
+    await store.init()
+    const jid = '120363000000000001@g.us'
+    await store.recordMessage({
+      sessionId: 'public',
+      message: {
+        key: { id: 'group-left-1', remoteJid: jid, fromMe: false, participant: '2348012345678@s.whatsapp.net' },
+        messageTimestamp: 1765000000,
+        messageStubType: 30,
+      },
+      systemText: 'Quarantine Scope left the group.',
+    })
+    const rows = await store.getMessages('public', jid)
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].text, 'Quarantine Scope left the group.')
+    assert.equal(rows[0].system, true)
+    assert.equal(rows[0].mediaUrl, '')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

@@ -9,28 +9,47 @@ import { fileURLToPath } from 'node:url'
 import express from 'express'
 import { WebSocket, WebSocketServer } from 'ws'
 import pino from 'pino'
-import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState, WAMessageStubType, downloadMediaMessage } from '@itsliaaa/baileys'
+import makeWASocket, { Browsers, DisconnectReason, useMultiFileAuthState, WAMessageStubType, downloadMediaMessage, getKeyAuthor, jidNormalizedUser } from '@itsliaaa/baileys'
+import { createPollVoteEnvelope, decryptIncomingPollVote } from './chat-polls.js'
 import {
-  isAllowedInbound,
   isPrivateVisibleChatJid,
   isSafeMessageUpsert,
   normalizePhone,
-  parseAllowedSenders,
   senderNumberFromJid,
 } from './policy.js'
+import { scheduledDestinationError } from './schedule-destination.js'
 import { createAccountRuntime } from './account-runtime.js'
+import {
+  WHATSAPP_LIBRARY,
+  WHATSAPP_TRANSPORT_CONTRACT_VERSION,
+  inspectWhatsAppCapabilities,
+  normalizeReceiptStatus,
+} from './whatsapp-contract.js'
 import { loadCommandRegistry, dispatchCommand, parseCommand } from './command-registry.js'
-import { isPrivateSelfChat, isPrivateSelfCommand, isPublicOwnerSender } from './authorization.js'
+import { resolveExecutionAuthorization } from './authorization.js'
 import { loadOwnerConfig, normalizeOwnerConfig, saveOwnerConfig } from './owner-config.js'
+import { createWhatsAppDiscovery } from './whatsapp-discovery.js'
 import { compareUpdateContents, extractUpdateArchive, inspectUpdateArchive, MAX_ARCHIVE_BYTES, normalizeUpdatePath } from './update-manager.js'
 import { createChatStore } from './chat-store.js'
+import { createEngineStore } from './engine-store.js'
+import { createSchedulerStore } from './scheduler-store.js'
+import { createSchedulerRunner } from './scheduler-runner.js'
+import {
+  createEngineRunner,
+  describeEngineCapabilities,
+  diagnoseEngine,
+  httpResponseForEnvelope,
+  invokeEngine,
+} from './engine-invocation.js'
 import { loadStudioSettings, saveStudioSettings, normalizeStudioSettings, normalizeChatVisibility, normalizeChatAppearance, isChatVisible, envView } from './studio-settings.js'
+import { discoverEnvironmentRows } from './environment-discovery.js'
 import { createActivityStore } from './activity-store.js'
 import { createAiReplyService } from './ai-reply.js'
-import { createVisualCommandStore, normalizeWorkflow, validateWorkflow, executeVisualWorkflow, VISUAL_NODE_LIBRARY } from './visual-command-builder.js'
+import { createVisualCommandStore, normalizeWorkflow, assertSupportedWorkflowSchema, exportWorkflow, importWorkflow, validateWorkflow, executeVisualWorkflow, currentVisualNodeLibrary, registerEngineNode, unregisterEngineNode } from './visual-command-builder.js'
 
 const APP_NAME = 'Aharane'
 const PROCESS_STARTED_AT = Date.now()
+const SOURCE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const PRIVATE_COMMAND_PREFIX = '.'
 const PUBLIC_COMMAND_PREFIX = '!'
@@ -48,7 +67,6 @@ const ADMIN_TOKEN = String(process.env.AHARANE_ADMIN_TOKEN || '')
 const LEGACY_PRIVATE_OWNER_NUMBER = String(process.env.AHARANE_PRIVATE_OWNER_NUMBER || '')
 const LEGACY_PUBLIC_OWNER_NUMBER = String(process.env.AHARANE_PUBLIC_OWNER_NUMBER || process.env.AHARANE_OWNER_NUMBER || '')
 const LEGACY_PUBLIC_BOT_NUMBER = String(process.env.AHARANE_PUBLIC_BOT_NUMBER || '')
-const LEGACY_PUBLIC_ALLOWED_SENDERS = String(process.env.AHARANE_ALLOWED_PUBLIC_SENDERS || process.env.AHARANE_ALLOWED_SENDERS || '')
 const APP_BASE = resolve('/opt/aharane')
 const CURRENT_RELEASE = join(APP_BASE, 'current')
 const RELEASES_DIR = join(APP_BASE, 'releases')
@@ -87,12 +105,116 @@ let ownerConfig = await loadOwnerConfig(OWNER_CONFIG_FILE, {
   privateOwnerNumber: LEGACY_PRIVATE_OWNER_NUMBER,
   publicOwnerNumber: LEGACY_PUBLIC_OWNER_NUMBER,
   publicBotNumber: LEGACY_PUBLIC_BOT_NUMBER,
-  allowedPublicSenders: LEGACY_PUBLIC_ALLOWED_SENDERS,
 })
 const chatStore = createChatStore({ dataDir: DATA_DIR, logger })
 const activityStore = createActivityStore({ dataDir: DATA_DIR })
 const visualCommandStore = createVisualCommandStore(join(DATA_DIR, 'visual-commands.json'))
-await Promise.all([chatStore.init(), activityStore.init(), visualCommandStore.init()])
+const engineStore = createEngineStore({ dataDir: DATA_DIR })
+const schedulerStore = createSchedulerStore(join(DATA_DIR, 'scheduled-workflows.json'))
+await Promise.all([chatStore.init(), activityStore.init(), visualCommandStore.init(), engineStore.init(), schedulerStore.init()])
+for (const engine of await engineStore.list()) registerEngineNode(engine)
+
+// Workflows and the Scheduler reach the sandbox only through invokeEngine (via this runner). A
+// pinned revision runs exactly that saved snapshot; otherwise the latest saved Engine runs and its
+// revision is recorded in the result.
+const runStoredEngine = createEngineRunner({ store: engineStore, logger })
+
+async function executeScheduledWorkflow(schedule) {
+  const workflow = visualCommandStore.get(schedule.workflowId)
+  if (!workflow || !workflow.enabled) throw new Error('The scheduled command is missing or disabled.')
+  const trigger = workflow.nodes.find(node => node.type === 'trigger.command')
+  if (!trigger) throw new Error('Only saved command-trigger workflows can be scheduled.')
+  const destinationError = scheduledDestinationError(workflow, schedule.destinationJid, ownerConfig)
+  if (destinationError) throw new Error(destinationError)
+
+  const session = accountRuntime?.get(schedule.account)
+  if (!session || session.state !== 'connected' || !session.socket) {
+    throw new Error('The ' + schedule.account + ' WhatsApp session is not connected. This occurrence was recorded as failed and will not be replayed.')
+  }
+  const currentSocket = session.socket
+  const destinationJid = schedule.destinationJid
+  // Re-evaluate owner privilege now; an approval from when the schedule was
+  // created is never trusted after the owner configuration or session changed.
+  const privileges = resolveExecutionAuthorization({
+    source: 'scheduler',
+    sessionId: schedule.account,
+    ownerConfig,
+    ownJid: currentSocket.user?.id || '',
+  })
+  if (schedule.account === 'private' && !privileges.privateControl) {
+    throw new Error('Scheduled run denied by owner policy (' + privileges.decisions.privateControl.reason + '). This occurrence was recorded as failed and will not be replayed.')
+  }
+  const ownerNumber = schedule.account === 'private'
+    ? ownerConfig.privateOwnerNumber
+    : ownerConfig.publicOwnerNumber
+  const senderJid = String(ownerNumber || '').replace(/\\D/g, '') + '@s.whatsapp.net'
+  const visualWorkflowSocket = {
+    sendMessage: async (...args) => {
+      const sent = await currentSocket.sendMessage(...args)
+      if (sent?.key?.id) await chatStore.recordMessage({ sessionId: schedule.account, message: sent, socket: currentSocket })
+      return sent
+    },
+  }
+  for (const method of [
+    'groupMetadata',
+    'groupUpdateSubject',
+    'groupUpdateDescription',
+    'groupParticipantsUpdate',
+    'groupSettingUpdate',
+    'updateBlockStatus',
+    'updateProfileName',
+    'updateProfileStatus',
+    'newsletterCreate',
+    'newsletterFollow',
+    'newsletterUnfollow',
+  ]) {
+    if (typeof currentSocket[method] === 'function') {
+      visualWorkflowSocket[method] = (...args) => currentSocket[method](...args)
+    }
+  }
+
+  const prefix = schedule.account === 'private' ? PRIVATE_COMMAND_PREFIX : PUBLIC_COMMAND_PREFIX
+  const commandName = String(trigger.config.command || '')
+  const messageText = prefix + commandName + ' scheduled'
+  const message = {
+    key: {
+      id: 'aharane-scheduled-' + String(schedule.claimedRunId).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 120),
+      remoteJid: destinationJid,
+      fromMe: true,
+      ...(destinationJid.endsWith('@g.us') ? { participant: currentSocket.user?.id || senderJid } : {}),
+    },
+    message: { conversation: messageText },
+  }
+  const result = await executeVisualWorkflow(workflow, {
+    store: visualCommandStore,
+    runEngine: runStoredEngine,
+    context: {
+      sessionId: schedule.account,
+      privateControl: privileges.privateControl,
+      isPublicOwner: privileges.isPublicOwner,
+      allowedPublicSender: privileges.allowedPublicSender,
+      socket: visualWorkflowSocket,
+      message,
+      messageText,
+      sender: senderJid,
+      senderJid,
+      isGroupChat: destinationJid.endsWith('@g.us'),
+      remoteJid: destinationJid,
+      commandName,
+      rawArgs: '',
+      args: [],
+      scheduledExecution: true,
+      scheduleId: schedule.id,
+      scheduleRunId: schedule.claimedRunId,
+    },
+  })
+  if (!result.ok) throw new Error(result.error || 'Scheduled workflow failed.')
+  return {
+    ok: true,
+    summary: 'Scheduled command .' .replace('.', prefix) + commandName + ' completed.',
+    trace: result.trace,
+  }
+}
 const SETTINGS_FILE = join(DATA_DIR, 'studio-settings.json')
 const CHAT_WALLPAPER_FILE = join(DATA_DIR, 'chat-wallpaper')
 let studioSettings = await loadStudioSettings(SETTINGS_FILE)
@@ -108,13 +230,6 @@ const commandTimes = new Map()
 const studioClients = new Set()
 let studioEventSequence = 0
 
-function publicAllowedSenders() {
-  return parseAllowedSenders([
-    ...(ownerConfig?.allowedPublicSenders || []),
-    ownerConfig?.publicOwnerNumber || '',
-  ].filter(Boolean).join(','))
-}
-
 function studioRuntimeSnapshot() {
   const runtime = accountRuntime?.snapshot() || {
     state: 'starting',
@@ -126,11 +241,11 @@ function studioRuntimeSnapshot() {
   }
   return {
     ...runtime,
-    allowlistedSenderCount: publicAllowedSenders().size,
     groupsEnabled: false,
     ownerIdentities: {
-      privateOwnerConfigured: Boolean(ownerConfig?.privateOwnerNumber),
-      publicOwnerConfigured: Boolean(ownerConfig?.publicOwnerNumber),
+      ownerConfigured: Boolean(ownerConfig?.ownerNumber || ownerConfig?.privateOwnerNumber),
+      privateOwnerConfigured: Boolean(ownerConfig?.ownerNumber || ownerConfig?.privateOwnerNumber),
+      publicOwnerConfigured: Boolean(ownerConfig?.ownerNumber || ownerConfig?.publicOwnerNumber),
     },
   }
 }
@@ -940,6 +1055,52 @@ function textFromMessage(message) {
   ).trim()
 }
 
+function currentPollActorKey(accountId) {
+  const socket = accountRuntime.get(accountId)?.socket
+  const voterJid = jidNormalizedUser(String(socket?.user?.id || ''))
+  return voterJid ? createHash('sha256').update(voterJid, 'utf8').digest('hex') : ''
+}
+
+function findPollUpdate(message) {
+  let current = message?.message
+  for (let depth = 0; current && depth < 6; depth += 1) {
+    if (current.pollUpdateMessage) return current.pollUpdateMessage
+    const next =
+      current.ephemeralMessage?.message ||
+      current.viewOnceMessage?.message ||
+      current.viewOnceMessageV2?.message ||
+      current.viewOnceMessageV2Extension?.message ||
+      current.deviceSentMessage?.message ||
+      current.documentWithCaptionMessage?.message ||
+      current.editedMessage?.message ||
+      null
+    if (!next) return null
+    current = next
+  }
+  return null
+}
+
+async function applyIncomingPollVote(accountId, currentSocket, message, pollUpdate) {
+  const jid = String(message?.key?.remoteJid || '')
+  const pollMessageId = String(pollUpdate?.pollCreationMessageKey?.id || '')
+  const normalizedMe = jidNormalizedUser(String(currentSocket?.user?.id || ''))
+  const voterJid = getKeyAuthor(message?.key, normalizedMe)
+  if (!jid || !pollMessageId || !voterJid || !normalizedMe) return false
+  const pollMessage = await chatStore.getMessage(accountId, jid, pollMessageId)
+  if (!pollMessage || pollMessage.type !== 'poll' || !pollMessage.sourceMessage) return false
+  const selectedHashes = decryptIncomingPollVote({
+    pollMessage,
+    vote: pollUpdate.vote,
+    voterJid,
+  })
+  if (!selectedHashes.length) return false
+  const actorKey = createHash('sha256').update(String(voterJid), 'utf8').digest('hex')
+  const result = await chatStore.applyPollVote(accountId, jid, pollMessageId, actorKey, selectedHashes)
+  if (!result) return false
+  publishStudioEvent('whatsapp.poll.updated', { accountId, jid, pollMessageId })
+  return true
+}
+
 function markMessageSeen(id) {
   if (!id) return false
   if (seenMessageIds.has(id)) return true
@@ -951,13 +1112,77 @@ function markMessageSeen(id) {
   return false
 }
 
+const whatsappDiscovery = createWhatsAppDiscovery()
+
+const GROUP_MEMBER_STUB_ACTIONS = new Map([
+  [WAMessageStubType.GROUP_PARTICIPANT_LEAVE, 'left the group'],
+  [WAMessageStubType.GROUP_PARTICIPANT_REMOVE, 'was removed from the group'],
+  [WAMessageStubType.GROUP_PARTICIPANT_ADD, 'was added to the group'],
+  [WAMessageStubType.GROUP_PARTICIPANT_PROMOTE, 'was made a group admin'],
+  [WAMessageStubType.GROUP_PARTICIPANT_DEMOTE, 'is no longer a group admin'],
+].filter(([stubType]) => stubType != null))
+
+function groupSystemNotificationText(message) {
+  if (!String(message?.key?.remoteJid || '').endsWith('@g.us')) return ''
+  const action = GROUP_MEMBER_STUB_ACTIONS.get(message?.messageStubType)
+  if (!action) return ''
+  const parameter = String(message?.messageStubParameters?.[0] || '').trim()
+  const parameterName = parameter && !parameter.includes('@') && !/^\+?\d{7,}$/.test(parameter)
+    ? parameter
+    : ''
+  const participantName = String(message?.pushName || parameterName || 'A participant').trim().slice(0, 80)
+  return participantName + ' ' + action + '.'
+}
+
 async function handleMessages(sessionId, currentSocket, event) {
   if (!isSafeMessageUpsert(event)) return
   for (const message of event.messages) {
-    if (!message?.message || !message.key?.id) continue
+    if (!message?.key?.id) continue
 
     const remoteJid = String(message.key?.remoteJid || '')
-    const senderJid = String(message.key?.participant || remoteJid)
+    if (remoteJid === 'status@broadcast') {
+      continue // Status is excluded from Aharane and is never stored or exposed.
+    }
+    const systemText = groupSystemNotificationText(message)
+    if (systemText) {
+      const shouldPersistSystem = remoteJid.endsWith('@g.us') &&
+        isPrivateVisibleChatJid(remoteJid) &&
+        (sessionId === 'private' || (sessionId === 'public' && message.key.fromMe !== true))
+      if (shouldPersistSystem) {
+        await chatStore.recordMessage({ sessionId, message, socket: currentSocket, systemText })
+      }
+      continue
+    }
+    if (!message.message) continue
+    const pollUpdate = findPollUpdate(message)
+    if (pollUpdate) {
+      const shouldPersistPoll = sessionId === 'private'
+        ? isPrivateVisibleChatJid(remoteJid)
+        : sessionId === 'public' && message.key.fromMe !== true && isPrivateVisibleChatJid(remoteJid)
+      if (shouldPersistPoll) {
+        try {
+          await applyIncomingPollVote(sessionId, currentSocket, message, pollUpdate)
+        } catch (error) {
+          logger.warn?.({
+            event: 'chat.poll.vote-decrypt-failed',
+            accountId: sessionId,
+            pollMessageId: String(pollUpdate.pollCreationMessageKey?.id || ''),
+            error: String(error?.message || error).slice(0, 180),
+          })
+        }
+      }
+      continue
+    }
+    const rawSenderJid = String(message.key?.participant || remoteJid)
+    const senderAlternateJid = String(remoteJid.endsWith('@g.us')
+      ? (message.key?.participantAlt || '')
+      : (message.key?.remoteJidAlt || ''))
+    // Prefer the phone-number identity paired by Baileys when WhatsApp uses
+    // LIDs. This is used for allow-list, owner and rate-limit checks only;
+    // outgoing replies continue to use the original remoteJid.
+    const senderJid = senderNumberFromJid(rawSenderJid)
+      ? rawSenderJid
+      : (senderNumberFromJid(senderAlternateJid) ? senderAlternateJid : rawSenderJid)
     const shouldPersist =
       (sessionId === 'private' && isPrivateVisibleChatJid(remoteJid)) ||
       (sessionId === 'public' && message.key.fromMe !== true && isPrivateVisibleChatJid(remoteJid))
@@ -970,52 +1195,48 @@ async function handleMessages(sessionId, currentSocket, event) {
     let privateControl = false
     let allowedForAutomation = false
 
+    // One canonical evaluation per inbound message. Identity proof comes only
+    // from verified transport metadata; the privilege flags below are derived
+    // here by the evaluator and nowhere else.
+    const authorizationProof = {
+      source: 'direct',
+      sessionId,
+      ownerConfig,
+      message,
+      remoteJid,
+      remoteJidAlt: message.key?.remoteJidAlt,
+      senderJid,
+      participantJid: rawSenderJid,
+      participantAltJid: senderAlternateJid,
+      ownJid: currentSocket.user?.id || '',
+      ownLid: currentSocket.user?.lid || '',
+    }
+    const privileges = resolveExecutionAuthorization(authorizationProof)
+
     if (sessionId === 'private') {
       if (!isPrivateVisibleChatJid(remoteJid)) continue
-      const privateSelfChat = isPrivateSelfChat({
-        sessionId, remoteJid, ownJid: currentSocket.user?.id || '',
-        privateOwnerNumber: ownerConfig.privateOwnerNumber,
-      })
       await chatStore.recordMessage({ sessionId, message, socket: currentSocket })
-      if (message.key.fromMe !== true || !privateSelfChat) continue
+      if (!privileges.privateControl) continue
       const visualCommandNames = new Set(visualCommandStore.list('private')
         .filter(workflow => workflow.enabled)
         .flatMap(workflow => {
           const trigger = workflow.nodes.find(node => node.type === 'trigger.command')
           return trigger ? [trigger.config.command, ...(trigger.config.aliases || [])].map(value => String(value).toLowerCase()) : []
         }))
-      privateControl = isPrivateSelfCommand({
-        sessionId,
-        message,
-        remoteJid,
-        ownJid: currentSocket.user?.id || '',
-        privateOwnerNumber: ownerConfig.privateOwnerNumber,
-        text: messageText,
-        privateRegistry: privateCommandRegistry,
-        visualCommandNames,
-        prefix: PRIVATE_COMMAND_PREFIX,
-      })
-      if (!privateControl) continue
+      // Private control also requires the text to be a known command.
+      const privateCommand = parseCommand(messageText, PRIVATE_COMMAND_PREFIX)
+      if (!privateCommand || !(privateCommandRegistry.commands.has(privateCommand.name) ||
+          visualCommandNames.has(privateCommand.name))) continue
+      privateControl = privileges.privateControl
       allowedForAutomation = true
       registry = privateCommandRegistry
     } else if (sessionId === 'public') {
       if (message.key.fromMe === true || !isPrivateVisibleChatJid(remoteJid)) continue
-      const allowedSenders = publicAllowedSenders()
-      // Existing public commands remain direct-chat-only. Visual workflows may
-      // opt into groups, but the triggering participant must still be in the
-      // configured public sender allow-list.
-      const allowedToUseCommands = isAllowedInbound({
-        remoteJid,
-        fromMe: false,
-        allowedSenders,
-      })
-      const allowedVisualSender = isAllowedInbound({
-        remoteJid,
-        participantJid: senderJid,
-        allowGroups: true,
-        fromMe: false,
-        allowedSenders,
-      })
+      // Public direct messages are open to valid WhatsApp senders. Ordinary
+      // commands remain direct-chat-only; visual workflows can opt into groups
+      // individually through their configured chat scope.
+      const allowedToUseCommands = privileges.canRunPublicCommands
+      const allowedVisualSender = privileges.allowedPublicSender
       const firstConversationMessage = allowedToUseCommands && !await chatStore.hasConversation(sessionId, remoteJid)
       if (studioSettings.public.autoRead) await currentSocket.readMessages([message.key]).catch(() => {})
       if (!allowedVisualSender) continue
@@ -1025,12 +1246,7 @@ async function handleMessages(sessionId, currentSocket, event) {
       }
       allowedForAutomation = true
       if (allowedToUseCommands) registry = publicCommandRegistry
-      isPublicOwner = isPublicOwnerSender({
-        sessionId,
-        remoteJid,
-        senderJid,
-        publicOwnerNumber: ownerConfig.publicOwnerNumber,
-      })
+      isPublicOwner = privileges.isPublicOwner
     } else {
       continue
     }
@@ -1080,10 +1296,10 @@ async function handleMessages(sessionId, currentSocket, event) {
     // Message Received workflows run only after the same account-specific
     // authorization gates used by the existing command dispatcher.
     if (allowedForAutomation && sessionId === 'public' &&
-        allowCommand('visual-message:' + senderNumberFromJid(senderJid))) {
+        allowCommand('visual-message:' + (senderJid || remoteJid))) {
       for (const workflow of visualCommandStore.findMessageTriggers(sessionId)) {
         try {
-          const result = await executeVisualWorkflow(workflow, { store: visualCommandStore, context: workflowContext })
+          const result = await executeVisualWorkflow(workflow, { store: visualCommandStore, context: workflowContext, runEngine: runStoredEngine, deduplicate: true })
           if (!result.ok) {
             logger.warn({ event: 'visual-workflow.failed', workflowId: workflow.id, account: sessionId, error: result.error })
             publishStudioEvent('visual-workflow.failed', { workflowId: workflow.id, account: sessionId, error: result.error })
@@ -1111,6 +1327,8 @@ async function handleMessages(sessionId, currentSocket, event) {
         try {
           const result = await executeVisualWorkflow(workflow, {
             store: visualCommandStore,
+            runEngine: runStoredEngine,
+            deduplicate: true,
             context: {
               ...workflowContext,
               commandName: parsedCommand.name,
@@ -1138,11 +1356,11 @@ async function handleMessages(sessionId, currentSocket, event) {
         registry,
         rawText: messageText,
         prefix,
+        auth: authorizationProof,
+        onDenied: denied => logger.warn({
+          event: 'command.denied', sessionId, command, reason: denied.reason, policyVersion: denied.policyVersion,
+        }),
         context: {
-          sessionId,
-          privateControl,
-          isPrivateOwner: privateControl,
-          isPublicOwner,
           reply: async value => {
             if (studioSettings[sessionId].showTyping) await currentSocket.sendPresenceUpdate('composing', remoteJid).catch(() => {})
             try {
@@ -1244,14 +1462,7 @@ accountRuntime = createAccountRuntime({
         }
       }
 
-      const raw = update.status
-      let status = ''
-      if (typeof raw === 'number' && Number.isFinite(raw)) {
-        status = raw <= 0 ? 'failed' : raw === 1 ? 'pending' : raw === 2 ? 'sent' : raw === 3 ? 'delivered' : raw >= 4 ? 'read' : ''
-      } else {
-        const value = String(raw || '').toLowerCase()
-        status = ['pending', 'sent', 'delivered', 'read', 'failed'].includes(value) ? value : ''
-      }
+      const status = normalizeReceiptStatus(update.status)
       if (status) await chatStore.updateMessageStatus(sessionId, jid, messageId, status)
     }
   },
@@ -1397,17 +1608,221 @@ function visualWorkflowPayload(workflow) {
   return { ...workflow, validation: validateWorkflow(workflow) }
 }
 
+// Custom Engine source is executed in a constrained QuickJS WASM context.
+// Only declared exact HTTPS host allowlists are exposed through the network capability.
+app.get('/api/engines', requireAdmin, async (_req, res) => {
+  try {
+    res.json({ ok: true, engines: await engineStore.list(), executionAvailable: true })
+  } catch (error) {
+    res.status(500).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+app.get('/api/engines/:id', requireAdmin, async (req, res) => {
+  try {
+    const engine = await engineStore.get(req.params.id)
+    if (!engine) return res.status(404).json({ ok: false, error: 'Engine not found.' })
+    res.json({ ok: true, engine, executionAvailable: true })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+app.post('/api/engines', requireAdmin, async (req, res) => {
+  try {
+    const existing = await engineStore.get(req.body?.manifest?.id)
+    if (existing) return res.status(409).json({ ok: false, error: 'Engine already exists. Use the edit endpoint.' })
+    const engine = await engineStore.save(req.body?.manifest, req.body?.code)
+    res.status(201).json({ ok: true, engine, executionAvailable: true })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+app.put('/api/engines/:id', requireAdmin, async (req, res) => {
+  try {
+    if (req.body?.manifest?.id !== req.params.id) throw new Error('Engine ID cannot change. Create a new Engine for a new ID.')
+    const current = await engineStore.get(req.params.id)
+    if (!current) return res.status(404).json({ ok: false, error: 'Engine not found.' })
+    const engine = await engineStore.save(req.body.manifest, req.body.code, req.body.expectedVersion, { expectedRevision: req.body.expectedRevision })
+    res.json({ ok: true, engine, executionAvailable: true })
+  } catch (error) {
+    res.status(409).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+app.get('/api/engines/:id/revisions', requireAdmin, async (req, res) => {
+  try {
+    if (!await engineStore.get(req.params.id)) return res.status(404).json({ ok: false, error: 'Engine not found.' })
+    res.json({ ok: true, revisions: await engineStore.listRevisions(req.params.id) })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+app.get('/api/engines/:id/revisions/:revision', requireAdmin, async (req, res) => {
+  try {
+    const engine = await engineStore.getRevision(req.params.id, req.params.revision)
+    if (!engine) return res.status(404).json({ ok: false, error: 'Engine revision not found.' })
+    res.json({ ok: true, engine })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+app.get('/api/engines/:id/capabilities', requireAdmin, async (req, res) => {
+  try {
+    const engine = await engineStore.get(req.params.id)
+    if (!engine) return res.status(404).json({ ok: false, error: 'Engine not found.' })
+    res.json({ ok: true, revision: engine.revision, sha256: engine.sha256, capabilities: describeEngineCapabilities(engine.manifest), diagnostics: diagnoseEngine(engine) })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+// Engine Library test action: runs a SAVED revision through the same sandbox as workflows. The
+// invocation source is fixed here; a client cannot choose it. Inputs/outputs are never logged.
+app.post('/api/engines/:id/run', requireAdmin, async (req, res) => {
+  const controller = new AbortController()
+  res.on('close', () => { if (!res.writableEnded) controller.abort() })
+  try {
+    const envelope = await invokeEngine({
+      store: engineStore,
+      logger,
+      signal: controller.signal,
+      request: {
+        engineId: req.params.id,
+        revision: req.body?.revision,
+        inputs: req.body?.inputs,
+        source: 'library-test',
+        correlationId: req.body?.correlationId,
+      },
+    })
+    logger.info({ event: 'engine.test-run', engineId: req.params.id, revision: envelope.engine?.revision, outcome: envelope.outcome, correlationId: envelope.correlationId })
+    const response = httpResponseForEnvelope(envelope)
+    res.status(response.status).json(response.body)
+  } catch (error) {
+    logger.error({ event: 'engine.test-run-failed', engineId: req.params.id })
+    res.status(500).json({ ok: false, outcome: 'infrastructure', message: 'The Engine test run failed unexpectedly.', error: 'The Engine test run failed unexpectedly.' })
+  }
+})
+app.delete('/api/engines/:id', requireAdmin, async (req, res) => {
+  try {
+    const references = visualCommandStore.list().filter(workflow =>
+      workflow.nodes.some(node => node.type === 'engine.' + req.params.id || node.config?.engineId === req.params.id)
+    )
+    const removed = await engineStore.remove(req.params.id, { confirm: req.body?.confirm, usedBy: references })
+    if (!removed) return res.status(404).json({ ok: false, error: 'Engine not found.' })
+    unregisterEngineNode(req.params.id)
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(409).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+
+app.get('/api/schedules', requireAdmin, async (req, res) => {
+  try {
+    const account = String(req.query.account || '')
+    if (account && !['private', 'public'].includes(account)) return res.status(400).json({ ok: false, error: 'Account must be private or public.' })
+    const rows = await schedulerStore.list()
+    res.json({ ok: true, schedules: account ? rows.filter(item => item.account === account) : rows })
+  } catch (error) {
+    res.status(500).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+
+app.post('/api/schedules', requireAdmin, async (req, res) => {
+  try {
+    const workflowId = String(req.body?.workflowId || '')
+    const workflow = visualCommandStore.get(workflowId)
+    if (!workflow) return res.status(404).json({ ok: false, error: 'Saved command workflow not found.' })
+    const destinationJid = String(req.body?.destinationJid || '')
+    const destinationError = scheduledDestinationError(workflow, destinationJid, ownerConfig)
+    if (destinationError) return res.status(400).json({ ok: false, error: destinationError })
+    const schedule = await schedulerStore.create({
+      ...req.body,
+      workflowId,
+      account: workflow.account,
+      destinationJid,
+    })
+    publishStudioEvent('scheduler.created', { scheduleId: schedule.id, workflowId, account: workflow.account })
+    res.status(201).json({ ok: true, schedule })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+
+app.put('/api/schedules/:id', requireAdmin, async (req, res) => {
+  try {
+    const current = await schedulerStore.get(req.params.id)
+    if (!current) return res.status(404).json({ ok: false, error: 'Schedule not found.' })
+    const workflow = visualCommandStore.get(current.workflowId)
+    if (!workflow) return res.status(409).json({ ok: false, error: 'The scheduled command no longer exists.' })
+    const destinationJid = String(req.body?.destinationJid ?? current.destinationJid)
+    const destinationError = scheduledDestinationError(workflow, destinationJid, ownerConfig)
+    if (destinationError) return res.status(400).json({ ok: false, error: destinationError })
+    const updated = await schedulerStore.update(req.params.id, { ...req.body, destinationJid })
+    res.json({ ok: true, schedule: updated })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+
+app.post('/api/schedules/:id/enabled', requireAdmin, async (req, res) => {
+  try {
+    if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({ ok: false, error: 'enabled must be true or false.' })
+    const current = await schedulerStore.get(req.params.id)
+    if (!current) return res.status(404).json({ ok: false, error: 'Schedule not found.' })
+    const workflow = visualCommandStore.get(current.workflowId)
+    if (req.body.enabled) {
+      const destinationError = scheduledDestinationError(workflow, current.destinationJid, ownerConfig)
+      if (destinationError) return res.status(400).json({ ok: false, error: destinationError })
+    }
+    const updated = await schedulerStore.setEnabled(req.params.id, req.body.enabled)
+    res.json({ ok: true, schedule: updated })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+
+app.delete('/api/schedules/:id', requireAdmin, async (req, res) => {
+  try {
+    const removed = await schedulerStore.remove(req.params.id)
+    if (!removed) return res.status(404).json({ ok: false, error: 'Schedule not found.' })
+    publishStudioEvent('scheduler.deleted', { scheduleId: req.params.id })
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(409).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+
 app.get('/api/visual-commands', requireAdmin, (req, res) => {
   const account = String(req.query.account || '')
   if (account && !['private', 'public'].includes(account)) {
     return res.status(400).json({ ok: false, error: 'Account must be private or public.' })
   }
   const workflows = visualCommandStore.list(account || undefined).map(visualWorkflowPayload)
-  res.json({ ok: true, workflows, library: VISUAL_NODE_LIBRARY, storageWarning: visualCommandStore.storageWarning() })
+  res.json({ ok: true, workflows, library: currentVisualNodeLibrary(), customNodes: visualCommandStore.listCustomNodes(), storageWarning: visualCommandStore.storageWarning() })
+})
+
+app.get('/api/custom-nodes', requireAdmin, (_req, res) => {
+  res.json({ ok: true, nodes: visualCommandStore.listCustomNodes() })
+})
+app.post('/api/custom-nodes', requireAdmin, async (req, res) => {
+  try {
+    const node = await visualCommandStore.saveCustomNode(req.body?.node || req.body || {})
+    res.status(201).json({ ok: true, node, library: currentVisualNodeLibrary() })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+app.delete('/api/custom-nodes/:id', requireAdmin, async (req, res) => {
+  try {
+    if (req.body?.confirm !== true) return res.status(400).json({ ok: false, error: 'Confirm custom node deletion.' })
+    const removed = await visualCommandStore.removeCustomNode(req.params.id)
+    if (!removed) return res.status(404).json({ ok: false, error: 'Custom node not found.' })
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(409).json({ ok: false, error: String(error?.message || error) })
+  }
 })
 
 app.post('/api/visual-commands', requireAdmin, async (req, res) => {
   try {
+    assertSupportedWorkflowSchema(req.body?.workflow || req.body || {})
     const workflow = normalizeWorkflow(req.body?.workflow || req.body || {})
     const conflict = visualWorkflowCommandConflict(workflow)
     if (conflict) return res.status(409).json({ ok: false, error: 'The command name or alias "' + conflict + '" is already registered in this account.' })
@@ -1422,12 +1837,16 @@ app.put('/api/visual-commands/:id', requireAdmin, async (req, res) => {
   try {
     const current = visualCommandStore.get(req.params.id)
     if (!current) return res.status(404).json({ ok: false, error: 'Workflow not found.' })
+    assertSupportedWorkflowSchema(req.body?.workflow || req.body || {})
     const workflow = normalizeWorkflow({ ...(req.body?.workflow || req.body || {}), id: current.id, createdAt: current.createdAt })
     const conflict = visualWorkflowCommandConflict(workflow)
     if (conflict) return res.status(409).json({ ok: false, error: 'The command name or alias "' + conflict + '" is already registered in this account.' })
-    const saved = await visualCommandStore.save(workflow)
+    // expectedRevision is optional so older clients keep working; when sent, a stale value is rejected.
+    const expectedRevision = req.body?.expectedRevision ?? req.body?.workflow?.expectedRevision
+    const saved = await visualCommandStore.save(workflow, { expectedRevision })
     res.json({ ok: true, workflow: saved.workflow, validation: saved.validation })
   } catch (error) {
+    if (error.conflict) return res.status(409).json({ ok: false, error: error.message, conflict: true, currentRevision: error.currentRevision })
     res.status(error.validation ? 422 : 400).json({ ok: false, error: error.message, validation: error.validation })
   }
 })
@@ -1439,9 +1858,40 @@ app.delete('/api/visual-commands/:id', requireAdmin, async (req, res) => {
   res.json({ ok: true })
 })
 
-app.post('/api/visual-commands/:id/test', requireAdmin, async (req, res) => {
+app.get('/api/visual-commands/:id/revisions', requireAdmin, (req, res) => {
+  if (!visualCommandStore.get(req.params.id)) return res.status(404).json({ ok: false, error: 'Workflow not found.' })
+  res.json({ ok: true, revisions: visualCommandStore.listRevisions(req.params.id) })
+})
+
+app.get('/api/visual-commands/:id/revisions/:revision', requireAdmin, (req, res) => {
+  const snapshot = visualCommandStore.getRevision(req.params.id, req.params.revision)
+  if (!snapshot) return res.status(404).json({ ok: false, error: 'Workflow revision not found.' })
+  res.json({ ok: true, workflow: snapshot, validation: validateWorkflow(snapshot) })
+})
+
+app.get('/api/visual-commands/:id/export', requireAdmin, (req, res) => {
   const workflow = visualCommandStore.get(req.params.id)
   if (!workflow) return res.status(404).json({ ok: false, error: 'Workflow not found.' })
+  res.json({ ok: true, export: exportWorkflow(workflow) })
+})
+
+app.post('/api/visual-commands/import', requireAdmin, async (req, res) => {
+  try {
+    const imported = importWorkflow(req.body?.export ?? req.body, { account: req.body?.account })
+    const saved = await visualCommandStore.save(imported.workflow)
+    res.status(201).json({ ok: true, workflow: saved.workflow, validation: saved.validation })
+  } catch (error) {
+    res.status(error.validation ? 422 : 400).json({ ok: false, error: error.message, validation: error.validation })
+  }
+})
+
+app.post('/api/visual-commands/:id/test', requireAdmin, async (req, res) => {
+  // Tests always run a SAVED revision (default: the latest); an unsaved graph is never executed.
+  const latest = visualCommandStore.get(req.params.id)
+  if (!latest) return res.status(404).json({ ok: false, error: 'Workflow not found.' })
+  const requestedRevision = req.body?.revision
+  const workflow = requestedRevision == null ? latest : visualCommandStore.getRevision(req.params.id, requestedRevision)
+  if (!workflow) return res.status(404).json({ ok: false, error: 'Workflow revision not found.' })
   const trigger = workflow.nodes.find(node => node.type === 'trigger.command' || node.type === 'trigger.message')
   const prefix = workflow.account === 'private' ? PRIVATE_COMMAND_PREFIX : PUBLIC_COMMAND_PREFIX
   const configuredName = String(trigger?.config?.command || 'hello')
@@ -1471,15 +1921,21 @@ app.post('/api/visual-commands/:id/test', requireAdmin, async (req, res) => {
       },
     },
   }
+  // The dry-run is an authenticated admin preview with stubbed sends; its
+  // privileges still come from the evaluator and the configured owners.
+  const previewPrivileges = resolveExecutionAuthorization({
+    source: 'admin-preview', sessionId: workflow.account, ownerConfig,
+  })
   try {
     const result = await executeVisualWorkflow(workflow, {
       store: visualCommandStore,
       dryRun: true,
+      runEngine: runStoredEngine,
       context: {
         sessionId: workflow.account,
-        privateControl: workflow.account === 'private',
-        isPublicOwner: workflow.account === 'public',
-        allowedPublicSender: workflow.account === 'public',
+        privateControl: previewPrivileges.privateControl,
+        isPublicOwner: previewPrivileges.isPublicOwner,
+        allowedPublicSender: previewPrivileges.allowedPublicSender,
         message,
         messageText,
         sender: senderJid,
@@ -1539,13 +1995,12 @@ app.get('/api/owners', requireAdmin, (_req, res) => {
 app.put('/api/owners', requireAdmin, async (req, res) => {
   try {
     const next = normalizeOwnerConfig({
-      privateOwnerNumber: req.body?.privateOwnerNumber,
-      publicOwnerNumber: req.body?.publicOwnerNumber,
-      publicBotNumber: req.body?.publicBotNumber,
-      allowedPublicSenders: req.body?.allowedPublicSenders,
+      privateOwnerNumber: req.body?.privateOwnerNumber ?? req.body?.ownerNumber ?? ownerConfig.privateOwnerNumber,
+      publicOwnerNumber: req.body?.publicOwnerNumber ?? ownerConfig.publicOwnerNumber,
+      publicBotNumber: req.body?.publicBotNumber ?? ownerConfig.publicBotNumber,
     })
-    // A configured private owner must match the WhatsApp identity paired to
-    // the private session. Never silently change either role during pairing.
+    // Only the Private Owner must match the paired Private identity.
+    // Public Owner is independently configurable and may equal its bot identity.
     const privateSession = accountRuntime.get('private')
     const publicSession = accountRuntime.get('public')
     const privateOwnNumber = senderNumberFromJid(
@@ -1555,16 +2010,14 @@ app.put('/api/owners', requireAdmin, async (req, res) => {
       publicSession.socket?.user?.id || publicSession.auth?.state?.creds?.me?.id || ''
     )
     if (next.privateOwnerNumber && privateOwnNumber && next.privateOwnerNumber !== privateOwnNumber) {
-      return res.status(409).json({ ok: false, error: 'Private Owner must match the phone number paired to the private WhatsApp session.' })
-    }
-    if (next.publicOwnerNumber && publicBotNumber && next.publicOwnerNumber === publicBotNumber) {
-      return res.status(409).json({ ok: false, error: 'Public Owner must be the sender number you use to message the public bot, not the public bot account itself.' })
+      return res.status(409).json({ ok: false, error: 'Owner number must match the phone number paired to the Private WhatsApp session.' })
     }
     if (next.publicBotNumber && publicBotNumber && next.publicBotNumber !== publicBotNumber) {
       return res.status(409).json({ ok: false, error: 'Public bot WhatsApp number must match the number already paired to the Public session.' })
     }
     ownerConfig = await saveOwnerConfig(OWNER_CONFIG_FILE, next)
     publishStudioEvent('owners.updated', {
+      ownerConfigured: Boolean(ownerConfig.privateOwnerNumber && ownerConfig.publicOwnerNumber),
       privateOwnerConfigured: Boolean(ownerConfig.privateOwnerNumber),
       publicOwnerConfigured: Boolean(ownerConfig.publicOwnerNumber),
     })
@@ -1677,9 +2130,6 @@ app.post('/api/pair-code', requireAdmin, async (req, res) => {
     }
     if (phoneNumber !== ownerConfig.publicBotNumber) {
       return res.status(409).json({ ok: false, error: 'The supplied number does not match the saved Public bot WhatsApp number. Update Configuration first.' })
-    }
-    if ([ownerConfig.privateOwnerNumber, ownerConfig.publicOwnerNumber].includes(phoneNumber)) {
-      return res.status(400).json({ ok: false, error: 'The public bot must use its own WhatsApp number, separate from both owner identities.' })
     }
     const pairingCode = await accountRuntime.requestPairingCode('public', ownerConfig.publicBotNumber)
     res.json({ ok: true, accountId: 'public', pairingCode })
@@ -1822,12 +2272,25 @@ function authorizedChat(accountId, jid) {
   }
   return true
 }
-app.get('/api/env', requireAdmin, (_req, res) => {
-  res.json({ ok: true, env: [...envView(studioSettings), ...aiReplyService.environmentRows()], owners: {
-    privateOwnerNumber: ownerConfig.privateOwnerNumber,
-    publicOwnerNumber: ownerConfig.publicOwnerNumber,
-    allowedPublicSenders: ownerConfig.allowedPublicSenders,
-  } })
+async function currentEnvironmentRows() {
+  const managed = envView(studioSettings)
+  const aiRows = aiReplyService.environmentRows()
+  const existingKeys = new Set([...managed, ...aiRows].map(row => row.key))
+  const discovered = await discoverEnvironmentRows(SOURCE_ROOT, process.env)
+  return [...managed, ...aiRows, ...discovered.filter(row => !existingKeys.has(row.key))]
+}
+
+app.get('/api/env', requireAdmin, async (_req, res) => {
+  try {
+    res.json({ ok: true, env: await currentEnvironmentRows(), owners: {
+      privateOwnerNumber: ownerConfig.privateOwnerNumber,
+      publicOwnerNumber: ownerConfig.publicOwnerNumber,
+      allowedPublicSenders: ownerConfig.allowedPublicSenders,
+    } })
+  } catch (error) {
+    logger.warn({ event: 'environment.discovery-failed', error: String(error?.message || error).slice(0, 180) })
+    res.status(500).json({ ok: false, error: 'Could not inspect the current server environment.' })
+  }
 })
 app.put('/api/env', requireAdmin, async (req, res) => {
   try {
@@ -1854,7 +2317,7 @@ app.put('/api/env', requireAdmin, async (req, res) => {
       if (socket?.sendPresenceUpdate) await socket.sendPresenceUpdate(studioSettings[accountId].alwaysOnline ? 'available' : 'unavailable').catch(() => {})
     }
     publishStudioEvent('settings.updated', { private: true, public: true })
-    res.json({ ok: true, env: [...envView(studioSettings), ...aiReplyService.environmentRows()], settings: studioSettings })
+    res.json({ ok: true, env: await currentEnvironmentRows(), settings: studioSettings })
   } catch (error) {
     res.status(400).json({ ok: false, error: String(error?.message || 'Could not save the managed environment settings.') })
   }
@@ -2094,6 +2557,94 @@ app.post('/api/chats/:accountId/:jid/mark-unread', requireAdmin, async (req, res
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not mark this chat unread.') })
   }
 })
+// Account-scoped, real WhatsApp profile pictures. A missing/private picture is
+// never substituted with a fabricated image. Short-lived caching prevents
+// repeated profile lookups while scrolling a long conversation list.
+const whatsappAvatarCache = new Map()
+app.get('/api/whatsapp/:accountId/capabilities', requireAdmin, (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const session = accountRuntime.get(accountId)
+    res.json({
+      ok: true,
+      accountId,
+      contractVersion: WHATSAPP_TRANSPORT_CONTRACT_VERSION,
+      library: WHATSAPP_LIBRARY,
+      connected: session.state === 'connected',
+      capabilities: inspectWhatsAppCapabilities(session.socket, {
+        mediaDownloadAvailable: typeof downloadMediaMessage === 'function',
+      }),
+    })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+app.get('/api/whatsapp/:accountId/channels', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const session = accountRuntime.get(accountId)
+    if (session.state !== 'connected') return res.status(503).json({ ok: false, error: 'Connect this WhatsApp session before loading Channels.' })
+    const result = await whatsappDiscovery.listChannels(accountId, session.socket)
+    res.json({ ok: true, accountId, ...result })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+app.get('/api/whatsapp/:accountId/channels/:jid/updates', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const session = accountRuntime.get(accountId)
+    if (session.state !== 'connected') return res.status(503).json({ ok: false, error: 'Connect this WhatsApp session before reading Channel updates.' })
+    const result = await whatsappDiscovery.channelUpdates(accountId, session.socket, decodeURIComponent(String(req.params.jid || '')), req.query.limit)
+    res.json({ ok: true, accountId, ...result })
+  } catch (error) {
+    res.status(400).json({ ok: false, error: String(error?.message || error) })
+  }
+})
+
+app.get('/api/chats/:accountId/:jid/avatar', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = decodeURIComponent(String(req.params.jid || ''))
+    if (!authorizedChat(accountId, jid) ||
+        !isChatVisible(studioSettings[accountId], jid) ||
+        !await chatStore.hasConversation(accountId, jid)) {
+      return res.status(404).json({ ok: false, error: 'Conversation not found.' })
+    }
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected') {
+      return res.status(503).json({ ok: false, error: 'Connect this WhatsApp account to load its profile pictures.' })
+    }
+    if (typeof socket.profilePictureUrl !== 'function') {
+      return res.status(501).json({ ok: false, error: 'Profile-picture lookup is unavailable in this WhatsApp session.' })
+    }
+    const ownJid = String(socket.user?.id || session.auth?.state?.creds?.me?.id || '')
+    const key = accountId + ':' + ownJid + ':' + jid
+    const now = Date.now()
+    const cached = whatsappAvatarCache.get(key)
+    if (cached && cached.expiresAt > now && req.query.refresh !== '1') {
+      res.set('Cache-Control', 'private, max-age=300')
+      return res.json({ ok: true, jid, sourceSession: ownJid, pictureUrl: cached.url, available: Boolean(cached.url) })
+    }
+    let pictureUrl = ''
+    try {
+      pictureUrl = String(await socket.profilePictureUrl(jid, 'preview') || '')
+    } catch {
+      // Privacy, no picture, or inaccessible picture are legitimate states.
+    }
+    whatsappAvatarCache.set(key, { url: pictureUrl, expiresAt: now + (pictureUrl ? 600_000 : 60_000) })
+    if (whatsappAvatarCache.size > 600) {
+      for (const [key, item] of whatsappAvatarCache) {
+        if (item.expiresAt <= now || whatsappAvatarCache.size > 500) whatsappAvatarCache.delete(key)
+      }
+    }
+    res.set('Cache-Control', 'private, max-age=300')
+    res.json({ ok: true, jid, sourceSession: ownJid, pictureUrl, available: Boolean(pictureUrl) })
+  } catch (error) {
+    res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not read WhatsApp profile picture.') })
+  }
+})
+
 app.get('/api/chats/:accountId/:jid/info', requireAdmin, async (req, res) => {
   try {
     const accountId = chatAccount(req.params.accountId), jid = decodeURIComponent(String(req.params.jid || ''))
@@ -2173,13 +2724,21 @@ app.get('/api/chats/:accountId/:jid/sync', requireAdmin, async (req, res) => {
     if (after > 0 && before > 0) return res.status(400).json({ ok: false, error: 'Use either an after or before cursor, not both.' })
     if (afterId && !after) return res.status(400).json({ ok: false, error: 'An after message id requires an after timestamp.' })
     if (beforeId && !before) return res.status(400).json({ ok: false, error: 'A before message id requires a before timestamp.' })
-    const messages = await chatStore.getMessages(accountId, jid, { limit, after, before, afterId, beforeId })
+    const messages = await chatStore.getMessages(accountId, jid, {
+      limit, after, before, afterId, beforeId,
+      pollActorKey: currentPollActorKey(accountId),
+    })
     const deletedMessageIds = before > 0 ? [] : await chatStore.listDeletedMessageIds(accountId, jid)
     const remoteDeletedMessages = await chatStore.listRemoteDeletedMessages(accountId, jid)
+    const pollUpdates = (await chatStore.getMessages(accountId, jid, {
+      limit: 500,
+      pollActorKey: currentPollActorKey(accountId),
+    })).filter(message => message.type === 'poll').slice(-100)
     const timestamps = messages.map(message => Number(message.timestamp) || 0).filter(value => value > 0)
     res.json({
       ok: true,
       messages,
+      pollUpdates,
       deletedMessageIds,
       remoteDeletedMessages,
       hasOlder: before > 0 ? messages.length >= limit : after === 0 && messages.length >= limit,
@@ -2205,7 +2764,10 @@ app.get('/api/chats/:accountId/:jid/messages', requireAdmin, async (req, res) =>
     const accountId = chatAccount(req.params.accountId)
     const jid = decodeURIComponent(String(req.params.jid || ''))
     if ((!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid)) || !await chatStore.hasConversation(accountId, jid)) return res.status(404).json({ ok: false, error: 'Conversation not found.' })
-    const messages = await chatStore.getMessages(accountId, jid, { limit: req.query.limit, before: req.query.before })
+    const messages = await chatStore.getMessages(accountId, jid, {
+      limit: req.query.limit, before: req.query.before,
+      pollActorKey: currentPollActorKey(accountId),
+    })
     await chatStore.markRead(accountId, jid)
     res.json({ ok: true, messages })
   } catch (error) {
@@ -2291,6 +2853,90 @@ app.post('/api/chats/:accountId/:jid/delete', requireAdmin, async (req, res) => 
     res.status(error?.status || 400).json({ ok: false, error: String(error?.message || 'Could not delete this message.') })
   }
 })
+app.post('/api/chats/:accountId/:jid/polls', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = decodeURIComponent(String(req.params.jid || ''))
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid) ||
+        !await chatStore.hasConversation(accountId, jid)) {
+      return res.status(404).json({ ok: false, error: 'Conversation not found or not authorized.' })
+    }
+    const name = String(req.body?.name || '').trim()
+    const options = Array.isArray(req.body?.options)
+      ? req.body.options.map(value => String(value || '').trim()) : []
+    const selectableCount = Number(req.body?.selectableCount || 1)
+    if (!name || name.length > 120) {
+      return res.status(400).json({ ok: false, error: 'Enter a poll question up to 120 characters.' })
+    }
+    if (options.length < 2 || options.length > 12 ||
+        options.some(value => !value || value.length > 100) ||
+        new Set(options.map(value => value.toLocaleLowerCase())).size !== options.length) {
+      return res.status(400).json({ ok: false, error: 'A poll needs 2–12 unique options, each up to 100 characters.' })
+    }
+    if (!Number.isInteger(selectableCount) || selectableCount < 1 || selectableCount > options.length) {
+      return res.status(400).json({ ok: false, error: 'The maximum number of choices must be between 1 and the number of options.' })
+    }
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected') {
+      return res.status(503).json({ ok: false, error: 'Connect this WhatsApp account before creating a poll.' })
+    }
+    const sent = await socket.sendMessage(jid, {
+      poll: {
+        name,
+        values: options,
+        selectableCount,
+        toAnnouncementGroup: false,
+        hideVoter: false,
+        canAddOption: false,
+      },
+    })
+    await chatStore.recordMessage({ sessionId: accountId, message: sent, socket })
+    publishStudioEvent('whatsapp.poll.created', { accountId, jid, messageId: String(sent?.key?.id || '') })
+    res.json({ ok: true, message: String(sent?.key?.id || '') })
+  } catch (error) {
+    res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not create this poll.') })
+  }
+})
+
+app.post('/api/chats/:accountId/:jid/:messageId/poll-vote', requireAdmin, async (req, res) => {
+  try {
+    const accountId = chatAccount(req.params.accountId)
+    const jid = decodeURIComponent(String(req.params.jid || ''))
+    const messageId = String(req.params.messageId || '')
+    if (!authorizedChat(accountId, jid) || !isChatVisible(studioSettings[accountId], jid) ||
+        !await chatStore.hasConversation(accountId, jid)) {
+      return res.status(404).json({ ok: false, error: 'Conversation not found or not authorized.' })
+    }
+    const selectedOptions = Array.isArray(req.body?.selectedOptions)
+      ? req.body.selectedOptions.map(value => String(value || '').trim()) : []
+    const pollMessage = await chatStore.getMessage(accountId, jid, messageId)
+    if (!pollMessage || pollMessage.type !== 'poll' || !pollMessage.sourceMessage) {
+      return res.status(404).json({ ok: false, error: 'The original poll is not available in this conversation.' })
+    }
+    const session = accountRuntime.get(accountId), socket = session.socket
+    if (!socket || session.state !== 'connected') {
+      return res.status(503).json({ ok: false, error: 'Connect this WhatsApp account before voting.' })
+    }
+    const voterJid = jidNormalizedUser(String(socket.user?.id || ''))
+    const encrypted = createPollVoteEnvelope({ pollMessage, selectedOptions, voterJid })
+    await socket.sendMessage(jid, {
+      pollUpdate: {
+        metadata: {},
+        key: pollMessage.sourceMessage.key,
+        vote: encrypted.vote,
+      },
+    }, { quoted: pollMessage.sourceMessage })
+    const actorKey = createHash('sha256').update(encrypted.voterJid, 'utf8').digest('hex')
+    const updated = await chatStore.applyPollVote(
+      accountId, jid, messageId, actorKey, encrypted.selectedOptionHashes
+    )
+    publishStudioEvent('whatsapp.poll.updated', { accountId, jid, pollMessageId: messageId })
+    res.json({ ok: true, messageId, selectedOptions: encrypted.selectedOptionNames, poll: updated })
+  } catch (error) {
+    res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not submit this poll vote.') })
+  }
+})
+
 app.post('/api/chats/:accountId/:jid/send', requireAdmin, async (req, res) => {
   try {
     const accountId = chatAccount(req.params.accountId)
@@ -2335,6 +2981,25 @@ app.post('/api/chats/:accountId/:jid/media', requireAdmin, express.raw({ type: '
     const mime = String(req.get('x-media-type') || 'application/octet-stream').split(';')[0].toLowerCase()
     const filename = String(req.get('x-file-name') || 'attachment').slice(0, 100).replace(/[\u0000-\u001f/\\]/g, '_')
     const caption = String(req.get('x-caption') || '').slice(0, 1000)
+    const isVoiceNote = req.get('x-voice-note') === 'true'
+    const durationSeconds = Math.max(0, Math.min(3600, Number(req.get('x-duration-seconds')) || 0))
+    const clientMessageId = String(req.get('x-client-message-id') || '')
+    const mediaDigest = createHash('sha256').update(req.body).digest('hex')
+    if (clientMessageId) {
+      const intent = await chatStore.beginIdempotentMediaSend(accountId, {
+        clientMessageId, jid, mimeType: mime, fileName: filename, caption,
+        sha256: mediaDigest, sizeBytes: req.body.length, isVoiceNote, durationSeconds,
+      })
+      if (intent.state === 'sent') {
+        return res.json({ ok: true, message: intent.messageId, clientMessageId, idempotentReplay: true })
+      }
+      if (intent.state === 'uncertain') {
+        return res.status(409).json({
+          ok: false, state: 'uncertain', clientMessageId,
+          error: 'This attachment send already started but its final WhatsApp result was not recorded. It was not sent again to avoid a duplicate.',
+        })
+      }
+    }
     let content
     if (mime.startsWith('image/') && mime !== 'image/webp') content = { image: req.body, caption }
     else if (mime.startsWith('video/')) content = { video: req.body, caption }
@@ -2342,9 +3007,11 @@ app.post('/api/chats/:accountId/:jid/media', requireAdmin, express.raw({ type: '
     else if (mime === 'image/webp') content = { sticker: req.body }
     else content = { document: req.body, mimetype: mime, fileName: filename, caption }
     const sent = await socket.sendMessage(jid, content)
-    await chatStore.recordOutgoingMedia({ sessionId: accountId, jid, buffer: req.body, mimeType: mime, fileName: filename, sendResult: sent, text: caption, ptt: req.get('x-voice-note') === 'true', duration: req.get('x-duration-seconds') })
+    await chatStore.recordOutgoingMedia({ sessionId: accountId, jid, buffer: req.body, mimeType: mime, fileName: filename, sendResult: sent, text: caption, ptt: isVoiceNote, duration: durationSeconds })
+    const messageId = sent?.key?.id || ''
+    if (clientMessageId) await chatStore.completeIdempotentSend(accountId, clientMessageId, messageId)
     publishStudioEvent('whatsapp.message.sent', { accountId, jid, type: 'media' })
-    res.json({ ok: true, message: sent?.key?.id || '' })
+    res.json({ ok: true, message: messageId, clientMessageId })
   } catch (error) {
     res.status(error?.status || 503).json({ ok: false, error: String(error?.message || 'Could not send the attachment.') })
   }
@@ -3359,10 +4026,27 @@ await Promise.all(['private', 'public'].map(async accountId => {
   }
 }))
 
+const schedulerRunner = createSchedulerRunner({
+  store: schedulerStore,
+  execute: executeScheduledWorkflow,
+  logger,
+  onResult: ({ schedule, ok, summary, error }) => {
+    publishStudioEvent(ok ? 'scheduler.completed' : 'scheduler.failed', {
+      scheduleId: schedule.id,
+      workflowId: schedule.workflowId,
+      account: schedule.account,
+      summary: summary || '',
+      error: error || '',
+    })
+  },
+})
+
+
 async function shutdown(signal) {
   if (shuttingDown) return
   shuttingDown = true
   for (const client of studioClients) client.close(1001, 'Aharane is shutting down')
+  await schedulerRunner.close()
   await accountRuntime.shutdown()
   await new Promise(resolveClose => server.close(() => resolveClose()))
   logger.info({ event: 'process.stopped', signal })
@@ -3371,9 +4055,6 @@ async function shutdown(signal) {
 process.once('SIGTERM', () => { void shutdown('SIGTERM') })
 process.once('SIGINT', () => { void shutdown('SIGINT') })
 
-if (publicAllowedSenders().size === 0) {
-  logger.warn({ event: 'security.inbound-deny-all', reason: 'No public WhatsApp sender allowlist is configured' })
-}
 if (!ownerConfig.privateOwnerNumber) {
   logger.warn({ event: 'security.private-owner-unconfigured', reason: 'Private self-chat commands remain disabled until the Private Owner number is configured' })
 }

@@ -9,6 +9,12 @@ import {
   executeVisualWorkflow,
   normalizeWorkflow,
   validateWorkflow,
+  VISUAL_NODE_LIBRARY,
+  convertTextToNumber,
+  convertTextToBoolean,
+  convertTextToList,
+  registerEngineNode,
+  unregisterEngineNode,
 } from '../src/visual-command-builder.js'
 
 async function makeStore(t) {
@@ -35,6 +41,153 @@ function context(overrides = {}) {
     ...overrides,
   }
 }
+
+test('node library exposes text, number, boolean and list conversions', () => {
+  const nodes = VISUAL_NODE_LIBRARY.flatMap(category => category.nodes)
+  const conversions = new Map(nodes.filter(node => node.type.startsWith('value.')).map(node => [node.type, node]))
+  assert.deepEqual([...conversions.keys()].sort(), [
+    'value.toBoolean', 'value.toList', 'value.toNumber', 'value.toText',
+  ])
+  assert.equal(conversions.get('value.toNumber').ports.inputs[0].type, 'string')
+  assert.equal(conversions.get('value.toNumber').ports.outputs[0].type, 'number')
+  assert.equal(conversions.get('value.toBoolean').ports.outputs[0].type, 'boolean')
+  assert.equal(conversions.get('value.toList').ports.outputs[0].type, 'list')
+})
+
+test('text conversion helpers are strict, bounded and deterministic', () => {
+  assert.equal(convertTextToNumber('  -12.5  '), -12.5)
+  assert.throws(() => convertTextToNumber(''), /empty text/i)
+  assert.throws(() => convertTextToNumber('Infinity'), /finite number/i)
+  assert.equal(convertTextToBoolean('YES'), true)
+  assert.equal(convertTextToBoolean('off'), false)
+  assert.throws(() => convertTextToBoolean('maybe'), /true\/false/i)
+  assert.deepEqual(convertTextToList('red ; blue ;; green', ';'), ['red', 'blue', 'green'])
+  assert.equal(convertTextToList(Array.from({ length: 100 }, (_, index) => String(index)).join(',')).length, 100)
+  assert.throws(
+    () => convertTextToList(Array.from({ length: 140 }, (_, index) => String(index)).join(',')),
+    /limited to 100 items/i
+  )
+})
+
+test('text-to-number and number-to-text nodes compose in a real workflow', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const args = { id: 'args', type: 'message.arguments', x: 230, y: 70, config: {} }
+  const toNumber = { id: 'to-number', type: 'value.toNumber', x: 440, y: 70, config: {} }
+  const toText = { id: 'to-text', type: 'value.toText', x: 650, y: 70, config: {} }
+  const send = { id: 'send-result', type: 'message.sendText', x: 870, y: 70, config: {} }
+  draft.nodes = [trigger, args, toNumber, toText, send]
+  draft.edges = [
+    { id: 'exec', from: trigger.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
+    { id: 'args-number', from: args.id, fromSocket: 'value', to: toNumber.id, toSocket: 'value' },
+    { id: 'number-text', from: toNumber.id, fromSocket: 'value', to: toText.id, toSocket: 'value' },
+    { id: 'text-send', from: toText.id, fromSocket: 'value', to: send.id, toSocket: 'text' },
+  ]
+  const validation = validateWorkflow(draft)
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors))
+  const sent = []
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({
+      rawArgs: ' 42.75 ',
+      socket: { sendMessage: async (_to, body) => { sent.push(body.text); return { key: { id: 'converted-number' } } } },
+    }),
+  })
+  assert.equal(result.ok, true, JSON.stringify(result))
+  assert.deepEqual(sent, ['42.75'])
+})
+
+test('text-to-boolean output drives a typed custom choose node', async t => {
+  const { store } = await makeStore(t)
+  await store.saveCustomNode({
+    id: 'choose-route',
+    name: 'Choose route',
+    version: 1,
+    operator: 'choose',
+    inputs: [
+      { id: 'condition', label: 'Condition', type: 'boolean' },
+      { id: 'yes', label: 'When true', type: 'string' },
+      { id: 'no', label: 'When false', type: 'string' },
+    ],
+    outputType: 'string',
+  })
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const args = { id: 'args', type: 'message.arguments', x: 230, y: 70, config: {} }
+  const toBoolean = { id: 'to-boolean', type: 'value.toBoolean', x: 440, y: 70, config: {} }
+  const choose = {
+    id: 'choose',
+    type: 'custom.choose-route',
+    x: 650,
+    y: 70,
+    config: { nodeVersion: '1', yes: 'TRUE branch', no: 'FALSE branch' },
+  }
+  const send = { id: 'send-result', type: 'message.sendText', x: 870, y: 70, config: {} }
+  draft.nodes = [trigger, args, toBoolean, choose, send]
+  draft.edges = [
+    { id: 'trigger-choose', from: trigger.id, fromSocket: 'next', to: choose.id, toSocket: 'in' },
+    { id: 'choose-send', from: choose.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
+    { id: 'args-bool', from: args.id, fromSocket: 'value', to: toBoolean.id, toSocket: 'value' },
+    { id: 'bool-condition', from: toBoolean.id, fromSocket: 'value', to: choose.id, toSocket: 'condition' },
+    { id: 'choose-text', from: choose.id, fromSocket: 'result', to: send.id, toSocket: 'text' },
+  ]
+  const validation = validateWorkflow(draft)
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors))
+  const sent = []
+  for (const rawArgs of ['yes', 'off']) {
+    const result = await executeVisualWorkflow(draft, {
+      store,
+      context: context({
+        rawArgs,
+        socket: { sendMessage: async (_to, body) => { sent.push(body.text); return { key: { id: 'converted-boolean' } } } },
+      }),
+    })
+    assert.equal(result.ok, true, JSON.stringify(result))
+  }
+  assert.deepEqual(sent, ['TRUE branch', 'FALSE branch'])
+})
+
+test('text-to-list output can be joined and used by a message node', async t => {
+  const { store } = await makeStore(t)
+  await store.saveCustomNode({
+    id: 'join-list',
+    name: 'Join list',
+    version: 1,
+    operator: 'join',
+    inputs: [
+      { id: 'value', label: 'List', type: 'list' },
+      { id: 'other', label: 'Separator', type: 'string' },
+    ],
+    outputType: 'string',
+  })
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const args = { id: 'args', type: 'message.arguments', x: 230, y: 70, config: {} }
+  const toList = { id: 'to-list', type: 'value.toList', x: 440, y: 70, config: { separator: ';' } }
+  const join = { id: 'join', type: 'custom.join-list', x: 650, y: 70, config: { nodeVersion: '1', other: ' | ' } }
+  const send = { id: 'send-result', type: 'message.sendText', x: 870, y: 70, config: {} }
+  draft.nodes = [trigger, args, toList, join, send]
+  draft.edges = [
+    { id: 'trigger-join', from: trigger.id, fromSocket: 'next', to: join.id, toSocket: 'in' },
+    { id: 'join-send', from: join.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
+    { id: 'args-list', from: args.id, fromSocket: 'value', to: toList.id, toSocket: 'value' },
+    { id: 'list-join', from: toList.id, fromSocket: 'value', to: join.id, toSocket: 'value' },
+    { id: 'join-text', from: join.id, fromSocket: 'result', to: send.id, toSocket: 'text' },
+  ]
+  const validation = validateWorkflow(draft)
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors))
+  const sent = []
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({
+      rawArgs: 'alpha; beta ;gamma',
+      socket: { sendMessage: async (_to, body) => { sent.push(body.text); return { key: { id: 'converted-list' } } } },
+    }),
+  })
+  assert.equal(result.ok, true, JSON.stringify(result))
+  assert.deepEqual(sent, ['alpha | beta | gamma'])
+})
 
 test('new workflow draft has one connected command trigger and reply', () => {
   const draft = createWorkflowDraft('private')
@@ -125,6 +278,27 @@ test('public workflow requires the existing authorized sender gate', async t => 
     context: context({ sessionId: 'public', privateControl: false, allowedPublicSender: true, messageText: '!hello' }),
   })
   assert.equal(accepted.ok, true, accepted.error)
+})
+
+test('Public direct command workflows accept numeric LID-addressed direct chats after sender authorization', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('public')
+  draft.nodes[0].config.command = 'hello'
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    dryRun: true,
+    context: context({
+      sessionId: 'public',
+      privateControl: false,
+      allowedPublicSender: true,
+      remoteJid: '123456789012345@lid',
+      sender: '2348012345678@s.whatsapp.net',
+      senderJid: '2348012345678@s.whatsapp.net',
+      messageText: '!hello',
+    }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.equal(result.dryRun, true)
 })
 
 test('conditional nodes select the correct YES and NO execution branch', async t => {
@@ -735,4 +909,365 @@ test('message triggers can be found only for their selected account', async t =>
   await store.save(draft)
   assert.equal(store.findMessageTriggers('public').length, 1)
   assert.equal(store.findMessageTriggers('private').length, 0)
+})
+
+
+test('node palette exposes general media and View Once categories', () => {
+  const categories = new Map(VISUAL_NODE_LIBRARY.map(group => [group.category, group.nodes.map(node => node.type)]))
+  assert.ok(categories.get('Media and attachments').includes('media.sendMedia'))
+  assert.ok(categories.get('View Once').includes('message.sendViewOnceText'))
+  assert.ok(categories.get('View Once').includes('media.sendViewOnce'))
+  assert.ok(categories.get('View Once').includes('message.isViewOnce'))
+  assert.ok(categories.get('Conditions and comparisons').includes('condition.isViewOnce'))
+})
+
+test('View Once text is sent with the View Once V2 wrapper; dry-run never sends', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  trigger.config.command = 'one'
+  const send = { id: 'view-once-text', type: 'message.sendViewOnceText', x: 280, y: 100, config: { text: 'Only once' } }
+  draft.nodes = [trigger, send]
+  draft.edges = [{ id: 'vo-text-edge', from: trigger.id, fromSocket: 'next', to: send.id, toSocket: 'in' }]
+  assert.equal(validateWorkflow(draft).valid, true, JSON.stringify(validateWorkflow(draft).errors))
+  const sent = []
+  const live = await executeVisualWorkflow(draft, {
+    store,
+    context: context({
+      messageText: '.one Ada',
+      socket: { sendMessage: async (_jid, body) => { sent.push(body); return { key: { id: 'view-once-text-sent' } } } },
+    }),
+  })
+  assert.equal(live.ok, true, live.error)
+  assert.deepEqual(sent, [{ text: 'Only once', viewOnceV2: true }])
+  let calls = 0
+  const dry = await executeVisualWorkflow(draft, {
+    store, dryRun: true,
+    context: context({
+      messageText: '.one Ada',
+      socket: { sendMessage: async () => { calls += 1; throw new Error('dry run must not send') } },
+    }),
+  })
+  assert.equal(dry.ok, true, dry.error)
+  assert.equal(calls, 0)
+})
+
+test('View Once condition recognises message wrappers without downloading media', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const condition = { id: 'view-once-condition', type: 'condition.isViewOnce', x: 270, y: 100, config: {} }
+  const yes = { id: 'yes-end', type: 'flow.end', x: 530, y: 35, config: {} }
+  const no = { id: 'no-end', type: 'flow.end', x: 530, y: 180, config: {} }
+  draft.nodes = [trigger, condition, yes, no]
+  draft.edges = [
+    { id: 'vo-condition-in', from: trigger.id, fromSocket: 'next', to: condition.id, toSocket: 'in' },
+    { id: 'vo-condition-yes', from: condition.id, fromSocket: 'yes', to: yes.id, toSocket: 'in' },
+    { id: 'vo-condition-no', from: condition.id, fromSocket: 'no', to: no.id, toSocket: 'in' },
+  ]
+  const result = await executeVisualWorkflow(draft, {
+    store, dryRun: true,
+    context: context({
+      message: {
+        key: { id: 'received-vo', remoteJid: '2348012345678@s.whatsapp.net', fromMe: false },
+        message: { viewOnceMessageV2: { message: { imageMessage: { mimetype: 'image/jpeg' } } } },
+      },
+    }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.match(result.trace.find(item => item.type === 'condition.isViewOnce').message, /YES branch selected/i)
+})
+
+test('View Once media sends Engine media with the View Once wrapper', async t => {
+  const { store } = await makeStore(t)
+  const manifest = {
+    id: 'vo_image_source', name: 'View Once test image source', version: 1, entryPoint: 'run',
+    inputs: [], outputs: [{ id: 'media', type: 'media' }],
+    permissions: [], allowedHosts: [], timeoutMs: 5000, maxResults: 1,
+  }
+  registerEngineNode(manifest)
+  t.after(() => unregisterEngineNode('vo_image_source'))
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const engine = { id: 'engine-source', type: 'engine.vo_image_source', x: 270, y: 90, config: { engineVersion: '1' } }
+  const send = { id: 'send-vo-image', type: 'media.sendViewOnce', x: 540, y: 90, config: { kind: 'image', caption: 'Once' } }
+  draft.nodes = [trigger, engine, send]
+  draft.edges = [
+    { id: 'engine-exec', from: trigger.id, fromSocket: 'next', to: engine.id, toSocket: 'in' },
+    { id: 'send-exec', from: engine.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
+    { id: 'engine-media', from: engine.id, fromSocket: 'media', to: send.id, toSocket: 'media' },
+  ]
+  assert.equal(validateWorkflow(draft).valid, true, JSON.stringify(validateWorkflow(draft).errors))
+  const sent = []
+  const pixel = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/pYcAAAAASUVORK5CYII='
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({ socket: { sendMessage: async (_jid, body) => { sent.push(body); return { key: { id: 'sent-view-once-image' } } } } }),
+    runEngine: async () => ({ outputs: { media: { mimeType: 'image/png', base64: pixel } } }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].viewOnceV2, true)
+  assert.ok(Buffer.isBuffer(sent[0].image))
+  assert.equal(sent[0].caption, 'Once')
+})
+
+test('View Once message content cannot be forwarded by a Builder workflow', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const forward = { id: 'forward-vo', type: 'media.forwardOriginal', x: 270, y: 100, config: {} }
+  draft.nodes = [trigger, forward]
+  draft.edges = [{ id: 'forward-vo-edge', from: trigger.id, fromSocket: 'next', to: forward.id, toSocket: 'in' }]
+  let calls = 0
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({
+      message: {
+        key: { id: 'view-once-to-forward', remoteJid: '2348012345678@s.whatsapp.net', fromMe: false },
+        message: { viewOnceMessage: { message: { videoMessage: { mimetype: 'video/mp4' } } } },
+      },
+      socket: { sendMessage: async () => { calls += 1; return { key: { id: 'should-not-send' } } } },
+    }),
+  })
+  assert.equal(result.ok, false)
+  assert.match(result.error, /View Once content cannot be forwarded/i)
+  assert.equal(calls, 0)
+})
+
+test('generic media node sends Engine-produced video using the correct WhatsApp payload', async t => {
+  const { store } = await makeStore(t)
+  const manifest = {
+    id: 'video_source', name: 'Video source', version: 1, entryPoint: 'run',
+    inputs: [], outputs: [{ id: 'media', type: 'media' }],
+    permissions: [], allowedHosts: [], timeoutMs: 5000, maxResults: 1,
+  }
+  registerEngineNode(manifest)
+  t.after(() => unregisterEngineNode('video_source'))
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const engine = { id: 'engine-video', type: 'engine.video_source', x: 270, y: 90, config: { engineVersion: '1' } }
+  const send = { id: 'send-video', type: 'media.sendMedia', x: 540, y: 90, config: { kind: 'video', caption: 'Clip' } }
+  draft.nodes = [trigger, engine, send]
+  draft.edges = [
+    { id: 'engine-video-exec', from: trigger.id, fromSocket: 'next', to: engine.id, toSocket: 'in' },
+    { id: 'send-video-exec', from: engine.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
+    { id: 'engine-video-media', from: engine.id, fromSocket: 'media', to: send.id, toSocket: 'media' },
+  ]
+  const sent = []
+  const videoBytes = Buffer.from('small synthetic video bytes').toString('base64')
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({ socket: { sendMessage: async (_jid, body) => { sent.push(body); return { key: { id: 'sent-video' } } } } }),
+    runEngine: async () => ({ outputs: { media: { mimeType: 'video/mp4', base64: videoBytes } } }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.equal(sent.length, 1)
+  assert.ok(Buffer.isBuffer(sent[0].video))
+  assert.equal(sent[0].mimetype, 'video/mp4')
+  assert.equal(sent[0].caption, 'Clip')
+})
+
+
+test('typed inputs carry message arguments into protected Public group actions', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('public')
+  const trigger = draft.nodes[0]
+  trigger.config = { command: 'rename', aliases: [], chatScope: 'groups', maxMessagesPerRun: '10' }
+  const args = { id: 'args', type: 'message.arguments', x: 240, y: 80, config: {} }
+  const rename = { id: 'rename-group', type: 'group.updateSubject', x: 500, y: 80, config: { subject: '' } }
+  draft.nodes = [trigger, args, rename]
+  draft.edges = [
+    { id: 'exec-rename', from: trigger.id, fromSocket: 'next', to: rename.id, toSocket: 'in' },
+    { id: 'dynamic-subject', from: args.id, fromSocket: 'value', to: rename.id, toSocket: 'subject' },
+  ]
+  const validation = validateWorkflow(draft)
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors))
+  const updates = []
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({
+      sessionId: 'public',
+      privateControl: false,
+      isPublicOwner: true,
+      allowedPublicSender: true,
+      remoteJid: '120363012345678901-123456@g.us',
+      messageText: '!rename New community name',
+      rawArgs: 'New community name',
+      args: ['New', 'community', 'name'],
+      socket: {
+        sendMessage: async () => ({ key: { id: 'unused' } }),
+        groupUpdateSubject: async (jid, subject) => updates.push({ jid, subject }),
+      },
+    }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.deepEqual(updates, [{
+    jid: '120363012345678901-123456@g.us',
+    subject: 'New community name',
+  }])
+})
+
+test('a generated phone list can feed a Public group participant action', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('public')
+  const trigger = draft.nodes[0]
+  trigger.config = { command: 'addmembers', aliases: [], chatScope: 'groups', maxMessagesPerRun: '10' }
+  const args = { id: 'args', type: 'message.arguments', x: 220, y: 80, config: {} }
+  const toList = { id: 'to-list', type: 'value.toList', x: 440, y: 80, config: { separator: ',' } }
+  const add = { id: 'add-members', type: 'group.participantsUpdate', x: 680, y: 80, config: { action: 'add', participants: '' } }
+  draft.nodes = [trigger, args, toList, add]
+  draft.edges = [
+    { id: 'exec-add', from: trigger.id, fromSocket: 'next', to: add.id, toSocket: 'in' },
+    { id: 'args-list', from: args.id, fromSocket: 'value', to: toList.id, toSocket: 'value' },
+    { id: 'list-participants', from: toList.id, fromSocket: 'value', to: add.id, toSocket: 'participants' },
+  ]
+  const validation = validateWorkflow(draft)
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors))
+  const calls = []
+  const participants = ['2348012345678@s.whatsapp.net', '2348098765432@s.whatsapp.net']
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({
+      sessionId: 'public',
+      privateControl: false,
+      isPublicOwner: true,
+      allowedPublicSender: true,
+      remoteJid: '120363012345678901-123456@g.us',
+      messageText: '!addmembers 2348012345678,2348098765432',
+      rawArgs: '2348012345678,2348098765432',
+      args: ['2348012345678,2348098765432'],
+      socket: {
+        sendMessage: async () => ({ key: { id: 'unused' } }),
+        groupParticipantsUpdate: async (jid, jids, action) => {
+          calls.push({ jid, jids, action })
+          return jids.map(value => ({ jid: value, status: '200' }))
+        },
+      },
+    }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.deepEqual(calls, [{
+    jid: '120363012345678901-123456@g.us',
+    jids: participants,
+    action: 'add',
+  }])
+})
+
+test('an action output can feed the next action through a typed connection', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  trigger.config.command = 'newchannel'
+  const create = { id: 'create-newsletter', type: 'newsletter.create', x: 250, y: 80, config: { name: 'Aharane updates', description: 'News and updates' } }
+  const follow = { id: 'follow-newsletter', type: 'newsletter.follow', x: 560, y: 80, config: { newsletterJid: '' } }
+  draft.nodes = [trigger, create, follow]
+  draft.edges = [
+    { id: 'trigger-create', from: trigger.id, fromSocket: 'next', to: create.id, toSocket: 'in' },
+    { id: 'create-follow', from: create.id, fromSocket: 'next', to: follow.id, toSocket: 'in' },
+    { id: 'created-jid', from: create.id, fromSocket: 'newsletterJid', to: follow.id, toSocket: 'newsletterJid' },
+  ]
+  const validation = validateWorkflow(draft)
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors))
+  const calls = []
+  const newsletterJid = '12345678901@newsletter'
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({
+      messageText: '.newchannel',
+      rawArgs: '',
+      socket: {
+        sendMessage: async () => ({ key: { id: 'unused' } }),
+        newsletterCreate: async (name, description) => {
+          calls.push({ operation: 'create', name, description })
+          return { id: newsletterJid }
+        },
+        newsletterFollow: async jid => calls.push({ operation: 'follow', jid }),
+      },
+    }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.deepEqual(calls, [
+    { operation: 'create', name: 'Aharane updates', description: 'News and updates' },
+    { operation: 'follow', jid: newsletterJid },
+  ])
+})
+
+test('media caption can be connected from command arguments instead of fixed node config', async t => {
+  const { store } = await makeStore(t)
+  const manifest = {
+    id: 'caption_media_source', name: 'Caption media source', version: 1, entryPoint: 'run',
+    inputs: [], outputs: [{ id: 'media', type: 'media' }],
+    permissions: [], allowedHosts: [], timeoutMs: 5000, maxResults: 1,
+  }
+  registerEngineNode(manifest)
+  t.after(() => unregisterEngineNode('caption_media_source'))
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const engine = { id: 'engine-source', type: 'engine.caption_media_source', x: 250, y: 80, config: { engineVersion: '1' } }
+  const args = { id: 'caption-args', type: 'message.arguments', x: 250, y: 230, config: {} }
+  const send = { id: 'send-media', type: 'media.sendMedia', x: 560, y: 80, config: { kind: 'image', caption: '' } }
+  draft.nodes = [trigger, engine, args, send]
+  draft.edges = [
+    { id: 'trigger-engine', from: trigger.id, fromSocket: 'next', to: engine.id, toSocket: 'in' },
+    { id: 'engine-send', from: engine.id, fromSocket: 'next', to: send.id, toSocket: 'in' },
+    { id: 'media-input', from: engine.id, fromSocket: 'media', to: send.id, toSocket: 'media' },
+    { id: 'caption-input', from: args.id, fromSocket: 'value', to: send.id, toSocket: 'caption' },
+  ]
+  const validation = validateWorkflow(draft)
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors))
+  const sent = []
+  const imageBytes = Buffer.from('synthetic image bytes').toString('base64')
+  const result = await executeVisualWorkflow(draft, {
+    store,
+    context: context({
+      rawArgs: 'Caption supplied at runtime',
+      socket: { sendMessage: async (_jid, body) => { sent.push(body); return { key: { id: 'captioned-image' } } } },
+    }),
+    runEngine: async () => ({ outputs: { media: { mimeType: 'image/png', base64: imageBytes } } }),
+  })
+  assert.equal(result.ok, true, result.error)
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].caption, 'Caption supplied at runtime')
+})
+
+
+test('Repeat consumes a connected numeric count and enforces the execution bound', async t => {
+  const { store } = await makeStore(t)
+  const draft = createWorkflowDraft('private')
+  const trigger = draft.nodes[0]
+  const args = { id: 'repeat-args', type: 'message.arguments', x: 220, y: 80, config: {} }
+  const toNumber = { id: 'repeat-count', type: 'value.toNumber', x: 430, y: 80, config: {} }
+  const repeat = { id: 'repeat', type: 'flow.repeat', x: 650, y: 80, config: { count: '2' } }
+  const send = { id: 'send', type: 'message.sendText', x: 870, y: 30, config: { text: 'Repeated' } }
+  const repeatEnd = { id: 'repeat-end', type: 'flow.repeatEnd', x: 1090, y: 30, config: {} }
+  const end = { id: 'end', type: 'flow.end', x: 870, y: 200, config: {} }
+  draft.nodes = [trigger, args, toNumber, repeat, send, repeatEnd, end]
+  draft.edges = [
+    { id: 'exec-repeat', from: trigger.id, fromSocket: 'next', to: repeat.id, toSocket: 'in' },
+    { id: 'repeat-body', from: repeat.id, fromSocket: 'body', to: send.id, toSocket: 'in' },
+    { id: 'send-repeat-end', from: send.id, fromSocket: 'next', to: repeatEnd.id, toSocket: 'in' },
+    { id: 'repeat-next', from: repeat.id, fromSocket: 'next', to: end.id, toSocket: 'in' },
+    { id: 'args-number', from: args.id, fromSocket: 'value', to: toNumber.id, toSocket: 'value' },
+    { id: 'number-count', from: toNumber.id, fromSocket: 'value', to: repeat.id, toSocket: 'count' },
+  ]
+  const validation = validateWorkflow(draft)
+  assert.equal(validation.valid, true, JSON.stringify(validation.errors))
+  const sent = []
+  const run = rawArgs => executeVisualWorkflow(draft, {
+    store,
+    context: context({
+      rawArgs,
+      messageText: '.hello ' + rawArgs,
+      socket: { sendMessage: async (_jid, body) => { sent.push(body.text); return { key: { id: 'repeat-' + sent.length } } } },
+    }),
+  })
+  const valid = await run('3')
+  assert.equal(valid.ok, true, valid.error)
+  assert.equal(sent.length, 3)
+  sent.length = 0
+  const invalid = await run('11')
+  assert.equal(invalid.ok, false)
+  assert.match(invalid.error, /Repeat count must be a whole number/i)
+  assert.equal(sent.length, 0)
 })

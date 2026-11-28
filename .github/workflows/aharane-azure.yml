@@ -57,10 +57,14 @@ jobs:
   deploy:
     name: Deploy Aharane as a separate Azure service
     needs: validate
+    # A push deploys only when its merge commit carries the explicit one-shot
+    # [deploy-aharane] marker. Ordinary pushes remain validation-only.
     if: >-
-      github.event_name == 'workflow_dispatch' &&
       github.ref == 'refs/heads/mscc-azure' &&
-      inputs.confirm_production == 'deploy'
+      (
+        (github.event_name == 'workflow_dispatch' && inputs.confirm_production == 'deploy') ||
+        (github.event_name == 'push' && contains(github.event.head_commit.message, '[deploy-aharane]'))
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: mscc-production
